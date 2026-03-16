@@ -12,6 +12,11 @@ dependency-reduced-pom.xml
 .flattened-pom.xml
 *.class
 
+# Maven - INCLUDE wrapper scripts and config
+!mvnw
+!mvnw.cmd
+!.mvn/
+
 # Node / npm
 node_modules/
 npm-debug.log
