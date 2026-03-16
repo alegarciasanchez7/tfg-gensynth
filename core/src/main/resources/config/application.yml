@@ -1,0 +1,72 @@
+# Gen-Synth Configuration - YAML Format
+# This is the primary configuration file for the Gen-Synth simulator
+
+server:
+  host: localhost
+  port: 8080
+  wsPort: 8081
+
+# Variables/Devices Configuration
+devices:
+  enabled: true
+  defaultCount: 10
+  updateInterval: 1000  # milliseconds
+
+# Broker Configurations
+brokers:
+  mqtt:
+    enabled: true
+    host: test.mosquitto.org
+    port: 1883
+    clientId: gen-synth-mqtt-client
+    username: null
+    password: null
+    topics:
+      - device/+/data
+      - device/+/status
+
+  kafka:
+    enabled: false
+    brokers: localhost:9092
+    topics:
+      - gensynth.data
+      - gensynth.events
+    groupId: gen-synth-group
+
+  rabbitmq:
+    enabled: false
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+    virtualHost: /
+    exchanges:
+      - name: gensynth.exchange
+        type: topic
+        durable: true
+
+  redis:
+    enabled: false
+    host: localhost
+    port: 6379
+    database: 0
+
+# Pipeline Configuration
+pipeline:
+  bufferSize: 10000
+  batchSize: 100
+  flushInterval: 5000  # milliseconds
+  backpressureThreshold: 8000  # triggers when buffer reaches this size
+
+# Metrics Configuration
+metrics:
+  enabled: true
+  metricsInterval: 5000  # milliseconds
+  collectSystemMetrics: true
+
+# Logging Configuration
+logging:
+  level: INFO
+  file: logs/gen-synth.log
+  maxFileSize: 10MB
+  maxBackupIndex: 5
