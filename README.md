@@ -1,42 +1,43 @@
 # Gen-Synth
 
-Sistema modular para simulación y síntesis de IoT con flujos configurables.
+Modular system for IoT simulation and synthesis with configurable flows.
 
-## 📋 Estructura del Proyecto
+## 📋 Project Structure
+
 
 ```
 gen-synth/
-├── core/                    # Backend Java (Maven)
-│   ├── src/
-│   │   └── main/java/com/gensynth/core/
-│   │       ├── api/         # Interfaces y contratos
-│   │       ├── engine/      # Motor de ejecución
-│   │       ├── flows/       # Gestión de flujos
-│   │       ├── variables/   # Sistema de variables
-│   │       ├── connectors/  # Conectores (MQTT, Kafka, RabbitMQ)
-│   │       ├── messaging/   # Comunicación interna
-│   │       ├── metrics/     # Recolección de métricas
-│   │       ├── common/      # Utilidades compartidas
-│   │       ├── config/      # Configuración central
-│   │       └── App.java     # Punto de entrada
-│   └── pom.xml
+├── core/                    # Java Backend (Maven)
+│   ├── src/
+│   │   └── main/java/com/gensynth/core/
+│   │       ├── api/         # Interfaces and contracts
+│   │       ├── engine/      # Execution engine
+│   │       ├── flows/       # Flow management
+│   │       ├── variables/   # Variable system
+│   │       ├── connectors/  # Connectors (MQTT, Kafka, RabbitMQ)
+│   │       ├── messaging/   # Internal communication
+│   │       ├── metrics/     # Metrics collection
+│   │       ├── common/      # Shared utilities
+│   │       ├── config/      # Central configuration
+│   │       └── App.java     # Entry point
+│   └── pom.xml
 │
-└── simulator-ui/            # Frontend React (Vite + TypeScript)
-    ├── src/
-    ├── package.json
-    ├── vite.config.ts
-    ├── tailwind.config.js
-    └── postcss.config.js
+└── simulator-ui/            # React Frontend (Vite + TypeScript)
+    ├── src/
+    ├── package.json
+    ├── vite.config.ts
+    ├── tailwind.config.js
+    └── postcss.config.js
 ```
 
-## 🚀 Requisitos
+## 🚀 Prerequisites
 
 - **Java 21 LTS**
 - **Maven 3.8+**
-- **Node.js 18+** (para el frontend)
-- **npm** o **pnpm**
+- **Node.js 18+** (for the frontend)
+- **npm** or **pnpm**
 
-## 📦 Instalación
+## 📦 Installation
 
 ### Backend
 
@@ -52,9 +53,9 @@ cd simulator-ui
 npm install
 ```
 
-## 🏃 Desarrollo
+## 🏃 Development
 
-### Ejecutar el Backend
+### Running the Backend
 
 ```bash
 cd core
@@ -62,35 +63,35 @@ mvn clean compile
 java -cp target/classes com.gensynth.core.App
 ```
 
-### Ejecutar el Frontend
+### Running the Frontend
 
 ```bash
 cd simulator-ui
 npm run dev
 ```
 
-La UI estará disponible en `http://localhost:5173`
+The UI will be available at `http://localhost:5173`
 
-## 🔧 Stack Tecnológico
+## 🔧 Tech Stack
 
 ### Backend
 - **Java 21 LTS**
-- **Maven** (gestión de dependencias)
+- **Maven** (Dependency management)
 - **Eclipse Paho** (MQTT)
 - **RabbitMQ AMQP Client** (RabbitMQ)
 - **Apache Kafka** (Kafka)
-- **Java-WebSocket** (Comunicación en tiempo real)
+- **Java-WebSocket** (Real-time communication)
 
 ### Frontend
 - **React 18** + **TypeScript**
 - **Vite** (bundler)
-- **Tailwind CSS** (estilos)
-- **Material-UI** (componentes UI)
+- **Tailwind CSS** (styling)
+- **Material-UI** (UI components)
 
-## 📝 Licencia
+## 📝 License
 
-MIT
+This project is licensed under the MIT License
 
-## 👨‍💻 Autor
+## 👨‍💻 Author
 
-Gen-Synth Development Team
+Alejandro García Sánchez
