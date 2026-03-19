@@ -1,0 +1,163 @@
+package com.gensynth.core.flow;
+
+import com.gensynth.core.api.IVariable;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+
+/**
+ * Represents a single Flow with multiple variables.
+ *
+ * A Flow is a set of variables that are sent together as a unit.
+ * Each flow can have a different combination of variables.
+ *
+ * Each flow:
+ * - Has a unique ID (e.g., "flow_0", "flow_1")
+ * - Contains multiple variables (temperature, pressure, humidity, etc.)
+ * - Can have ANY combination of variables (flexible)
+ * - Can generate data events for each variable periodically
+ *
+ * Example:
+ * ```java
+ * Flow flow = new Flow("flow_0");
+ * flow.addVariable(new SimpleVariable("temperature", 20.0));
+ * flow.addVariable(new SimpleVariable("pressure", 1013.0));
+ *
+ * List<DataEvent> events = flow.generateEvents();
+ * // → 2 DataEvent objects (one per variable)
+ * ```
+ */
+public class Flow {
+
+    private final String flowId;
+    private final Map<String, IVariable> variables;
+    private final long createdAt;
+
+    /**
+     * Constructor for Flow.
+     *
+     * @param flowId Unique identifier for this flow (e.g., "flow_0")
+     */
+    public Flow(String flowId) {
+        if (flowId == null || flowId.isEmpty()) {
+            throw new IllegalArgumentException("flowId cannot be null or empty");
+        }
+        this.flowId = flowId;
+        this.variables = new ConcurrentHashMap<>();
+        this.createdAt = System.currentTimeMillis();
+    }
+
+    /**
+     * Add a variable to this flow.
+     *
+     * @param variable The variable to add
+     * @throws IllegalArgumentException if variable is null or ID already exists
+     */
+    public void addVariable(IVariable variable) {
+        if (variable == null) {
+            throw new IllegalArgumentException("variable cannot be null");
+        }
+        String varId = variable.getId();
+        if (variables.containsKey(varId)) {
+            throw new IllegalArgumentException(
+                String.format("Variable %s already exists in flow %s",
+                    varId, flowId));
+        }
+        variables.put(varId, variable);
+    }
+
+    /**
+     * Get a variable by ID.
+     *
+     * @return Optional containing the variable, or empty if not found
+     */
+    public Optional<IVariable> getVariable(String variableId) {
+        return Optional.ofNullable(variables.get(variableId));
+    }
+
+    /**
+     * Generate data events from all variables.
+     *
+     * Creates one DataEvent per variable with current values.
+     * For SimpleVariable: also calls generateNextValue() to update internal state.
+     *
+     * @return List of DataEvent objects (one per variable)
+     */
+    public List<DataEvent> generateEvents() {
+        List<DataEvent> events = new ArrayList<>();
+        long now = System.currentTimeMillis();
+
+        for (Map.Entry<String, IVariable> entry : variables.entrySet()) {
+            String variableId = entry.getKey();
+            IVariable variable = entry.getValue();
+
+            // Generate next value if it's a SimpleVariable
+            if (variable instanceof SimpleVariable) {
+                ((SimpleVariable) variable).generateNextValue();
+            }
+
+            // Get current value
+            Object currentValue = variable.getValue();
+
+            // Create and add event
+            DataEvent event = new DataEvent(
+                now,
+                this.flowId,
+                variableId,
+                currentValue,
+                variable.getType()
+            );
+            events.add(event);
+        }
+
+        return events;
+    }
+
+    /**
+     * Get flow ID.
+     */
+    public String getFlowId() {
+        return flowId;
+    }
+
+    /**
+     * Get device ID (alias for getFlowId for backwards compatibility).
+     */
+    @Deprecated(since = "1.1", forRemoval = true)
+    public String getDeviceId() {
+        return flowId;
+    }
+
+    /**
+     * Get number of variables in this flow.
+     */
+    public int getVariableCount() {
+        return variables.size();
+    }
+
+    /**
+     * Get all variable IDs.
+     */
+    public Set<String> getVariableIds() {
+        return Collections.unmodifiableSet(variables.keySet());
+    }
+
+    /**
+     * Get all variables.
+     */
+    public Collection<IVariable> getVariables() {
+        return Collections.unmodifiableCollection(variables.values());
+    }
+
+    /**
+     * Get time since flow creation (in milliseconds).
+     */
+    public long getUptimeMs() {
+        return System.currentTimeMillis() - createdAt;
+    }
+
+    @Override
+    public String toString() {
+        return String.format("Flow{id=%s, variables=%d, uptime=%dms}",
+            flowId, variables.size(), getUptimeMs());
+    }
+}
