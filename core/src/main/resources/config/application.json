@@ -69,5 +69,18 @@
     "file": "logs/gen-synth.log",
     "maxFileSize": "10MB",
     "maxBackupIndex": 5
+  },
+  "threadPool": {
+    "coreSize": 2,
+    "maxSize": 4,
+    "keepAliveSeconds": 60
+  },
+  "flowEngine": {
+    "enabled": true,
+    "devices": {
+      "count": 10,
+      "simulationInterval": 1000
+    },
+    "useVirtualThreads": true
   }
 }

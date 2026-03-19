@@ -70,3 +70,20 @@ logging:
   file: logs/gen-synth.log
   maxFileSize: 10MB
   maxBackupIndex: 5
+
+# Thread Pool Configuration
+# IMPORTANT: Conservative defaults for secondary application to avoid contention
+#            with main application. Adjust based on your deployment environment.
+threadPool:
+  coreSize: 2           # Minimum threads (conservative for secondary app)
+  maxSize: 4            # Maximum threads (2x core for I/O spikes)
+  keepAliveSeconds: 60  # Idle thread lifetime
+
+# FlowEngine Configuration
+# Device simulation and data generation settings
+flowEngine:
+  enabled: true
+  devices:
+    count: 10              # Number of virtual devices to simulate
+    simulationInterval: 1000  # milliseconds between data generation per device
+  useVirtualThreads: true    # Use Java 21 virtual threads (recommended for scalability)
