@@ -6,41 +6,51 @@ import com.gensynth.core.lifecycle.ILifecycleListener;
 
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.*;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * Implementation of IFlowEngine using Virtual Threads.
  *
  * Key Design:
  * - Uses Executors.newVirtualThreadPerTaskExecutor() for data generation
- * - Each virtual device runs on its own virtual thread
+ * - Manages Groups which contain multiple Flows
+ * - Each Flow runs on its own virtual thread
  * - Virtual threads are ultra-lightweight (~100 bytes each)
- * - Scales to millions of concurrent devices without OS thread overhead
- * - Independent from LifecycleManager's thread pool (no contention)
+ * - Scales to millions of concurrent flows without OS thread overhead
  *
  * Architecture:
- * LifecycleManager (2 threads) -> coordinates
- * FlowEngine (virtual threads) -> generates data
- * Pipeline (ring buffer) -> buffers data
- * Connectors -> sends to brokers
+ * Group (contains multiple Flows)
+ *   └── Flow (contains multiple Variables)
+ *        ├── Temperature Variable
+ *        ├── Pressure Variable
+ *        └── Humidity Variable
  */
 public class FlowEngineImpl implements IFlowEngine, ILifecycleListener {
+
+    private static final Logger logger = Logger.getLogger(FlowEngineImpl.class.getName());
 
     private final AppConfig config;
 
     // Virtual thread executor for data generation
-    // Using virtual threads allows millions of concurrent device simulations
     private ExecutorService dataGenerationExecutor;
 
-    // Track active flows (flowId -> status)
-    private final Map<String, FlowStatus> activeFlows = new ConcurrentHashMap<>();
+    // Pipeline for event buffering
+    private IPipeline pipeline;
+
+    // Track active groups (groupId -> GroupContext)
+    private final Map<String, GroupContext> activeGroups = new ConcurrentHashMap<>();
+
+    // Registered groups (groupId -> Group)
+    private final Map<String, Group> registeredGroups = new ConcurrentHashMap<>();
 
     // Current state
     private final AtomicReference<EngineState> state = new AtomicReference<>(EngineState.CREATED);
 
     // Counter for generated events (metrics)
-    private final AtomicInteger generatedEventCount = new AtomicInteger(0);
+    private final AtomicLong generatedEventCount = new AtomicLong(0);
 
     /**
      * Constructor with AppConfig.
@@ -64,8 +74,9 @@ public class FlowEngineImpl implements IFlowEngine, ILifecycleListener {
         // Create virtual thread executor for data generation
         if (config.useVirtualThreads()) {
             this.dataGenerationExecutor = Executors.newVirtualThreadPerTaskExecutor();
+            logger.info("FlowEngine initialized with virtual threads");
         } else {
-            // Fallback to ThreadPoolExecutor if virtual threads disabled
+            // Fallback to ThreadPoolExecutor
             int coreSize = Math.max(2, Runtime.getRuntime().availableProcessors());
             int maxSize = coreSize * 2;
             this.dataGenerationExecutor = new ThreadPoolExecutor(
@@ -74,19 +85,33 @@ public class FlowEngineImpl implements IFlowEngine, ILifecycleListener {
                 createThreadFactory(),
                 new ThreadPoolExecutor.CallerRunsPolicy()
             );
+            logger.info("FlowEngine initialized with traditional thread pool");
         }
+        // Initialize pipeline for event buffering
+        this.pipeline = new MockPipeline();
+        logger.info("FlowEngine initialized with MockPipeline");
         state.set(EngineState.INITIALIZED);
     }
 
     @Override
     public void onStart() throws Exception {
-        // FlowEngine is ready to execute flows
         state.set(EngineState.RUNNING);
+        logger.info("FlowEngine started");
     }
 
     @Override
     public void onStop() throws Exception {
-        // Shutdown data generation executor
+        // Stop all active groups
+        List<String> groupIds = new ArrayList<>(activeGroups.keySet());
+        for (String groupId : groupIds) {
+            try {
+                stopGroup(groupId);
+            } catch (Exception e) {
+                logger.log(Level.WARNING, "Error stopping group: " + groupId, e);
+            }
+        }
+
+        // Shutdown executor
         if (dataGenerationExecutor != null && !dataGenerationExecutor.isShutdown()) {
             dataGenerationExecutor.shutdown();
             if (!dataGenerationExecutor.awaitTermination(30, TimeUnit.SECONDS)) {
@@ -94,93 +119,232 @@ public class FlowEngineImpl implements IFlowEngine, ILifecycleListener {
             }
         }
         state.set(EngineState.STOPPED);
+        logger.info("FlowEngine stopped");
     }
 
+    // ============ Group Management ============
+
+    /**
+     * Register a group with the engine.
+     * The group won't start until executeFlow() is called on its ID.
+     */
+    public void addGroup(Group group) {
+        if (group == null) {
+            throw new IllegalArgumentException("group cannot be null");
+        }
+        String groupId = group.getGroupId();
+        registeredGroups.put(groupId, group);
+        logger.info(String.format("Group %s added with %d flows",
+            groupId, group.getFlowCount()));
+    }
+
+    /**
+     * Get a registered group by ID.
+     */
+    public Optional<Group> getGroup(String groupId) {
+        return Optional.ofNullable(registeredGroups.get(groupId));
+    }
+
+    /**
+     * Remove a group from the engine.
+     */
+    public void removeGroup(String groupId) {
+        registeredGroups.remove(groupId);
+        logger.info(String.format("Group %s removed", groupId));
+    }
+
+    /**
+     * Get number of registered groups.
+     */
+    public int getGroupCount() {
+        return registeredGroups.size();
+    }
+
+    /**
+     * Get number of active (running) groups.
+     */
+    public int getActiveGroupCount() {
+        return activeGroups.size();
+    }
+
+    // ============ Execution Control (IFlowEngine Interface) ============
+
     @Override
-    public void executeFlow(String flowId) {
-        if (!canExecuteFlow()) {
+    public void executeFlow(String groupId) {
+        // IFlowEngine.executeFlow() now executes a Group
+        executeGroup(groupId);
+    }
+
+    /**
+     * Execute (start) a group - all its enabled flows will run.
+     * Each flow in the group will run on its own virtual thread.
+     */
+    public void executeGroup(String groupId) {
+        if (!canExecute()) {
             throw new IllegalStateException(
                 String.format("FlowEngine is not running, current state: %s", state.get())
             );
         }
 
-        if (activeFlows.containsKey(flowId)) {
-            throw new IllegalStateException(String.format("Flow %s is already running", flowId));
+        if (activeGroups.containsKey(groupId)) {
+            throw new IllegalStateException(String.format("Group %s is already running", groupId));
         }
 
-        // Create flow status tracker
-        FlowStatus status = new FlowStatus();
-        activeFlows.put(flowId, status);
+        // Get registered group
+        Group group = registeredGroups.get(groupId);
+        if (group == null) {
+            throw new IllegalStateException(
+                String.format("Group %s not found. Add it first with addGroup()", groupId));
+        }
 
-        // Submit data generation tasks to virtual thread executor
-        int deviceCount = config.getDeviceCount();
+        // Create context and mark as active
+        GroupContext context = new GroupContext(group);
+        activeGroups.put(groupId, context);
         long interval = config.getSimulationInterval();
 
-        for (int i = 0; i < deviceCount; i++) {
+        // Submit data generation task for each flow
+        for (Flow flow : group.getFlows()) {
             dataGenerationExecutor.submit(() -> {
-                while (status.isRunning()) {
-                    try {
-                        // Sleep for configured interval
-                        Thread.sleep(interval);
-
-                        // Generate data point (placeholder for now)
-                        // When Pipeline is implemented, events will be submitted there
-                        generatedEventCount.incrementAndGet();
-
-                    } catch (InterruptedException e) {
-                        // Flow was stopped, exit gracefully
-                        Thread.currentThread().interrupt();
-                        break;
-                    }
+                try {
+                    runFlowDataGeneration(flow, context, interval);
+                } catch (Throwable e) {
+                    logger.log(Level.SEVERE, "Error in flow thread for " + flow.getFlowId(), e);
+                    group.recordError();
                 }
             });
         }
-    }
 
-    @Override
-    public void stopFlow(String flowId) {
-        FlowStatus status = activeFlows.get(flowId);
-        if (status == null) {
-            throw new IllegalStateException(String.format("Flow %s is not running", flowId));
-        }
-
-        // Signal flow to stop
-        status.stop();
-
-        // Remove from active flows
-        activeFlows.remove(flowId);
-    }
-
-    @Override
-    public void pauseFlow(String flowId) {
-        FlowStatus status = activeFlows.get(flowId);
-        if (status == null) {
-            throw new IllegalStateException(String.format("Flow %s is not running", flowId));
-        }
-
-        // Pause data generation for this flow
-        status.pause();
+        logger.info(String.format("Group %s started with %d flows",
+            groupId, group.getFlowCount()));
     }
 
     /**
-     * Get the number of events generated so far.
-     * Useful for metrics and monitoring.
+     * Data generation loop for a single flow within a group.
      */
-    public int getGeneratedEventCount() {
+    private void runFlowDataGeneration(Flow flow, GroupContext context, long interval) {
+        while (context.isRunning()) {
+            try {
+                // Check pause state
+                if (context.isPaused()) {
+                    Thread.sleep(100);
+                    continue;
+                }
+
+                // Check if group is enabled
+                if (!context.group.isEnabled()) {
+                    Thread.sleep(100);
+                    continue;
+                }
+
+                // Generate events from all variables in the flow
+                List<DataEvent> events = flow.generateEvents();
+
+                // Submit events to pipeline and record metrics
+                for (DataEvent event : events) {
+                    if (pipeline != null && !pipeline.isFull()) {
+                        pipeline.submit(event);
+                    }
+                }
+
+                // Record metrics
+                generatedEventCount.addAndGet(events.size());
+                context.group.recordEventsSent(events.size());
+
+                // Sleep for configured interval
+                Thread.sleep(interval);
+
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            } catch (Exception e) {
+                logger.log(Level.SEVERE, "Error in data generation for " + flow.getFlowId(), e);
+                context.group.recordError();
+                break;
+            }
+        }
+
+        logger.fine("Flow " + flow.getFlowId() + " stopped");
+    }
+
+    @Override
+    public void stopFlow(String groupId) {
+        // IFlowEngine.stopFlow() now stops a Group
+        stopGroup(groupId);
+    }
+
+    /**
+     * Stop (pause all flows in) a group.
+     */
+    public void stopGroup(String groupId) {
+        GroupContext context = activeGroups.get(groupId);
+        if (context == null) {
+            throw new IllegalStateException(String.format("Group %s is not running", groupId));
+        }
+
+        context.stop();
+        activeGroups.remove(groupId);
+
+        logger.info(String.format("Group %s stopped", groupId));
+    }
+
+    @Override
+    public void pauseFlow(String groupId) {
+        // IFlowEngine.pauseFlow() now pauses a Group
+        pauseGroup(groupId);
+    }
+
+    /**
+     * Pause a group (all its flows).
+     */
+    public void pauseGroup(String groupId) {
+        GroupContext context = activeGroups.get(groupId);
+        if (context == null) {
+            throw new IllegalStateException(String.format("Group %s is not running", groupId));
+        }
+
+        context.pause();
+        logger.info(String.format("Group %s paused", groupId));
+    }
+
+    /**
+     * Resume a paused group.
+     */
+    public void resumeGroup(String groupId) {
+        GroupContext context = activeGroups.get(groupId);
+        if (context == null) {
+            throw new IllegalStateException(String.format("Group %s is not running", groupId));
+        }
+
+        context.resume();
+        logger.info(String.format("Group %s resumed", groupId));
+    }
+
+    // ============ Metrics ============
+
+    /**
+     * Get total events generated since engine start.
+     */
+    public long getGeneratedEventCount() {
         return generatedEventCount.get();
     }
 
     /**
-     * Get number of active flows.
+     * Get number of active (running) flows (alias for getActiveGroupCount for compatibility).
+     * @deprecated Use getActiveGroupCount() instead. Each "group" now represents a collection of flows.
      */
+    @Deprecated
     public int getActiveFlowCount() {
-        return activeFlows.size();
+        return (int) activeGroups.values().stream()
+            .map(ctx -> ctx.group.getFlowCount())
+            .reduce(0, Integer::sum);
     }
 
+    // ============ Private Helpers ============
+
     /**
-     * Check if engine can execute flows.
+     * Check if engine can execute groups.
      */
-    private boolean canExecuteFlow() {
+    private boolean canExecute() {
         return state.get() == EngineState.RUNNING;
     }
 
@@ -189,7 +353,7 @@ public class FlowEngineImpl implements IFlowEngine, ILifecycleListener {
      */
     private ThreadFactory createThreadFactory() {
         return new ThreadFactory() {
-            private final AtomicInteger count = new AtomicInteger(0);
+            private final AtomicLong count = new AtomicLong(0);
 
             @Override
             public Thread newThread(Runnable r) {
@@ -209,21 +373,32 @@ public class FlowEngineImpl implements IFlowEngine, ILifecycleListener {
     }
 
     /**
-     * Internal class to track flow execution status.
+     * Internal class to track group execution context.
+     * Contains state and configuration for a running group.
      */
-    private static class FlowStatus {
+    private static class GroupContext {
+        private final Group group;
         private volatile boolean running = true;
         private volatile boolean paused = false;
 
-        FlowStatus() {
+        GroupContext(Group group) {
+            this.group = group;
         }
 
         boolean isRunning() {
-            return running && !paused;
+            return running;
+        }
+
+        boolean isPaused() {
+            return paused;
         }
 
         void pause() {
             paused = true;
+        }
+
+        void resume() {
+            paused = false;
         }
 
         void stop() {
