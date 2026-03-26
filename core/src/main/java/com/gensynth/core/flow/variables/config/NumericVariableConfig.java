@@ -2,6 +2,7 @@ package com.gensynth.core.flow.variables.config;
 
 import com.gensynth.core.flow.variables.*;
 import java.util.*;
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * Configuration for numerical variables.
@@ -56,7 +57,7 @@ public class NumericVariableConfig extends VariableConfiguration {
         
         switch (pattern) {
             case RANDOM:
-                currentValue = fromValue + (toValue - fromValue) * Math.random();
+                currentValue = fromValue + (toValue - fromValue) * ThreadLocalRandom.current().nextDouble();
                 break;
             case CONSTANT:
                 currentValue = constantValue;
@@ -80,7 +81,7 @@ public class NumericVariableConfig extends VariableConfiguration {
         if (anomalyConfig.isEnabledProbabilityMode()) {
             // Probability-based: each tick has a chance to trigger
             double probabilityThreshold = anomalyConfig.getProbabilityRatio() / 100.0;
-            if (Math.random() < probabilityThreshold && !isAnomalous) {
+            if (ThreadLocalRandom.current().nextDouble() < probabilityThreshold && !isAnomalous) {
                 isAnomalous = true;
                 anomalyStartTick = tickCounter;
             }
@@ -158,7 +159,7 @@ public class NumericVariableConfig extends VariableConfiguration {
         double intervalMin = fromValue + (intervalIndex * (toValue - fromValue) / trendConfig.getIntervalCount());
         double intervalMax = fromValue + ((intervalIndex + 1) * (toValue - fromValue) / trendConfig.getIntervalCount());
         
-        return intervalMin + (intervalMax - intervalMin) * Math.random();
+        return intervalMin + (intervalMax - intervalMin) * ThreadLocalRandom.current().nextDouble();
     }
 
     private Object formatValue(double value) {
@@ -170,7 +171,7 @@ public class NumericVariableConfig extends VariableConfiguration {
 
     private long getRandomLongInRange(long min, long max) {
         if (min == max) return min;
-        return min + (long) (Math.random() * (max - min + 1));
+        return ThreadLocalRandom.current().nextLong(min, max + 1);
     }
 
     /**
@@ -191,7 +192,7 @@ public class NumericVariableConfig extends VariableConfiguration {
 
     @Override
     public Map<String, Object> toMap() {
-        Map<String, Object> map = new HashMap<>();
+        Map<String, Object> map = new HashMap<>(8);
         map.put("identifier", identifier);
         map.put("type", type.name());
         map.put("pattern", pattern.name());

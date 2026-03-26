@@ -24,7 +24,17 @@ public enum GenerationPattern {
     FIXED_DATE("Fixed Date - Constant date/time"),
     SYSTEM_NOW("System Now - Current date/time"),
     START_PLUS_INCREMENT("Start + Increment - Increasing from start"),
-    DATE_RANGE("Date Range - Random within range");
+    DATE_RANGE("Date Range - Random within range"),
+
+    // Point patterns
+    FIXED_POINT("Fixed Point - Constant XYZ coordinates"),
+    RANDOM_POINT("Random Point - Random XYZ within bounds"),
+    PATH_INTERPOLATOR("Path Interpolator - Interpolate across path points"),
+
+    // Boolean patterns
+    CONSTANT_BOOLEAN("Constant Boolean - Fixed TRUE/FALSE"),
+    DUTY_CYCLE("Duty Cycle - ON/OFF with durations"),
+    ALTERNATING_BOOLEAN("Alternating Boolean - Toggle at intervals");
 
     private final String description;
 
