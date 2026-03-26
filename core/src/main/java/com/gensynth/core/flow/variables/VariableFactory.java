@@ -29,6 +29,38 @@ public class VariableFactory {
     }
 
     /**
+     * Create list variable configuration
+     */
+    public static ListVariableConfig createList(String id) {
+        return new ListVariableConfig()
+            .identifier(id);
+    }
+
+    /**
+     * Create boolean variable configuration
+     */
+    public static BooleanVariableConfig createBoolean(String id) {
+        return new BooleanVariableConfig()
+            .identifier(id);
+    }
+
+    /**
+     * Create date variable configuration
+     */
+    public static DateVariableConfig createDate(String id) {
+        return new DateVariableConfig()
+            .identifier(id);
+    }
+
+    /**
+     * Create point variable configuration
+     */
+    public static PointVariableConfig createPoint(String id) {
+        return new PointVariableConfig()
+            .identifier(id);
+    }
+
+    /**
      * Create configurable variable from configuration
      */
     public static ConfigurableVariable createFromConfig(VariableConfiguration config) {

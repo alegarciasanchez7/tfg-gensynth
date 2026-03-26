@@ -2,6 +2,7 @@ package com.gensynth.core.flow.variables.config;
 
 import com.gensynth.core.flow.variables.*;
 import java.util.*;
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * Configuration for string variables.
@@ -54,7 +55,7 @@ public class StringVariableConfig extends VariableConfiguration {
             buildCharacterSetCache();
         }
         
-        int length = fixedSize ? fixedLength : minLength + (int)(Math.random() * (maxLength - minLength + 1));
+        int length = fixedSize ? fixedLength : ThreadLocalRandom.current().nextInt(minLength, maxLength + 1);
         StringBuilder sb = new StringBuilder(length);
         
         for (int i = 0; i < length; i++) {
@@ -106,7 +107,7 @@ public class StringVariableConfig extends VariableConfiguration {
             return new CharacterSet(LOWERCASE_CHARS, 1.0);
         }
         
-        double random = Math.random() * totalProbability;
+        double random = ThreadLocalRandom.current().nextDouble(totalProbability);
         double cumulative = 0.0;
         
         // Loop-based selection is faster than stream for small arrays
@@ -128,7 +129,7 @@ public class StringVariableConfig extends VariableConfiguration {
 
     @Override
     public Map<String, Object> toMap() {
-        Map<String, Object> map = new HashMap<>();
+        Map<String, Object> map = new HashMap<>(7);
         map.put("identifier", identifier);
         map.put("type", type.name());
         map.put("pattern", pattern.name());
@@ -234,7 +235,7 @@ public class StringVariableConfig extends VariableConfiguration {
         }
 
         char getRandomChar() {
-            return chars.charAt((int)(Math.random() * chars.length()));
+            return chars.charAt(ThreadLocalRandom.current().nextInt(chars.length()));
         }
     }
 }

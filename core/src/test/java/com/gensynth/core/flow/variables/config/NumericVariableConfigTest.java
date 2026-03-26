@@ -183,14 +183,11 @@ public class NumericVariableConfigTest {
         config.anomaly(anomaly)
             .pattern(GenerationPattern.CONSTANT)
             .constant(25.0);
-        
+
         // Generate many values to potentially see the anomaly
-        int anomalousCount = 0;
         for (int i = 0; i < 10000; i++) {
             Object value = config.generateNextValue();
-            if (Math.abs((double) value - 999.0) < 0.01) {
-                anomalousCount++;
-            }
+            assertNotNull(value);
         }
         
         // With 0.00001% probability over 10000 iterations:
