@@ -50,9 +50,23 @@ public interface IPipeline {
      * @return Count of successfully processed events
      */
     long getTotalProcessed();
+    
+    /**
+     * Get current number of events in buffer.
+     *
+     * @return Current buffer size
+     */
+    long getBufferSize();
+    
+    /**
+     * Get throughput in events per second.
+     *
+     * @return Events/second (approximate, based on recent activity)
+     */
+    double getThroughput();
 
     /**
-     *Reset all statistics and counters.
+     * Reset all statistics and counters.
      */
     void reset();
 }
