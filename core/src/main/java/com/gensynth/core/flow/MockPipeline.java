@@ -22,6 +22,7 @@ public class MockPipeline implements IPipeline {
     private final int capacity;
     private final double backpressureThreshold;  // Default 0.8 (80%)
     private final AtomicLong totalProcessed;
+    private final AtomicLong lastFlushTime;
 
     /**
      * Constructor with default settings.
@@ -51,6 +52,7 @@ public class MockPipeline implements IPipeline {
         this.capacity = capacity;
         this.backpressureThreshold = backpressureThreshold;
         this.totalProcessed = new AtomicLong(0);
+        this.lastFlushTime = new AtomicLong(System.currentTimeMillis());
     }
 
     @Override
@@ -99,13 +101,26 @@ public class MockPipeline implements IPipeline {
     public void reset() {
         buffer.clear();
         totalProcessed.set(0);
+        lastFlushTime.set(System.currentTimeMillis());
     }
 
-    /**
-     * Get current buffer size (number of pending events).
-     */
-    public int getBufferSize() {
-        return buffer.size();
+    @Override
+    public long getBufferSize() {
+        return (long) buffer.size();
+    }
+
+    @Override
+    public double getThroughput() {
+        long now = System.currentTimeMillis();
+        long lastFlush = lastFlushTime.get();
+        long elapsedMs = now - lastFlush;
+        
+        if (elapsedMs == 0) {
+            return 0.0;
+        }
+
+        long processed = totalProcessed.get();
+        return (processed / (double) elapsedMs) * 1000.0;
     }
 
     /**
