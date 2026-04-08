@@ -10,6 +10,8 @@ import java.util.concurrent.ThreadLocalRandom;
  */
 public class StringVariableConfig extends VariableConfiguration {
     
+    private static final int CHARACTER_POOL_SIZE = 256;
+    
     // Size
     private boolean fixedSize;
     private int fixedLength;
@@ -28,9 +30,8 @@ public class StringVariableConfig extends VariableConfiguration {
     private static final String NUMBER_CHARS = "0123456789";
     private static final String SYMBOL_CHARS = "!@#$%^&*()_+-=[]{}|;:,.<>?";
     
-    // Performance optimization: pre-computed character sets cache
-    private CharacterSet[] enabledCharSets;
-    private double totalProbability;
+    // Performance optimization: pre-computed flat character pool
+    private char[] characterPool;
     private boolean needsRebuild = true;
 
     public StringVariableConfig() {
@@ -55,15 +56,15 @@ public class StringVariableConfig extends VariableConfiguration {
             buildCharacterSetCache();
         }
         
-        int length = fixedSize ? fixedLength : ThreadLocalRandom.current().nextInt(minLength, maxLength + 1);
-        StringBuilder sb = new StringBuilder(length);
-        
+        ThreadLocalRandom random = ThreadLocalRandom.current();
+        int length = fixedSize ? fixedLength : random.nextInt(minLength, maxLength + 1);
+        char[] output = new char[length];
+
         for (int i = 0; i < length; i++) {
-            CharacterSet charSet = selectCharacterSet();
-            sb.append(charSet.getRandomChar());
+            output[i] = characterPool[random.nextInt(characterPool.length)];
         }
         
-        return sb.toString();
+        return new String(output);
     }
 
     /**
@@ -71,55 +72,58 @@ public class StringVariableConfig extends VariableConfiguration {
      * Called only when configuration changes, not on every generation.
      */
     private void buildCharacterSetCache() {
-        CharacterSet[] temp = new CharacterSet[4];
-        int count = 0;
-        double total = 0.0;
-        
+        List<WeightedCharSet> enabledSets = new ArrayList<>(4);
+
         if (lowerCase.enabled) {
-            temp[count++] = new CharacterSet(LOWERCASE_CHARS, lowerCase.probability);
-            total += lowerCase.probability;
+            enabledSets.add(new WeightedCharSet(LOWERCASE_CHARS.toCharArray(), lowerCase.probability));
         }
         if (upperCase.enabled) {
-            temp[count++] = new CharacterSet(UPPERCASE_CHARS, upperCase.probability);
-            total += upperCase.probability;
+            enabledSets.add(new WeightedCharSet(UPPERCASE_CHARS.toCharArray(), upperCase.probability));
         }
         if (numbers.enabled) {
-            temp[count++] = new CharacterSet(NUMBER_CHARS, numbers.probability);
-            total += numbers.probability;
+            enabledSets.add(new WeightedCharSet(NUMBER_CHARS.toCharArray(), numbers.probability));
         }
         if (symbols.enabled) {
-            temp[count++] = new CharacterSet(SYMBOL_CHARS, symbols.probability);
-            total += symbols.probability;
+            enabledSets.add(new WeightedCharSet(SYMBOL_CHARS.toCharArray(), symbols.probability));
         }
-        
-        // Shrink array to exact size
-        this.enabledCharSets = new CharacterSet[count];
-        System.arraycopy(temp, 0, this.enabledCharSets, 0, count);
-        this.totalProbability = total;
-        this.needsRebuild = false;
-    }
 
-    /**
-     * Selects a character set based on probability (optimized - no stream, single random).
-     */
-    private CharacterSet selectCharacterSet() {
-        if (enabledCharSets.length == 0) {
-            return new CharacterSet(LOWERCASE_CHARS, 1.0);
+        if (enabledSets.isEmpty()) {
+            this.characterPool = LOWERCASE_CHARS.toCharArray();
+            this.needsRebuild = false;
+            return;
         }
-        
-        double random = ThreadLocalRandom.current().nextDouble(totalProbability);
-        double cumulative = 0.0;
-        
-        // Loop-based selection is faster than stream for small arrays
-        for (int i = 0; i < enabledCharSets.length; i++) {
-            cumulative += enabledCharSets[i].probability;
-            if (random <= cumulative) {
-                return enabledCharSets[i];
+
+        double totalProbability = 0.0;
+        for (WeightedCharSet set : enabledSets) {
+            totalProbability += set.probability;
+        }
+
+        char[] pool = new char[CHARACTER_POOL_SIZE];
+        ThreadLocalRandom random = ThreadLocalRandom.current();
+        int position = 0;
+        int remaining = CHARACTER_POOL_SIZE;
+
+        for (int i = 0; i < enabledSets.size(); i++) {
+            WeightedCharSet set = enabledSets.get(i);
+            int setsLeft = enabledSets.size() - i - 1;
+            int slots;
+
+            if (setsLeft == 0) {
+                slots = remaining;
+            } else {
+                double share = set.probability / totalProbability;
+                slots = Math.max(1, (int) Math.round(share * CHARACTER_POOL_SIZE));
+                slots = Math.min(slots, remaining - setsLeft);
             }
+
+            for (int j = 0; j < slots; j++) {
+                pool[position++] = set.chars[random.nextInt(set.chars.length)];
+            }
+            remaining -= slots;
         }
-        
-        // Fallback (should rarely happen)
-        return enabledCharSets[enabledCharSets.length - 1];
+
+        this.characterPool = pool;
+        this.needsRebuild = false;
     }
 
     @Override
@@ -222,20 +226,13 @@ public class StringVariableConfig extends VariableConfiguration {
         }
     }
 
-    /**
-     * Helper for character selection
-     */
-    private static class CharacterSet {
-        String chars;
-        double probability;
+    private static class WeightedCharSet {
+        final char[] chars;
+        final double probability;
 
-        CharacterSet(String chars, double probability) {
+        WeightedCharSet(char[] chars, double probability) {
             this.chars = chars;
             this.probability = probability;
-        }
-
-        char getRandomChar() {
-            return chars.charAt(ThreadLocalRandom.current().nextInt(chars.length()));
         }
     }
 }

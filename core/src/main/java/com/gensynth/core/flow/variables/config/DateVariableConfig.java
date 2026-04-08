@@ -18,6 +18,11 @@ public class DateVariableConfig extends VariableConfiguration {
     private Instant rangeStart;
     private Instant rangeEnd;
     private long sequenceIndex;
+    private long fixedDateMillis;
+    private long startDateMillis;
+    private long incrementMillis;
+    private long rangeStartMillis;
+    private long rangeEndMillis;
 
     // Anomaly state
     private long cachedWhenTicks = -1;
@@ -33,6 +38,11 @@ public class DateVariableConfig extends VariableConfiguration {
         this.rangeStart = Instant.now();
         this.rangeEnd = this.rangeStart.plus(Duration.ofMinutes(1));
         this.sequenceIndex = 0;
+        this.fixedDateMillis = fixedDate.toEpochMilli();
+        this.startDateMillis = startDate.toEpochMilli();
+        this.incrementMillis = increment.toMillis();
+        this.rangeStartMillis = rangeStart.toEpochMilli();
+        this.rangeEndMillis = rangeEnd.toEpochMilli();
         this.isAnomalous = false;
         this.anomalyStartTick = 0;
     }
@@ -42,6 +52,7 @@ public class DateVariableConfig extends VariableConfiguration {
             throw new IllegalArgumentException("Fixed date cannot be null");
         }
         this.fixedDate = value;
+        this.fixedDateMillis = value.toEpochMilli();
         return this;
     }
 
@@ -50,6 +61,7 @@ public class DateVariableConfig extends VariableConfiguration {
             throw new IllegalArgumentException("Start date cannot be null");
         }
         this.startDate = value;
+        this.startDateMillis = value.toEpochMilli();
         this.sequenceIndex = 0;
         return this;
     }
@@ -59,6 +71,7 @@ public class DateVariableConfig extends VariableConfiguration {
             throw new IllegalArgumentException("Increment must be non-negative");
         }
         this.increment = value;
+        this.incrementMillis = value.toMillis();
         return this;
     }
 
@@ -71,6 +84,8 @@ public class DateVariableConfig extends VariableConfiguration {
         }
         this.rangeStart = from;
         this.rangeEnd = to;
+        this.rangeStartMillis = from.toEpochMilli();
+        this.rangeEndMillis = to.toEpochMilli();
         return this;
     }
 
@@ -85,32 +100,30 @@ public class DateVariableConfig extends VariableConfiguration {
 
         switch (pattern) {
             case FIXED_DATE:
-                return fixedDate;
+                return Instant.ofEpochMilli(fixedDateMillis);
             case SYSTEM_NOW:
-                return Instant.now();
+                return Instant.ofEpochMilli(System.currentTimeMillis());
             case START_PLUS_INCREMENT:
                 return generateIncremental();
             case DATE_RANGE:
                 return generateRange();
             default:
-                return Instant.now();
+                return Instant.ofEpochMilli(System.currentTimeMillis());
         }
     }
 
     private Instant generateIncremental() {
-        Instant value = startDate.plus(increment.multipliedBy(sequenceIndex));
+        long valueMillis = startDateMillis + (incrementMillis * sequenceIndex);
         sequenceIndex++;
-        return value;
+        return Instant.ofEpochMilli(valueMillis);
     }
 
     private Instant generateRange() {
-        long fromMs = rangeStart.toEpochMilli();
-        long toMs = rangeEnd.toEpochMilli();
-        if (toMs <= fromMs) {
+        if (rangeEndMillis <= rangeStartMillis) {
             return rangeStart;
         }
-        long offset = ThreadLocalRandom.current().nextLong(toMs - fromMs + 1);
-        return Instant.ofEpochMilli(fromMs + offset);
+        long offset = ThreadLocalRandom.current().nextLong(rangeEndMillis - rangeStartMillis + 1);
+        return Instant.ofEpochMilli(rangeStartMillis + offset);
     }
 
     @Override
