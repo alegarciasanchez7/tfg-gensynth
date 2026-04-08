@@ -16,9 +16,11 @@ public class ListVariableConfig extends VariableConfiguration {
     
     // Source data
     private List<?> sourceList;            // The items to select from
+    private Object[] sourceArray;          // Fast access for random/sequential selection
+    private int sourceSize;                // Cached size for hot path
     private int currentIndex;              // Current position for sequential mode
     private boolean shuffle;               // Whether to shuffle sequential list
-    private List<?> shuffledList;          // Cache for shuffled list
+    private Object[] shuffledArray;        // Cache for shuffled sequence
     private boolean needsReshuffle;        // Flag for cache invalidation
 
     // Anomaly state
@@ -30,6 +32,8 @@ public class ListVariableConfig extends VariableConfiguration {
         this.type = VariableType.LIST;
         this.pattern = GenerationPattern.RANDOM_FROM_LIST;
         this.sourceList = new ArrayList<>();
+        this.sourceArray = new Object[0];
+        this.sourceSize = 0;
         this.currentIndex = 0;
         this.shuffle = DEFAULT_SHUFFLE;
         this.needsReshuffle = true;
@@ -46,6 +50,8 @@ public class ListVariableConfig extends VariableConfiguration {
             throw new IllegalArgumentException("Source list cannot be null or empty");
         }
         this.sourceList = new ArrayList<>(items);  // Defensive copy
+        this.sourceArray = this.sourceList.toArray();
+        this.sourceSize = this.sourceArray.length;
         this.currentIndex = 0;
         this.needsReshuffle = true;
         return this;
@@ -60,6 +66,8 @@ public class ListVariableConfig extends VariableConfiguration {
             sourceList = new ArrayList<>();
         }
         ((List<Object>)sourceList).add(item);
+        this.sourceArray = this.sourceList.toArray();
+        this.sourceSize = this.sourceArray.length;
         needsReshuffle = true;
         return this;
     }
@@ -77,7 +85,7 @@ public class ListVariableConfig extends VariableConfiguration {
      * Get the source list size (for testing/monitoring).
      */
     public int getSourceListSize() {
-        return sourceList != null ? sourceList.size() : 0;
+        return sourceSize;
     }
 
     /**
@@ -110,7 +118,7 @@ public class ListVariableConfig extends VariableConfiguration {
             return anomalyConfig.getAnomalousValue();
         }
         
-        if (sourceList.isEmpty()) {
+        if (sourceSize == 0) {
             return null;
         }
         
@@ -131,14 +139,17 @@ public class ListVariableConfig extends VariableConfiguration {
      */
     private Object generateSequential() {
         if (shuffle && needsReshuffle) {
-            shuffledList = new ArrayList<>(sourceList);
-            Collections.shuffle(shuffledList);
+            shuffledArray = Arrays.copyOf(sourceArray, sourceSize);
+            shuffleArray(shuffledArray);
             needsReshuffle = false;
         }
         
-        List<?> itemList = shuffle ? shuffledList : sourceList;
-        Object value = itemList.get(currentIndex);
-        currentIndex = (currentIndex + 1) % itemList.size();
+        Object[] itemArray = shuffle ? shuffledArray : sourceArray;
+        Object value = itemArray[currentIndex];
+        currentIndex++;
+        if (currentIndex == sourceSize) {
+            currentIndex = 0;
+        }
         return value;
     }
 
@@ -146,15 +157,15 @@ public class ListVariableConfig extends VariableConfiguration {
      * Random selection: pick random item each time.
      */
     private Object generateRandom() {
-        int randomIndex = ThreadLocalRandom.current().nextInt(sourceList.size());
-        return sourceList.get(randomIndex);
+        int randomIndex = ThreadLocalRandom.current().nextInt(sourceSize);
+        return sourceArray[randomIndex];
     }
 
     /**
      * Constant mode: always return the first element.
      */
     private Object generateConstant() {
-        return sourceList.get(0);
+        return sourceArray[0];
     }
 
     @Override
@@ -279,6 +290,16 @@ public class ListVariableConfig extends VariableConfiguration {
                     cachedWhenTicks = -1;
                 }
                 break;
+        }
+    }
+
+    private void shuffleArray(Object[] array) {
+        ThreadLocalRandom random = ThreadLocalRandom.current();
+        for (int i = array.length - 1; i > 0; i--) {
+            int swapIndex = random.nextInt(i + 1);
+            Object temp = array[i];
+            array[i] = array[swapIndex];
+            array[swapIndex] = temp;
         }
     }
 
