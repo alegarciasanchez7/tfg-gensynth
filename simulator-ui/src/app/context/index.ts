@@ -8,4 +8,5 @@ export {
   useMetrics, 
   useLogs,
   useConnection,
+  useConnectorCatalog,
 } from './AppContext';

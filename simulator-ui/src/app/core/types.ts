@@ -58,6 +58,14 @@ export interface LogPayload {
   message: string;
 }
 
+export interface ConnectorPluginDescriptor {
+  pluginId: string;
+  displayName: string;
+  pluginVersion: string;
+  coreApiVersion: string;
+  configSchema: Record<string, unknown>;
+}
+
 // ─────────────────────────────────────────────────────────────
 // Mensajes de la UI → Core (Comandos)
 // ─────────────────────────────────────────────────────────────
@@ -78,6 +86,8 @@ export type UICommandType =
   | 'CREATE_VARIABLE'
   | 'DELETE_VARIABLE'
   | 'GET_INITIAL_STATE'
+  | 'GET_CONNECTOR_CATALOG'
+  | 'GET_LATEST_CONNECTOR'
   | 'SUBSCRIBE_METRICS'
   | 'UNSUBSCRIBE_METRICS';
 
