@@ -1,4 +1,5 @@
 import type { Group, Variable, LogEntry } from '../types';
+import type { ConnectorPluginDescriptor } from '../core/types';
 
 export const mockGroups: Group[] = [
   {
@@ -300,3 +301,80 @@ X-Trace-Id: 550e8400-e29b-41d4-a716-446655440000
   f6: `192.168.1.104 - jsmith [04/Mar/2026:14:32:08 +0000] "GET /api/metrics HTTP/1.1" 200 2048 "-" "Mozilla/5.0"`,
   f9: `Mar  4 14:32:08 host-42 sshd[4821]: Accepted publickey for jsmith from 192.168.1.104 port 54321 ssh2`,
 };
+
+export const mockConnectorCatalog: ConnectorPluginDescriptor[] = [
+  {
+    pluginId: 'rabbitmq',
+    displayName: 'RabbitMQ Connector',
+    pluginVersion: '1.0.0',
+    coreApiVersion: '1.0.0',
+    configSchema: {
+      type: 'object',
+      properties: {
+        host: { type: 'string' },
+        port: { type: 'number' },
+        exchange: { type: 'string' },
+        queue: { type: 'string' },
+      },
+    },
+  },
+  {
+    pluginId: 'rabbitmq',
+    displayName: 'RabbitMQ Connector',
+    pluginVersion: '1.1.0',
+    coreApiVersion: '1.0.0',
+    configSchema: {
+      type: 'object',
+      properties: {
+        host: { type: 'string' },
+        port: { type: 'number' },
+        exchange: { type: 'string' },
+        queue: { type: 'string' },
+        reconnectAttempts: { type: 'number' },
+      },
+    },
+  },
+  {
+    pluginId: 'kafka',
+    displayName: 'Kafka Connector',
+    pluginVersion: '2.0.0',
+    coreApiVersion: '1.0.0',
+    configSchema: {
+      type: 'object',
+      properties: {
+        bootstrapServers: { type: 'string' },
+        topic: { type: 'string' },
+        compressionType: { type: 'string' },
+      },
+    },
+  },
+  {
+    pluginId: 'mqtt',
+    displayName: 'MQTT Connector',
+    pluginVersion: '1.0.0',
+    coreApiVersion: '1.0.0',
+    configSchema: {
+      type: 'object',
+      properties: {
+        host: { type: 'string' },
+        port: { type: 'number' },
+        topic: { type: 'string' },
+        qos: { type: 'number' },
+      },
+    },
+  },
+  {
+    pluginId: 'http',
+    displayName: 'HTTP Connector',
+    pluginVersion: '1.0.0',
+    coreApiVersion: '1.0.0',
+    configSchema: {
+      type: 'object',
+      properties: {
+        endpoint: { type: 'string' },
+        method: { type: 'string' },
+        authType: { type: 'string' },
+      },
+    },
+  },
+];

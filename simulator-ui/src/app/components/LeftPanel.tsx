@@ -15,12 +15,15 @@ import {
   Pause,
 } from 'lucide-react';
 import type { Group, Flow, Selection, ConnectionStatus, GroupStatus, Variable } from '../types';
+import type { ConnectorPluginDescriptor } from '../core/types';
 
 interface LeftPanelProps {
   groups: Group[];
   selection: Selection;
   variables: Variable[];
   formatTemplate: Record<string, string>;
+  connectorCatalog: ConnectorPluginDescriptor[];
+  latestConnectors: ConnectorPluginDescriptor[];
   onSelectGroup: (groupId: string) => void;
   onSelectFlow: (groupId: string, flowId: string) => void;
   onToggleGroup: (groupId: string) => void;
@@ -231,7 +234,17 @@ function GroupItem({ group, selection, variables, formatTemplate, onSelectGroup,
   );
 }
 
-export function LeftPanel({ groups, selection, variables, formatTemplate, onSelectGroup, onSelectFlow, onToggleGroup }: LeftPanelProps) {
+export function LeftPanel({
+  groups,
+  selection,
+  variables,
+  formatTemplate,
+  connectorCatalog,
+  latestConnectors,
+  onSelectGroup,
+  onSelectFlow,
+  onToggleGroup,
+}: LeftPanelProps) {
   return (
     <div
       className="flex flex-col border-r border-[var(--c-br1)] bg-[var(--c-bg2)] shrink-0 overflow-hidden"
@@ -275,6 +288,39 @@ export function LeftPanel({ groups, selection, variables, formatTemplate, onSele
             onToggleGroup={onToggleGroup}
           />
         ))}
+      </div>
+
+      {/* Connector catalog summary */}
+      <div className="px-3 py-2 border-t border-[var(--c-br2)] shrink-0">
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <span className="text-[9px] text-[var(--c-tx5)] tracking-widest uppercase" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+            Connector Catalog
+          </span>
+          <span className="text-[9px] text-[var(--c-tx4)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+            {connectorCatalog.length} entries
+          </span>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {latestConnectors.length > 0 ? (
+            latestConnectors.map((connector) => (
+              <div
+                key={connector.pluginId}
+                className="flex flex-col gap-0.5 rounded border border-[var(--c-br1)] bg-[var(--c-bg1)] px-2 py-1"
+              >
+                <span className="text-[10px] text-[var(--c-tx2)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+                  {connector.displayName}
+                </span>
+                <span className="text-[9px] text-cyan-500" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+                  {connector.pluginId}@{connector.pluginVersion}
+                </span>
+              </div>
+            ))
+          ) : (
+            <span className="text-[9px] text-[var(--c-tx4)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+              no connectors loaded
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Footer stats */}

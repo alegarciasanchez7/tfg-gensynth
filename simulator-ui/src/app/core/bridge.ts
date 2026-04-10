@@ -18,6 +18,7 @@ import type {
   LogPayload,
   GroupState,
   FlowMetricsPayload,
+  ConnectorPluginDescriptor,
 } from './types';
 
 // ─────────────────────────────────────────────────────────────
@@ -54,6 +55,7 @@ interface EventMap {
   'groups-update': GroupState[];
   'flow-update': FlowMetricsPayload;
   'initial-state': InitialStatePayload;
+  'connector-catalog': ConnectorPluginDescriptor[];
   'message': CoreMessage;
 }
 
@@ -400,6 +402,10 @@ export const CoreCommands = {
   deleteVariable: (variableId: string) => bridge.send('DELETE_VARIABLE', { variableId }),
   updateVariable: (config: { variableId: string; [key: string]: unknown }) =>
     bridge.send('UPDATE_VARIABLE', config),
+
+  // Catálogo de conectores
+  getConnectorCatalog: () => bridge.send('GET_CONNECTOR_CATALOG'),
+  getLatestConnector: (pluginId: string) => bridge.send('GET_LATEST_CONNECTOR', { pluginId }),
   
   // Métricas
   subscribeMetrics: () => bridge.send('SUBSCRIBE_METRICS'),

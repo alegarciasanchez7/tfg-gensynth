@@ -21,9 +21,10 @@ import type {
   GroupState,
   FlowMetricsPayload,
   VariableState,
+  ConnectorPluginDescriptor,
 } from '../core/types';
 import type { Selection, Group, Variable, LogEntry, SystemStatus } from '../types';
-import { mockGroups, mockVariables, mockLogs } from '../data/mockData';
+import { mockGroups, mockVariables, mockLogs, mockConnectorCatalog } from '../data/mockData';
 
 // ─────────────────────────────────────────────────────────────
 // Estado de la aplicación
@@ -48,6 +49,8 @@ interface AppState {
   variables: Variable[];
   logs: LogEntry[];
   formatTemplates: Record<string, string>;
+  connectorCatalog: ConnectorPluginDescriptor[];
+  latestConnectors: ConnectorPluginDescriptor[];
   
   // Métricas
   metrics: MetricsPayload | null;
@@ -66,6 +69,8 @@ const initialState: AppState = {
   variables: [],
   logs: [],
   formatTemplates: {},
+  connectorCatalog: [],
+  latestConnectors: [],
   metrics: null,
   flowMetrics: {},
 };
@@ -89,9 +94,41 @@ type AppAction =
   | { type: 'SET_LOGS'; payload: LogEntry[] }
   | { type: 'CLEAR_LOGS' }
   | { type: 'SET_FORMAT_TEMPLATE'; payload: { flowId: string; template: string } }
+  | { type: 'SET_CONNECTOR_CATALOG'; payload: ConnectorPluginDescriptor[] }
   | { type: 'SET_METRICS'; payload: MetricsPayload }
   | { type: 'SET_FLOW_METRICS'; payload: FlowMetricsPayload }
   | { type: 'LOAD_INITIAL_STATE'; payload: { groups: Group[]; variables: Variable[]; logs: LogEntry[] } };
+
+function compareVersions(leftVersion: string, rightVersion: string): number {
+  const leftParts = leftVersion.split('.').map((part) => Number(part) || 0);
+  const rightParts = rightVersion.split('.').map((part) => Number(part) || 0);
+  const length = Math.max(leftParts.length, rightParts.length);
+
+  for (let index = 0; index < length; index += 1) {
+    const comparison = (leftParts[index] ?? 0) - (rightParts[index] ?? 0);
+    if (comparison !== 0) {
+      return comparison;
+    }
+  }
+
+  return leftVersion.localeCompare(rightVersion);
+}
+
+function latestConnectorsFromCatalog(catalog: ConnectorPluginDescriptor[]): ConnectorPluginDescriptor[] {
+  const latestByPluginId = new Map<string, ConnectorPluginDescriptor>();
+
+  for (const descriptor of catalog) {
+    const current = latestByPluginId.get(descriptor.pluginId);
+    if (!current || compareVersions(descriptor.pluginVersion, current.pluginVersion) > 0) {
+      latestByPluginId.set(descriptor.pluginId, descriptor);
+    }
+  }
+
+  return Array.from(latestByPluginId.values()).sort((left, right) =>
+    left.displayName.localeCompare(right.displayName) ||
+    left.pluginId.localeCompare(right.pluginId)
+  );
+}
 
 function appReducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
@@ -158,6 +195,13 @@ function appReducer(state: AppState, action: AppAction): AppState {
           ...state.formatTemplates,
           [action.payload.flowId]: action.payload.template,
         },
+      };
+
+    case 'SET_CONNECTOR_CATALOG':
+      return {
+        ...state,
+        connectorCatalog: action.payload,
+        latestConnectors: latestConnectorsFromCatalog(action.payload),
       };
 
     case 'SET_METRICS':
@@ -254,6 +298,7 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
             logs: mockLogs,
           },
         });
+        dispatch({ type: 'SET_CONNECTOR_CATALOG', payload: mockConnectorCatalog });
         dispatch({ type: 'SET_CONNECTED', payload: { connected: true, mode: 'mock' } });
         return;
       }
@@ -268,6 +313,12 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
         // Solicitar estado inicial
         await CoreCommands.getInitialState();
         await CoreCommands.subscribeMetrics();
+
+        const catalogResponse = await CoreCommands.getConnectorCatalog();
+        const catalogPayload = Array.isArray(catalogResponse)
+          ? catalogResponse
+          : (catalogResponse as { catalog?: ConnectorPluginDescriptor[] } | null)?.catalog ?? [];
+        dispatch({ type: 'SET_CONNECTOR_CATALOG', payload: catalogPayload });
       } catch (error) {
         console.error('[AppContext] Error conectando con el Core:', error);
         // Fallback a datos mock si falla la conexión
@@ -279,6 +330,7 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
             logs: mockLogs,
           },
         });
+        dispatch({ type: 'SET_CONNECTOR_CATALOG', payload: mockConnectorCatalog });
         dispatch({ type: 'SET_CONNECTED', payload: { connected: false, mode: 'mock' } });
       }
     };
@@ -540,5 +592,13 @@ export function useConnection() {
   return {
     isConnected: state.isConnected,
     mode: state.connectionMode,
+  };
+}
+
+export function useConnectorCatalog() {
+  const { state } = useApp();
+  return {
+    connectorCatalog: state.connectorCatalog,
+    latestConnectors: state.latestConnectors,
   };
 }
