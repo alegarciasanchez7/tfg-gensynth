@@ -21,9 +21,16 @@ dependency-reduced-pom.xml
 node_modules/
 npm-debug.log
 npm-error.log
-package-lock.json
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 dist/
 build/
+.vite/
+coverage/
+*.tsbuildinfo
+.eslintcache
+.cache/
 
 # IDE
 .vscode/
@@ -47,3 +54,5 @@ logs/
 thumbs.db
 SCRUM.md
 MEMORIA.md
+
+figma_ui

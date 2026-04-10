@@ -1,0 +1,297 @@
+import { useState, useRef, useEffect } from 'react';
+import {
+  Terminal, BarChart2, Eye, ChevronUp, ChevronDown,
+  Circle, AlertTriangle, AlertCircle, Bug, Trash2, RefreshCw,
+} from 'lucide-react';
+import { mockLogs, mockPreviewSamples } from '../data/mockData';
+import type { SystemStatus } from '../types';
+
+const levelCfg = {
+  info:  { color: 'text-sky-500',     dot: 'bg-sky-500',     label: 'INFO ' },
+  warn:  { color: 'text-amber-500',   dot: 'bg-amber-500',   label: 'WARN ' },
+  error: { color: 'text-red-500',     dot: 'bg-red-500',     label: 'ERROR' },
+  debug: { color: 'text-[var(--c-tx4)]', dot: 'bg-[var(--c-tx4)]', label: 'DEBUG' },
+};
+
+const levelIcon = {
+  info:  <Circle size={9} fill="currentColor" />,
+  warn:  <AlertTriangle size={9} />,
+  error: <AlertCircle size={9} />,
+  debug: <Bug size={9} />,
+};
+
+type Tab = 'logs' | 'stats' | 'preview';
+
+interface BottomPanelProps {
+  tab: Tab;
+  onTabChange: (t: Tab) => void;
+  systemStatus: SystemStatus;
+}
+
+function LogsView() {
+  const endRef = useRef<HTMLDivElement>(null);
+  const [filter, setFilter] = useState<string>('all');
+  const filtered = filter === 'all' ? mockLogs : mockLogs.filter(l => l.level === filter);
+
+  return (
+    <div className="flex flex-col flex-1 overflow-hidden">
+      {/* Toolbar */}
+      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-[var(--c-br2)] shrink-0">
+        {(['all', 'info', 'warn', 'error', 'debug'] as const).map(f => (
+          <button
+            key={f}
+            onClick={() => setFilter(f)}
+            className={`px-2 py-0.5 rounded text-[10px] transition-all ${
+              filter === f
+                ? f === 'all' ? 'bg-[var(--c-bg7)] text-[var(--c-tx1)] border border-[var(--c-br3)]'
+                  : f === 'error' ? 'bg-red-500/15 text-red-500 border border-red-500/30'
+                  : f === 'warn' ? 'bg-amber-500/15 text-amber-500 border border-amber-500/30'
+                  : f === 'debug' ? 'bg-[var(--c-bg7)] text-[var(--c-tx4)] border border-[var(--c-br3)]'
+                  : 'bg-sky-500/15 text-sky-500 border border-sky-500/30'
+                : 'text-[var(--c-tx4)] hover:text-[var(--c-tx2)]'
+            }`}
+            style={{ fontFamily: 'JetBrains Mono, monospace' }}
+          >
+            {f.toUpperCase()}
+          </button>
+        ))}
+        <div className="flex-1" />
+        <button className="p-1 rounded text-[var(--c-tx4)] hover:text-[var(--c-tx2)] hover:bg-[var(--c-bg6)] transition-all">
+          <Trash2 size={10} />
+        </button>
+      </div>
+
+      {/* Log entries */}
+      <div className="flex-1 overflow-y-auto px-3 py-1 font-mono">
+        {filtered.map(entry => {
+          const cfg = levelCfg[entry.level];
+          return (
+            <div key={entry.id} className="flex items-start gap-2 py-0.5 group hover:bg-[var(--c-bg4)] px-1 rounded">
+              <span className="text-[10px] text-[var(--c-tx5)] shrink-0 pt-px" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+                {entry.timestamp}
+              </span>
+              <span className={`flex items-center gap-0.5 text-[10px] shrink-0 pt-px ${cfg.color}`}
+                style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+                {levelIcon[entry.level]}
+                {cfg.label}
+              </span>
+              <span className="text-[10px] text-[var(--c-tx4)] shrink-0 pt-px" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+                [{entry.source}]
+              </span>
+              <span className="text-[11px] text-[var(--c-tx3)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+                {entry.message}
+              </span>
+            </div>
+          );
+        })}
+        <div ref={endRef} />
+      </div>
+    </div>
+  );
+}
+
+function StatsView({ running }: { running: boolean }) {
+  const bars = [
+    { label: 'Kafka',     value: running ? 78 : 0, color: 'bg-cyan-500',   msgs: running ? '1.65K/s' : '0' },
+    { label: 'HTTP',      value: running ? 47 : 0, color: 'bg-violet-500', msgs: running ? '1.07K/s' : '0' },
+    { label: 'MQTT',      value: 0,                color: 'bg-red-500',    msgs: '0 (error)' },
+    { label: 'TCP',       value: running ? 34 : 0, color: 'bg-amber-500',  msgs: running ? '770/s' : '0' },
+    { label: 'WebSocket', value: 0,                color: 'bg-slate-400',  msgs: '0 (stopped)' },
+    { label: 'gRPC',      value: 0,                color: 'bg-slate-400',  msgs: '0 (stopped)' },
+  ];
+
+  const counters = [
+    { label: 'TOTAL SENT',  value: running ? '2,847,394' : '0',  color: 'text-cyan-500' },
+    { label: 'ERRORS',      value: running ? '3' : '0',          color: running ? 'text-red-500' : 'text-slate-400' },
+    { label: 'DROPPED',     value: '0',                          color: 'text-slate-400' },
+    { label: 'AVG LATENCY', value: running ? '12ms' : '--',      color: 'text-emerald-500' },
+  ];
+
+  return (
+    <div className="flex-1 overflow-y-auto flex gap-4 p-3">
+      {/* Counters */}
+      <div className="flex flex-col gap-2 shrink-0" style={{ width: 200 }}>
+        {counters.map(c => (
+          <div key={c.label} className="bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded px-3 py-2 flex flex-col gap-0.5">
+            <span className="text-[9px] text-[var(--c-tx4)] tracking-widest" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+              {c.label}
+            </span>
+            <span className={`text-sm ${c.color}`} style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+              {c.value}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {/* Throughput bars */}
+      <div className="flex flex-col gap-2 flex-1">
+        <span className="text-[9px] text-[var(--c-tx5)] tracking-widest uppercase" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+          Throughput by technology
+        </span>
+        {bars.map(b => (
+          <div key={b.label} className="flex items-center gap-2">
+            <span className="text-[10px] text-[var(--c-tx4)] w-20 shrink-0 text-right" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+              {b.label}
+            </span>
+            <div className="flex-1 h-3 bg-[var(--c-bg1)] border border-[var(--c-br2)] rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-1000 ${b.color}`}
+                style={{ width: `${b.value}%`, opacity: b.value === 0 ? 0.3 : 1 }}
+              />
+            </div>
+            <span className="text-[10px] text-[var(--c-tx4)] w-20 shrink-0" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+              {b.msgs}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PreviewView({ running }: { running: boolean }) {
+  const [selectedFlow, setSelectedFlow] = useState<string>('f1');
+  const flows = [
+    { id: 'f1', label: 'Kafka · sensor.temp' },
+    { id: 'f2', label: 'HTTP · telemetry' },
+    { id: 'f6', label: 'Kafka · access.raw' },
+    { id: 'f9', label: 'TCP · syslog' },
+  ];
+
+  const sample = mockPreviewSamples[selectedFlow] ?? '// no preview available';
+
+  return (
+    <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-[var(--c-br2)] shrink-0">
+        <span className="text-[10px] text-[var(--c-tx4)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+          Flow:
+        </span>
+        <div className="flex gap-1">
+          {flows.map(f => (
+            <button
+              key={f.id}
+              onClick={() => setSelectedFlow(f.id)}
+              className={`px-2 py-0.5 rounded text-[10px] transition-all ${
+                selectedFlow === f.id
+                  ? 'bg-cyan-500/15 border border-cyan-500/30 text-cyan-500'
+                  : 'text-[var(--c-tx4)] hover:text-[var(--c-tx2)]'
+              }`}
+              style={{ fontFamily: 'JetBrains Mono, monospace' }}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex-1" />
+        {running && (
+          <span className="flex items-center gap-1.5 text-[10px] text-emerald-500" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
+            live
+          </span>
+        )}
+        <button className="p-1 rounded text-[var(--c-tx4)] hover:text-[var(--c-tx2)] hover:bg-[var(--c-bg6)] transition-all">
+          <RefreshCw size={10} />
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-auto p-3">
+        {running ? (
+          <pre className="text-[11px] text-[var(--c-tx2)] leading-relaxed" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+            {sample}
+          </pre>
+        ) : (
+          <div className="flex items-center justify-center h-full text-[var(--c-tx5)] text-[11px]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+            Start the system to see live preview
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function BottomPanel({ tab, onTabChange, systemStatus }: BottomPanelProps) {
+  const [height, setHeight] = useState(220);
+  const [collapsed, setCollapsed] = useState(false);
+  const dragging = useRef(false);
+  const startY = useRef(0);
+  const startH = useRef(0);
+  const running = systemStatus === 'running';
+
+  const tabs: { id: Tab; icon: React.ReactNode; label: string }[] = [
+    { id: 'logs',    icon: <Terminal size={11} />,  label: 'Logs' },
+    { id: 'stats',   icon: <BarChart2 size={11} />, label: 'Statistics' },
+    { id: 'preview', icon: <Eye size={11} />,       label: 'Preview' },
+  ];
+
+  const onMouseDown = (e: React.MouseEvent) => {
+    dragging.current = true;
+    startY.current = e.clientY;
+    startH.current = height;
+    e.preventDefault();
+  };
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!dragging.current) return;
+      const delta = startY.current - e.clientY;
+      setHeight(Math.max(120, Math.min(500, startH.current + delta)));
+    };
+    const onUp = () => { dragging.current = false; };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+  }, []);
+
+  return (
+    <div
+      className="flex flex-col border-t border-[var(--c-br1)] bg-[var(--c-bg2)] shrink-0"
+      style={{ height: collapsed ? 32 : height }}
+    >
+      {/* Drag handle */}
+      <div
+        onMouseDown={onMouseDown}
+        className="h-1 bg-[var(--c-bg3)] hover:bg-cyan-500/20 cursor-row-resize transition-colors shrink-0"
+      />
+
+      {/* Tab bar */}
+      <div className="flex items-center border-b border-[var(--c-br2)] shrink-0 px-2">
+        {tabs.map(t => (
+          <button
+            key={t.id}
+            onClick={() => { onTabChange(t.id); setCollapsed(false); }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-[10px] border-b-2 transition-all ${
+              tab === t.id && !collapsed
+                ? 'border-cyan-500 text-cyan-500'
+                : 'border-transparent text-[var(--c-tx4)] hover:text-[var(--c-tx2)]'
+            }`}
+            style={{ fontFamily: 'JetBrains Mono, monospace' }}
+          >
+            {t.icon} {t.label}
+          </button>
+        ))}
+        <div className="flex-1" />
+        {running && (
+          <div className="flex items-center gap-1.5 text-[10px] text-emerald-500 mr-3" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
+            4,950 msg/s
+          </div>
+        )}
+        <button
+          onClick={() => setCollapsed(!collapsed)}
+          className="p-1 rounded text-[var(--c-tx4)] hover:text-[var(--c-tx2)] hover:bg-[var(--c-bg6)] transition-all"
+        >
+          {collapsed ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+        </button>
+      </div>
+
+      {/* Content */}
+      {!collapsed && (
+        <div className="flex-1 overflow-hidden flex">
+          {tab === 'logs'    && <LogsView />}
+          {tab === 'stats'   && <StatsView running={running} />}
+          {tab === 'preview' && <PreviewView running={running} />}
+        </div>
+      )}
+    </div>
+  );
+}
