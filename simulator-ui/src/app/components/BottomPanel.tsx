@@ -3,7 +3,9 @@ import {
   Terminal, BarChart2, Eye, ChevronUp, ChevronDown,
   Circle, AlertTriangle, AlertCircle, Bug, Trash2, RefreshCw,
 } from 'lucide-react';
-import { mockLogs, mockPreviewSamples } from '../data/mockData';
+import { mockPreviewSamples } from '../data/mockData';
+import { useApp } from '../context';
+import type { ConnectorHealthSummary } from '../types';
 import type { SystemStatus } from '../types';
 
 const levelCfg = {
@@ -28,13 +30,39 @@ interface BottomPanelProps {
   systemStatus: SystemStatus;
 }
 
-function LogsView() {
+function LogsView({ entries, connectorHealthSummary }: { entries: Array<{ id: string; timestamp: string; level: 'info' | 'warn' | 'error' | 'debug'; source: string; message: string }>; connectorHealthSummary: ConnectorHealthSummary[] }) {
   const endRef = useRef<HTMLDivElement>(null);
   const [filter, setFilter] = useState<string>('all');
-  const filtered = filter === 'all' ? mockLogs : mockLogs.filter(l => l.level === filter);
+  const filtered = filter === 'all' ? entries : entries.filter(l => l.level === filter);
 
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
+      <div className="px-3 py-2 border-b border-[var(--c-br2)] bg-[var(--c-bg1)]">
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <span className="text-[9px] text-[var(--c-tx5)] tracking-widest uppercase" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+            Connector Health
+          </span>
+          <span className="text-[9px] text-[var(--c-tx4)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+            {connectorHealthSummary.length} monitored
+          </span>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {connectorHealthSummary.length > 0 ? connectorHealthSummary.map((entry) => (
+            <div key={`${entry.pluginId}@${entry.pluginVersion}`} className="flex items-center gap-2 rounded border border-[var(--c-br1)] px-2 py-1 text-[9px]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+              <span className="text-[var(--c-tx2)]">{entry.displayName}</span>
+              <span className="text-cyan-500">{entry.pluginVersion}</span>
+              <span className={`uppercase ${entry.status === 'healthy' ? 'text-emerald-500' : entry.status === 'degraded' ? 'text-amber-500' : 'text-slate-400'}`}>
+                {entry.status}
+              </span>
+            </div>
+          )) : (
+            <span className="text-[9px] text-[var(--c-tx4)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+              no connector health available
+            </span>
+          )}
+        </div>
+      </div>
+
       {/* Toolbar */}
       <div className="flex items-center gap-2 px-3 py-1.5 border-b border-[var(--c-br2)] shrink-0">
         {(['all', 'info', 'warn', 'error', 'debug'] as const).map(f => (
@@ -210,6 +238,7 @@ function PreviewView({ running }: { running: boolean }) {
 }
 
 export function BottomPanel({ tab, onTabChange, systemStatus }: BottomPanelProps) {
+  const { state } = useApp();
   const [height, setHeight] = useState(220);
   const [collapsed, setCollapsed] = useState(false);
   const dragging = useRef(false);
@@ -287,7 +316,7 @@ export function BottomPanel({ tab, onTabChange, systemStatus }: BottomPanelProps
       {/* Content */}
       {!collapsed && (
         <div className="flex-1 overflow-hidden flex">
-          {tab === 'logs'    && <LogsView />}
+          {tab === 'logs'    && <LogsView entries={state.logs} connectorHealthSummary={state.connectorHealthSummary} />}
           {tab === 'stats'   && <StatsView running={running} />}
           {tab === 'preview' && <PreviewView running={running} />}
         </div>

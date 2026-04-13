@@ -15,6 +15,7 @@ import {
   Pause,
 } from 'lucide-react';
 import type { Group, Flow, Selection, ConnectionStatus, GroupStatus, Variable } from '../types';
+import type { ConnectorHealthSummary } from '../types';
 import type { ConnectorPluginDescriptor } from '../core/types';
 
 interface LeftPanelProps {
@@ -24,6 +25,7 @@ interface LeftPanelProps {
   formatTemplate: Record<string, string>;
   connectorCatalog: ConnectorPluginDescriptor[];
   latestConnectors: ConnectorPluginDescriptor[];
+  connectorHealthSummary: ConnectorHealthSummary[];
   onSelectGroup: (groupId: string) => void;
   onSelectFlow: (groupId: string, flowId: string) => void;
   onToggleGroup: (groupId: string) => void;
@@ -241,10 +243,22 @@ export function LeftPanel({
   formatTemplate,
   connectorCatalog,
   latestConnectors,
+  connectorHealthSummary,
   onSelectGroup,
   onSelectFlow,
   onToggleGroup,
 }: LeftPanelProps) {
+  const healthColor = (status: ConnectorHealthSummary['status']) => {
+    switch (status) {
+      case 'healthy':
+        return 'text-emerald-500 border-emerald-500/30 bg-emerald-500/10';
+      case 'degraded':
+        return 'text-amber-500 border-amber-500/30 bg-amber-500/10';
+      default:
+        return 'text-slate-400 border-slate-400/30 bg-slate-500/10';
+    }
+  };
+
   return (
     <div
       className="flex flex-col border-r border-[var(--c-br1)] bg-[var(--c-bg2)] shrink-0 overflow-hidden"
@@ -302,23 +316,32 @@ export function LeftPanel({
         </div>
         <div className="flex flex-wrap gap-1.5">
           {latestConnectors.length > 0 ? (
-            latestConnectors.map((connector) => (
-              <div
-                key={connector.pluginId}
-                className="flex flex-col gap-0.5 rounded border border-[var(--c-br1)] bg-[var(--c-bg1)] px-2 py-1"
-              >
-                <span className="text-[10px] text-[var(--c-tx2)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-                  {connector.displayName}
-                </span>
-                <span className="text-[9px] text-cyan-500" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-                  {connector.pluginId}@{connector.pluginVersion}
-                </span>
-              </div>
-            ))
+            latestConnectors.map((connector) => {
+              const health = connectorHealthSummary.find(
+                (entry) => entry.pluginId === connector.pluginId && entry.pluginVersion === connector.pluginVersion,
+              );
+
+              return (
+                <div
+                  key={connector.pluginId}
+                  className="flex flex-col gap-1 rounded border border-[var(--c-br1)] bg-[var(--c-bg1)] px-2 py-1.5 min-w-[110px]"
+                >
+                  <span className="text-[10px] text-[var(--c-tx2)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+                    {connector.displayName}
+                  </span>
+                  <span className="text-[9px] text-cyan-500" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+                    {connector.pluginId}@{connector.pluginVersion}
+                  </span>
+                  <span className={`inline-flex items-center justify-center rounded border px-1.5 py-0.5 text-[9px] uppercase ${health ? healthColor(health.status) : 'text-[var(--c-tx4)] border-[var(--c-br1)] bg-transparent'}`} style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+                    {health ? health.status : 'unknown'}
+                  </span>
+                </div>
+              );
+            })
           ) : (
-            <span className="text-[9px] text-[var(--c-tx4)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-              no connectors loaded
-            </span>
+            <div className="rounded border border-dashed border-[var(--c-br2)] bg-[var(--c-bg1)] px-2 py-2 text-[9px] text-[var(--c-tx4)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+              No connectors loaded. The flow editor will show a fallback state until the catalog is available.
+            </div>
           )}
         </div>
       </div>

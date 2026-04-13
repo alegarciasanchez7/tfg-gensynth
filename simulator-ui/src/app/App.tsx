@@ -21,6 +21,7 @@ export default function App() {
     formatTemplates,
     connectorCatalog,
     latestConnectors,
+    connectorHealthSummary,
   } = state;
 
   // Combinar templates por defecto con los del estado
@@ -69,6 +70,7 @@ export default function App() {
           formatTemplate={mergedTemplates}
           connectorCatalog={connectorCatalog}
           latestConnectors={latestConnectors}
+          connectorHealthSummary={connectorHealthSummary}
           onSelectGroup={actions.selectGroup}
           onSelectFlow={actions.selectFlow}
           onToggleGroup={actions.toggleGroupExpanded}
