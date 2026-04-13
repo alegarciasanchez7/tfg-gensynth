@@ -63,3 +63,17 @@ export interface LogEntry {
   source: string;
   message: string;
 }
+
+export type ConnectorHealthStatus = 'healthy' | 'degraded' | 'offline';
+
+export interface ConnectorHealthSummary {
+  pluginId: string;
+  pluginVersion: string;
+  displayName: string;
+  status: ConnectorHealthStatus;
+  flowCount: number;
+  connectedCount: number;
+  warningCount: number;
+  errorCount: number;
+  lastMessage?: string;
+}

@@ -23,7 +23,8 @@ import type {
   VariableState,
   ConnectorPluginDescriptor,
 } from '../core/types';
-import type { Selection, Group, Variable, LogEntry, SystemStatus } from '../types';
+import type { Selection, Group, Variable, LogEntry, SystemStatus, Flow } from '../types';
+import type { ConnectorHealthSummary } from '../types';
 import { mockGroups, mockVariables, mockLogs, mockConnectorCatalog } from '../data/mockData';
 
 // ─────────────────────────────────────────────────────────────
@@ -51,6 +52,9 @@ interface AppState {
   formatTemplates: Record<string, string>;
   connectorCatalog: ConnectorPluginDescriptor[];
   latestConnectors: ConnectorPluginDescriptor[];
+  flowConnectorSelections: Record<string, { pluginId: string; pluginVersion: string }>;
+  flowConnectorConfigs: Record<string, Record<string, unknown>>;
+  connectorHealthSummary: ConnectorHealthSummary[];
   
   // Métricas
   metrics: MetricsPayload | null;
@@ -71,6 +75,9 @@ const initialState: AppState = {
   formatTemplates: {},
   connectorCatalog: [],
   latestConnectors: [],
+  flowConnectorSelections: {},
+  flowConnectorConfigs: {},
+  connectorHealthSummary: [],
   metrics: null,
   flowMetrics: {},
 };
@@ -95,6 +102,8 @@ type AppAction =
   | { type: 'CLEAR_LOGS' }
   | { type: 'SET_FORMAT_TEMPLATE'; payload: { flowId: string; template: string } }
   | { type: 'SET_CONNECTOR_CATALOG'; payload: ConnectorPluginDescriptor[] }
+  | { type: 'SET_FLOW_CONNECTOR_SELECTION'; payload: { flowId: string; pluginId: string; pluginVersion: string } }
+  | { type: 'SET_FLOW_CONNECTOR_CONFIG'; payload: { flowId: string; config: Record<string, unknown> } }
   | { type: 'SET_METRICS'; payload: MetricsPayload }
   | { type: 'SET_FLOW_METRICS'; payload: FlowMetricsPayload }
   | { type: 'LOAD_INITIAL_STATE'; payload: { groups: Group[]; variables: Variable[]; logs: LogEntry[] } };
@@ -130,6 +139,170 @@ function latestConnectorsFromCatalog(catalog: ConnectorPluginDescriptor[]): Conn
   );
 }
 
+function getConnectorProperties(schema: Record<string, unknown>): Record<string, Record<string, unknown>> {
+  return ((schema.properties as Record<string, Record<string, unknown>> | undefined) ?? {});
+}
+
+function getDefaultConfigFromSchema(schema: Record<string, unknown>): Record<string, unknown> {
+  const properties = getConnectorProperties(schema);
+  const defaults: Record<string, unknown> = {};
+
+  for (const [name, definition] of Object.entries(properties)) {
+    if (Object.prototype.hasOwnProperty.call(definition, 'default')) {
+      defaults[name] = definition.default;
+      continue;
+    }
+
+    if (Array.isArray(definition.enum) && definition.enum.length > 0) {
+      defaults[name] = definition.enum[0];
+      continue;
+    }
+
+    switch (definition.type) {
+      case 'number':
+      case 'integer':
+        defaults[name] = 0;
+        break;
+      case 'boolean':
+        defaults[name] = false;
+        break;
+      case 'array':
+        defaults[name] = [];
+        break;
+      case 'object':
+        defaults[name] = {};
+        break;
+      default:
+        defaults[name] = '';
+        break;
+    }
+  }
+
+  return defaults;
+}
+
+function findDescriptor(
+  catalog: ConnectorPluginDescriptor[],
+  pluginId: string,
+  pluginVersion?: string,
+): ConnectorPluginDescriptor | null {
+  if (pluginVersion) {
+    return catalog.find((descriptor) => descriptor.pluginId === pluginId && descriptor.pluginVersion === pluginVersion) ?? null;
+  }
+
+  return catalog
+    .filter((descriptor) => descriptor.pluginId === pluginId)
+    .sort((left, right) => compareVersions(right.pluginVersion, left.pluginVersion))[0] ?? null;
+}
+
+function findBestDescriptorForFlow(flow: Flow, catalog: ConnectorPluginDescriptor[]): ConnectorPluginDescriptor | null {
+  const normalizedTechnology = flow.technology.toLowerCase();
+  return findDescriptor(catalog, normalizedTechnology) ?? findDescriptor(catalog, flow.technology) ?? catalog[0] ?? null;
+}
+
+function normalizeConnectorState(
+  groups: Group[],
+  catalog: ConnectorPluginDescriptor[],
+  previousSelections: Record<string, { pluginId: string; pluginVersion: string }> = {},
+  previousConfigs: Record<string, Record<string, unknown>> = {},
+) {
+  const selections: Record<string, { pluginId: string; pluginVersion: string }> = {};
+  const configs: Record<string, Record<string, unknown>> = {};
+
+  for (const group of groups) {
+    for (const flow of group.flows) {
+      const existingSelection = previousSelections[flow.id];
+      const existingDescriptor = existingSelection
+        ? findDescriptor(catalog, existingSelection.pluginId, existingSelection.pluginVersion)
+        : null;
+      const selectedDescriptor = existingDescriptor ?? findBestDescriptorForFlow(flow, catalog);
+
+      if (!selectedDescriptor) {
+        continue;
+      }
+
+      selections[flow.id] = {
+        pluginId: selectedDescriptor.pluginId,
+        pluginVersion: selectedDescriptor.pluginVersion,
+      };
+
+      configs[flow.id] = previousConfigs[flow.id] ?? getDefaultConfigFromSchema(selectedDescriptor.configSchema);
+    }
+  }
+
+  return { selections, configs, healthSummary: buildConnectorHealthSummary(groups, catalog, selections) };
+}
+
+function buildConnectorHealthSummary(
+  groups: Group[],
+  catalog: ConnectorPluginDescriptor[],
+  selections: Record<string, { pluginId: string; pluginVersion: string }>,
+): ConnectorHealthSummary[] {
+  const summaryByKey = new Map<string, ConnectorHealthSummary>();
+
+  for (const group of groups) {
+    for (const flow of group.flows) {
+      const selection = selections[flow.id];
+      const descriptor = selection
+        ? findDescriptor(catalog, selection.pluginId, selection.pluginVersion)
+        : findBestDescriptorForFlow(flow, catalog);
+
+      if (!descriptor) {
+        continue;
+      }
+
+      const key = `${descriptor.pluginId}@${descriptor.pluginVersion}`;
+      const entry = summaryByKey.get(key) ?? {
+        pluginId: descriptor.pluginId,
+        pluginVersion: descriptor.pluginVersion,
+        displayName: descriptor.displayName,
+        status: 'offline',
+        flowCount: 0,
+        connectedCount: 0,
+        warningCount: 0,
+        errorCount: 0,
+        lastMessage: undefined,
+      };
+
+      entry.flowCount += 1;
+
+      if (flow.connectionStatus === 'connected' && !flow.hasError) {
+        entry.connectedCount += 1;
+      } else if (flow.connectionStatus === 'warning') {
+        entry.warningCount += 1;
+        entry.lastMessage = flow.errorMessage ?? entry.lastMessage;
+      } else {
+        entry.errorCount += 1;
+        entry.lastMessage = flow.errorMessage ?? entry.lastMessage ?? `Flow ${flow.name} is ${flow.connectionStatus}`;
+      }
+
+      summaryByKey.set(key, entry);
+    }
+  }
+
+  return Array.from(summaryByKey.values())
+    .map((entry) => {
+      const allConnected = entry.connectedCount === entry.flowCount && entry.flowCount > 0;
+      const hasProblems = entry.errorCount > 0 || entry.warningCount > 0;
+
+      return {
+        ...entry,
+        status: allConnected ? 'healthy' : hasProblems ? 'degraded' : 'offline',
+      };
+    })
+    .sort((left, right) => left.displayName.localeCompare(right.displayName) || left.pluginVersion.localeCompare(right.pluginVersion));
+}
+
+function formatConnectorHealthMessage(summary: ConnectorHealthSummary[]): string {
+  if (summary.length === 0) {
+    return 'Connector health unavailable';
+  }
+
+  return summary
+    .map((entry) => `${entry.displayName}@${entry.pluginVersion}:${entry.status}`)
+    .join(' | ');
+}
+
 function appReducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
     case 'SET_CONNECTED':
@@ -155,13 +328,33 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, bottomTab: action.payload };
 
     case 'SET_GROUPS':
-      return { ...state, groups: action.payload };
+      return (() => {
+        const { selections, configs, healthSummary } = normalizeConnectorState(
+          action.payload,
+          state.connectorCatalog,
+          state.flowConnectorSelections,
+          state.flowConnectorConfigs,
+        );
+
+        return {
+          ...state,
+          groups: action.payload,
+          flowConnectorSelections: selections,
+          flowConnectorConfigs: configs,
+          connectorHealthSummary: healthSummary,
+        };
+      })();
 
     case 'UPDATE_GROUP':
       return {
         ...state,
         groups: state.groups.map(g =>
           g.id === action.payload.id ? { ...g, ...action.payload } : g
+        ),
+        connectorHealthSummary: buildConnectorHealthSummary(
+          state.groups.map(g => (g.id === action.payload.id ? { ...g, ...action.payload } : g)),
+          state.connectorCatalog,
+          state.flowConnectorSelections,
         ),
       };
 
@@ -198,10 +391,68 @@ function appReducer(state: AppState, action: AppAction): AppState {
       };
 
     case 'SET_CONNECTOR_CATALOG':
+      return (() => {
+        const { selections, configs, healthSummary } = normalizeConnectorState(
+          state.groups,
+          action.payload,
+          state.flowConnectorSelections,
+          state.flowConnectorConfigs,
+        );
+
+        return {
+          ...state,
+          connectorCatalog: action.payload,
+          latestConnectors: latestConnectorsFromCatalog(action.payload),
+          flowConnectorSelections: selections,
+          flowConnectorConfigs: configs,
+          connectorHealthSummary: healthSummary,
+        };
+      })();
+
+    case 'SET_FLOW_CONNECTOR_SELECTION':
       return {
         ...state,
-        connectorCatalog: action.payload,
-        latestConnectors: latestConnectorsFromCatalog(action.payload),
+        flowConnectorSelections: {
+          ...state.flowConnectorSelections,
+          [action.payload.flowId]: {
+            pluginId: action.payload.pluginId,
+            pluginVersion: action.payload.pluginVersion,
+          },
+        },
+        flowConnectorConfigs: (() => {
+          const descriptor = findDescriptor(
+            state.connectorCatalog,
+            action.payload.pluginId,
+            action.payload.pluginVersion,
+          );
+
+          return {
+            ...state.flowConnectorConfigs,
+            [action.payload.flowId]: descriptor
+              ? getDefaultConfigFromSchema(descriptor.configSchema)
+              : {},
+          };
+        })(),
+        connectorHealthSummary: buildConnectorHealthSummary(
+          state.groups,
+          state.connectorCatalog,
+          {
+            ...state.flowConnectorSelections,
+            [action.payload.flowId]: {
+              pluginId: action.payload.pluginId,
+              pluginVersion: action.payload.pluginVersion,
+            },
+          },
+        ),
+      };
+
+    case 'SET_FLOW_CONNECTOR_CONFIG':
+      return {
+        ...state,
+        flowConnectorConfigs: {
+          ...state.flowConnectorConfigs,
+          [action.payload.flowId]: action.payload.config,
+        },
       };
 
     case 'SET_METRICS':
@@ -217,12 +468,24 @@ function appReducer(state: AppState, action: AppAction): AppState {
       };
 
     case 'LOAD_INITIAL_STATE':
-      return {
-        ...state,
-        groups: action.payload.groups,
-        variables: action.payload.variables,
-        logs: action.payload.logs,
-      };
+      return (() => {
+        const { selections, configs, healthSummary } = normalizeConnectorState(
+          action.payload.groups,
+          state.connectorCatalog,
+          state.flowConnectorSelections,
+          state.flowConnectorConfigs,
+        );
+
+        return {
+          ...state,
+          groups: action.payload.groups,
+          variables: action.payload.variables,
+          logs: action.payload.logs,
+          flowConnectorSelections: selections,
+          flowConnectorConfigs: configs,
+          connectorHealthSummary: healthSummary,
+        };
+      })();
 
     default:
       return state;
@@ -255,6 +518,8 @@ interface AppContextValue {
     
     // Templates
     setFormatTemplate: (flowId: string, template: string) => void;
+    setFlowConnectorSelection: (flowId: string, pluginId: string, pluginVersion: string) => void;
+    setFlowConnectorConfig: (flowId: string, config: Record<string, unknown>) => void;
     
     // Variables
     insertVariable: (name: string, scope: string) => void;
@@ -281,6 +546,7 @@ interface AppProviderProps {
 export function AppProvider({ children, useMockData = true }: AppProviderProps) {
   const [state, dispatch] = useReducer(appReducer, initialState);
   const connectionAttempted = useRef(false);
+  const lastConnectorHealthSignature = useRef('');
 
   // Conexión inicial al Core
   useEffect(() => {
@@ -337,6 +603,30 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
 
     initConnection();
   }, [useMockData]);
+
+  useEffect(() => {
+    const signature = state.connectorHealthSummary
+      .map((entry) => `${entry.pluginId}@${entry.pluginVersion}:${entry.status}:${entry.flowCount}:${entry.connectedCount}:${entry.warningCount}:${entry.errorCount}`)
+      .join('|');
+
+    if (!signature || signature === lastConnectorHealthSignature.current) {
+      return;
+    }
+
+    lastConnectorHealthSignature.current = signature;
+
+    const overallStatus = state.connectorHealthSummary.some((entry) => entry.status === 'degraded') ? 'warn' : 'info';
+    dispatch({
+      type: 'ADD_LOG',
+      payload: {
+        id: `health_${Date.now()}`,
+        timestamp: new Date().toLocaleTimeString('en-GB', { hour12: false }),
+        level: overallStatus,
+        source: 'CONNECTORS',
+        message: formatConnectorHealthMessage(state.connectorHealthSummary),
+      },
+    });
+  }, [state.connectorHealthSummary]);
 
   // Suscribirse a eventos del bridge
   useEffect(() => {
@@ -482,6 +772,20 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
     dispatch({ type: 'SET_FORMAT_TEMPLATE', payload: { flowId, template } });
   }, []);
 
+  const setFlowConnectorSelection = useCallback((flowId: string, pluginId: string, pluginVersion: string) => {
+    dispatch({
+      type: 'SET_FLOW_CONNECTOR_SELECTION',
+      payload: { flowId, pluginId, pluginVersion },
+    });
+  }, []);
+
+  const setFlowConnectorConfig = useCallback((flowId: string, config: Record<string, unknown>) => {
+    dispatch({
+      type: 'SET_FLOW_CONNECTOR_CONFIG',
+      payload: { flowId, config },
+    });
+  }, []);
+
   const insertVariable = useCallback((name: string, scope: string) => {
     const varRef = `{{${scope}.${name}}}`;
     const insertFn = (window as unknown as Record<string, unknown>).__insertIntoFlow;
@@ -518,6 +822,8 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
     startGroup,
     stopGroup,
     setFormatTemplate,
+    setFlowConnectorSelection,
+    setFlowConnectorConfig,
     insertVariable,
     setBottomTab,
     toggleTheme,
@@ -600,5 +906,20 @@ export function useConnectorCatalog() {
   return {
     connectorCatalog: state.connectorCatalog,
     latestConnectors: state.latestConnectors,
+  };
+}
+
+export function useConnectorHealthSummary() {
+  const { state } = useApp();
+  return state.connectorHealthSummary;
+}
+
+export function useFlowConnectorState(flowId: string) {
+  const { state, actions } = useApp();
+  return {
+    connectorSelection: state.flowConnectorSelections[flowId] ?? null,
+    connectorConfig: state.flowConnectorConfigs[flowId] ?? {},
+    setConnectorSelection: actions.setFlowConnectorSelection,
+    setConnectorConfig: actions.setFlowConnectorConfig,
   };
 }
