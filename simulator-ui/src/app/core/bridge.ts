@@ -34,7 +34,7 @@ export interface BridgeConfig {
 
 const DEFAULT_CONFIG: BridgeConfig = {
   mode: 'auto',
-  websocketUrl: 'ws://localhost:8765',
+  websocketUrl: import.meta.env.VITE_WEBSOCKET_URL || 'ws://localhost:8765',
   reconnectInterval: 3000,
   maxReconnectAttempts: 10,
 };
