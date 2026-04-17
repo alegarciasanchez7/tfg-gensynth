@@ -4,6 +4,12 @@
  */
 
 // ─────────────────────────────────────────────────────────────
+// Versionado del contrato
+// ─────────────────────────────────────────────────────────────
+
+export const CORE_PROTOCOL_VERSION = '1.0.0';
+
+// ─────────────────────────────────────────────────────────────
 // Mensajes del Core → UI
 // ─────────────────────────────────────────────────────────────
 
@@ -20,7 +26,29 @@ export type CoreMessageType =
 export interface CoreMessage<T = unknown> {
   type: CoreMessageType;
   timestamp: number;
+  protocolVersion?: string;
   payload: T;
+}
+
+export interface CoreCommandErrorPayload {
+  commandId?: string;
+  status: 'error';
+  code:
+    | 'INVALID_ENVELOPE'
+    | 'INVALID_PAYLOAD'
+    | 'UNSUPPORTED_COMMAND'
+    | 'NOT_FOUND'
+    | 'PROTOCOL_VERSION_MISMATCH'
+    | 'INTERNAL_ERROR';
+  message: string;
+  details?: Record<string, unknown>;
+  recoverable?: boolean;
+}
+
+export interface CoreCommandOkPayload {
+  commandId?: string;
+  status: 'ok';
+  result?: string;
 }
 
 export interface SystemStatusPayload {
@@ -91,10 +119,119 @@ export type UICommandType =
   | 'SUBSCRIBE_METRICS'
   | 'UNSUBSCRIBE_METRICS';
 
-export interface UICommand<T = unknown> {
-  type: UICommandType;
+export interface StartGroupCommandPayload {
+  groupId: string;
+}
+
+export interface StopGroupCommandPayload {
+  groupId: string;
+}
+
+export interface PauseGroupCommandPayload {
+  groupId: string;
+}
+
+export interface CreateGroupCommandPayload {
+  name: string;
+  threads?: number;
+  outputMode?: string;
+  description?: string;
+}
+
+export interface DeleteGroupCommandPayload {
+  groupId: string;
+}
+
+export interface CreateFlowCommandPayload {
+  groupId: string;
+  name: string;
+  technology: string;
+  host: string;
+  port: number;
+  topic?: string;
+  interval?: number;
+  burst?: number;
+  template?: string;
+}
+
+export interface DeleteFlowCommandPayload {
+  flowId: string;
+  groupId: string;
+}
+
+export interface UpdateGroupCommandPayload {
+  groupId: string;
+  name?: string;
+  threads?: number;
+  outputMode?: string;
+  description?: string;
+}
+
+export interface UpdateFlowCommandPayload {
+  flowId: string;
+  groupId: string;
+  name?: string;
+  technology?: string;
+  host?: string;
+  port?: number;
+  topic?: string;
+  interval?: number;
+  burst?: number;
+  template?: string;
+}
+
+export interface CreateVariableCommandPayload {
+  name: string;
+  type: string;
+  scope: 'local' | 'group' | 'global';
+  groupId?: string;
+  config?: Record<string, unknown>;
+}
+
+export interface DeleteVariableCommandPayload {
+  variableId: string;
+}
+
+export interface UpdateVariableCommandPayload {
+  variableId: string;
+  name?: string;
+  type?: string;
+  scope?: 'local' | 'group' | 'global';
+  groupId?: string;
+  config?: Record<string, unknown>;
+}
+
+export interface GetLatestConnectorCommandPayload {
+  pluginId: string;
+}
+
+export interface UICommandPayloadMap {
+  START_SYSTEM: undefined;
+  STOP_SYSTEM: undefined;
+  START_GROUP: StartGroupCommandPayload;
+  STOP_GROUP: StopGroupCommandPayload;
+  PAUSE_GROUP: PauseGroupCommandPayload;
+  UPDATE_GROUP_CONFIG: UpdateGroupCommandPayload;
+  UPDATE_FLOW_CONFIG: UpdateFlowCommandPayload;
+  UPDATE_VARIABLE: UpdateVariableCommandPayload;
+  CREATE_GROUP: CreateGroupCommandPayload;
+  DELETE_GROUP: DeleteGroupCommandPayload;
+  CREATE_FLOW: CreateFlowCommandPayload;
+  DELETE_FLOW: DeleteFlowCommandPayload;
+  CREATE_VARIABLE: CreateVariableCommandPayload;
+  DELETE_VARIABLE: DeleteVariableCommandPayload;
+  GET_INITIAL_STATE: undefined;
+  GET_CONNECTOR_CATALOG: undefined;
+  GET_LATEST_CONNECTOR: GetLatestConnectorCommandPayload;
+  SUBSCRIBE_METRICS: undefined;
+  UNSUBSCRIBE_METRICS: undefined;
+}
+
+export interface UICommand<T extends UICommandType = UICommandType> {
+  type: T;
   id: string; // ID único para correlacionar respuestas
-  payload?: T;
+  protocolVersion: string;
+  payload?: UICommandPayloadMap[T];
 }
 
 export interface GroupConfigPayload {

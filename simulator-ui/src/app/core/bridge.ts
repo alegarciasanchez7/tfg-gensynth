@@ -8,10 +8,13 @@
  * 2. JCEF Bridge: Comunicación directa cuando está embebido en JCEF
  */
 
+import { CORE_PROTOCOL_VERSION } from './types';
 import type {
   CoreMessage,
+  CoreCommandErrorPayload,
   UICommand,
   UICommandType,
+  UICommandPayloadMap,
   InitialStatePayload,
   SystemStatusPayload,
   MetricsPayload,
@@ -45,10 +48,28 @@ const DEFAULT_CONFIG: BridgeConfig = {
 
 type EventCallback<T = unknown> = (data: T) => void;
 
+type PendingCommand = {
+  resolve: (value: unknown) => void;
+  reject: (error: Error) => void;
+  timerId: number;
+};
+
+const SUPPORTED_COMMANDS = new Set<UICommandType>([
+  'START_SYSTEM',
+  'STOP_SYSTEM',
+  'START_GROUP',
+  'STOP_GROUP',
+  'GET_INITIAL_STATE',
+  'GET_CONNECTOR_CATALOG',
+  'GET_LATEST_CONNECTOR',
+  'SUBSCRIBE_METRICS',
+  'UNSUBSCRIBE_METRICS',
+]);
+
 interface EventMap {
   'connected': undefined;
   'disconnected': { reason: string };
-  'error': { error: Error };
+  'error': { error: Error; commandId?: string; code?: string; details?: Record<string, unknown>; recoverable?: boolean };
   'system-status': SystemStatusPayload;
   'metrics': MetricsPayload;
   'log': LogPayload;
@@ -70,7 +91,7 @@ class CoreBridge {
   private reconnectAttempts = 0;
   private reconnectTimer: number | null = null;
   private eventListeners: Map<string, Set<EventCallback>> = new Map();
-  private pendingCommands: Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void }> = new Map();
+  private pendingCommands: Map<string, PendingCommand> = new Map();
   private commandIdCounter = 0;
 
   constructor(config: Partial<BridgeConfig> = {}) {
@@ -215,28 +236,103 @@ class CoreBridge {
   /**
    * Envía un comando al Core Java
    */
-  send<T = unknown>(type: UICommandType, payload?: T): Promise<unknown> {
+  send<T extends UICommandType>(type: T, payload?: UICommandPayloadMap[T]): Promise<unknown> {
+    const validationError = this.validateCommand(type, payload);
+    if (validationError) {
+      return Promise.reject(validationError);
+    }
+
     return new Promise((resolve, reject) => {
       const id = `cmd_${++this.commandIdCounter}_${Date.now()}`;
-      
+
       const command: UICommand<T> = {
         type,
         id,
+        protocolVersion: CORE_PROTOCOL_VERSION,
         payload,
       };
 
-      this.pendingCommands.set(id, { resolve, reject });
-
-      // Timeout para comandos
-      setTimeout(() => {
-        if (this.pendingCommands.has(id)) {
-          this.pendingCommands.delete(id);
-          reject(new Error(`Comando ${type} timeout`));
+      const timerId = window.setTimeout(() => {
+        if (!this.pendingCommands.has(id)) {
+          return;
         }
+
+        this.pendingCommands.delete(id);
+        reject(new Error(`Comando ${type} timeout`));
       }, 30000);
+
+      this.pendingCommands.set(id, { resolve, reject, timerId });
 
       this.sendRaw(JSON.stringify(command));
     });
+  }
+
+  private validateCommand<T extends UICommandType>(type: T, payload?: UICommandPayloadMap[T]): Error | null {
+    if (!SUPPORTED_COMMANDS.has(type)) {
+      return new Error(`El comando ${type} no está soportado por el bridge actual`);
+    }
+
+    const isObjectPayload = typeof payload === 'object' && payload !== null && !Array.isArray(payload);
+    const readField = (field: string): unknown => (isObjectPayload ? (payload as Record<string, unknown>)[field] : undefined);
+
+    const requireStringField = (field: string, message: string) => {
+      const value = readField(field);
+      return typeof value === 'string' && value.trim().length > 0 ? null : new Error(message);
+    };
+
+    switch (type) {
+      case 'START_SYSTEM':
+      case 'STOP_SYSTEM':
+      case 'GET_INITIAL_STATE':
+      case 'GET_CONNECTOR_CATALOG':
+      case 'SUBSCRIBE_METRICS':
+      case 'UNSUBSCRIBE_METRICS':
+        return null;
+      case 'START_GROUP':
+      case 'STOP_GROUP':
+      case 'PAUSE_GROUP':
+      case 'DELETE_GROUP':
+      case 'DELETE_VARIABLE':
+        return requireStringField('groupId', `El comando ${type} requiere groupId`);
+      case 'GET_LATEST_CONNECTOR':
+        return requireStringField('pluginId', 'El comando GET_LATEST_CONNECTOR requiere pluginId');
+      case 'DELETE_FLOW':
+        return isObjectPayload
+          && typeof readField('flowId') === 'string'
+          && typeof readField('groupId') === 'string'
+          ? null
+          : new Error('El comando DELETE_FLOW requiere flowId y groupId');
+      case 'CREATE_GROUP':
+        return requireStringField('name', 'El comando CREATE_GROUP requiere name');
+      case 'CREATE_FLOW':
+        return isObjectPayload
+          && typeof readField('groupId') === 'string'
+          && typeof readField('name') === 'string'
+          && typeof readField('technology') === 'string'
+          && typeof readField('host') === 'string'
+          && typeof readField('port') === 'number'
+          ? null
+          : new Error('El comando CREATE_FLOW requiere groupId, name, technology, host y port');
+      case 'UPDATE_GROUP_CONFIG':
+        return requireStringField('groupId', 'El comando UPDATE_GROUP_CONFIG requiere groupId');
+      case 'UPDATE_FLOW_CONFIG':
+        return isObjectPayload
+          && typeof readField('flowId') === 'string'
+          && typeof readField('groupId') === 'string'
+          ? null
+          : new Error('El comando UPDATE_FLOW_CONFIG requiere flowId y groupId');
+      case 'CREATE_VARIABLE':
+        return isObjectPayload
+          && typeof readField('name') === 'string'
+          && typeof readField('type') === 'string'
+          && typeof readField('scope') === 'string'
+          ? null
+          : new Error('El comando CREATE_VARIABLE requiere name, type y scope');
+      case 'UPDATE_VARIABLE':
+        return requireStringField('variableId', 'El comando UPDATE_VARIABLE requiere variableId');
+      default:
+        return new Error(`Validación no implementada para ${type}`);
+    }
   }
 
   /**
@@ -286,18 +382,62 @@ class CoreBridge {
         case 'FLOW_UPDATE':
           this.emit('flow-update', message.payload as FlowMetricsPayload);
           break;
+        case 'ERROR':
+          this.emit('error', this.createErrorEvent(message.payload as CoreCommandErrorPayload));
+          break;
       }
 
       // Verificar si es respuesta a un comando pendiente
-      const responseId = (message.payload as { commandId?: string })?.commandId;
+      const responsePayload = message.payload as { commandId?: string; status?: string } | null;
+      const responseId = responsePayload?.commandId;
       if (responseId && this.pendingCommands.has(responseId)) {
-        const { resolve } = this.pendingCommands.get(responseId)!;
+        const pending = this.pendingCommands.get(responseId)!;
         this.pendingCommands.delete(responseId);
-        resolve(message.payload);
+        window.clearTimeout(pending.timerId);
+
+        if (message.type === 'ERROR' || responsePayload?.status === 'error') {
+          pending.reject(this.createError(message.payload as CoreCommandErrorPayload, responseId));
+          return;
+        }
+
+        pending.resolve(message.payload);
       }
     } catch (error) {
       console.error('[Bridge] Error parseando mensaje:', error, raw);
     }
+  }
+
+  private createError(payload: CoreCommandErrorPayload | { message?: string } | null | undefined, commandId?: string): Error {
+    const message = payload && 'message' in payload && typeof payload.message === 'string'
+      ? payload.message
+      : 'Error no especificado por el Core';
+    const error = new Error(message);
+    const code = payload && 'code' in payload && typeof payload.code === 'string' ? payload.code : undefined;
+    const details = payload && 'details' in payload && payload.details && typeof payload.details === 'object'
+      ? (payload.details as Record<string, unknown>)
+      : undefined;
+
+    if (code) {
+      (error as Error & { code?: string }).code = code;
+    }
+    if (commandId) {
+      (error as Error & { commandId?: string }).commandId = commandId;
+    }
+    if (details) {
+      (error as Error & { details?: Record<string, unknown> }).details = details;
+    }
+
+    return error;
+  }
+
+  private createErrorEvent(payload: CoreCommandErrorPayload): { error: Error; commandId?: string; code?: string; details?: Record<string, unknown>; recoverable?: boolean } {
+    return {
+      error: this.createError(payload, payload.commandId),
+      commandId: payload.commandId,
+      code: payload.code,
+      details: payload.details,
+      recoverable: payload.recoverable,
+    };
   }
 
   // ─────────────────────────────────────────────────────────

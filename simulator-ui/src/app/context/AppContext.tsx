@@ -696,19 +696,42 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
   // Acciones
   // ─────────────────────────────────────────────────────────
 
+  const reportCommandError = useCallback((source: string, action: string, error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`[AppContext] ${action} falló:`, error);
+    dispatch({
+      type: 'ADD_LOG',
+      payload: {
+        id: `cmd_error_${Date.now()}`,
+        timestamp: new Date().toLocaleTimeString('en-GB', { hour12: false }),
+        level: 'error',
+        source,
+        message,
+      },
+    });
+  }, []);
+
   const startSystem = useCallback(async () => {
-    if (state.connectionMode !== 'mock') {
-      await CoreCommands.startSystem();
+    try {
+      if (state.connectionMode !== 'mock') {
+        await CoreCommands.startSystem();
+      }
+      dispatch({ type: 'SET_SYSTEM_STATUS', payload: 'running' });
+    } catch (error) {
+      reportCommandError('SYSTEM', 'startSystem', error);
     }
-    dispatch({ type: 'SET_SYSTEM_STATUS', payload: 'running' });
-  }, [state.connectionMode]);
+  }, [reportCommandError, state.connectionMode]);
 
   const stopSystem = useCallback(async () => {
-    if (state.connectionMode !== 'mock') {
-      await CoreCommands.stopSystem();
+    try {
+      if (state.connectionMode !== 'mock') {
+        await CoreCommands.stopSystem();
+      }
+      dispatch({ type: 'SET_SYSTEM_STATUS', payload: 'stopped' });
+    } catch (error) {
+      reportCommandError('SYSTEM', 'stopSystem', error);
     }
-    dispatch({ type: 'SET_SYSTEM_STATUS', payload: 'stopped' });
-  }, [state.connectionMode]);
+  }, [reportCommandError, state.connectionMode]);
 
   const toggleSystem = useCallback(async () => {
     if (state.systemStatus === 'stopped') {
@@ -755,18 +778,26 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
   }, []);
 
   const startGroup = useCallback(async (groupId: string) => {
-    if (state.connectionMode !== 'mock') {
-      await CoreCommands.startGroup(groupId);
+    try {
+      if (state.connectionMode !== 'mock') {
+        await CoreCommands.startGroup(groupId);
+      }
+      dispatch({ type: 'UPDATE_GROUP', payload: { id: groupId, status: 'running' } });
+    } catch (error) {
+      reportCommandError('GROUPS', `startGroup(${groupId})`, error);
     }
-    dispatch({ type: 'UPDATE_GROUP', payload: { id: groupId, status: 'running' } });
-  }, [state.connectionMode]);
+  }, [reportCommandError, state.connectionMode]);
 
   const stopGroup = useCallback(async (groupId: string) => {
-    if (state.connectionMode !== 'mock') {
-      await CoreCommands.stopGroup(groupId);
+    try {
+      if (state.connectionMode !== 'mock') {
+        await CoreCommands.stopGroup(groupId);
+      }
+      dispatch({ type: 'UPDATE_GROUP', payload: { id: groupId, status: 'stopped' } });
+    } catch (error) {
+      reportCommandError('GROUPS', `stopGroup(${groupId})`, error);
     }
-    dispatch({ type: 'UPDATE_GROUP', payload: { id: groupId, status: 'stopped' } });
-  }, [state.connectionMode]);
+  }, [reportCommandError, state.connectionMode]);
 
   const setFormatTemplate = useCallback((flowId: string, template: string) => {
     dispatch({ type: 'SET_FORMAT_TEMPLATE', payload: { flowId, template } });
