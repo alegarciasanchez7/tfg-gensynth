@@ -8,7 +8,7 @@ public class AppConfig {
 
     // WebSocket defaults
     private static final String DEFAULT_WEBSOCKET_HOST = "localhost";
-    private static final int DEFAULT_WEBSOCKET_PORT = 8080;
+    private static final int DEFAULT_WEBSOCKET_PORT = 8765;
 
     // Thread Pool defaults (conservative for secondary application)
     private static final int DEFAULT_THREAD_POOL_CORE_SIZE = 2;
