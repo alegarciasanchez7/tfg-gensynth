@@ -5,6 +5,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gensynth.core.connectors.runtime.ConnectorCatalogService;
 import com.gensynth.core.connectors.spi.ConnectorPlugin;
 import com.gensynth.core.connectors.spi.ConnectorPluginDescriptor;
+import com.gensynth.core.model.FlowDefinition;
+import com.gensynth.core.model.GroupDefinition;
+import com.gensynth.core.model.Variable;
+import com.gensynth.core.persistence.JsonStateRepositoryImpl;
+import com.gensynth.core.persistence.StateRepository;
 import org.java_websocket.WebSocket;
 import org.java_websocket.handshake.ClientHandshake;
 import org.java_websocket.server.WebSocketServer;
@@ -36,6 +41,15 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         "STOP_SYSTEM",
         "START_GROUP",
         "STOP_GROUP",
+        "CREATE_GROUP",
+        "DELETE_GROUP",
+        "UPDATE_GROUP_CONFIG",
+        "CREATE_FLOW",
+        "DELETE_FLOW",
+        "UPDATE_FLOW_CONFIG",
+        "CREATE_VARIABLE",
+        "DELETE_VARIABLE",
+        "UPDATE_VARIABLE",
         "GET_INITIAL_STATE",
         "GET_CONNECTOR_CATALOG",
         "GET_LATEST_CONNECTOR",
@@ -47,8 +61,10 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
     private final Object stateLock = new Object();
 
     private final ConnectorCatalogService connectorCatalogService;
+    private final StateRepository stateRepository;
 
     private final Map<String, GroupRuntime> groupsById = new LinkedHashMap<>();
+    private final Map<String, Variable> variablesById = new ConcurrentHashMap<>();
     private final Map<String, ConnectorPlugin> connectorByFlowId = new ConcurrentHashMap<>();
     private final Map<String, ScheduledFuture<?>> publisherTasksByFlowId = new ConcurrentHashMap<>();
     private final Set<WebSocket> metricSubscribers = ConcurrentHashMap.newKeySet();
@@ -70,8 +86,9 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
     UiBridgeWebSocketServer(InetSocketAddress address, ConnectorCatalogService connectorCatalogService) {
         super(address);
         this.connectorCatalogService = connectorCatalogService;
+        this.stateRepository = new JsonStateRepositoryImpl();
         this.scheduler = Executors.newScheduledThreadPool(2);
-        initializeDefaultRuntime();
+        initializeRuntime();
     }
 
     @Override
@@ -114,6 +131,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                 stopGroupInternal(group);
             }
             systemRunning = false;
+            persistState();
         }
 
         scheduler.shutdownNow();
@@ -124,7 +142,31 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         }
     }
 
-    private void initializeDefaultRuntime() {
+    private void initializeRuntime() {
+        synchronized (stateLock) {
+            try {
+                List<GroupDefinition> persistedGroups = stateRepository.loadGroups();
+                List<Variable> persistedVariables = stateRepository.loadVariables();
+
+                if (persistedGroups.isEmpty()) {
+                    createDefaultRuntime();
+                    persistState();
+                } else {
+                    for (GroupDefinition definition : persistedGroups) {
+                        groupsById.put(definition.getGroupId(), GroupRuntime.fromDefinition(definition));
+                    }
+                }
+
+                for (Variable variable : persistedVariables) {
+                    variablesById.put(variable.getId(), variable);
+                }
+            } catch (StateRepository.StateRepositoryException e) {
+                createDefaultRuntime();
+            }
+        }
+    }
+
+    private void createDefaultRuntime() {
         GroupRuntime rabbitGroup = new GroupRuntime(
             "g-rabbit",
             "RabbitMQ Local",
@@ -152,6 +194,20 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         ));
 
         groupsById.put(rabbitGroup.id, rabbitGroup);
+    }
+
+    private void persistState() {
+        try {
+            List<GroupDefinition> groupDefinitions = new ArrayList<>();
+            for (GroupRuntime group : groupsById.values()) {
+                groupDefinitions.add(group.toDefinition());
+            }
+
+            stateRepository.saveGroups(groupDefinitions);
+            stateRepository.saveVariables(new ArrayList<>(variablesById.values()));
+        } catch (StateRepository.StateRepositoryException e) {
+            totalErrors.incrementAndGet();
+        }
     }
 
     private void handleCommand(WebSocket conn, String rawMessage) {
@@ -189,6 +245,13 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                 case "GET_INITIAL_STATE" -> {
                     sendSystemStatus(conn, commandId);
                     sendGroupsUpdate(conn);
+                    List<Map<String, Object>> variablesPayload = new ArrayList<>();
+                    synchronized (stateLock) {
+                        for (Variable variable : variablesById.values()) {
+                            variablesPayload.add(variable.toPayload());
+                        }
+                    }
+                    sendMessage(conn, "VARIABLE_UPDATE", variablesPayload);
                 }
                 case "SUBSCRIBE_METRICS" -> {
                     metricSubscribers.add(conn);
@@ -286,6 +349,15 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                     broadcastSystemStatus();
                     sendLog(conn, "info", group.id, "Group stopped");
                 }
+                case "CREATE_GROUP" -> handleCreateGroup(conn, commandId, payload);
+                case "DELETE_GROUP" -> handleDeleteGroup(conn, commandId, payload);
+                case "UPDATE_GROUP_CONFIG" -> handleUpdateGroupConfig(conn, commandId, payload);
+                case "CREATE_FLOW" -> handleCreateFlow(conn, commandId, payload);
+                case "DELETE_FLOW" -> handleDeleteFlow(conn, commandId, payload);
+                case "UPDATE_FLOW_CONFIG" -> handleUpdateFlowConfig(conn, commandId, payload);
+                case "CREATE_VARIABLE" -> handleCreateVariable(conn, commandId, payload);
+                case "DELETE_VARIABLE" -> handleDeleteVariable(conn, commandId, payload);
+                case "UPDATE_VARIABLE" -> handleUpdateVariable(conn, commandId, payload);
                 default -> sendError(conn, commandId, "UNSUPPORTED_COMMAND", "Unsupported command: " + type, Map.of(
                     "command", type
                 ));
@@ -315,6 +387,360 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         }
 
         return value;
+    }
+
+    private void handleCreateGroup(WebSocket conn, String commandId, JsonNode payload) {
+        String name = requireTextField(conn, commandId, payload, "name", "INVALID_PAYLOAD", "CREATE_GROUP");
+        if (name == null) {
+            return;
+        }
+
+        synchronized (stateLock) {
+            for (GroupRuntime group : groupsById.values()) {
+                if (group.name.equalsIgnoreCase(name)) {
+                    sendError(conn, commandId, "INVALID_PAYLOAD", "Group name already exists", Map.of("name", name));
+                    return;
+                }
+            }
+
+            String id = payload.path("groupId").asText("");
+            if (id.isBlank()) {
+                id = UUID.randomUUID().toString();
+            }
+            String description = payload.path("description").asText("");
+            int threads = Math.max(1, payload.path("threads").asInt(1));
+            String outputMode = payload.path("outputMode").asText("parallel");
+
+            groupsById.put(id, new GroupRuntime(id, name, "stopped", description, threads, outputMode));
+            persistState();
+        }
+
+        sendAck(conn, commandId, "group_created");
+        broadcastGroupsUpdate();
+    }
+
+    private void handleDeleteGroup(WebSocket conn, String commandId, JsonNode payload) {
+        String groupId = requireTextField(conn, commandId, payload, "groupId", "INVALID_PAYLOAD", "DELETE_GROUP");
+        if (groupId == null) {
+            return;
+        }
+
+        synchronized (stateLock) {
+            GroupRuntime group = groupsById.remove(groupId);
+            if (group == null) {
+                sendError(conn, commandId, "NOT_FOUND", "Group not found: " + groupId, Map.of("groupId", groupId));
+                return;
+            }
+
+            stopGroupInternal(group);
+            persistState();
+            systemRunning = hasAnyRunningGroup();
+        }
+
+        sendAck(conn, commandId, "group_deleted");
+        broadcastGroupsUpdate();
+        broadcastSystemStatus();
+    }
+
+    private void handleUpdateGroupConfig(WebSocket conn, String commandId, JsonNode payload) {
+        String groupId = requireTextField(conn, commandId, payload, "groupId", "INVALID_PAYLOAD", "UPDATE_GROUP_CONFIG");
+        if (groupId == null) {
+            return;
+        }
+
+        synchronized (stateLock) {
+            GroupRuntime group = groupsById.get(groupId);
+            if (group == null) {
+                sendError(conn, commandId, "NOT_FOUND", "Group not found: " + groupId, Map.of("groupId", groupId));
+                return;
+            }
+
+            if (payload.hasNonNull("name")) {
+                String newName = payload.path("name").asText(group.name).trim();
+                if (newName.isBlank()) {
+                    sendError(conn, commandId, "INVALID_PAYLOAD", "Group name cannot be empty", Map.of("groupId", groupId));
+                    return;
+                }
+
+                for (GroupRuntime existing : groupsById.values()) {
+                    if (!existing.id.equals(groupId) && existing.name.equalsIgnoreCase(newName)) {
+                        sendError(conn, commandId, "INVALID_PAYLOAD", "Group name already exists", Map.of("name", newName));
+                        return;
+                    }
+                }
+                group.name = newName;
+            }
+
+            if (payload.hasNonNull("description")) {
+                group.description = payload.path("description").asText(group.description);
+            }
+
+            if (payload.hasNonNull("threads")) {
+                group.threads = Math.max(1, payload.path("threads").asInt(group.threads));
+            }
+
+            if (payload.hasNonNull("outputMode")) {
+                String outputMode = payload.path("outputMode").asText(group.outputMode).trim();
+                group.outputMode = outputMode.isBlank() ? group.outputMode : outputMode;
+            }
+
+            persistState();
+        }
+
+        sendAck(conn, commandId, "group_updated");
+        broadcastGroupsUpdate();
+    }
+
+    private void handleCreateFlow(WebSocket conn, String commandId, JsonNode payload) {
+        String groupId = requireTextField(conn, commandId, payload, "groupId", "INVALID_PAYLOAD", "CREATE_FLOW");
+        String name = requireTextField(conn, commandId, payload, "name", "INVALID_PAYLOAD", "CREATE_FLOW");
+        String technology = requireTextField(conn, commandId, payload, "technology", "INVALID_PAYLOAD", "CREATE_FLOW");
+        String host = requireTextField(conn, commandId, payload, "host", "INVALID_PAYLOAD", "CREATE_FLOW");
+        if (groupId == null || name == null || technology == null || host == null) {
+            return;
+        }
+
+        if (connectorCatalogService.findLatestConnector(technology).isEmpty()) {
+            sendError(conn, commandId, "INVALID_PAYLOAD", "Connector not found for technology: " + technology, Map.of("technology", technology));
+            return;
+        }
+
+        synchronized (stateLock) {
+            GroupRuntime group = groupsById.get(groupId);
+            if (group == null) {
+                sendError(conn, commandId, "NOT_FOUND", "Group not found: " + groupId, Map.of("groupId", groupId));
+                return;
+            }
+
+            String flowId = payload.path("flowId").asText("");
+            if (flowId.isBlank()) {
+                flowId = UUID.randomUUID().toString();
+            }
+
+            if (findFlowById(group, flowId) != null) {
+                sendError(conn, commandId, "INVALID_PAYLOAD", "Flow already exists: " + flowId, Map.of("flowId", flowId));
+                return;
+            }
+
+            String topic = payload.path("topic").asText("gensynth.data");
+            int port = payload.path("port").asInt(5672);
+            int interval = Math.max(50, payload.path("interval").asInt(1000));
+            int burst = Math.max(1, payload.path("burst").asInt(1));
+            String template = payload.path("template").asText("{\"eventId\":\"{{uuid}}\",\"timestamp\":\"{{ts}}\",\"source\":\"gen-synth\",\"value\":{{n}}}");
+
+            group.flows.add(new FlowRuntime(
+                flowId,
+                name,
+                technology,
+                "disconnected",
+                0,
+                0,
+                false,
+                null,
+                interval,
+                burst,
+                topic,
+                host,
+                port,
+                template
+            ));
+
+            persistState();
+        }
+
+        sendAck(conn, commandId, "flow_created");
+        broadcastGroupsUpdate();
+    }
+
+    private void handleDeleteFlow(WebSocket conn, String commandId, JsonNode payload) {
+        String groupId = requireTextField(conn, commandId, payload, "groupId", "INVALID_PAYLOAD", "DELETE_FLOW");
+        String flowId = requireTextField(conn, commandId, payload, "flowId", "INVALID_PAYLOAD", "DELETE_FLOW");
+        if (groupId == null || flowId == null) {
+            return;
+        }
+
+        synchronized (stateLock) {
+            GroupRuntime group = groupsById.get(groupId);
+            if (group == null) {
+                sendError(conn, commandId, "NOT_FOUND", "Group not found: " + groupId, Map.of("groupId", groupId));
+                return;
+            }
+
+            FlowRuntime flow = findFlowById(group, flowId);
+            if (flow == null) {
+                sendError(conn, commandId, "NOT_FOUND", "Flow not found: " + flowId, Map.of("flowId", flowId));
+                return;
+            }
+
+            stopPublisherTask(flowId);
+            ConnectorPlugin connector = connectorByFlowId.remove(flowId);
+            if (connector != null) {
+                try {
+                    connector.stop();
+                } catch (Exception ignored) {
+                    totalErrors.incrementAndGet();
+                }
+            }
+
+            group.flows.remove(flow);
+            persistState();
+        }
+
+        sendAck(conn, commandId, "flow_deleted");
+        broadcastGroupsUpdate();
+    }
+
+    private void handleUpdateFlowConfig(WebSocket conn, String commandId, JsonNode payload) {
+        String groupId = requireTextField(conn, commandId, payload, "groupId", "INVALID_PAYLOAD", "UPDATE_FLOW_CONFIG");
+        String flowId = requireTextField(conn, commandId, payload, "flowId", "INVALID_PAYLOAD", "UPDATE_FLOW_CONFIG");
+        if (groupId == null || flowId == null) {
+            return;
+        }
+
+        synchronized (stateLock) {
+            GroupRuntime group = groupsById.get(groupId);
+            if (group == null) {
+                sendError(conn, commandId, "NOT_FOUND", "Group not found: " + groupId, Map.of("groupId", groupId));
+                return;
+            }
+
+            FlowRuntime flow = findFlowById(group, flowId);
+            if (flow == null) {
+                sendError(conn, commandId, "NOT_FOUND", "Flow not found: " + flowId, Map.of("flowId", flowId));
+                return;
+            }
+
+            boolean wasRunning = "connected".equals(flow.connectionStatus);
+            if (payload.hasNonNull("name")) {
+                flow.name = payload.path("name").asText(flow.name);
+            }
+            if (payload.hasNonNull("technology")) {
+                String technology = payload.path("technology").asText(flow.technology);
+                if (connectorCatalogService.findLatestConnector(technology).isEmpty()) {
+                    sendError(conn, commandId, "INVALID_PAYLOAD", "Connector not found for technology: " + technology, Map.of("technology", technology));
+                    return;
+                }
+                flow.technology = technology;
+            }
+            if (payload.hasNonNull("host")) {
+                flow.host = payload.path("host").asText(flow.host);
+            }
+            if (payload.hasNonNull("port")) {
+                flow.port = payload.path("port").asInt(flow.port);
+            }
+            if (payload.hasNonNull("topic")) {
+                flow.topic = payload.path("topic").asText(flow.topic);
+            }
+            if (payload.hasNonNull("interval")) {
+                flow.interval = Math.max(50, payload.path("interval").asInt(flow.interval));
+            }
+            if (payload.hasNonNull("burst")) {
+                flow.burst = Math.max(1, payload.path("burst").asInt(flow.burst));
+            }
+            if (payload.hasNonNull("template")) {
+                flow.template = payload.path("template").asText(flow.template);
+            }
+
+            if (wasRunning) {
+                stopPublisherTask(flow.id);
+            }
+
+            persistState();
+        }
+
+        sendAck(conn, commandId, "flow_updated");
+        broadcastGroupsUpdate();
+    }
+
+    private void handleCreateVariable(WebSocket conn, String commandId, JsonNode payload) {
+        String name = requireTextField(conn, commandId, payload, "name", "INVALID_PAYLOAD", "CREATE_VARIABLE");
+        String type = requireTextField(conn, commandId, payload, "type", "INVALID_PAYLOAD", "CREATE_VARIABLE");
+        String scope = requireTextField(conn, commandId, payload, "scope", "INVALID_PAYLOAD", "CREATE_VARIABLE");
+        if (name == null || type == null || scope == null) {
+            return;
+        }
+
+        Object defaultValue = payload.has("config") ? payload.get("config").toString() : "";
+        Map<String, Object> config = Map.of();
+
+        
+        synchronized (stateLock) {
+            String variableId = payload.path("variableId").asText("");
+            if (variableId.isBlank()) {
+                variableId = UUID.randomUUID().toString();
+            }
+            try {
+                Variable variable = new Variable(variableId, name, scope.toUpperCase(), type, defaultValue, config);
+                variablesById.put(variableId, variable);
+                persistState();
+            } catch (IllegalArgumentException ex) {
+                sendError(conn, commandId, "INVALID_PAYLOAD", ex.getMessage(), Map.of("name", name, "type", type, "scope", scope));
+                return;
+            }
+        }
+
+        sendAck(conn, commandId, "variable_created");
+        sendVariablesUpdate();
+    }
+
+    private void handleDeleteVariable(WebSocket conn, String commandId, JsonNode payload) {
+        String variableId = requireTextField(conn, commandId, payload, "variableId", "INVALID_PAYLOAD", "DELETE_VARIABLE");
+        if (variableId == null) {
+            return;
+        }
+
+        synchronized (stateLock) {
+            Variable removed = variablesById.remove(variableId);
+            if (removed == null) {
+                sendError(conn, commandId, "NOT_FOUND", "Variable not found: " + variableId, Map.of("variableId", variableId));
+                return;
+            }
+            persistState();
+        }
+
+        sendAck(conn, commandId, "variable_deleted");
+        sendVariablesUpdate();
+    }
+
+    private void handleUpdateVariable(WebSocket conn, String commandId, JsonNode payload) {
+        String variableId = requireTextField(conn, commandId, payload, "variableId", "INVALID_PAYLOAD", "UPDATE_VARIABLE");
+        if (variableId == null) {
+            return;
+        }
+
+        synchronized (stateLock) {
+            Variable existing = variablesById.get(variableId);
+            if (existing == null) {
+                sendError(conn, commandId, "NOT_FOUND", "Variable not found: " + variableId, Map.of("variableId", variableId));
+                return;
+            }
+
+            String name = payload.path("name").asText(existing.getName());
+            String type = payload.path("type").asText(existing.getType());
+            String scope = payload.path("scope").asText(existing.getScope()).toUpperCase();
+            Object defaultValue = payload.has("config") ? payload.get("config").toString() : existing.getDefaultValue();
+
+            try {
+                Variable updated = new Variable(variableId, name, scope, type, defaultValue, existing.getConfig());
+                variablesById.put(variableId, updated);
+                persistState();
+            } catch (IllegalArgumentException ex) {
+                sendError(conn, commandId, "INVALID_PAYLOAD", ex.getMessage(), Map.of("variableId", variableId));
+                return;
+            }
+        }
+
+        sendAck(conn, commandId, "variable_updated");
+        sendVariablesUpdate();
+    }
+
+    private FlowRuntime findFlowById(GroupRuntime group, String flowId) {
+        for (FlowRuntime flow : group.flows) {
+            if (flow.id.equals(flowId)) {
+                return flow;
+            }
+        }
+        return null;
     }
 
     private void startGroupInternal(GroupRuntime group) {
@@ -525,6 +951,16 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         sendMessage(conn, "GROUPS_UPDATE", toGroupsPayload());
     }
 
+    private void sendVariablesUpdate() {
+        List<Map<String, Object>> payload = new ArrayList<>();
+        synchronized (stateLock) {
+            for (Variable variable : variablesById.values()) {
+                payload.add(variable.toPayload());
+            }
+        }
+        broadcastMessage("VARIABLE_UPDATE", payload);
+    }
+
     private void broadcastGroupsUpdate() {
         List<Map<String, Object>> payload = toGroupsPayload();
         broadcastMessage("GROUPS_UPDATE", payload);
@@ -632,11 +1068,11 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
 
     private static final class GroupRuntime {
         private final String id;
-        private final String name;
+        private String name;
         private String status;
-        private final String description;
-        private final int threads;
-        private final String outputMode;
+        private String description;
+        private int threads;
+        private String outputMode;
         private final List<FlowRuntime> flows = new ArrayList<>();
 
         private GroupRuntime(String id, String name, String status, String description, int threads, String outputMode) {
@@ -646,6 +1082,31 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             this.description = description;
             this.threads = threads;
             this.outputMode = outputMode;
+        }
+
+        private static GroupRuntime fromDefinition(GroupDefinition definition) {
+            GroupRuntime runtime = new GroupRuntime(
+                definition.getGroupId(),
+                definition.getName(),
+                "stopped",
+                definition.getDescription(),
+                definition.getThreads(),
+                definition.getOutputMode()
+            );
+
+            for (FlowDefinition flowDefinition : definition.getAllFlows().values()) {
+                runtime.flows.add(FlowRuntime.fromDefinition(flowDefinition));
+            }
+
+            return runtime;
+        }
+
+        private GroupDefinition toDefinition() {
+            GroupDefinition definition = new GroupDefinition(id, name, description, threads, outputMode);
+            for (FlowRuntime flow : flows) {
+                definition.addFlow(flow.toDefinition(id));
+            }
+            return definition;
         }
 
         private Map<String, Object> toPayload() {
@@ -669,19 +1130,19 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
 
     private static final class FlowRuntime {
         private final String id;
-        private final String name;
-        private final String technology;
+        private String name;
+        private String technology;
         private String connectionStatus;
         private int throughput;
         private int latency;
         private boolean hasError;
         private String errorMessage;
-        private final int interval;
-        private final int burst;
-        private final String topic;
-        private final String host;
-        private final int port;
-        private final String template;
+        private int interval;
+        private int burst;
+        private String topic;
+        private String host;
+        private int port;
+        private String template;
 
         private FlowRuntime(
             String id,
@@ -713,6 +1174,42 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             this.host = host;
             this.port = port;
             this.template = template;
+        }
+
+        private static FlowRuntime fromDefinition(FlowDefinition definition) {
+            return new FlowRuntime(
+                definition.getFlowId(),
+                definition.getName(),
+                definition.getTechnology(),
+                "disconnected",
+                0,
+                0,
+                false,
+                null,
+                definition.getInterval(),
+                definition.getBurst(),
+                definition.getTopic(),
+                definition.getHost(),
+                definition.getPort(),
+                definition.getTemplate()
+            );
+        }
+
+        private FlowDefinition toDefinition(String groupId) {
+            return new FlowDefinition(
+                id,
+                groupId,
+                name,
+                technology,
+                host,
+                port,
+                topic,
+                interval,
+                burst,
+                template,
+                technology,
+                Map.of()
+            );
         }
 
         private Map<String, Object> toPayload() {
