@@ -1,7 +1,7 @@
 /**
- * Contexto global de la aplicación
+ * Global application context
  * 
- * Maneja el estado centralizado y la comunicación con el Core Java
+ * Manages centralized state and communication with Core Java
  */
 
 import React, {
@@ -20,23 +20,24 @@ import type {
   LogPayload,
   GroupState,
   FlowMetricsPayload,
-  VariableState,
   ConnectorPluginDescriptor,
 } from '../core/types';
-import type { Selection, Group, Variable, LogEntry, SystemStatus, Flow } from '../types';
+import type { Selection, Group, Variable, LogEntry, SystemStatus, Flow, ConnectorHealthStatus } from '../types';
 import type { ConnectorHealthSummary } from '../types';
 import { mockGroups, mockVariables, mockLogs, mockConnectorCatalog } from '../data/mockData';
+import * as CRUDActions from './crudActions';
+import type { CRUDActionContext } from './crudActions';
 
 // ─────────────────────────────────────────────────────────────
-// Estado de la aplicación
+// Application State
 // ─────────────────────────────────────────────────────────────
 
 interface AppState {
-  // Conexión
+  // Connection
   isConnected: boolean;
   connectionMode: 'websocket' | 'jcef' | 'mock';
   
-  // Sistema
+  // System
   systemStatus: SystemStatus;
   projectName: string;
   
@@ -45,7 +46,7 @@ interface AppState {
   selection: Selection;
   bottomTab: 'logs' | 'stats' | 'preview';
   
-  // Datos
+  // Data
   groups: Group[];
   variables: Variable[];
   logs: LogEntry[];
@@ -56,7 +57,7 @@ interface AppState {
   flowConnectorConfigs: Record<string, Record<string, unknown>>;
   connectorHealthSummary: ConnectorHealthSummary[];
   
-  // Métricas
+  // Metrics
   metrics: MetricsPayload | null;
   flowMetrics: Record<string, FlowMetricsPayload>;
 }
@@ -83,7 +84,7 @@ const initialState: AppState = {
 };
 
 // ─────────────────────────────────────────────────────────────
-// Acciones
+// Actions
 // ─────────────────────────────────────────────────────────────
 
 type AppAction =
@@ -284,10 +285,11 @@ function buildConnectorHealthSummary(
     .map((entry) => {
       const allConnected = entry.connectedCount === entry.flowCount && entry.flowCount > 0;
       const hasProblems = entry.errorCount > 0 || entry.warningCount > 0;
+      const status: ConnectorHealthStatus = allConnected ? 'healthy' : hasProblems ? 'degraded' : 'offline';
 
       return {
         ...entry,
-        status: allConnected ? 'healthy' : hasProblems ? 'degraded' : 'offline',
+        status,
       };
     })
     .sort((left, right) => left.displayName.localeCompare(right.displayName) || left.pluginVersion.localeCompare(right.pluginVersion));
@@ -372,7 +374,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
     case 'ADD_LOG':
       return { 
         ...state, 
-        logs: [...state.logs.slice(-999), action.payload], // Mantener máx 1000 logs
+        logs: [...state.logs.slice(-999), action.payload], // Keep at most 1000 logs
       };
 
     case 'SET_LOGS':
@@ -493,35 +495,69 @@ function appReducer(state: AppState, action: AppAction): AppState {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Contexto
+// Context
 // ─────────────────────────────────────────────────────────────
 
 interface AppContextValue {
   state: AppState;
   dispatch: React.Dispatch<AppAction>;
   actions: {
-    // Sistema
+    // System
     startSystem: () => Promise<void>;
     stopSystem: () => Promise<void>;
     toggleSystem: () => Promise<void>;
     
-    // Selección
+    // Selection
     selectGroup: (groupId: string) => void;
     selectFlow: (groupId: string, flowId: string) => void;
     selectVariable: (variableId: string) => void;
     clearVariableSelection: () => void;
     
-    // Grupos
+    // Groups: basic actions
     toggleGroupExpanded: (groupId: string) => void;
     startGroup: (groupId: string) => Promise<void>;
     stopGroup: (groupId: string) => Promise<void>;
+    
+    // Groups: CRUD
+    createGroup: (name: string, description?: string) => Promise<Group>;
+    deleteGroup: (groupId: string) => Promise<void>;
+    updateGroupConfig: (groupId: string, config: Partial<Omit<Group, 'id' | 'flows'>>) => Promise<void>;
+    
+    // Flows: CRUD
+    createFlow: (
+      groupId: string,
+      name: string,
+      technology: string,
+      host: string,
+      port: number,
+      topic?: string,
+      interval?: number,
+      burst?: number,
+      template?: string,
+    ) => Promise<Flow>;
+    deleteFlow: (groupId: string, flowId: string) => Promise<void>;
+    updateFlowConfig: (
+      groupId: string,
+      flowId: string,
+      config: Partial<Omit<Flow, 'id' | 'connectionStatus' | 'throughput' | 'hasError' | 'errorMessage'>>,
+    ) => Promise<void>;
+    
+    // Variables: CRUD
+    createVariable: (
+      name: string,
+      type: 'numeric' | 'string' | 'boolean' | 'temporal' | 'point' | 'list',
+      scope: 'global' | 'group' | 'local',
+      config?: Record<string, unknown>,
+    ) => Promise<Variable>;
+    deleteVariable: (variableId: string) => Promise<void>;
+    updateVariable: (variableId: string, updates: Partial<Omit<Variable, 'id'>>) => Promise<void>;
     
     // Templates
     setFormatTemplate: (flowId: string, template: string) => void;
     setFlowConnectorSelection: (flowId: string, pluginId: string, pluginVersion: string) => void;
     setFlowConnectorConfig: (flowId: string, config: Record<string, unknown>) => void;
     
-    // Variables
+    // Variables: insertion into templates
     insertVariable: (name: string, scope: string) => void;
     
     // UI
@@ -548,14 +584,14 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
   const connectionAttempted = useRef(false);
   const lastConnectorHealthSignature = useRef('');
 
-  // Conexión inicial al Core
+  // Initial connection to the Core
   useEffect(() => {
     if (connectionAttempted.current) return;
     connectionAttempted.current = true;
 
     const initConnection = async () => {
       if (useMockData) {
-        // Modo desarrollo: usar datos mock
+        // Dev mode: load mock data without connecting to Core
         dispatch({
           type: 'LOAD_INITIAL_STATE',
           payload: {
@@ -576,7 +612,7 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
           payload: { connected: true, mode: bridge.getMode() } 
         });
 
-        // Solicitar estado inicial
+        // Get initial state and catalog from Core
         await CoreCommands.getInitialState();
         await CoreCommands.subscribeMetrics();
 
@@ -586,8 +622,8 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
           : (catalogResponse as { catalog?: ConnectorPluginDescriptor[] } | null)?.catalog ?? [];
         dispatch({ type: 'SET_CONNECTOR_CATALOG', payload: catalogPayload });
       } catch (error) {
-        console.error('[AppContext] Error conectando con el Core:', error);
-        // Fallback a datos mock si falla la conexión
+        console.error('[AppContext] Error connecting to the Core:', error);
+        // Data fallback if connection fails
         dispatch({
           type: 'LOAD_INITIAL_STATE',
           payload: {
@@ -628,7 +664,7 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
     });
   }, [state.connectorHealthSummary]);
 
-  // Suscribirse a eventos del bridge
+  // Subscribers for Core events
   useEffect(() => {
     if (useMockData) return;
 
@@ -646,7 +682,7 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
       }),
       
       bridge.on('groups-update', (groups: GroupState[]) => {
-        // Convertir GroupState del core a Group de la UI
+        // Convert GroupState from Core to Group for UI, preserving expanded state and normalizing connector info
         const uiGroups: Group[] = groups.map(g => ({
           id: g.id,
           name: g.name,
@@ -693,12 +729,12 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
   }, [useMockData, state.groups]);
 
   // ─────────────────────────────────────────────────────────
-  // Acciones
+  // Actions
   // ─────────────────────────────────────────────────────────
 
   const reportCommandError = useCallback((source: string, action: string, error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
-    console.error(`[AppContext] ${action} falló:`, error);
+    console.error(`[AppContext] ${action} failed:`, error);
     dispatch({
       type: 'ADD_LOG',
       payload: {
@@ -841,6 +877,85 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
     dispatch({ type: 'CLEAR_LOGS' });
   }, []);
 
+  // ─────────────────────────────────────────────────────────
+  // CRUD Actions: Groups, Flows, Variables
+  // ─────────────────────────────────────────────────────────
+
+  const crudContext: CRUDActionContext = {
+    dispatch,
+    reportError: reportCommandError,
+    connectionMode: state.connectionMode,
+  };
+
+  const createGroupAction = useCallback((name: string, description?: string) =>
+    CRUDActions.createGroup(crudContext, name, description),
+    [crudContext, state.connectionMode],
+  );
+
+  const deleteGroupAction = useCallback((groupId: string) =>
+    CRUDActions.deleteGroup(crudContext, groupId),
+    [crudContext, state.connectionMode],
+  );
+
+  const updateGroupConfigAction = useCallback(
+    (groupId: string, config: Partial<Omit<Group, 'id' | 'flows'>>) =>
+      CRUDActions.updateGroupConfig(crudContext, groupId, config),
+    [crudContext, state.connectionMode],
+  );
+
+  const createFlowAction = useCallback(
+    (
+      groupId: string,
+      name: string,
+      technology: string,
+      host: string,
+      port: number,
+      topic?: string,
+      interval?: number,
+      burst?: number,
+      template?: string,
+    ) =>
+      CRUDActions.createFlow(crudContext, groupId, name, technology, host, port, topic, interval, burst, template),
+    [crudContext, state.connectionMode],
+  );
+
+  const deleteFlowAction = useCallback((groupId: string, flowId: string) =>
+    CRUDActions.deleteFlow(crudContext, groupId, flowId),
+    [crudContext, state.connectionMode],
+  );
+
+  const updateFlowConfigAction = useCallback(
+    (
+      groupId: string,
+      flowId: string,
+      config: Partial<Omit<Flow, 'id' | 'connectionStatus' | 'throughput' | 'hasError' | 'errorMessage'>>,
+    ) =>
+      CRUDActions.updateFlowConfig(crudContext, groupId, flowId, config),
+    [crudContext, state.connectionMode],
+  );
+
+  const createVariableAction = useCallback(
+    (
+      name: string,
+      type: 'numeric' | 'string' | 'boolean' | 'temporal' | 'point' | 'list',
+      scope: 'global' | 'group' | 'local',
+      config?: Record<string, unknown>,
+    ) =>
+      CRUDActions.createVariable(crudContext, name, type, scope, config),
+    [crudContext, state.connectionMode],
+  );
+
+  const deleteVariableAction = useCallback((variableId: string) =>
+    CRUDActions.deleteVariable(crudContext, variableId),
+    [crudContext, state.connectionMode],
+  );
+
+  const updateVariableAction = useCallback(
+    (variableId: string, updates: Partial<Omit<Variable, 'id'>>) =>
+      CRUDActions.updateVariable(crudContext, variableId, updates),
+    [crudContext, state.connectionMode],
+  );
+
   const actions = {
     startSystem,
     stopSystem,
@@ -852,6 +967,15 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
     toggleGroupExpanded,
     startGroup,
     stopGroup,
+    createGroup: createGroupAction,
+    deleteGroup: deleteGroupAction,
+    updateGroupConfig: updateGroupConfigAction,
+    createFlow: createFlowAction,
+    deleteFlow: deleteFlowAction,
+    updateFlowConfig: updateFlowConfigAction,
+    createVariable: createVariableAction,
+    deleteVariable: deleteVariableAction,
+    updateVariable: updateVariableAction,
     setFormatTemplate,
     setFlowConnectorSelection,
     setFlowConnectorConfig,
@@ -881,7 +1005,7 @@ export function useApp() {
   return context;
 }
 
-// Hooks de conveniencia
+// Hooks of specific slices of state for convenience
 export function useSystemStatus() {
   const { state } = useApp();
   return state.systemStatus;
