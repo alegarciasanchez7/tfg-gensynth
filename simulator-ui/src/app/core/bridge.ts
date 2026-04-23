@@ -1,11 +1,11 @@
 /**
- * Bridge de comunicación con el Core Java
+ * Communication bridge with the Java core
  * 
- * Este módulo maneja la comunicación bidireccional entre la UI React
- * y el núcleo Java. Soporta dos modos de comunicación:
+ * This module handles bidirectional communication between the React UI
+ * and the Java core. It supports two communication modes:
  * 
- * 1. WebSocket: Para cuando la UI corre en navegador externo o desarrollo
- * 2. JCEF Bridge: Comunicación directa cuando está embebido en JCEF
+ * 1. WebSocket: For when the UI runs in an external browser or in development
+ * 2. JCEF Bridge: Direct communication when embedded in JCEF
  */
 
 import { CORE_PROTOCOL_VERSION } from './types';
@@ -25,7 +25,7 @@ import type {
 } from './types';
 
 // ─────────────────────────────────────────────────────────────
-// Configuración
+// Configuration
 // ─────────────────────────────────────────────────────────────
 
 export interface BridgeConfig {
@@ -43,7 +43,7 @@ const DEFAULT_CONFIG: BridgeConfig = {
 };
 
 // ─────────────────────────────────────────────────────────────
-// Tipos de eventos
+// Event types
 // ─────────────────────────────────────────────────────────────
 
 type EventCallback<T = unknown> = (data: T) => void;
@@ -64,6 +64,15 @@ const SUPPORTED_COMMANDS = new Set<UICommandType>([
   'GET_LATEST_CONNECTOR',
   'SUBSCRIBE_METRICS',
   'UNSUBSCRIBE_METRICS',
+  'CREATE_GROUP',
+  'DELETE_GROUP',
+  'UPDATE_GROUP_CONFIG',
+  'CREATE_FLOW',
+  'DELETE_FLOW',
+  'UPDATE_FLOW_CONFIG',
+  'CREATE_VARIABLE',
+  'DELETE_VARIABLE',
+  'UPDATE_VARIABLE',
 ]);
 
 interface EventMap {
@@ -99,11 +108,11 @@ class CoreBridge {
   }
 
   // ─────────────────────────────────────────────────────────
-  // Conexión
+  // Connection
   // ─────────────────────────────────────────────────────────
 
   /**
-   * Inicia la conexión con el Core Java
+   * Starts the connection to the Java core
    */
   async connect(): Promise<void> {
     const mode = this.detectMode();
@@ -116,14 +125,14 @@ class CoreBridge {
   }
 
   /**
-   * Detecta el modo de comunicación disponible
+   * Detects the available communication mode
    */
   private detectMode(): 'websocket' | 'jcef' {
     if (this.config.mode !== 'auto') {
       return this.config.mode;
     }
 
-    // Detectar si estamos en JCEF verificando la presencia del bridge global
+    // Detect whether we are running in JCEF by checking for the global bridge
     if (typeof window !== 'undefined' && (window as JCEFWindow).javaBridge) {
       return 'jcef';
     }
@@ -132,7 +141,7 @@ class CoreBridge {
   }
 
   /**
-   * Conexión vía WebSocket
+   * WebSocket connection
    */
   private connectWebSocket(): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -148,19 +157,19 @@ class CoreBridge {
           this.connected = true;
           this.reconnectAttempts = 0;
           this.emit('connected', undefined);
-          console.log('[Bridge] Conectado al Core Java vía WebSocket');
+          console.log('[Bridge] Connected to the Java core via WebSocket');
           resolve();
         };
 
         this.ws.onclose = (event) => {
           this.connected = false;
           this.emit('disconnected', { reason: event.reason || 'Connection closed' });
-          console.log('[Bridge] Desconectado del Core Java');
+          console.log('[Bridge] Disconnected from the Java core');
           this.scheduleReconnect();
         };
 
         this.ws.onerror = (error) => {
-          console.error('[Bridge] Error de WebSocket:', error);
+          console.error('[Bridge] WebSocket error:', error);
           this.emit('error', { error: new Error('WebSocket error') });
           reject(new Error('WebSocket connection failed'));
         };
@@ -175,7 +184,7 @@ class CoreBridge {
   }
 
   /**
-   * Conexión vía JCEF Bridge
+   * JCEF Bridge connection
    */
   private async connectJCEF(): Promise<void> {
     const jcef = (window as JCEFWindow).javaBridge;
@@ -184,18 +193,18 @@ class CoreBridge {
       throw new Error('JCEF Bridge no disponible');
     }
 
-    // Registrar callback para recibir mensajes del Core Java
+    // Register the callback to receive messages from the Java core
     jcef.registerCallback('onCoreMessage', (messageJson: string) => {
       this.handleMessage(messageJson);
     });
 
     this.connected = true;
     this.emit('connected', undefined);
-    console.log('[Bridge] Conectado al Core Java vía JCEF Bridge');
+    console.log('[Bridge] Connected to the Java core via JCEF Bridge');
   }
 
   /**
-   * Desconecta del Core
+   * Disconnects from the core
    */
   disconnect(): void {
     if (this.reconnectTimer) {
@@ -212,29 +221,29 @@ class CoreBridge {
   }
 
   /**
-   * Programa un intento de reconexión
+   * Schedules a reconnect attempt
    */
   private scheduleReconnect(): void {
     if (this.reconnectAttempts >= this.config.maxReconnectAttempts!) {
-      console.error('[Bridge] Máximo de intentos de reconexión alcanzado');
+      console.error('[Bridge] Maximum reconnect attempts reached');
       return;
     }
 
     this.reconnectTimer = window.setTimeout(() => {
       this.reconnectAttempts++;
-      console.log(`[Bridge] Intento de reconexión ${this.reconnectAttempts}/${this.config.maxReconnectAttempts}`);
+      console.log(`[Bridge] Reconnect attempt ${this.reconnectAttempts}/${this.config.maxReconnectAttempts}`);
       this.connectWebSocket().catch(() => {
-        // Se manejará en el siguiente ciclo
+        // Will be handled on the next cycle
       });
     }, this.config.reconnectInterval);
   }
 
   // ─────────────────────────────────────────────────────────
-  // Envío de comandos
+  // Command sending
   // ─────────────────────────────────────────────────────────
 
   /**
-   * Envía un comando al Core Java
+   * Sends a command to the Java core
    */
   send<T extends UICommandType>(type: T, payload?: UICommandPayloadMap[T]): Promise<unknown> {
     const validationError = this.validateCommand(type, payload);
@@ -269,11 +278,11 @@ class CoreBridge {
 
   private validateCommand<T extends UICommandType>(type: T, payload?: UICommandPayloadMap[T]): Error | null {
     if (!SUPPORTED_COMMANDS.has(type)) {
-      return new Error(`El comando ${type} no está soportado por el bridge actual`);
+      return new Error(`The command ${type} is not supported by the current bridge`);
     }
 
     const isObjectPayload = typeof payload === 'object' && payload !== null && !Array.isArray(payload);
-    const readField = (field: string): unknown => (isObjectPayload ? (payload as Record<string, unknown>)[field] : undefined);
+    const readField = (field: string): unknown => (isObjectPayload ? ((payload as unknown) as Record<string, unknown>)[field] : undefined);
 
     const requireStringField = (field: string, message: string) => {
       const value = readField(field);
@@ -292,8 +301,9 @@ class CoreBridge {
       case 'STOP_GROUP':
       case 'PAUSE_GROUP':
       case 'DELETE_GROUP':
-      case 'DELETE_VARIABLE':
         return requireStringField('groupId', `El comando ${type} requiere groupId`);
+      case 'DELETE_VARIABLE':
+        return requireStringField('variableId', 'El comando DELETE_VARIABLE requiere variableId');
       case 'GET_LATEST_CONNECTOR':
         return requireStringField('pluginId', 'El comando GET_LATEST_CONNECTOR requiere pluginId');
       case 'DELETE_FLOW':
@@ -331,12 +341,12 @@ class CoreBridge {
       case 'UPDATE_VARIABLE':
         return requireStringField('variableId', 'El comando UPDATE_VARIABLE requiere variableId');
       default:
-        return new Error(`Validación no implementada para ${type}`);
+        return new Error(`Validation not implemented for ${type}`);
     }
   }
 
   /**
-   * Envía datos raw al Core
+   * Sends raw data to the core
    */
   private sendRaw(data: string): void {
     const mode = this.detectMode();
@@ -347,25 +357,25 @@ class CoreBridge {
     } else if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(data);
     } else {
-      console.warn('[Bridge] No hay conexión activa para enviar');
+      console.warn('[Bridge] No active connection available to send data');
     }
   }
 
   // ─────────────────────────────────────────────────────────
-  // Recepción de mensajes
+  // Message handling
   // ─────────────────────────────────────────────────────────
 
   /**
-   * Procesa mensajes recibidos del Core
+   * Processes messages received from the core
    */
   private handleMessage(raw: string): void {
     try {
       const message: CoreMessage = JSON.parse(raw);
       
-      // Emitir evento genérico
+      // Emit the generic event
       this.emit('message', message);
 
-      // Emitir evento específico según el tipo
+      // Emit the specific event according to its type
       switch (message.type) {
         case 'SYSTEM_STATUS':
           this.emit('system-status', message.payload as SystemStatusPayload);
@@ -387,7 +397,7 @@ class CoreBridge {
           break;
       }
 
-      // Verificar si es respuesta a un comando pendiente
+      // Check whether this is a response to a pending command
       const responsePayload = message.payload as { commandId?: string; status?: string } | null;
       const responseId = responsePayload?.commandId;
       if (responseId && this.pendingCommands.has(responseId)) {
@@ -403,7 +413,7 @@ class CoreBridge {
         pending.resolve(message.payload);
       }
     } catch (error) {
-      console.error('[Bridge] Error parseando mensaje:', error, raw);
+      console.error('[Bridge] Error parsing message:', error, raw);
     }
   }
 
@@ -441,11 +451,11 @@ class CoreBridge {
   }
 
   // ─────────────────────────────────────────────────────────
-  // Sistema de eventos
+  // Event system
   // ─────────────────────────────────────────────────────────
 
   /**
-   * Suscribe a un evento
+   * Subscribes to an event
    */
   on<K extends keyof EventMap>(event: K, callback: EventCallback<EventMap[K]>): () => void {
     if (!this.eventListeners.has(event)) {
@@ -453,26 +463,26 @@ class CoreBridge {
     }
     this.eventListeners.get(event)!.add(callback as EventCallback);
 
-    // Devuelve función para desuscribirse
+    // Returns an unsubscribe function
     return () => this.off(event, callback);
   }
 
   /**
-   * Desuscribe de un evento
+   * Unsubscribes from an event
    */
   off<K extends keyof EventMap>(event: K, callback: EventCallback<EventMap[K]>): void {
     this.eventListeners.get(event)?.delete(callback as EventCallback);
   }
 
   /**
-   * Emite un evento
+   * Emits an event
    */
   private emit<K extends keyof EventMap>(event: K, data: EventMap[K]): void {
     this.eventListeners.get(event)?.forEach(callback => {
       try {
         callback(data);
       } catch (error) {
-        console.error(`[Bridge] Error en listener de ${event}:`, error);
+        console.error(`[Bridge] Error in ${event} listener:`, error);
       }
     });
   }
@@ -491,7 +501,7 @@ class CoreBridge {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Tipos para JCEF
+// JCEF types
 // ─────────────────────────────────────────────────────────────
 
 interface JCEFBridge {
@@ -510,16 +520,16 @@ interface JCEFWindow extends Window {
 export const bridge = new CoreBridge();
 
 // ─────────────────────────────────────────────────────────────
-// Comandos de conveniencia
+// Convenience commands
 // ─────────────────────────────────────────────────────────────
 
 export const CoreCommands = {
-  // Sistema
+  // System
   startSystem: () => bridge.send('START_SYSTEM'),
   stopSystem: () => bridge.send('STOP_SYSTEM'),
   getInitialState: () => bridge.send('GET_INITIAL_STATE'),
   
-  // Grupos
+  // Groups
   startGroup: (groupId: string) => bridge.send('START_GROUP', { groupId }),
   stopGroup: (groupId: string) => bridge.send('STOP_GROUP', { groupId }),
   pauseGroup: (groupId: string) => bridge.send('PAUSE_GROUP', { groupId }),
@@ -537,17 +547,17 @@ export const CoreCommands = {
     bridge.send('UPDATE_FLOW_CONFIG', config),
   
   // Variables
-  createVariable: (config: { name: string; type: string; scope: string; config?: Record<string, unknown> }) =>
+  createVariable: (config: { name: string; type: string; scope: 'global' | 'group' | 'local'; config?: Record<string, unknown> }) =>
     bridge.send('CREATE_VARIABLE', config),
   deleteVariable: (variableId: string) => bridge.send('DELETE_VARIABLE', { variableId }),
   updateVariable: (config: { variableId: string; [key: string]: unknown }) =>
     bridge.send('UPDATE_VARIABLE', config),
 
-  // Catálogo de conectores
+  // Connector catalog
   getConnectorCatalog: () => bridge.send('GET_CONNECTOR_CATALOG'),
   getLatestConnector: (pluginId: string) => bridge.send('GET_LATEST_CONNECTOR', { pluginId }),
   
-  // Métricas
+  // Metrics
   subscribeMetrics: () => bridge.send('SUBSCRIBE_METRICS'),
   unsubscribeMetrics: () => bridge.send('UNSUBSCRIBE_METRICS'),
 };
