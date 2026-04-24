@@ -6,6 +6,7 @@ import { RightPanel } from './components/RightPanel';
 import { BottomPanel } from './components/BottomPanel';
 import { useApp } from './context';
 import { defaultTemplates } from './data/mockData';
+import { Toaster } from 'sonner';
 
 export default function App() {
   const { state, actions } = useApp();
@@ -74,6 +75,9 @@ export default function App() {
           onSelectGroup={actions.selectGroup}
           onSelectFlow={actions.selectFlow}
           onToggleGroup={actions.toggleGroupExpanded}
+          onCreateGroup={actions.createGroup}
+          onDeleteGroup={actions.deleteGroup}
+          onCreateFlow={actions.createFlow}
         />
 
         {/* Center: Dynamic Workspace */}
@@ -102,6 +106,8 @@ export default function App() {
         onTabChange={actions.setBottomTab}
         systemStatus={systemStatus}
       />
+
+      <Toaster position="top-right" richColors closeButton />
     </div>
   );
 }

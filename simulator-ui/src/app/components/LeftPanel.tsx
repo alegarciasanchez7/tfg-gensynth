@@ -1,3 +1,4 @@
+import { useEffect, useState, type FormEvent } from 'react';
 import {
   ChevronRight,
   ChevronDown,
@@ -13,7 +14,39 @@ import {
   Play,
   Square,
   Pause,
+  Trash2,
 } from 'lucide-react';
+import { toast } from 'sonner';
+import { Button } from './ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from './ui/dialog';
+import { Input } from './ui/input';
+import { Textarea } from './ui/textarea';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from './ui/alert-dialog';
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuLabel,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from './ui/context-menu';
 import type { Group, Flow, Selection, ConnectionStatus, GroupStatus, Variable } from '../types';
 import type { ConnectorHealthSummary } from '../types';
 import type { ConnectorPluginDescriptor } from '../core/types';
@@ -29,6 +62,19 @@ interface LeftPanelProps {
   onSelectGroup: (groupId: string) => void;
   onSelectFlow: (groupId: string, flowId: string) => void;
   onToggleGroup: (groupId: string) => void;
+  onCreateGroup: (name: string, description?: string) => Promise<Group>;
+  onDeleteGroup: (groupId: string) => Promise<void>;
+  onCreateFlow: (
+    groupId: string,
+    name: string,
+    technology: string,
+    host: string,
+    port: number,
+    topic?: string,
+    interval?: number,
+    burst?: number,
+    template?: string,
+  ) => Promise<Flow>;
 }
 
 const connColor: Record<ConnectionStatus, string> = {
@@ -156,7 +202,18 @@ function FlowItem({ flow, selected, groupId, onSelect, formatTemplate }: {
   );
 }
 
-function GroupItem({ group, selection, variables, formatTemplate, onSelectGroup, onSelectFlow, onToggleGroup }: {
+function GroupItem({
+  group,
+  selection,
+  variables,
+  formatTemplate,
+  onSelectGroup,
+  onSelectFlow,
+  onToggleGroup,
+  onDeleteGroup,
+  onCreateFlow,
+  latestConnectors,
+}: {
   group: Group;
   selection: Selection;
   variables: Variable[];
@@ -164,55 +221,166 @@ function GroupItem({ group, selection, variables, formatTemplate, onSelectGroup,
   onSelectGroup: (id: string) => void;
   onSelectFlow: (gId: string, fId: string) => void;
   onToggleGroup: (id: string) => void;
+  onDeleteGroup: (groupId: string) => Promise<void>;
+  onCreateFlow: (
+    groupId: string,
+    name: string,
+    technology: string,
+    host: string,
+    port: number,
+    topic?: string,
+    interval?: number,
+    burst?: number,
+    template?: string,
+  ) => Promise<Flow>;
+  latestConnectors: ConnectorPluginDescriptor[];
 }) {
   const gCfg = groupStatusCfg[group.status];
   const selectedGroup = selection.type === 'group' && selection.groupId === group.id;
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [isCreateFlowOpen, setIsCreateFlowOpen] = useState(false);
+  const [flowName, setFlowName] = useState('');
+  const [flowTechnology, setFlowTechnology] = useState(latestConnectors[0]?.pluginId ?? '');
+  const [flowHost, setFlowHost] = useState('localhost');
+  const [flowPort, setFlowPort] = useState('8080');
+  const [flowTopic, setFlowTopic] = useState('');
+  const [flowInterval, setFlowInterval] = useState('1000');
+  const [flowBurst, setFlowBurst] = useState('1');
+  const [flowTemplate, setFlowTemplate] = useState('{}');
+
+  useEffect(() => {
+    if (!flowTechnology && latestConnectors[0]) {
+      setFlowTechnology(latestConnectors[0].pluginId);
+    }
+  }, [flowTechnology, latestConnectors]);
+
+  const resetCreateFlowForm = () => {
+    setFlowName('');
+    setFlowTechnology(latestConnectors[0]?.pluginId ?? '');
+    setFlowHost('localhost');
+    setFlowPort('8080');
+    setFlowTopic('');
+    setFlowInterval('1000');
+    setFlowBurst('1');
+    setFlowTemplate('{}');
+  };
+
+  const handleDeleteConfirm = async () => {
+    try {
+      await onDeleteGroup(group.id);
+      toast.success(`Group "${group.name}" deleted`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to delete group';
+      toast.error(message);
+    } finally {
+      setIsDeleteConfirmOpen(false);
+    }
+  };
+
+  const handleCreateFlow = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const port = Number(flowPort);
+    const interval = flowInterval.trim() ? Number(flowInterval) : undefined;
+    const burst = flowBurst.trim() ? Number(flowBurst) : undefined;
+
+    try {
+      const createdFlow = await onCreateFlow(
+        group.id,
+        flowName.trim(),
+        flowTechnology.trim(),
+        flowHost.trim(),
+        port,
+        flowTopic.trim() || undefined,
+        Number.isNaN(interval) ? undefined : interval,
+        Number.isNaN(burst) ? undefined : burst,
+        flowTemplate.trim() || '{}',
+      );
+
+      toast.success(`Flow "${createdFlow.name}" created`);
+      onSelectFlow(group.id, createdFlow.id);
+      setIsCreateFlowOpen(false);
+      resetCreateFlowForm();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to create flow';
+      toast.error(message);
+    }
+  };
 
   return (
     <div className="mb-px">
-      {/* Group Header */}
-      <div
-        className={`flex items-center gap-1.5 px-2 py-2 cursor-pointer transition-all ${
-          selectedGroup
-            ? 'bg-[var(--c-bg7)] border-l-2 border-l-cyan-500'
-            : 'hover:bg-[var(--c-bg5)] border-l-2 border-l-transparent'
-        }`}
-      >
-        <button
-          onClick={() => onToggleGroup(group.id)}
-          className="text-[var(--c-tx4)] hover:text-[var(--c-tx2)] transition-colors p-0.5"
-        >
-          {group.expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-        </button>
-
-        <button
-          onClick={() => onSelectGroup(group.id)}
-          className="flex-1 flex flex-col gap-0.5 text-left"
-        >
-          <div className="flex items-center gap-1.5">
-            <span className="relative flex h-1.5 w-1.5 shrink-0">
-              <span className={`${gCfg.bg} rounded-full w-1.5 h-1.5 ${group.status === 'running' ? 'animate-pulse' : ''}`} />
-            </span>
-            <span
-              className={`text-xs truncate ${selectedGroup ? 'text-[var(--c-tx1)]' : 'text-[var(--c-tx2)]'}`}
-              style={{ fontFamily: 'JetBrains Mono, monospace' }}
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <div
+            className={`flex items-center gap-1.5 px-2 py-2 cursor-pointer transition-all ${
+              selectedGroup
+                ? 'bg-[var(--c-bg7)] border-l-2 border-l-cyan-500'
+                : 'hover:bg-[var(--c-bg5)] border-l-2 border-l-transparent'
+            }`}
+          >
+            <button
+              onClick={() => onToggleGroup(group.id)}
+              className="text-[var(--c-tx4)] hover:text-[var(--c-tx2)] transition-colors p-0.5"
+              aria-label={group.expanded ? 'Collapse group' : 'Expand group'}
             >
-              {group.name}
-            </span>
+              {group.expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+            </button>
+
+            <button
+              onClick={() => onSelectGroup(group.id)}
+              className="flex-1 flex flex-col gap-0.5 text-left"
+            >
+              <div className="flex items-center gap-1.5">
+                <span className="relative flex h-1.5 w-1.5 shrink-0">
+                  <span className={`${gCfg.bg} rounded-full w-1.5 h-1.5 ${group.status === 'running' ? 'animate-pulse' : ''}`} />
+                </span>
+                <span
+                  className={`text-xs truncate ${selectedGroup ? 'text-[var(--c-tx1)]' : 'text-[var(--c-tx2)]'}`}
+                  style={{ fontFamily: 'JetBrains Mono, monospace' }}
+                >
+                  {group.name}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 pl-3">
+                <span className={`text-[10px] ${gCfg.color}`} style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+                  {group.throughput}
+                </span>
+                <span className="text-[10px] text-[var(--c-tx4)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+                  {group.flows.length} flows
+                </span>
+                {group.flows.some(f => f.hasError) && (
+                  <AlertCircle size={9} className="text-red-500" />
+                )}
+              </div>
+            </button>
           </div>
-          <div className="flex items-center gap-2 pl-3">
-            <span className={`text-[10px] ${gCfg.color}`} style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-              {group.throughput}
-            </span>
-            <span className="text-[10px] text-[var(--c-tx4)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-              {group.flows.length} flows
-            </span>
-            {group.flows.some(f => f.hasError) && (
-              <AlertCircle size={9} className="text-red-500" />
-            )}
-          </div>
-        </button>
-      </div>
+        </ContextMenuTrigger>
+        <ContextMenuContent className="w-48">
+          <ContextMenuLabel>Group actions</ContextMenuLabel>
+          <ContextMenuSeparator />
+          <ContextMenuItem onSelect={() => setIsDeleteConfirmOpen(true)} className="text-red-500 focus:text-red-500">
+            <Trash2 size={14} />
+            Delete group
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
+
+      <AlertDialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete group</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete "{group.name}" and all of its flows. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteConfirm} className="bg-red-600 text-white hover:bg-red-700">
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Flows */}
       {group.expanded && (
@@ -227,9 +395,159 @@ function GroupItem({ group, selection, variables, formatTemplate, onSelectGroup,
               formatTemplate={formatTemplate}
             />
           ))}
-          <button className="w-full text-left px-3 py-1.5 flex items-center gap-1.5 text-[10px] text-[var(--c-tx4)] hover:text-[var(--c-tx2)] transition-colors">
-            <Plus size={9} /> add flow
-          </button>
+          <Dialog open={isCreateFlowOpen} onOpenChange={setIsCreateFlowOpen}>
+            <DialogTrigger asChild>
+              <button className="w-full text-left px-3 py-1.5 flex items-center gap-1.5 text-[10px] text-[var(--c-tx4)] hover:text-[var(--c-tx2)] transition-colors">
+                <Plus size={9} /> add flow
+              </button>
+            </DialogTrigger>
+            <DialogContent className="max-w-lg">
+              <form onSubmit={handleCreateFlow} className="space-y-4">
+                <DialogHeader>
+                  <DialogTitle>Add flow</DialogTitle>
+                  <DialogDescription>
+                    Create a new flow inside {group.name}.
+                  </DialogDescription>
+                </DialogHeader>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2 sm:col-span-2">
+                    <label className="text-xs text-[var(--c-tx3)]" htmlFor={`flow-name-${group.id}`}>
+                      Name
+                    </label>
+                    <Input
+                      id={`flow-name-${group.id}`}
+                      value={flowName}
+                      onChange={(event) => setFlowName(event.target.value)}
+                      placeholder="Orders → Kafka"
+                      autoFocus
+                      required
+                    />
+                  </div>
+
+                  <div className="space-y-2 sm:col-span-2">
+                    <label className="text-xs text-[var(--c-tx3)]" htmlFor={`flow-technology-${group.id}`}>
+                      Technology
+                    </label>
+                    {latestConnectors.length > 0 ? (
+                      <select
+                        id={`flow-technology-${group.id}`}
+                        value={flowTechnology}
+                        onChange={(event) => setFlowTechnology(event.target.value)}
+                        className="flex h-9 w-full rounded-md border border-[var(--c-br1)] bg-[var(--c-bg1)] px-3 py-2 text-sm text-[var(--c-tx1)] shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-500"
+                        required
+                      >
+                        {latestConnectors.map((connector) => (
+                          <option key={connector.pluginId} value={connector.pluginId}>
+                            {connector.displayName} ({connector.pluginId}@{connector.pluginVersion})
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <Input
+                        id={`flow-technology-${group.id}`}
+                        value={flowTechnology}
+                        onChange={(event) => setFlowTechnology(event.target.value)}
+                        placeholder="HTTP"
+                        required
+                      />
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs text-[var(--c-tx3)]" htmlFor={`flow-host-${group.id}`}>
+                      Host
+                    </label>
+                    <Input
+                      id={`flow-host-${group.id}`}
+                      value={flowHost}
+                      onChange={(event) => setFlowHost(event.target.value)}
+                      placeholder="localhost"
+                      required
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs text-[var(--c-tx3)]" htmlFor={`flow-port-${group.id}`}>
+                      Port
+                    </label>
+                    <Input
+                      id={`flow-port-${group.id}`}
+                      type="number"
+                      min={1}
+                      max={65535}
+                      value={flowPort}
+                      onChange={(event) => setFlowPort(event.target.value)}
+                      placeholder="8080"
+                      required
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs text-[var(--c-tx3)]" htmlFor={`flow-topic-${group.id}`}>
+                      Topic
+                    </label>
+                    <Input
+                      id={`flow-topic-${group.id}`}
+                      value={flowTopic}
+                      onChange={(event) => setFlowTopic(event.target.value)}
+                      placeholder="orders.events"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs text-[var(--c-tx3)]" htmlFor={`flow-interval-${group.id}`}>
+                      Interval (ms)
+                    </label>
+                    <Input
+                      id={`flow-interval-${group.id}`}
+                      type="number"
+                      min={1}
+                      value={flowInterval}
+                      onChange={(event) => setFlowInterval(event.target.value)}
+                      placeholder="1000"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs text-[var(--c-tx3)]" htmlFor={`flow-burst-${group.id}`}>
+                      Burst
+                    </label>
+                    <Input
+                      id={`flow-burst-${group.id}`}
+                      type="number"
+                      min={1}
+                      value={flowBurst}
+                      onChange={(event) => setFlowBurst(event.target.value)}
+                      placeholder="1"
+                    />
+                  </div>
+
+                  <div className="space-y-2 sm:col-span-2">
+                    <label className="text-xs text-[var(--c-tx3)]" htmlFor={`flow-template-${group.id}`}>
+                      Template
+                    </label>
+                    <Textarea
+                      id={`flow-template-${group.id}`}
+                      value={flowTemplate}
+                      onChange={(event) => setFlowTemplate(event.target.value)}
+                      rows={5}
+                      placeholder="{}"
+                    />
+                  </div>
+                </div>
+
+                <DialogFooter>
+                  <Button type="button" variant="outline" onClick={() => setIsCreateFlowOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={!flowName.trim() || !flowTechnology.trim() || !flowHost.trim()}>
+                    Create flow
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
         </div>
       )}
     </div>
@@ -247,7 +565,33 @@ export function LeftPanel({
   onSelectGroup,
   onSelectFlow,
   onToggleGroup,
+  onCreateGroup,
+  onDeleteGroup,
+  onCreateFlow,
 }: LeftPanelProps) {
+  const [isCreateGroupOpen, setIsCreateGroupOpen] = useState(false);
+  const [groupName, setGroupName] = useState('');
+  const [groupDescription, setGroupDescription] = useState('');
+
+  const resetCreateGroupForm = () => {
+    setGroupName('');
+    setGroupDescription('');
+  };
+
+  const handleCreateGroup = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    try {
+      await onCreateGroup(groupName.trim(), groupDescription.trim() || undefined);
+      toast.success(`Group "${groupName.trim()}" created`);
+      setIsCreateGroupOpen(false);
+      resetCreateGroupForm();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to create group';
+      toast.error(message);
+    }
+  };
+
   const healthColor = (status: ConnectorHealthSummary['status']) => {
     switch (status) {
       case 'healthy':
@@ -269,9 +613,62 @@ export function LeftPanel({
         <span className="text-[10px] text-[var(--c-tx4)] tracking-widest uppercase" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
           Groups &amp; Flows
         </span>
-        <button className="text-[var(--c-tx4)] hover:text-cyan-500 transition-colors p-0.5">
-          <Plus size={12} />
-        </button>
+        <Dialog open={isCreateGroupOpen} onOpenChange={setIsCreateGroupOpen}>
+          <DialogTrigger asChild>
+            <button
+              className="text-[var(--c-tx4)] hover:text-cyan-500 transition-colors p-0.5"
+              aria-label="Create group"
+            >
+              <Plus size={12} />
+            </button>
+          </DialogTrigger>
+          <DialogContent>
+            <form onSubmit={handleCreateGroup} className="space-y-4">
+              <DialogHeader>
+                <DialogTitle>Create group</DialogTitle>
+                <DialogDescription>
+                  Define a new group with a name and an optional description.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-2">
+                <label className="text-xs text-[var(--c-tx3)]" htmlFor="group-name">
+                  Name
+                </label>
+                <Input
+                  id="group-name"
+                  value={groupName}
+                  onChange={(event) => setGroupName(event.target.value)}
+                  placeholder="Sensor Ingestion"
+                  autoFocus
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs text-[var(--c-tx3)]" htmlFor="group-description">
+                  Description
+                </label>
+                <Textarea
+                  id="group-description"
+                  value={groupDescription}
+                  onChange={(event) => setGroupDescription(event.target.value)}
+                  placeholder="Optional description for this group"
+                  rows={4}
+                />
+              </div>
+
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setIsCreateGroupOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={!groupName.trim()}>
+                  Create group
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
       </div>
 
       {/* Scope legend */}
@@ -300,6 +697,9 @@ export function LeftPanel({
             onSelectGroup={onSelectGroup}
             onSelectFlow={onSelectFlow}
             onToggleGroup={onToggleGroup}
+            onDeleteGroup={onDeleteGroup}
+            onCreateFlow={onCreateFlow}
+            latestConnectors={latestConnectors}
           />
         ))}
       </div>
