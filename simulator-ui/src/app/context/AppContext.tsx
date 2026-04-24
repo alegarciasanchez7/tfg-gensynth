@@ -887,15 +887,29 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
     connectionMode: state.connectionMode,
   };
 
-  const createGroupAction = useCallback((name: string, description?: string) =>
-    CRUDActions.createGroup(crudContext, name, description),
-    [crudContext, state.connectionMode],
-  );
+  const createGroupAction = useCallback(async (name: string, description?: string) => {
+    const createdGroup = await CRUDActions.createGroup(crudContext, name, description);
 
-  const deleteGroupAction = useCallback((groupId: string) =>
-    CRUDActions.deleteGroup(crudContext, groupId),
-    [crudContext, state.connectionMode],
-  );
+    if (state.connectionMode === 'mock') {
+      dispatch({
+        type: 'SET_GROUPS',
+        payload: [...state.groups, createdGroup],
+      });
+    }
+
+    return createdGroup;
+  }, [crudContext, state.connectionMode, state.groups]);
+
+  const deleteGroupAction = useCallback(async (groupId: string) => {
+    await CRUDActions.deleteGroup(crudContext, groupId);
+
+    if (state.connectionMode === 'mock') {
+      dispatch({
+        type: 'SET_GROUPS',
+        payload: state.groups.filter((group) => group.id !== groupId),
+      });
+    }
+  }, [crudContext, state.connectionMode, state.groups]);
 
   const updateGroupConfigAction = useCallback(
     (groupId: string, config: Partial<Omit<Group, 'id' | 'flows'>>) =>
@@ -903,21 +917,35 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
     [crudContext, state.connectionMode],
   );
 
-  const createFlowAction = useCallback(
-    (
-      groupId: string,
-      name: string,
-      technology: string,
-      host: string,
-      port: number,
-      topic?: string,
-      interval?: number,
-      burst?: number,
-      template?: string,
-    ) =>
-      CRUDActions.createFlow(crudContext, groupId, name, technology, host, port, topic, interval, burst, template),
-    [crudContext, state.connectionMode],
-  );
+  const createFlowAction = useCallback(async (
+    groupId: string,
+    name: string,
+    technology: string,
+    host: string,
+    port: number,
+    topic?: string,
+    interval?: number,
+    burst?: number,
+    template?: string,
+  ) => {
+    const createdFlow = await CRUDActions.createFlow(crudContext, groupId, name, technology, host, port, topic, interval, burst, template);
+
+    if (state.connectionMode === 'mock') {
+      dispatch({
+        type: 'SET_GROUPS',
+        payload: state.groups.map((group) =>
+          group.id === groupId
+            ? {
+                ...group,
+                flows: [...group.flows, createdFlow],
+              }
+            : group,
+        ),
+      });
+    }
+
+    return createdFlow;
+  }, [crudContext, state.connectionMode, state.groups]);
 
   const deleteFlowAction = useCallback((groupId: string, flowId: string) =>
     CRUDActions.deleteFlow(crudContext, groupId, flowId),

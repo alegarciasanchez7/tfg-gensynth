@@ -1,5 +1,6 @@
 # Persisted state directory (runtime generated)
 /state/
+/core/state/
 
 # Maven
 /target/
