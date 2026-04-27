@@ -539,7 +539,7 @@ interface AppContextValue {
     updateFlowConfig: (
       groupId: string,
       flowId: string,
-      config: Partial<Omit<Flow, 'id' | 'connectionStatus' | 'throughput' | 'hasError' | 'errorMessage'>>,
+      config: Partial<Omit<Flow, 'id' | 'connectionStatus' | 'throughput' | 'hasError' | 'errorMessage'>> & { template?: string },
     ) => Promise<void>;
     
     // Variables: CRUD
@@ -947,20 +947,52 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
     return createdFlow;
   }, [crudContext, state.connectionMode, state.groups]);
 
-  const deleteFlowAction = useCallback((groupId: string, flowId: string) =>
-    CRUDActions.deleteFlow(crudContext, groupId, flowId),
-    [crudContext, state.connectionMode],
-  );
+  const deleteFlowAction = useCallback(async (groupId: string, flowId: string) => {
+    await CRUDActions.deleteFlow(crudContext, groupId, flowId);
 
-  const updateFlowConfigAction = useCallback(
-    (
-      groupId: string,
-      flowId: string,
-      config: Partial<Omit<Flow, 'id' | 'connectionStatus' | 'throughput' | 'hasError' | 'errorMessage'>>,
-    ) =>
-      CRUDActions.updateFlowConfig(crudContext, groupId, flowId, config),
-    [crudContext, state.connectionMode],
-  );
+    if (state.connectionMode === 'mock') {
+      dispatch({
+        type: 'SET_GROUPS',
+        payload: state.groups.map((group) =>
+          group.id === groupId
+            ? {
+                ...group,
+                flows: group.flows.filter((flow) => flow.id !== flowId),
+              }
+            : group,
+        ),
+      });
+    }
+  }, [crudContext, state.connectionMode, state.groups]);
+
+  const updateFlowConfigAction = useCallback(async (
+    groupId: string,
+    flowId: string,
+    config: Partial<Omit<Flow, 'id' | 'connectionStatus' | 'throughput' | 'hasError' | 'errorMessage'>> & { template?: string },
+  ) => {
+    await CRUDActions.updateFlowConfig(crudContext, groupId, flowId, config);
+
+    if (state.connectionMode === 'mock') {
+      dispatch({
+        type: 'SET_GROUPS',
+        payload: state.groups.map((group) =>
+          group.id === groupId
+            ? {
+                ...group,
+                flows: group.flows.map((flow) =>
+                  flow.id === flowId
+                    ? {
+                        ...flow,
+                        ...config,
+                      }
+                    : flow,
+                ),
+              }
+            : group,
+        ),
+      });
+    }
+  }, [crudContext, state.connectionMode, state.groups]);
 
   const createVariableAction = useCallback(
     (

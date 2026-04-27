@@ -1,9 +1,10 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Radio, Globe, Wifi, Zap, Cpu, Layers, AlertTriangle,
-  CheckCircle, WifiOff, Code2, Settings2, Hash,
+  CheckCircle, Code2, Settings2, Hash,
   AlignLeft, Copy, RotateCcw,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import type { Flow, Group, ConnectionStatus } from '../../types';
 import { defaultTemplates } from '../../data/mockData';
 import { useApp } from '../../context';
@@ -28,18 +29,6 @@ function FieldRow({ label, children }: { label: string; children: React.ReactNod
         style={{ fontFamily: 'JetBrains Mono, monospace' }}>{label}</label>
       {children}
     </div>
-  );
-}
-
-function TInput({ value, onChange }: { value: string; onChange?: (v: string) => void }) {
-  const [v, setV] = useState(value);
-  return (
-    <input
-      value={v}
-      onChange={e => { setV(e.target.value); onChange?.(e.target.value); }}
-      className="bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded px-2.5 py-1.5 text-[11px] text-[var(--c-tx1)] outline-none focus:border-cyan-500/50 transition-all w-full"
-      style={{ fontFamily: 'JetBrains Mono, monospace' }}
-    />
   );
 }
 
@@ -277,14 +266,12 @@ function ConnectorSchemaField({
 function ConnectorConfigEditor({
   flowId,
   connector,
-  connectorCatalogSize,
   config,
   fallbackFlow,
   onChange,
 }: {
   flowId: string;
   connector: ConnectorPluginDescriptor | null;
-  connectorCatalogSize: number;
   config: Record<string, unknown>;
   fallbackFlow: Flow;
   onChange: (nextConfig: Record<string, unknown>) => void;
@@ -400,7 +387,23 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
     (entry) => entry.pluginId === (connectorSelection?.pluginId ?? latestConnectorForFlow?.pluginId) && entry.pluginVersion === (connectorSelection?.pluginVersion ?? latestConnectorForFlow?.pluginVersion),
   ) ?? null;
 
-  const currentTemplate = template || defaultTemplates[formatMode];
+  const currentTemplate = template ?? defaultTemplates[formatMode];
+  const [draftHost, setDraftHost] = useState(flow.host);
+  const [draftPort, setDraftPort] = useState(flow.port);
+  const [draftTopic, setDraftTopic] = useState(flow.topic);
+  const [draftInterval, setDraftInterval] = useState(flow.interval);
+  const [draftBurst, setDraftBurst] = useState(flow.burst);
+  const [isSavingTemplate, setIsSavingTemplate] = useState(false);
+  const [isUpdatingConfig, setIsUpdatingConfig] = useState(false);
+  const [isDeletingFlow, setIsDeletingFlow] = useState(false);
+
+  useEffect(() => {
+    setDraftHost(flow.host);
+    setDraftPort(flow.port);
+    setDraftTopic(flow.topic);
+    setDraftInterval(flow.interval);
+    setDraftBurst(flow.burst);
+  }, [flow.host, flow.port, flow.topic, flow.interval, flow.burst, flow.id]);
 
   const handleFormatModeChange = (mode: 'json' | 'xml' | 'csv' | 'plain') => {
     setFormatMode(mode);
@@ -434,6 +437,80 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
 
   const handleConnectorConfigChange = (nextConfig: Record<string, unknown>) => {
     actions.setFlowConnectorConfig(flow.id, nextConfig);
+  };
+
+  const handleSaveTemplate = async () => {
+    try {
+      setIsSavingTemplate(true);
+      await actions.updateFlowConfig(group.id, flow.id, {
+        template: currentTemplate,
+      });
+      toast.success('Template saved');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to save template';
+      toast.error(message);
+    } finally {
+      setIsSavingTemplate(false);
+    }
+  };
+
+  const handleUpdateConfig = async () => {
+    if (!draftHost.trim()) {
+      toast.error('Host is required');
+      return;
+    }
+
+    if (!Number.isInteger(draftPort) || draftPort < 1 || draftPort > 65535) {
+      toast.error('Port must be between 1 and 65535');
+      return;
+    }
+
+    if (!Number.isInteger(draftInterval) || draftInterval < 1) {
+      toast.error('Interval must be greater than 0');
+      return;
+    }
+
+    if (!Number.isInteger(draftBurst) || draftBurst < 1) {
+      toast.error('Burst must be greater than 0');
+      return;
+    }
+
+    try {
+      setIsUpdatingConfig(true);
+      await actions.updateFlowConfig(group.id, flow.id, {
+        technology: connectorSelection?.pluginId ?? latestConnectorForFlow?.pluginId ?? flow.technology,
+        host: draftHost.trim(),
+        port: draftPort,
+        topic: draftTopic.trim(),
+        interval: draftInterval,
+        burst: draftBurst,
+      });
+      toast.success('Flow configuration updated');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to update flow configuration';
+      toast.error(message);
+    } finally {
+      setIsUpdatingConfig(false);
+    }
+  };
+
+  const handleDeleteFlow = async () => {
+    const confirmed = window.confirm(`Delete flow "${flow.name}"? This action cannot be undone.`);
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setIsDeletingFlow(true);
+      await actions.deleteFlow(group.id, flow.id);
+      actions.selectGroup(group.id);
+      toast.success(`Flow "${flow.name}" deleted`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to delete flow';
+      toast.error(message);
+    } finally {
+      setIsDeletingFlow(false);
+    }
   };
 
   // Exposed globally for variable insertion
@@ -474,8 +551,34 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
             <AlertTriangle size={10} /> {flow.errorMessage}
           </div>
         )}
+        <div className="ml-auto flex items-center gap-1.5">
+          <button
+            onClick={handleSaveTemplate}
+            disabled={isSavingTemplate}
+            className="px-2.5 py-1 rounded border border-cyan-500/40 text-cyan-500 hover:bg-cyan-500/10 disabled:opacity-50 text-[10px] tracking-wider uppercase"
+            style={{ fontFamily: 'JetBrains Mono, monospace' }}
+          >
+            {isSavingTemplate ? 'Saving...' : 'Save Template'}
+          </button>
+          <button
+            onClick={handleUpdateConfig}
+            disabled={isUpdatingConfig}
+            className="px-2.5 py-1 rounded border border-[var(--c-br1)] text-[var(--c-tx3)] hover:text-[var(--c-tx1)] hover:bg-[var(--c-bg4)] disabled:opacity-50 text-[10px] tracking-wider uppercase"
+            style={{ fontFamily: 'JetBrains Mono, monospace' }}
+          >
+            {isUpdatingConfig ? 'Updating...' : 'Update Config'}
+          </button>
+          <button
+            onClick={handleDeleteFlow}
+            disabled={isDeletingFlow}
+            className="px-2.5 py-1 rounded border border-red-500/40 text-red-500 hover:bg-red-500/10 disabled:opacity-50 text-[10px] tracking-wider uppercase"
+            style={{ fontFamily: 'JetBrains Mono, monospace' }}
+          >
+            {isDeletingFlow ? 'Deleting...' : 'Delete Flow'}
+          </button>
+        </div>
         {!flow.hasError && flow.connectionStatus === 'connected' && (
-          <CheckCircle size={12} className="text-emerald-500 ml-auto" />
+          <CheckCircle size={12} className="text-emerald-500" />
         )}
       </div>
 
@@ -560,7 +663,6 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
                 <ConnectorConfigEditor
                   flowId={flow.id}
                   connector={latestConnectorForFlow}
-                  connectorCatalogSize={connectorCatalog.length}
                   config={connectorConfig}
                   fallbackFlow={flow}
                   onChange={handleConnectorConfigChange}
@@ -569,22 +671,79 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
                 <ConnectorConfigEditor
                   flowId={flow.id}
                   connector={null}
-                  connectorCatalogSize={0}
                   config={connectorConfig}
                   fallbackFlow={flow}
                   onChange={handleConnectorConfigChange}
                 />
               )}
+              <div
+                className="rounded border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-[9px] text-amber-400"
+                style={{ fontFamily: 'JetBrains Mono, monospace' }}
+              >
+                Advanced connector schema fields are local draft only for now. Update Config currently persists technology, host, port, topic, interval, burst and template.
+              </div>
             </div>
 
             {/* Generation */}
             <div className="h-px bg-[var(--c-br2)]" />
             <div className="flex flex-col gap-2">
               <span className="text-[9px] text-[var(--c-tx5)] tracking-widest uppercase"
+                style={{ fontFamily: 'JetBrains Mono, monospace' }}>CONNECTION</span>
+              <div className="grid grid-cols-2 gap-2">
+                <FieldRow label="Host">
+                  <input
+                    value={draftHost}
+                    onChange={(event) => setDraftHost(event.target.value)}
+                    className="bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded px-2.5 py-1.5 text-[11px] text-[var(--c-tx1)] outline-none focus:border-cyan-500/50 transition-all w-full"
+                    style={{ fontFamily: 'JetBrains Mono, monospace' }}
+                  />
+                </FieldRow>
+                <FieldRow label="Port">
+                  <input
+                    type="number"
+                    min={1}
+                    max={65535}
+                    value={draftPort}
+                    onChange={(event) => setDraftPort(Number(event.target.value))}
+                    className="bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded px-2.5 py-1.5 text-[11px] text-[var(--c-tx1)] outline-none focus:border-cyan-500/50 transition-all w-full"
+                    style={{ fontFamily: 'JetBrains Mono, monospace' }}
+                  />
+                </FieldRow>
+              </div>
+              <FieldRow label="Topic / Endpoint">
+                <input
+                  value={draftTopic}
+                  onChange={(event) => setDraftTopic(event.target.value)}
+                  className="bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded px-2.5 py-1.5 text-[11px] text-[var(--c-tx1)] outline-none focus:border-cyan-500/50 transition-all w-full"
+                  style={{ fontFamily: 'JetBrains Mono, monospace' }}
+                />
+              </FieldRow>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <span className="text-[9px] text-[var(--c-tx5)] tracking-widest uppercase"
                 style={{ fontFamily: 'JetBrains Mono, monospace' }}>GENERATION</span>
               <div className="grid grid-cols-2 gap-2">
-                <FieldRow label="Interval"><TNumber value={flow.interval} unit="ms" /></FieldRow>
-                <FieldRow label="Burst"><TNumber value={flow.burst} unit="msg" /></FieldRow>
+                <FieldRow label="Interval">
+                  <input
+                    type="number"
+                    min={1}
+                    value={draftInterval}
+                    onChange={(event) => setDraftInterval(Number(event.target.value))}
+                    className="bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded px-2.5 py-1.5 text-[11px] text-[var(--c-tx1)] outline-none focus:border-cyan-500/50 transition-all w-full"
+                    style={{ fontFamily: 'JetBrains Mono, monospace' }}
+                  />
+                </FieldRow>
+                <FieldRow label="Burst">
+                  <input
+                    type="number"
+                    min={1}
+                    value={draftBurst}
+                    onChange={(event) => setDraftBurst(Number(event.target.value))}
+                    className="bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded px-2.5 py-1.5 text-[11px] text-[var(--c-tx1)] outline-none focus:border-cyan-500/50 transition-all w-full"
+                    style={{ fontFamily: 'JetBrains Mono, monospace' }}
+                  />
+                </FieldRow>
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <FieldRow label="Pattern"><TSelect options={['random', 'sequential', 'gaussian', 'spike']} value="random" /></FieldRow>

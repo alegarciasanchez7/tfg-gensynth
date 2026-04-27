@@ -260,7 +260,7 @@ export async function updateFlowConfig(
   ctx: CRUDActionContext,
   groupId: string,
   flowId: string,
-  config: Partial<Omit<Flow, 'id' | 'connectionStatus' | 'throughput' | 'hasError' | 'errorMessage'>>,
+  config: Partial<Omit<Flow, 'id' | 'connectionStatus' | 'throughput' | 'hasError' | 'errorMessage'>> & { template?: string },
 ): Promise<void> {
   if (!groupId?.trim()) throwValidationError('groupId', 'is required');
   if (!flowId?.trim()) throwValidationError('flowId', 'is required');
