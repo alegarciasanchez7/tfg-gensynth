@@ -2,7 +2,7 @@ import type { Selection, Group, Variable } from '../types';
 import { EmptyWorkspace } from './workspace/EmptyWorkspace';
 import { GroupWorkspace } from './workspace/GroupWorkspace';
 import { FlowWorkspace } from './workspace/FlowWorkspace';
-import { VariableEditorWorkspace } from './workspace/VariableEditorWorkspace';
+import { VariableEditorWorkspace } from './workspace/variables/VariableEditorWorkspace';
 
 interface WorkspaceProps {
   selection: Selection;

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Power, Square, FolderOpen, Save, Settings, Zap, Activity, Moon, Sun, X } from 'lucide-react';
-import type { SystemStatus } from '../types';
+import type { SystemStatus } from '../../../types';
 
 interface HeaderProps {
   systemStatus: SystemStatus;

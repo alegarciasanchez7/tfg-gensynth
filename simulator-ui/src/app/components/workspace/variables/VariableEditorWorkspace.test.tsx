@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Variable } from '../../types';
+import type { Variable } from '../../../types';
 
 const { mockUseApp, mockToast } = vi.hoisted(() => ({
   mockUseApp: vi.fn(),
@@ -11,7 +11,7 @@ const { mockUseApp, mockToast } = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('../../context', () => ({
+vi.mock('../../../context', () => ({
   useApp: () => mockUseApp(),
 }));
 

@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import { Database, Hash, List, PencilLine, ShieldAlert, Type } from 'lucide-react';
 import { toast } from 'sonner';
-import { useApp } from '../../context';
-import type { Variable } from '../../types';
+import { useApp } from '../../../context';
+import type { Variable } from '../../../types';
 
 export type VariableDraft = {
   name: string;

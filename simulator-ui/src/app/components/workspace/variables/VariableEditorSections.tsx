@@ -1,10 +1,10 @@
 import type { Dispatch, SetStateAction } from 'react';
 import type { LucideIcon } from 'lucide-react';
-import { Button } from '../../components/ui/button';
-import { Input } from '../../components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
-import { Textarea } from '../../components/ui/textarea';
-import type { Variable } from '../../types';
+import { Button } from '../../../components/ui/button';
+import { Input } from '../../../components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../components/ui/select';
+import { Textarea } from '../../../components/ui/textarea';
+import type { Variable } from '../../../types';
 import type { VariableDraft } from './useVariableEditor';
 
 export type VariableEditorTheme = {
@@ -63,7 +63,7 @@ export function VariableEditorHeader({ variable, theme, scopeBadgeClass }: Varia
 
 interface VariableEditorIdentityCardProps {
   draft: VariableDraft;
-  setDraft: React.Dispatch<React.SetStateAction<VariableDraft>>;
+  setDraft: Dispatch<SetStateAction<VariableDraft>>;
   scopeOptions: VariableEditorScopeOption[];
 }
 
@@ -129,7 +129,7 @@ interface VariableEditorConfigCardProps {
   typeLabel: string;
   theme: VariableEditorTheme;
   draft: VariableDraft;
-  setDraft: React.Dispatch<React.SetStateAction<VariableDraft>>;
+  setDraft: Dispatch<SetStateAction<VariableDraft>>;
 }
 
 export function VariableEditorConfigCard({ typeLabel, theme, draft, setDraft }: VariableEditorConfigCardProps) {

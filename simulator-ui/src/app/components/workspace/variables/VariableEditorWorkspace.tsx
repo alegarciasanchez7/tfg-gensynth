@@ -1,5 +1,5 @@
 import { ChevronLeft } from 'lucide-react';
-import type { Variable } from '../../types';
+import type { Variable } from '../../../types';
 import { useVariableEditor } from './useVariableEditor';
 import {
   VariableEditorActions,

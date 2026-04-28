@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { Plus, ChevronUp } from 'lucide-react';
 import { toast } from 'sonner';
-import { useApp } from '../context';
-import type { Variable, VariableScope, VariableType, Selection } from '../types';
-import { CreateVariableDialog } from './panels/CreateVariableDialog';
-import { DeleteVariableDialog } from './panels/DeleteVariableDialog';
-import { VariableListItem } from './panels/VariableListItem';
+import { useApp } from '../../../../context';
+import type { Variable, VariableScope, VariableType, Selection } from '../../../../types';
+import { CreateVariableDialog } from '../../../panels/CreateVariableDialog';
+import { DeleteVariableDialog } from '../../../panels/DeleteVariableDialog';
+import { VariableListItem } from '../../../panels/VariableListItem';
 
 interface RightPanelProps {
   variables: Variable[];

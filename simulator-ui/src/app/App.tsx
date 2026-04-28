@@ -1,9 +1,9 @@
-import { Header } from './components/Header';
-import { ResourceBar } from './components/ResourceBar';
-import { LeftPanel } from './components/LeftPanel';
+import { Header } from './components/layout/header/Header';
+import { ResourceBar } from './components/layout/resource-bar/ResourceBar';
+import { LeftPanel } from './components/layout/panels/left/LeftPanel';
 import { Workspace } from './components/Workspace';
-import { RightPanel } from './components/RightPanel';
-import { BottomPanel } from './components/BottomPanel';
+import { RightPanel } from './components/layout/panels/right/RightPanel';
+import { BottomPanel } from './components/layout/panels/bottom/BottomPanel';
 import { useApp } from './context';
 import { defaultTemplates } from './data/mockData';
 import { Toaster } from 'sonner';

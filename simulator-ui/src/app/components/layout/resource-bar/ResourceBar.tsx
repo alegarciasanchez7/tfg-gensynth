@@ -1,5 +1,5 @@
 import { Cpu, MemoryStick, ArrowUpRight, ArrowDownLeft, Server, Clock4 } from 'lucide-react';
-import type { SystemStatus } from '../types';
+import type { SystemStatus } from '../../../types';
 
 interface Metric {
   icon: React.ReactNode;
