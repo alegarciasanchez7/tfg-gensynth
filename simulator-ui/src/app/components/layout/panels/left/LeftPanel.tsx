@@ -17,7 +17,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { Button } from './ui/button';
+import { Button } from '../../../ui/button';
 import {
   Dialog,
   DialogContent,
@@ -26,9 +26,9 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from './ui/dialog';
-import { Input } from './ui/input';
-import { Textarea } from './ui/textarea';
+} from '../../../ui/dialog';
+import { Input } from '../../../ui/input';
+import { Textarea } from '../../../ui/textarea';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -38,7 +38,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from './ui/alert-dialog';
+} from '../../../ui/alert-dialog';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -46,10 +46,10 @@ import {
   ContextMenuLabel,
   ContextMenuSeparator,
   ContextMenuTrigger,
-} from './ui/context-menu';
-import type { Group, Flow, Selection, ConnectionStatus, GroupStatus, Variable } from '../types';
-import type { ConnectorHealthSummary } from '../types';
-import type { ConnectorPluginDescriptor } from '../core/types';
+} from '../../../ui/context-menu';
+import type { Group, Flow, Selection, ConnectionStatus, GroupStatus, Variable } from '../../../types';
+import type { ConnectorHealthSummary } from '../../../types';
+import type { ConnectorPluginDescriptor } from '../../../core/types';
 
 interface LeftPanelProps {
   groups: Group[];

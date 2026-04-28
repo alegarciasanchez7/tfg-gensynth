@@ -3,10 +3,10 @@ import {
   Terminal, BarChart2, Eye, ChevronUp, ChevronDown,
   Circle, AlertTriangle, AlertCircle, Bug, Trash2, RefreshCw,
 } from 'lucide-react';
-import { mockPreviewSamples } from '../data/mockData';
-import { useApp } from '../context';
-import type { ConnectorHealthSummary } from '../types';
-import type { SystemStatus } from '../types';
+import { mockPreviewSamples } from '../../../../data/mockData';
+import { useApp } from '../../../../context';
+import type { ConnectorHealthSummary } from '../../../../types';
+import type { SystemStatus } from '../../../../types';
 
 const levelCfg = {
   info:  { color: 'text-sky-500',     dot: 'bg-sky-500',     label: 'INFO ' },
