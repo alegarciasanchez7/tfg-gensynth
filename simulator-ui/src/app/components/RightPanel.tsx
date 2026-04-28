@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import {
   Plus,
   Hash,
@@ -7,10 +7,34 @@ import {
   ToggleLeft,
   Clock,
   MapPin,
-  Pencil,
   CornerDownRight,
+  Trash2,
   ChevronUp,
 } from 'lucide-react';
+import { toast } from 'sonner';
+import { Button } from './ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from './ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from './ui/alert-dialog';
+import { Input } from './ui/input';
+import { Textarea } from './ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { useApp } from '../context';
 import type { Variable, VariableScope, VariableType, Selection } from '../types';
 
 interface RightPanelProps {
@@ -19,6 +43,14 @@ interface RightPanelProps {
   onSelectVariable: (id: string) => void;
   onInsertVariable: (name: string, scope: VariableScope) => void;
 }
+
+type VariableFormState = {
+  name: string;
+  type: VariableType;
+  scope: VariableScope;
+  description: string;
+  configText: string;
+};
 
 const scopeLabels: Record<VariableScope, string> = {
   local: 'LOCAL',
@@ -55,15 +87,48 @@ const typeConfig: Record<VariableType, { icon: React.ReactNode; color: string; l
 
 const varTypes: VariableType[] = ['numeric', 'list', 'string', 'temporal', 'point', 'boolean'];
 
-function VariableItem({ variable, isSelected, isFlowSelected, onEdit, onInsert }: {
+function defaultConfigTextForType(type: VariableType): string {
+  switch (type) {
+    case 'numeric':
+      return JSON.stringify({ min: 0, max: 100, step: 1 }, null, 2);
+    case 'list':
+      return JSON.stringify({ values: [] }, null, 2);
+    case 'boolean':
+      return JSON.stringify({ value: false }, null, 2);
+    case 'temporal':
+      return JSON.stringify({ pattern: 'SYSTEM_NOW' }, null, 2);
+    case 'point':
+      return JSON.stringify({ x: 0, y: 0, z: 0 }, null, 2);
+    case 'string':
+    default:
+      return JSON.stringify({ value: '' }, null, 2);
+  }
+}
+
+function parseConfig(configText: string): Record<string, unknown> {
+  if (!configText.trim()) {
+    return {};
+  }
+
+  const parsed = JSON.parse(configText);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('Config must be a JSON object');
+  }
+
+  return parsed as Record<string, unknown>;
+}
+
+function VariableItem({ variable, isSelected, isFlowSelected, onDelete, onSelect, onInsert }: {
   variable: Variable;
   isSelected: boolean;
   isFlowSelected: boolean;
-  onEdit: () => void;
+  onDelete: () => void;
+  onSelect: () => void;
   onInsert: () => void;
 }) {
   const tc = typeConfig[variable.type];
   const sc = scopeColors[variable.scope];
+  const description = variable.description ?? (typeof variable.config.description === 'string' ? variable.config.description : '');
 
   return (
     <div
@@ -74,7 +139,7 @@ function VariableItem({ variable, isSelected, isFlowSelected, onEdit, onInsert }
       }`}
     >
       <button
-        onClick={onEdit}
+        onClick={onSelect}
         className="flex-1 flex flex-col gap-0.5 px-2.5 py-1.5 text-left"
       >
         <div className="flex items-center gap-1.5">
@@ -92,9 +157,9 @@ function VariableItem({ variable, isSelected, isFlowSelected, onEdit, onInsert }
             {variable.name}
           </span>
         </div>
-        {variable.description && (
+        {description && (
           <span className="text-[10px] text-[var(--c-tx4)] truncate pl-0.5" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-            {variable.description}
+            {description}
           </span>
         )}
       </button>
@@ -110,18 +175,18 @@ function VariableItem({ variable, isSelected, isFlowSelected, onEdit, onInsert }
           </button>
         )}
         <button
-          onClick={(e) => { e.stopPropagation(); onEdit(); }}
-          title="Edit variable"
-          className="p-1 rounded text-[var(--c-tx4)] hover:text-violet-500 hover:bg-violet-500/10 transition-all"
+          onClick={(e) => { e.stopPropagation(); onDelete(); }}
+          title="Delete variable"
+          className="p-1 rounded text-[var(--c-tx4)] hover:text-red-500 hover:bg-red-500/10 transition-all"
         >
-          <Pencil size={10} />
+          <Trash2 size={10} />
         </button>
       </div>
     </div>
   );
 }
 
-function AddVariableDropdown({ onClose }: { onClose: () => void }) {
+function AddVariableDropdown({ onSelectType }: { onSelectType: (type: VariableType) => void }) {
   return (
     // ↑ Opens ABOVE the button
     <div className="absolute right-0 bottom-full mb-1 z-50 bg-[var(--c-bg8)] border border-[var(--c-br1)] rounded shadow-xl shadow-black/20 min-w-40 py-1">
@@ -130,7 +195,7 @@ function AddVariableDropdown({ onClose }: { onClose: () => void }) {
         return (
           <button
             key={type}
-            onClick={onClose}
+            onClick={() => onSelectType(type)}
             className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-[var(--c-bg5)] transition-colors"
           >
             <span className={tc.color}>{tc.icon}</span>
@@ -145,12 +210,97 @@ function AddVariableDropdown({ onClose }: { onClose: () => void }) {
 }
 
 export function RightPanel({ variables, selection, onSelectVariable, onInsertVariable }: RightPanelProps) {
+  const { actions } = useApp();
   const [activeScope, setActiveScope] = useState<VariableScope>('local');
   const [showAdd, setShowAdd] = useState(false);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [createState, setCreateState] = useState<VariableFormState>({
+    name: '',
+    type: 'numeric',
+    scope: activeScope,
+    description: '',
+    configText: defaultConfigTextForType('numeric'),
+  });
+  const [deleteVariable, setDeleteVariable] = useState<Variable | null>(null);
 
   const isFlowSelected = selection.type === 'flow';
   const filteredVars = variables.filter(v => v.scope === activeScope);
   const scopes: VariableScope[] = ['local', 'group', 'global'];
+
+  const createScopeLabel = useMemo(() => scopeLabels[createState.scope], [createState.scope]);
+
+  useEffect(() => {
+    setCreateState((current) => ({
+      ...current,
+      scope: activeScope,
+    }));
+  }, [activeScope]);
+
+  useEffect(() => {
+    if (!createDialogOpen) {
+      setCreateState({
+        name: '',
+        type: 'numeric',
+        scope: activeScope,
+        description: '',
+        configText: defaultConfigTextForType('numeric'),
+      });
+    }
+  }, [activeScope, createDialogOpen]);
+
+  const openCreateDialog = (type: VariableType) => {
+    setShowAdd(false);
+    setCreateState({
+      name: '',
+      type,
+      scope: activeScope,
+      description: '',
+      configText: defaultConfigTextForType(type),
+    });
+    setCreateDialogOpen(true);
+  };
+
+  const handleCreateSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    try {
+      const config = parseConfig(createState.configText);
+      await actions.createVariable(
+        createState.name,
+        createState.type,
+        createState.scope,
+        {
+          ...config,
+          ...(createState.description.trim() ? { description: createState.description.trim() } : {}),
+        },
+      );
+      toast.success('Variable created');
+      setCreateDialogOpen(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to create variable';
+      toast.error(message);
+    }
+  };
+
+  const handleDeleteVariable = async () => {
+    if (!deleteVariable) {
+      return;
+    }
+
+    try {
+      await actions.deleteVariable(deleteVariable.id);
+      if (selection.variableId === deleteVariable.id) {
+        actions.clearVariableSelection();
+      }
+      toast.success('Variable deleted');
+      setDeleteDialogOpen(false);
+      setDeleteVariable(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to delete variable';
+      toast.error(message);
+    }
+  };
 
   return (
     <div
@@ -209,7 +359,11 @@ export function RightPanel({ variables, selection, onSelectVariable, onInsertVar
               variable={v}
               isSelected={selection.variableId === v.id}
               isFlowSelected={isFlowSelected}
-              onEdit={() => onSelectVariable(v.id)}
+              onSelect={() => onSelectVariable(v.id)}
+              onDelete={() => {
+                setDeleteVariable(v);
+                setDeleteDialogOpen(true);
+              }}
               onInsert={() => onInsertVariable(v.name, v.scope)}
             />
           ))
@@ -230,7 +384,7 @@ export function RightPanel({ variables, selection, onSelectVariable, onInsertVar
           <span className="flex items-center gap-1.5"><Plus size={11} /> add variable</span>
           <ChevronUp size={10} className={`transition-transform ${showAdd ? 'rotate-180' : ''}`} />
         </button>
-        {showAdd && <AddVariableDropdown onClose={() => setShowAdd(false)} />}
+        {showAdd && <AddVariableDropdown onSelectType={openCreateDialog} />}
       </div>
 
       {/* Legend */}
@@ -248,6 +402,109 @@ export function RightPanel({ variables, selection, onSelectVariable, onInsertVar
           ))}
         </div>
       </div>
+
+      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+        <DialogContent className="sm:max-w-lg bg-[var(--c-bg2)] border-[var(--c-br1)] text-[var(--c-tx2)]">
+          <DialogHeader>
+            <DialogTitle className="text-[var(--c-tx1)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+              Create Variable
+            </DialogTitle>
+            <DialogDescription className="text-[var(--c-tx4)]">
+              Add a new variable for the {createScopeLabel} scope.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form className="flex flex-col gap-3" onSubmit={handleCreateSubmit}>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="flex flex-col gap-1 text-[10px] uppercase tracking-wider text-[var(--c-tx4)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+                Name
+                <Input
+                  value={createState.name}
+                  onChange={(event) => setCreateState((current) => ({ ...current, name: event.target.value }))}
+                  placeholder="temperature"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-[10px] uppercase tracking-wider text-[var(--c-tx4)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+                Type
+                <Select
+                  value={createState.type}
+                  onValueChange={(value) => setCreateState((current) => ({ ...current, type: value as VariableType, configText: defaultConfigTextForType(value as VariableType) }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {varTypes.map((type) => (
+                      <SelectItem key={type} value={type}>{type}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </label>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="flex flex-col gap-1 text-[10px] uppercase tracking-wider text-[var(--c-tx4)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+                Scope
+                <Select
+                  value={createState.scope}
+                  onValueChange={(value) => setCreateState((current) => ({ ...current, scope: value as VariableScope }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select scope" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {scopes.map((scope) => (
+                      <SelectItem key={scope} value={scope}>{scopeLabels[scope]}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </label>
+              <label className="flex flex-col gap-1 text-[10px] uppercase tracking-wider text-[var(--c-tx4)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+                Description
+                <Input
+                  value={createState.description}
+                  onChange={(event) => setCreateState((current) => ({ ...current, description: event.target.value }))}
+                  placeholder="Optional note"
+                />
+              </label>
+            </div>
+
+            <label className="flex flex-col gap-1 text-[10px] uppercase tracking-wider text-[var(--c-tx4)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+              Config JSON
+              <Textarea
+                value={createState.configText}
+                onChange={(event) => setCreateState((current) => ({ ...current, configText: event.target.value }))}
+                rows={8}
+                className="font-mono text-[11px]"
+              />
+            </label>
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setCreateDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit">Create</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent className="bg-[var(--c-bg2)] border-[var(--c-br1)] text-[var(--c-tx2)]">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-[var(--c-tx1)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+              Delete variable
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-[var(--c-tx4)]">
+              {deleteVariable ? `Delete "${deleteVariable.name}"? This action cannot be undone.` : 'Delete this variable? This action cannot be undone.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setDeleteVariable(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteVariable}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

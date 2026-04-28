@@ -339,6 +339,7 @@ export async function createVariable(
   type: 'numeric' | 'string' | 'boolean' | 'temporal' | 'point' | 'list',
   scope: 'global' | 'group' | 'local',
   config?: Record<string, unknown>,
+  variableId?: string,
 ): Promise<Variable> {
   // Validations
   if (!name?.trim()) throwValidationError('name', 'is required');
@@ -354,6 +355,7 @@ export async function createVariable(
   try {
     if (ctx.connectionMode !== 'mock') {
       const response = await bridge.send('CREATE_VARIABLE', {
+        variableId,
         name: name.trim(),
         type,
         scope,
@@ -365,20 +367,14 @@ export async function createVariable(
       }
     }
 
-    // For mock mode
-    const variableId = generateId();
+    const generatedId = variableId ?? generateId();
     const newVariable: Variable = {
-      id: variableId,
+      id: generatedId,
       name: name.trim(),
       type,
       scope,
       config: config || {},
     };
-
-    ctx.dispatch({
-      type: 'SET_VARIABLES',
-      payload: [newVariable],
-    });
 
     return newVariable;
   } catch (error) {
