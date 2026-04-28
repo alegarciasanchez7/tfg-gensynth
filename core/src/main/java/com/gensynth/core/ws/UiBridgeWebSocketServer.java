@@ -248,7 +248,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                     List<Map<String, Object>> variablesPayload = new ArrayList<>();
                     synchronized (stateLock) {
                         for (Variable variable : variablesById.values()) {
-                            variablesPayload.add(variable.toPayload());
+                            variablesPayload.add(normalizeVariablePayloadForUi(variable.toPayload()));
                         }
                     }
                     sendMessage(conn, "VARIABLE_UPDATE", variablesPayload);
@@ -660,8 +660,10 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             return;
         }
 
+        String coreType = normalizeVariableTypeForCore(type);
         Object defaultValue = payload.has("config") ? payload.get("config").toString() : "";
         Map<String, Object> config = Map.of();
+        Variable createdVariable;
 
         
         synchronized (stateLock) {
@@ -670,8 +672,8 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                 variableId = UUID.randomUUID().toString();
             }
             try {
-                Variable variable = new Variable(variableId, name, scope.toUpperCase(), type, defaultValue, config);
-                variablesById.put(variableId, variable);
+                createdVariable = new Variable(variableId, name, scope.toUpperCase(), coreType, defaultValue, config);
+                variablesById.put(variableId, createdVariable);
                 persistState();
             } catch (IllegalArgumentException ex) {
                 sendError(conn, commandId, "INVALID_PAYLOAD", ex.getMessage(), Map.of("name", name, "type", type, "scope", scope));
@@ -679,7 +681,13 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             }
         }
 
-        sendAck(conn, commandId, "variable_created");
+        Map<String, Object> response = new LinkedHashMap<>(createdVariable.toPayload());
+        response.put("commandId", commandId);
+        response.put("status", "ok");
+        response.put("result", "variable_created");
+        response.put("type", type);
+        response.put("scope", scope.toLowerCase());
+        sendMessage(conn, "CONNECTION_STATUS", response);
         sendVariablesUpdate();
     }
 
@@ -716,7 +724,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             }
 
             String name = payload.path("name").asText(existing.getName());
-            String type = payload.path("type").asText(existing.getType());
+            String type = normalizeVariableTypeForCore(payload.path("type").asText(existing.getType()));
             String scope = payload.path("scope").asText(existing.getScope()).toUpperCase();
             Object defaultValue = payload.has("config") ? payload.get("config").toString() : existing.getDefaultValue();
 
@@ -955,7 +963,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         List<Map<String, Object>> payload = new ArrayList<>();
         synchronized (stateLock) {
             for (Variable variable : variablesById.values()) {
-                payload.add(variable.toPayload());
+                payload.add(normalizeVariablePayloadForUi(variable.toPayload()));
             }
         }
         broadcastMessage("VARIABLE_UPDATE", payload);
@@ -1019,6 +1027,23 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             payload.put("details", details);
         }
         sendMessage(conn, "ERROR", payload);
+    }
+
+    private String normalizeVariableTypeForCore(String type) {
+        return "temporal".equalsIgnoreCase(type) ? "date" : type;
+    }
+
+    private Map<String, Object> normalizeVariablePayloadForUi(Map<String, Object> payload) {
+        Map<String, Object> normalized = new LinkedHashMap<>(payload);
+        Object type = normalized.get("type");
+        if (type instanceof String && "date".equalsIgnoreCase((String) type)) {
+            normalized.put("type", "temporal");
+        }
+        Object scope = normalized.get("scope");
+        if (scope instanceof String) {
+            normalized.put("scope", ((String) scope).toLowerCase());
+        }
+        return normalized;
     }
 
     private void sendLog(WebSocket conn, String level, String source, String message) {

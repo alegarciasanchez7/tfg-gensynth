@@ -27,6 +27,7 @@ import type { ConnectorHealthSummary } from '../types';
 import { mockGroups, mockVariables, mockLogs, mockConnectorCatalog } from '../data/mockData';
 import * as CRUDActions from './crudActions';
 import type { CRUDActionContext } from './crudActions';
+import { normalizeVariableFromCore, normalizeVariableListFromCore } from './variableNormalization';
 
 // ─────────────────────────────────────────────────────────────
 // Application State
@@ -369,7 +370,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
       };
 
     case 'SET_VARIABLES':
-      return { ...state, variables: action.payload };
+      return { ...state, variables: normalizeVariableListFromCore(action.payload) };
 
     case 'ADD_LOG':
       return { 
@@ -481,7 +482,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
         return {
           ...state,
           groups: action.payload.groups,
-          variables: action.payload.variables,
+          variables: normalizeVariableListFromCore(action.payload.variables),
           logs: action.payload.logs,
           flowConnectorSelections: selections,
           flowConnectorConfigs: configs,
@@ -548,6 +549,7 @@ interface AppContextValue {
       type: 'numeric' | 'string' | 'boolean' | 'temporal' | 'point' | 'list',
       scope: 'global' | 'group' | 'local',
       config?: Record<string, unknown>,
+      variableId?: string,
     ) => Promise<Variable>;
     deleteVariable: (variableId: string) => Promise<void>;
     updateVariable: (variableId: string, updates: Partial<Omit<Variable, 'id'>>) => Promise<void>;
@@ -994,27 +996,53 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
     }
   }, [crudContext, state.connectionMode, state.groups]);
 
-  const createVariableAction = useCallback(
-    (
-      name: string,
-      type: 'numeric' | 'string' | 'boolean' | 'temporal' | 'point' | 'list',
-      scope: 'global' | 'group' | 'local',
-      config?: Record<string, unknown>,
-    ) =>
-      CRUDActions.createVariable(crudContext, name, type, scope, config),
-    [crudContext, state.connectionMode],
-  );
+  const createVariableAction = useCallback(async (
+    name: string,
+    type: 'numeric' | 'string' | 'boolean' | 'temporal' | 'point' | 'list',
+    scope: 'global' | 'group' | 'local',
+    config?: Record<string, unknown>,
+    variableId?: string,
+  ) => {
+    const createdVariable = normalizeVariableFromCore(
+      await CRUDActions.createVariable(crudContext, name, type, scope, config, variableId),
+    );
 
-  const deleteVariableAction = useCallback((variableId: string) =>
-    CRUDActions.deleteVariable(crudContext, variableId),
-    [crudContext, state.connectionMode],
-  );
+    const nextVariables = state.variables.some(variable => variable.id === createdVariable.id)
+      ? state.variables.map(variable => (
+        variable.id === createdVariable.id ? createdVariable : variable
+      ))
+      : [...state.variables, createdVariable];
 
-  const updateVariableAction = useCallback(
-    (variableId: string, updates: Partial<Omit<Variable, 'id'>>) =>
-      CRUDActions.updateVariable(crudContext, variableId, updates),
-    [crudContext, state.connectionMode],
-  );
+    dispatch({
+      type: 'SET_VARIABLES',
+      payload: nextVariables,
+    });
+
+    return createdVariable;
+  }, [crudContext, state.connectionMode, state.variables]);
+
+  const deleteVariableAction = useCallback(async (variableId: string) => {
+    await CRUDActions.deleteVariable(crudContext, variableId);
+
+    dispatch({
+      type: 'SET_VARIABLES',
+      payload: state.variables.filter((variable) => variable.id !== variableId),
+    });
+  }, [crudContext, state.connectionMode, state.variables]);
+
+  const updateVariableAction = useCallback(async (
+    variableId: string,
+    updates: Partial<Omit<Variable, 'id'>>,
+  ) => {
+    await CRUDActions.updateVariable(crudContext, variableId, updates);
+
+    dispatch({
+      type: 'SET_VARIABLES',
+      payload: state.variables.map((variable) => (
+        variable.id === variableId ? normalizeVariableFromCore({ ...variable, ...updates }) : variable
+      )),
+    });
+  }, [crudContext, state.connectionMode, state.variables]);
 
   const actions = {
     startSystem,
