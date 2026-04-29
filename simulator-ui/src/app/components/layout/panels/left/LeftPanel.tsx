@@ -47,18 +47,14 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from '../../../ui/context-menu';
-import type { Group, Flow, Selection, ConnectionStatus, GroupStatus, Variable } from '../../../types';
-import type { ConnectorHealthSummary } from '../../../types';
-import type { ConnectorPluginDescriptor } from '../../../core/types';
+import type { Group, Flow, Selection, ConnectionStatus, GroupStatus } from '../../../../types';
+import type { ConnectorPluginDescriptor } from '../../../../core/types';
 
 interface LeftPanelProps {
   groups: Group[];
   selection: Selection;
-  variables: Variable[];
   formatTemplate: Record<string, string>;
-  connectorCatalog: ConnectorPluginDescriptor[];
   latestConnectors: ConnectorPluginDescriptor[];
-  connectorHealthSummary: ConnectorHealthSummary[];
   onSelectGroup: (groupId: string) => void;
   onSelectFlow: (groupId: string, flowId: string) => void;
   onToggleGroup: (groupId: string) => void;
@@ -145,16 +141,26 @@ function FlowItem({ flow, selected, groupId, onSelect, formatTemplate }: {
       onClick={() => onSelect(groupId, flow.id)}
       className={`w-full text-left px-3 py-2 flex flex-col gap-1 border-l-2 transition-all ${
         selected
-          ? 'bg-cyan-500/10 border-l-cyan-500'
-          : 'border-l-transparent hover:bg-[var(--c-bg5)] hover:border-l-[var(--c-br3)]'
+          ? 'bg-violet-500/10 border-l-violet-500'
+          : 'border-l-transparent hover:bg-violet-500/5 hover:border-l-violet-400/60'
       }`}
     >
       {/* Row 1: tech badge + name */}
       <div className="flex items-center gap-1.5">
+          <span
+            className={`inline-flex h-4 w-4 items-center justify-center rounded border ${
+            selected
+              ? 'border-violet-500/40 text-violet-500 bg-violet-500/10'
+              : 'border-[var(--c-br1)] text-violet-400 bg-[var(--c-bg1)]'
+          }`}
+          title="Flow"
+        >
+          <Radio size={9} />
+        </span>
         <span
           className={`flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] border ${
             selected
-              ? 'border-cyan-500/40 text-cyan-500 bg-cyan-500/10'
+              ? 'border-violet-500/40 text-violet-500 bg-violet-500/10'
               : 'border-[var(--c-br1)] text-[var(--c-tx3)] bg-[var(--c-bg1)]'
           }`}
           style={{ fontFamily: 'JetBrains Mono, monospace' }}
@@ -205,7 +211,6 @@ function FlowItem({ flow, selected, groupId, onSelect, formatTemplate }: {
 function GroupItem({
   group,
   selection,
-  variables,
   formatTemplate,
   onSelectGroup,
   onSelectFlow,
@@ -216,7 +221,6 @@ function GroupItem({
 }: {
   group: Group;
   selection: Selection;
-  variables: Variable[];
   formatTemplate: Record<string, string>;
   onSelectGroup: (id: string) => void;
   onSelectFlow: (gId: string, fId: string) => void;
@@ -314,8 +318,8 @@ function GroupItem({
           <div
             className={`flex items-center gap-1.5 px-2 py-2 cursor-pointer transition-all ${
               selectedGroup
-                ? 'bg-[var(--c-bg7)] border-l-2 border-l-cyan-500'
-                : 'hover:bg-[var(--c-bg5)] border-l-2 border-l-transparent'
+                ? 'bg-cyan-500/10 border-l-2 border-l-cyan-500'
+                : 'hover:bg-cyan-500/5 border-l-2 border-l-transparent'
             }`}
           >
             <button
@@ -331,8 +335,15 @@ function GroupItem({
               className="flex-1 flex flex-col gap-0.5 text-left"
             >
               <div className="flex items-center gap-1.5">
-                <span className="relative flex h-1.5 w-1.5 shrink-0">
-                  <span className={`${gCfg.bg} rounded-full w-1.5 h-1.5 ${group.status === 'running' ? 'animate-pulse' : ''}`} />
+                <span
+                    className={`inline-flex h-4 w-4 items-center justify-center rounded border ${
+                    selectedGroup
+                      ? 'border-cyan-500/40 text-cyan-500 bg-cyan-500/10'
+                      : 'border-[var(--c-br1)] text-cyan-400 bg-[var(--c-bg1)]'
+                  }`}
+                  title="Group"
+                >
+                  <Layers size={9} />
                 </span>
                 <span
                   className={`text-xs truncate ${selectedGroup ? 'text-[var(--c-tx1)]' : 'text-[var(--c-tx2)]'}`}
@@ -384,7 +395,7 @@ function GroupItem({
 
       {/* Flows */}
       {group.expanded && (
-        <div className="pl-4 border-l border-[var(--c-br2)] ml-4">
+        <div className="pl-4 border-l border-cyan-500/20 ml-4 bg-gradient-to-r from-cyan-500/5 to-transparent">
           {group.flows.map(flow => (
             <FlowItem
               key={flow.id}
@@ -557,11 +568,8 @@ function GroupItem({
 export function LeftPanel({
   groups,
   selection,
-  variables,
   formatTemplate,
-  connectorCatalog,
   latestConnectors,
-  connectorHealthSummary,
   onSelectGroup,
   onSelectFlow,
   onToggleGroup,
@@ -569,13 +577,36 @@ export function LeftPanel({
   onDeleteGroup,
   onCreateFlow,
 }: LeftPanelProps) {
+  const [showAddMenu, setShowAddMenu] = useState(false);
   const [isCreateGroupOpen, setIsCreateGroupOpen] = useState(false);
   const [groupName, setGroupName] = useState('');
   const [groupDescription, setGroupDescription] = useState('');
+  const [isCreateFlowOpen, setIsCreateFlowOpen] = useState(false);
+  const [selectedGroupForFlow, setSelectedGroupForFlow] = useState<string | null>(null);
+  const [flowName, setFlowName] = useState('');
+  const [flowTechnology, setFlowTechnology] = useState(latestConnectors[0]?.pluginId ?? '');
+  const [flowHost, setFlowHost] = useState('localhost');
+  const [flowPort, setFlowPort] = useState('8080');
+  const [flowTopic, setFlowTopic] = useState('');
+  const [flowInterval, setFlowInterval] = useState('1000');
+  const [flowBurst, setFlowBurst] = useState('1');
+  const [flowTemplate, setFlowTemplate] = useState('{}');
 
   const resetCreateGroupForm = () => {
     setGroupName('');
     setGroupDescription('');
+  };
+
+  const resetCreateFlowForm = () => {
+    setFlowName('');
+    setFlowTechnology(latestConnectors[0]?.pluginId ?? '');
+    setFlowHost('localhost');
+    setFlowPort('8080');
+    setFlowTopic('');
+    setFlowInterval('1000');
+    setFlowBurst('1');
+    setFlowTemplate('{}');
+    setSelectedGroupForFlow(null);
   };
 
   const handleCreateGroup = async (event: FormEvent<HTMLFormElement>) => {
@@ -592,14 +623,37 @@ export function LeftPanel({
     }
   };
 
-  const healthColor = (status: ConnectorHealthSummary['status']) => {
-    switch (status) {
-      case 'healthy':
-        return 'text-emerald-500 border-emerald-500/30 bg-emerald-500/10';
-      case 'degraded':
-        return 'text-amber-500 border-amber-500/30 bg-amber-500/10';
-      default:
-        return 'text-slate-400 border-slate-400/30 bg-slate-500/10';
+  const handleCreateFlow = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedGroupForFlow) {
+      toast.error('Please select a group first');
+      return;
+    }
+
+    const port = Number(flowPort);
+    const interval = flowInterval.trim() ? Number(flowInterval) : undefined;
+    const burst = flowBurst.trim() ? Number(flowBurst) : undefined;
+
+    try {
+      const createdFlow = await onCreateFlow(
+        selectedGroupForFlow,
+        flowName.trim(),
+        flowTechnology.trim(),
+        flowHost.trim(),
+        port,
+        flowTopic.trim() || undefined,
+        Number.isNaN(interval) ? undefined : interval,
+        Number.isNaN(burst) ? undefined : burst,
+        flowTemplate.trim() || '{}',
+      );
+
+      toast.success(`Flow "${createdFlow.name}" created`);
+      onSelectFlow(selectedGroupForFlow, createdFlow.id);
+      setIsCreateFlowOpen(false);
+      resetCreateFlowForm();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to create flow';
+      toast.error(message);
     }
   };
 
@@ -609,67 +663,281 @@ export function LeftPanel({
       style={{ width: 260 }}
     >
       {/* Panel Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--c-br2)] shrink-0">
-        <span className="text-[10px] text-[var(--c-tx4)] tracking-widest uppercase" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+      <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--c-br2)] shrink-0 relative gap-2">
+        <span
+          className="inline-flex items-center rounded border border-[var(--c-br1)] bg-[var(--c-bg1)] px-2 py-1 text-[10px] text-[var(--c-tx4)] tracking-widest uppercase shrink-0"
+          style={{ fontFamily: 'JetBrains Mono, monospace' }}
+        >
           Groups &amp; Flows
         </span>
-        <Dialog open={isCreateGroupOpen} onOpenChange={setIsCreateGroupOpen}>
-          <DialogTrigger asChild>
-            <button
-              className="text-[var(--c-tx4)] hover:text-cyan-500 transition-colors p-0.5"
-              aria-label="Create group"
-            >
-              <Plus size={12} />
-            </button>
-          </DialogTrigger>
-          <DialogContent>
-            <form onSubmit={handleCreateGroup} className="space-y-4">
-              <DialogHeader>
-                <DialogTitle>Create group</DialogTitle>
-                <DialogDescription>
-                  Define a new group with a name and an optional description.
-                </DialogDescription>
-              </DialogHeader>
 
-              <div className="space-y-2">
-                <label className="text-xs text-[var(--c-tx3)]" htmlFor="group-name">
+        {/* Add dropdown menu */}
+        <div className="relative shrink-0">
+          <button
+            onClick={() => setShowAddMenu(!showAddMenu)}
+            className={`inline-flex items-center gap-1 rounded border px-2.5 py-1 text-[11px] transition-all whitespace-nowrap ${
+              showAddMenu
+                ? 'border-cyan-500/50 text-cyan-500 bg-cyan-500/10'
+                : 'border-[var(--c-br1)] text-[var(--c-tx4)] hover:text-[var(--c-tx2)] hover:border-[var(--c-br3)] hover:bg-[var(--c-bg5)]'
+            }`}
+            aria-label="Add group or flow"
+            style={{ fontFamily: 'JetBrains Mono, monospace' }}
+          >
+            <Plus size={11} />
+            <span>add</span>
+            <ChevronDown size={10} className={`transition-transform ${showAddMenu ? 'rotate-180' : ''}`} />
+          </button>
+
+          {showAddMenu && (
+            <div className="absolute right-0 top-full mt-1 z-50 bg-[var(--c-bg8)] border border-[var(--c-br1)] rounded shadow-xl shadow-black/20 min-w-40 py-1">
+              <button
+                onClick={() => {
+                  setShowAddMenu(false);
+                  setIsCreateGroupOpen(true);
+                }}
+                className="w-full text-left px-3 py-1.5 flex items-center gap-2 text-[10px] text-[var(--c-tx4)] hover:text-[var(--c-tx2)] hover:bg-cyan-500/5 transition-colors"
+              >
+                <span className="inline-flex h-4 w-4 items-center justify-center rounded border border-cyan-500/20 bg-cyan-500/10 text-cyan-500">
+                  <Layers size={9} />
+                </span>
+                <span>add group</span>
+              </button>
+              <button
+                onClick={() => {
+                  setShowAddMenu(false);
+                  setIsCreateFlowOpen(true);
+                }}
+                className="w-full text-left px-3 py-1.5 flex items-center gap-2 text-[10px] text-[var(--c-tx4)] hover:text-[var(--c-tx2)] hover:bg-violet-500/5 transition-colors"
+              >
+                <span className="inline-flex h-4 w-4 items-center justify-center rounded border border-violet-500/20 bg-violet-500/10 text-violet-500">
+                  <Radio size={8} />
+                </span>
+                <span>add flow</span>
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Create Group Dialog */}
+      <Dialog open={isCreateGroupOpen} onOpenChange={setIsCreateGroupOpen}>
+        <DialogContent>
+          <form onSubmit={handleCreateGroup} className="space-y-4">
+            <DialogHeader>
+              <DialogTitle>Create group</DialogTitle>
+              <DialogDescription>
+                Define a new group with a name and an optional description.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-2">
+              <label className="text-xs text-[var(--c-tx3)]" htmlFor="group-name">
+                Name
+              </label>
+              <Input
+                id="group-name"
+                value={groupName}
+                onChange={(event) => setGroupName(event.target.value)}
+                placeholder="Sensor Ingestion"
+                autoFocus
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs text-[var(--c-tx3)]" htmlFor="group-description">
+                Description
+              </label>
+              <Textarea
+                id="group-description"
+                value={groupDescription}
+                onChange={(event) => setGroupDescription(event.target.value)}
+                placeholder="Optional description for this group"
+                rows={4}
+              />
+            </div>
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setIsCreateGroupOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={!groupName.trim()}>
+                Create group
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Flow Dialog */}
+      <Dialog open={isCreateFlowOpen} onOpenChange={setIsCreateFlowOpen}>
+        <DialogContent className="max-w-lg">
+          <form onSubmit={handleCreateFlow} className="space-y-4">
+            <DialogHeader>
+              <DialogTitle>Add flow</DialogTitle>
+              <DialogDescription>
+                Create a new flow. Select a group first.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-2">
+              <label className="text-xs text-[var(--c-tx3)]" htmlFor="flow-group-select">
+                Group
+              </label>
+              <select
+                id="flow-group-select"
+                value={selectedGroupForFlow ?? ''}
+                onChange={(event) => setSelectedGroupForFlow(event.target.value || null)}
+                className="flex h-9 w-full rounded-md border border-[var(--c-br1)] bg-[var(--c-bg1)] px-3 py-2 text-sm text-[var(--c-tx1)] shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-500"
+                required
+              >
+                <option value="">Select a group...</option>
+                {groups.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-2 sm:col-span-2">
+                <label className="text-xs text-[var(--c-tx3)]" htmlFor="flow-name">
                   Name
                 </label>
                 <Input
-                  id="group-name"
-                  value={groupName}
-                  onChange={(event) => setGroupName(event.target.value)}
-                  placeholder="Sensor Ingestion"
+                  id="flow-name"
+                  value={flowName}
+                  onChange={(event) => setFlowName(event.target.value)}
+                  placeholder="Orders → Kafka"
                   autoFocus
                   required
                 />
               </div>
 
-              <div className="space-y-2">
-                <label className="text-xs text-[var(--c-tx3)]" htmlFor="group-description">
-                  Description
+              <div className="space-y-2 sm:col-span-2">
+                <label className="text-xs text-[var(--c-tx3)]" htmlFor="flow-technology">
+                  Technology
                 </label>
-                <Textarea
-                  id="group-description"
-                  value={groupDescription}
-                  onChange={(event) => setGroupDescription(event.target.value)}
-                  placeholder="Optional description for this group"
-                  rows={4}
+                {latestConnectors.length > 0 ? (
+                  <select
+                    id="flow-technology"
+                    value={flowTechnology}
+                    onChange={(event) => setFlowTechnology(event.target.value)}
+                    className="flex h-9 w-full rounded-md border border-[var(--c-br1)] bg-[var(--c-bg1)] px-3 py-2 text-sm text-[var(--c-tx1)] shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-500"
+                    required
+                  >
+                    {latestConnectors.map((connector) => (
+                      <option key={connector.pluginId} value={connector.pluginId}>
+                        {connector.displayName} ({connector.pluginId}@{connector.pluginVersion})
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <Input
+                    id="flow-technology"
+                    value={flowTechnology}
+                    onChange={(event) => setFlowTechnology(event.target.value)}
+                    placeholder="HTTP"
+                    required
+                  />
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs text-[var(--c-tx3)]" htmlFor="flow-host">
+                  Host
+                </label>
+                <Input
+                  id="flow-host"
+                  value={flowHost}
+                  onChange={(event) => setFlowHost(event.target.value)}
+                  placeholder="localhost"
+                  required
                 />
               </div>
 
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setIsCreateGroupOpen(false)}>
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={!groupName.trim()}>
-                  Create group
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
-      </div>
+              <div className="space-y-2">
+                <label className="text-xs text-[var(--c-tx3)]" htmlFor="flow-port">
+                  Port
+                </label>
+                <Input
+                  id="flow-port"
+                  type="number"
+                  min={1}
+                  max={65535}
+                  value={flowPort}
+                  onChange={(event) => setFlowPort(event.target.value)}
+                  placeholder="8080"
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs text-[var(--c-tx3)]" htmlFor="flow-topic">
+                  Topic
+                </label>
+                <Input
+                  id="flow-topic"
+                  value={flowTopic}
+                  onChange={(event) => setFlowTopic(event.target.value)}
+                  placeholder="orders.events"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs text-[var(--c-tx3)]" htmlFor="flow-interval">
+                  Interval (ms)
+                </label>
+                <Input
+                  id="flow-interval"
+                  type="number"
+                  min={1}
+                  value={flowInterval}
+                  onChange={(event) => setFlowInterval(event.target.value)}
+                  placeholder="1000"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs text-[var(--c-tx3)]" htmlFor="flow-burst">
+                  Burst
+                </label>
+                <Input
+                  id="flow-burst"
+                  type="number"
+                  min={1}
+                  value={flowBurst}
+                  onChange={(event) => setFlowBurst(event.target.value)}
+                  placeholder="1"
+                />
+              </div>
+
+              <div className="space-y-2 sm:col-span-2">
+                <label className="text-xs text-[var(--c-tx3)]" htmlFor="flow-template">
+                  Template
+                </label>
+                <Textarea
+                  id="flow-template"
+                  value={flowTemplate}
+                  onChange={(event) => setFlowTemplate(event.target.value)}
+                  rows={5}
+                  placeholder="{}"
+                />
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setIsCreateFlowOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={!selectedGroupForFlow || !flowName.trim() || !flowTechnology.trim() || !flowHost.trim()}>
+                Create flow
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {/* Scope legend */}
       <div className="flex items-center gap-3 px-3 py-1.5 border-b border-[var(--c-br2)] shrink-0">
@@ -692,7 +960,6 @@ export function LeftPanel({
             key={group.id}
             group={group}
             selection={selection}
-            variables={variables}
             formatTemplate={formatTemplate}
             onSelectGroup={onSelectGroup}
             onSelectFlow={onSelectFlow}
@@ -702,48 +969,6 @@ export function LeftPanel({
             latestConnectors={latestConnectors}
           />
         ))}
-      </div>
-
-      {/* Connector catalog summary */}
-      <div className="px-3 py-2 border-t border-[var(--c-br2)] shrink-0">
-        <div className="flex items-center justify-between gap-2 mb-2">
-          <span className="text-[9px] text-[var(--c-tx5)] tracking-widest uppercase" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-            Connector Catalog
-          </span>
-          <span className="text-[9px] text-[var(--c-tx4)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-            {connectorCatalog.length} entries
-          </span>
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          {latestConnectors.length > 0 ? (
-            latestConnectors.map((connector) => {
-              const health = connectorHealthSummary.find(
-                (entry) => entry.pluginId === connector.pluginId && entry.pluginVersion === connector.pluginVersion,
-              );
-
-              return (
-                <div
-                  key={connector.pluginId}
-                  className="flex flex-col gap-1 rounded border border-[var(--c-br1)] bg-[var(--c-bg1)] px-2 py-1.5 min-w-[110px]"
-                >
-                  <span className="text-[10px] text-[var(--c-tx2)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-                    {connector.displayName}
-                  </span>
-                  <span className="text-[9px] text-cyan-500" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-                    {connector.pluginId}@{connector.pluginVersion}
-                  </span>
-                  <span className={`inline-flex items-center justify-center rounded border px-1.5 py-0.5 text-[9px] uppercase ${health ? healthColor(health.status) : 'text-[var(--c-tx4)] border-[var(--c-br1)] bg-transparent'}`} style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-                    {health ? health.status : 'unknown'}
-                  </span>
-                </div>
-              );
-            })
-          ) : (
-            <div className="rounded border border-dashed border-[var(--c-br2)] bg-[var(--c-bg1)] px-2 py-2 text-[9px] text-[var(--c-tx4)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-              No connectors loaded. The flow editor will show a fallback state until the catalog is available.
-            </div>
-          )}
-        </div>
       </div>
 
       {/* Footer stats */}

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, ChevronUp } from 'lucide-react';
+import { Plus, ChevronDown, Hash, List, ToggleLeft, Clock3, LocateFixed, Type } from 'lucide-react';
 import { toast } from 'sonner';
 import { useApp } from '../../../../context';
 import type { Variable, VariableScope, VariableType, Selection } from '../../../../types';
@@ -18,6 +18,24 @@ const scopeLabels: Record<VariableScope, string> = {
   local: 'LOCAL',
   group: 'GROUP',
   global: 'GLOBAL',
+};
+
+const typeIcons: Record<VariableType, React.ReactNode> = {
+  numeric: <Hash size={11} />,
+  list: <List size={11} />,
+  boolean: <ToggleLeft size={11} />,
+  temporal: <Clock3 size={11} />,
+  point: <LocateFixed size={11} />,
+  string: <Type size={11} />,
+};
+
+const typeStyles: Record<VariableType, { badge: string; icon: string; hover: string }> = {
+  numeric: { badge: 'border-sky-500/20 bg-sky-500/10 text-sky-500', icon: 'text-sky-500', hover: 'hover:bg-sky-500/5' },
+  list: { badge: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-500', icon: 'text-emerald-500', hover: 'hover:bg-emerald-500/5' },
+  boolean: { badge: 'border-amber-500/20 bg-amber-500/10 text-amber-500', icon: 'text-amber-500', hover: 'hover:bg-amber-500/5' },
+  temporal: { badge: 'border-violet-500/20 bg-violet-500/10 text-violet-500', icon: 'text-violet-500', hover: 'hover:bg-violet-500/5' },
+  point: { badge: 'border-cyan-500/20 bg-cyan-500/10 text-cyan-500', icon: 'text-cyan-500', hover: 'hover:bg-cyan-500/5' },
+  string: { badge: 'border-pink-500/20 bg-pink-500/10 text-pink-500', icon: 'text-pink-500', hover: 'hover:bg-pink-500/5' },
 };
 
 function defaultConfigTextForType(type: VariableType): string {
@@ -110,15 +128,71 @@ export function RightPanel({ variables, selection, onSelectVariable, onInsertVar
   return (
     <div className="flex flex-col border-l border-[var(--c-br1)] bg-[var(--c-bg2)] shrink-0 overflow-hidden" style={{ width: 260 }}>
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--c-br2)] shrink-0">
-        <span className="text-[10px] text-[var(--c-tx4)] tracking-widest uppercase" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-          Variables
-        </span>
-        {isFlowSelected && (
-          <span className="text-[9px] text-cyan-500 bg-cyan-500/10 border border-cyan-500/30 px-1.5 py-0.5 rounded" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-            click → to insert
+      <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--c-br2)] shrink-0 relative gap-2">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <span
+            className="inline-flex items-center rounded border border-[var(--c-br1)] bg-[var(--c-bg1)] px-2 py-1 text-[10px] text-[var(--c-tx4)] tracking-widest uppercase shrink-0"
+            style={{ fontFamily: 'JetBrains Mono, monospace' }}
+          >
+            Variables
           </span>
-        )}
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          {isFlowSelected && (
+            <span
+              className="text-[9px] text-cyan-500 bg-cyan-500/10 border border-cyan-500/30 px-1.5 py-0.5 rounded whitespace-nowrap"
+              style={{ fontFamily: 'JetBrains Mono, monospace' }}
+            >
+              click → to insert
+            </span>
+          )}
+
+          <div className="relative shrink-0">
+            <button
+              onClick={() => setShowAdd(!showAdd)}
+              className={`inline-flex items-center gap-1 rounded border px-2.5 py-1 text-[11px] transition-all whitespace-nowrap ${
+                showAdd
+                  ? 'border-cyan-500/50 text-cyan-500 bg-cyan-500/10'
+                  : 'border-[var(--c-br1)] text-[var(--c-tx4)] hover:text-[var(--c-tx2)] hover:border-[var(--c-br3)] hover:bg-[var(--c-bg5)]'
+              }`}
+              style={{ fontFamily: 'JetBrains Mono, monospace' }}
+              aria-label="Add variable"
+            >
+              <Plus size={11} />
+              <span>add</span>
+              <ChevronDown size={10} className={`transition-transform ${showAdd ? 'rotate-180' : ''}`} />
+            </button>
+
+            {showAdd && (
+              <div className="absolute right-0 top-full mt-1 z-50 bg-[var(--c-bg8)] border border-[var(--c-br1)] rounded shadow-xl shadow-black/20 min-w-40 py-1">
+                {(['numeric', 'list', 'string', 'temporal', 'point', 'boolean'] as const).map(type => (
+                  <button
+                    key={type}
+                    onClick={() => {
+                      setShowAdd(false);
+                      setCreateState({
+                        name: '',
+                        type,
+                        scope: activeScope,
+                        description: '',
+                        configText: defaultConfigTextForType(type),
+                      });
+                      setCreateDialogOpen(true);
+                    }}
+                    className={`w-full flex items-center gap-2 px-3 py-1.5 text-left transition-colors text-[11px] text-[var(--c-tx3)] ${typeStyles[type].hover}`}
+                    style={{ fontFamily: 'JetBrains Mono, monospace' }}
+                  >
+                    <span className={`inline-flex h-4 w-4 items-center justify-center rounded border ${typeStyles[type].badge}`}>
+                      <span className={typeStyles[type].icon}>{typeIcons[type]}</span>
+                    </span>
+                    <span className="capitalize">{type}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Scope tabs */}
@@ -162,49 +236,6 @@ export function RightPanel({ variables, selection, onSelectVariable, onInsertVar
               onInsert={() => onInsertVariable(v.name, v.scope)}
             />
           ))
-        )}
-      </div>
-
-      {/* Add variable button */}
-      <div className="px-2 py-2 border-t border-[var(--c-br2)] shrink-0 relative">
-        <button
-          onClick={() => setShowAdd(!showAdd)}
-          className={`w-full flex items-center justify-between gap-1.5 px-2.5 py-1.5 rounded border text-[11px] transition-all ${
-            showAdd
-              ? 'border-cyan-500/50 text-cyan-500 bg-cyan-500/10'
-              : 'border-[var(--c-br1)] text-[var(--c-tx4)] hover:text-[var(--c-tx2)] hover:border-[var(--c-br3)] hover:bg-[var(--c-bg5)]'
-          }`}
-          style={{ fontFamily: 'JetBrains Mono, monospace' }}
-        >
-          <span className="flex items-center gap-1.5">
-            <Plus size={11} /> add variable
-          </span>
-          <ChevronUp size={10} className={`transition-transform ${showAdd ? 'rotate-180' : ''}`} />
-        </button>
-
-        {showAdd && (
-          <div className="absolute right-0 bottom-full mb-1 z-50 bg-[var(--c-bg8)] border border-[var(--c-br1)] rounded shadow-xl shadow-black/20 min-w-40 py-1">
-            {(['numeric', 'list', 'string', 'temporal', 'point', 'boolean'] as const).map(type => (
-              <button
-                key={type}
-                onClick={() => {
-                  setShowAdd(false);
-                  setCreateState({
-                    name: '',
-                    type,
-                    scope: activeScope,
-                    description: '',
-                    configText: defaultConfigTextForType(type),
-                  });
-                  setCreateDialogOpen(true);
-                }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-[var(--c-bg5)] transition-colors text-[11px] text-[var(--c-tx3)]"
-                style={{ fontFamily: 'JetBrains Mono, monospace' }}
-              >
-                {type}
-              </button>
-            ))}
-          </div>
         )}
       </div>
 
