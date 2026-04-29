@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
-import { Power, Square, FolderOpen, Save, Settings, Zap, Activity, Moon, Sun, X } from 'lucide-react';
-import type { SystemStatus } from '../../../types';
+import { Power, Square, FolderOpen, Save, Settings, Zap, Activity, Moon, Sun, X, Package } from 'lucide-react';
+import type { SystemStatus, ConnectorHealthSummary } from '../../../types';
+import type { ConnectorPluginDescriptor } from '../../../core/types';
 
 interface HeaderProps {
   systemStatus: SystemStatus;
@@ -9,6 +10,9 @@ interface HeaderProps {
   onProjectNameChange: (n: string) => void;
   isDark: boolean;
   onThemeToggle: () => void;
+  connectorCatalog: ConnectorPluginDescriptor[];
+  latestConnectors: ConnectorPluginDescriptor[];
+  connectorHealthSummary: ConnectorHealthSummary[];
 }
 
 const StatusBadge = ({ status }: { status: SystemStatus }) => {
@@ -32,6 +36,94 @@ const StatusBadge = ({ status }: { status: SystemStatus }) => {
     </div>
   );
 };
+
+function ConnectorCatalogPanel({ latestConnectors, connectorHealthSummary, onClose }: {
+  latestConnectors: ConnectorPluginDescriptor[];
+  connectorHealthSummary: ConnectorHealthSummary[];
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [onClose]);
+
+  const healthColor = (status: ConnectorHealthSummary['status']) => {
+    switch (status) {
+      case 'healthy':
+        return 'text-emerald-500 border-emerald-500/30 bg-emerald-500/10';
+      case 'degraded':
+        return 'text-amber-500 border-amber-500/30 bg-amber-500/10';
+      default:
+        return 'text-slate-400 border-slate-400/30 bg-slate-500/10';
+    }
+  };
+
+  return (
+    <div
+      ref={ref}
+      className="absolute left-0 top-full mt-1 z-50 bg-[var(--c-bg2)] border border-[var(--c-br1)] rounded shadow-xl shadow-black/20 max-w-md max-h-96 overflow-y-auto py-2"
+      style={{ fontFamily: 'JetBrains Mono, monospace' }}
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between px-3 py-1.5 border-b border-[var(--c-br2)] mb-1 sticky top-0 bg-[var(--c-bg2)]">
+        <span className="text-[10px] text-[var(--c-tx4)] tracking-widest uppercase">Connector Catalog</span>
+        <button onClick={onClose} className="text-[var(--c-tx4)] hover:text-[var(--c-tx2)] transition-colors">
+          <X size={10} />
+        </button>
+      </div>
+
+      {/* Connectors list */}
+      {latestConnectors.length > 0 ? (
+        <div className="flex flex-col gap-2 px-3">
+          {latestConnectors.map((connector) => {
+            const health = connectorHealthSummary.find(
+              (entry) => entry.pluginId === connector.pluginId && entry.pluginVersion === connector.pluginVersion,
+            );
+
+            return (
+              <div
+                key={connector.pluginId}
+                className="flex flex-col gap-1.5 rounded border border-[var(--c-br1)] bg-[var(--c-bg1)] px-2.5 py-2"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1">
+                    <span className="text-[10px] text-[var(--c-tx2)] block" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+                      {connector.displayName}
+                    </span>
+                    <span className="text-[9px] text-cyan-500" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+                      {connector.pluginId}@{connector.pluginVersion}
+                    </span>
+                  </div>
+                  <span className={`inline-flex items-center justify-center rounded border px-1.5 py-0.5 text-[9px] uppercase whitespace-nowrap ${
+                    health ? healthColor(health.status) : 'text-[var(--c-tx4)] border-[var(--c-br1)] bg-transparent'
+                  }`} style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+                    {health ? health.status : 'unknown'}
+                  </span>
+                </div>
+                {health && (
+                  <div className="text-[9px] text-[var(--c-tx4)] flex items-center gap-2">
+                    <span>{health.connectedCount}/{health.flowCount} flows</span>
+                    {health.warningCount > 0 && <span className="text-amber-500">⚠ {health.warningCount} warn</span>}
+                    {health.errorCount > 0 && <span className="text-red-500">✕ {health.errorCount} err</span>}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="px-3 py-4 text-center text-[9px] text-[var(--c-tx4)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+          No connectors loaded
+        </div>
+      )}
+    </div>
+  );
+}
 
 function SettingsPanel({ isDark, onThemeToggle, onClose }: {
   isDark: boolean;
@@ -94,8 +186,9 @@ function SettingsPanel({ isDark, onThemeToggle, onClose }: {
   );
 }
 
-export function Header({ systemStatus, onStatusToggle, projectName, onProjectNameChange, isDark, onThemeToggle }: HeaderProps) {
+export function Header({ systemStatus, onStatusToggle, projectName, onProjectNameChange, isDark, onThemeToggle, connectorCatalog, latestConnectors, connectorHealthSummary }: HeaderProps) {
   const [showSettings, setShowSettings] = useState(false);
+  const [showCatalog, setShowCatalog] = useState(false);
   const isRunning = systemStatus === 'running';
 
   return (
@@ -153,6 +246,31 @@ export function Header({ systemStatus, onStatusToggle, projectName, onProjectNam
         <button className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-[var(--c-br1)] text-xs text-[var(--c-tx3)] hover:text-[var(--c-tx1)] hover:border-[var(--c-br3)] hover:bg-[var(--c-bg5)] transition-all">
           <Save size={12} /> Save
         </button>
+      </div>
+
+      {/* Separator */}
+      <div className="w-px h-7 bg-[var(--c-br1)]" />
+
+      {/* Connector catalog button */}
+      <div className="relative">
+        <button
+          onClick={() => setShowCatalog(s => !s)}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded border text-xs transition-all ${
+            showCatalog
+              ? 'border-cyan-500/50 bg-cyan-500/10 text-cyan-400'
+              : 'border-[var(--c-br1)] text-[var(--c-tx3)] hover:text-[var(--c-tx1)] hover:border-[var(--c-br3)] hover:bg-[var(--c-bg5)]'
+          }`}
+          style={{ fontFamily: 'JetBrains Mono, monospace' }}
+        >
+          <Package size={12} /> Connectors ({latestConnectors.length})
+        </button>
+        {showCatalog && (
+          <ConnectorCatalogPanel
+            latestConnectors={latestConnectors}
+            connectorHealthSummary={connectorHealthSummary}
+            onClose={() => setShowCatalog(false)}
+          />
+        )}
       </div>
 
       {/* Spacer */}

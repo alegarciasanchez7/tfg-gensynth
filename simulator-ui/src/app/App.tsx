@@ -56,6 +56,9 @@ export default function App() {
         onProjectNameChange={actions.setProjectName}
         isDark={isDark}
         onThemeToggle={actions.toggleTheme}
+        connectorCatalog={connectorCatalog}
+        latestConnectors={latestConnectors}
+        connectorHealthSummary={connectorHealthSummary}
       />
 
       {/* ── Resource monitor bar ────────────────────── */}
@@ -63,15 +66,13 @@ export default function App() {
 
       {/* ── Main 3-column layout ────────────────────── */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Left: Groups & Flows */}
+      {/* Left: Groups & Flows */}
         <LeftPanel
           groups={groups}
           selection={selection}
           variables={variables}
           formatTemplate={mergedTemplates}
-          connectorCatalog={connectorCatalog}
           latestConnectors={latestConnectors}
-          connectorHealthSummary={connectorHealthSummary}
           onSelectGroup={actions.selectGroup}
           onSelectFlow={actions.selectFlow}
           onToggleGroup={actions.toggleGroupExpanded}
