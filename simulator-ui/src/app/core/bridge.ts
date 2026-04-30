@@ -33,6 +33,10 @@ export interface BridgeConfig {
   websocketUrl?: string;
   reconnectInterval?: number;
   maxReconnectAttempts?: number;
+  commandTimeoutMs?: number;
+  maxCommandRetries?: number;
+  retryBackoffMs?: number;
+  maxRetryBackoffMs?: number;
 }
 
 const DEFAULT_CONFIG: BridgeConfig = {
@@ -40,6 +44,10 @@ const DEFAULT_CONFIG: BridgeConfig = {
   websocketUrl: import.meta.env.VITE_WEBSOCKET_URL || 'ws://localhost:8765',
   reconnectInterval: 3000,
   maxReconnectAttempts: 10,
+  commandTimeoutMs: 30000,
+  maxCommandRetries: 2,
+  retryBackoffMs: 500,
+  maxRetryBackoffMs: 4000,
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -52,6 +60,8 @@ type PendingCommand = {
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
   timerId: number;
+  command: UICommand;
+  attempts: number;
 };
 
 const SUPPORTED_COMMANDS = new Set<UICommandType>([
@@ -60,6 +70,8 @@ const SUPPORTED_COMMANDS = new Set<UICommandType>([
   'START_GROUP',
   'STOP_GROUP',
   'GET_INITIAL_STATE',
+  'LOAD_STATE',
+  'SAVE_STATE',
   'GET_CONNECTOR_CATALOG',
   'GET_LATEST_CONNECTOR',
   'SUBSCRIBE_METRICS',
@@ -261,18 +273,65 @@ class CoreBridge {
         payload,
       };
 
-      const timerId = window.setTimeout(() => {
-        if (!this.pendingCommands.has(id)) {
-          return;
+      const pending: PendingCommand = {
+        resolve,
+        reject,
+        timerId: 0,
+        command,
+        attempts: 0,
+      };
+
+      const scheduleAttempt = () => {
+        if (pending.timerId) {
+          window.clearTimeout(pending.timerId);
         }
 
-        this.pendingCommands.delete(id);
-        reject(new Error(`Comando ${type} timeout`));
-      }, 30000);
+        pending.timerId = window.setTimeout(() => {
+          if (!this.pendingCommands.has(id)) {
+            return;
+          }
 
-      this.pendingCommands.set(id, { resolve, reject, timerId });
+          if (pending.attempts < (this.config.maxCommandRetries ?? 0)) {
+            pending.attempts += 1;
+            const delay = Math.min(
+              (this.config.retryBackoffMs ?? 500) * (2 ** (pending.attempts - 1)),
+              this.config.maxRetryBackoffMs ?? 4000,
+            );
 
+            this.emit('error', {
+              error: this.createError({
+                status: 'error',
+                code: 'BRIDGE_TIMEOUT',
+                message: `Timeout en ${type}; reintentando en ${delay} ms`,
+                recoverable: true,
+                commandId: id,
+              }, id),
+              commandId: id,
+              code: 'BRIDGE_TIMEOUT',
+              recoverable: true,
+            });
+
+            window.setTimeout(() => {
+              this.sendRaw(JSON.stringify(pending.command));
+              scheduleAttempt();
+            }, delay);
+            return;
+          }
+
+          this.pendingCommands.delete(id);
+          reject(this.createError({
+            status: 'error',
+            code: 'BRIDGE_TIMEOUT',
+            message: `Comando ${type} timeout`,
+            recoverable: false,
+            commandId: id,
+          }, id));
+        }, this.config.commandTimeoutMs ?? 30000);
+      };
+
+      this.pendingCommands.set(id, pending);
       this.sendRaw(JSON.stringify(command));
+      scheduleAttempt();
     });
   }
 
@@ -293,6 +352,8 @@ class CoreBridge {
       case 'START_SYSTEM':
       case 'STOP_SYSTEM':
       case 'GET_INITIAL_STATE':
+      case 'LOAD_STATE':
+      case 'SAVE_STATE':
       case 'GET_CONNECTOR_CATALOG':
       case 'SUBSCRIBE_METRICS':
       case 'UNSUBSCRIBE_METRICS':
@@ -392,6 +453,9 @@ class CoreBridge {
         case 'FLOW_UPDATE':
           this.emit('flow-update', message.payload as FlowMetricsPayload);
           break;
+        case 'INITIAL_STATE':
+          this.emit('initial-state', message.payload as InitialStatePayload);
+          break;
         case 'ERROR':
           this.emit('error', this.createErrorEvent(message.payload as CoreCommandErrorPayload));
           break;
@@ -402,19 +466,91 @@ class CoreBridge {
       const responseId = responsePayload?.commandId;
       if (responseId && this.pendingCommands.has(responseId)) {
         const pending = this.pendingCommands.get(responseId)!;
-        this.pendingCommands.delete(responseId);
         window.clearTimeout(pending.timerId);
 
         if (message.type === 'ERROR' || responsePayload?.status === 'error') {
-          pending.reject(this.createError(message.payload as CoreCommandErrorPayload, responseId));
+          const commandError = this.createError(message.payload as CoreCommandErrorPayload, responseId);
+          const recoverable = (message.payload as CoreCommandErrorPayload)?.recoverable ?? false;
+
+          if (recoverable && pending.attempts < (this.config.maxCommandRetries ?? 0)) {
+            pending.attempts += 1;
+            const delay = Math.min(
+              (this.config.retryBackoffMs ?? 500) * (2 ** (pending.attempts - 1)),
+              this.config.maxRetryBackoffMs ?? 4000,
+            );
+
+            this.emit('error', {
+              error: commandError,
+              commandId: responseId,
+              code: (message.payload as CoreCommandErrorPayload).code,
+              details: (message.payload as CoreCommandErrorPayload).details,
+              recoverable: true,
+            });
+
+            window.setTimeout(() => {
+              this.sendRaw(JSON.stringify(pending.command));
+              pending.timerId = window.setTimeout(() => {
+                this.handleRetryTimeout(responseId, pending, pending.command.type, reject => pending.reject(reject));
+              }, this.config.commandTimeoutMs ?? 30000);
+            }, delay);
+            return;
+          }
+
+          this.pendingCommands.delete(responseId);
+          pending.reject(commandError);
           return;
         }
 
+        this.pendingCommands.delete(responseId);
         pending.resolve(message.payload);
       }
     } catch (error) {
       console.error('[Bridge] Error parsing message:', error, raw);
     }
+  }
+
+  private handleRetryTimeout(commandId: string, pending: PendingCommand, type: UICommandType, reject: (error: Error) => void): void {
+    if (!this.pendingCommands.has(commandId)) {
+      return;
+    }
+
+    if (pending.attempts < (this.config.maxCommandRetries ?? 0)) {
+      pending.attempts += 1;
+      const delay = Math.min(
+        (this.config.retryBackoffMs ?? 500) * (2 ** (pending.attempts - 1)),
+        this.config.maxRetryBackoffMs ?? 4000,
+      );
+
+      this.emit('error', {
+        error: this.createError({
+          status: 'error',
+          code: 'BRIDGE_TIMEOUT',
+          message: `Timeout en ${type}; reintentando en ${delay} ms`,
+          recoverable: true,
+          commandId,
+        }, commandId),
+        commandId,
+        code: 'BRIDGE_TIMEOUT',
+        recoverable: true,
+      });
+
+      window.setTimeout(() => {
+        this.sendRaw(JSON.stringify(pending.command));
+        pending.timerId = window.setTimeout(() => {
+          this.handleRetryTimeout(commandId, pending, type, reject);
+        }, this.config.commandTimeoutMs ?? 30000);
+      }, delay);
+      return;
+    }
+
+    this.pendingCommands.delete(commandId);
+    reject(this.createError({
+      status: 'error',
+      code: 'BRIDGE_TIMEOUT',
+      message: `Comando ${type} timeout`,
+      recoverable: false,
+      commandId,
+    }, commandId));
   }
 
   private createError(payload: CoreCommandErrorPayload | { message?: string } | null | undefined, commandId?: string): Error {
@@ -528,6 +664,8 @@ export const CoreCommands = {
   startSystem: () => bridge.send('START_SYSTEM'),
   stopSystem: () => bridge.send('STOP_SYSTEM'),
   getInitialState: () => bridge.send('GET_INITIAL_STATE'),
+  loadState: () => bridge.send('LOAD_STATE'),
+  saveState: () => bridge.send('SAVE_STATE'),
   
   // Groups
   startGroup: (groupId: string) => bridge.send('START_GROUP', { groupId }),

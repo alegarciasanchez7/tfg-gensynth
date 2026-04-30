@@ -170,12 +170,7 @@ export async function deleteGroup(
       });
     }
 
-    // Backend will send groups-update with the deleted group removed
-    // For now, update local state
-    ctx.dispatch({
-      type: 'SET_GROUPS',
-      payload: [], // Will be updated with groups-update event
-    });
+    // Local state reconciliation is handled by AppContext.
   } catch (error) {
     ctx.reportError('GROUPS', `deleteGroup(${groupId})`, error);
     throw extractCommandError(error);

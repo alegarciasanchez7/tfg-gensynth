@@ -52,6 +52,8 @@ export default function App() {
       <Header
         systemStatus={systemStatus}
         onStatusToggle={actions.toggleSystem}
+        onLoadProject={actions.loadProjectState}
+        onSaveProject={actions.saveProjectState}
         projectName={projectName}
         onProjectNameChange={actions.setProjectName}
         isDark={isDark}
