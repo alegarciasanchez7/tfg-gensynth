@@ -20,8 +20,12 @@ export type CoreMessageType =
   | 'METRICS_UPDATE'
   | 'LOG_ENTRY'
   | 'VARIABLE_UPDATE'
+  | 'INITIAL_STATE'
   | 'CONNECTION_STATUS'
-  | 'ERROR';
+  | 'ERROR'
+  | 'BRIDGE_TIMEOUT'
+  | 'BRIDGE_RECONNECTING'
+  | 'BRIDGE_RECONNECT_EXHAUSTED';
 
 export interface CoreMessage<T = unknown> {
   type: CoreMessageType;
@@ -39,7 +43,10 @@ export interface CoreCommandErrorPayload {
     | 'UNSUPPORTED_COMMAND'
     | 'NOT_FOUND'
     | 'PROTOCOL_VERSION_MISMATCH'
-    | 'INTERNAL_ERROR';
+    | 'INTERNAL_ERROR'
+    | 'BRIDGE_TIMEOUT'
+    | 'BRIDGE_RECONNECTING'
+    | 'BRIDGE_RECONNECT_EXHAUSTED';
   message: string;
   details?: Record<string, unknown>;
   recoverable?: boolean;
@@ -114,6 +121,8 @@ export type UICommandType =
   | 'CREATE_VARIABLE'
   | 'DELETE_VARIABLE'
   | 'GET_INITIAL_STATE'
+  | 'LOAD_STATE'
+  | 'SAVE_STATE'
   | 'GET_CONNECTOR_CATALOG'
   | 'GET_LATEST_CONNECTOR'
   | 'SUBSCRIBE_METRICS'
@@ -221,6 +230,8 @@ export interface UICommandPayloadMap {
   CREATE_VARIABLE: CreateVariableCommandPayload;
   DELETE_VARIABLE: DeleteVariableCommandPayload;
   GET_INITIAL_STATE: undefined;
+  LOAD_STATE: undefined;
+  SAVE_STATE: undefined;
   GET_CONNECTOR_CATALOG: undefined;
   GET_LATEST_CONNECTOR: GetLatestConnectorCommandPayload;
   SUBSCRIBE_METRICS: undefined;
@@ -273,6 +284,7 @@ export interface InitialStatePayload {
   groups: GroupState[];
   variables: VariableState[];
   metrics: MetricsPayload;
+  connectorCatalog: ConnectorPluginDescriptor[];
 }
 
 export interface GroupState {

@@ -6,6 +6,8 @@ import type { ConnectorPluginDescriptor } from '../../../core/types';
 interface HeaderProps {
   systemStatus: SystemStatus;
   onStatusToggle: () => void;
+  onLoadProject: () => Promise<void>;
+  onSaveProject: () => Promise<void>;
   projectName: string;
   onProjectNameChange: (n: string) => void;
   isDark: boolean;
@@ -186,9 +188,10 @@ function SettingsPanel({ isDark, onThemeToggle, onClose }: {
   );
 }
 
-export function Header({ systemStatus, onStatusToggle, projectName, onProjectNameChange, isDark, onThemeToggle, connectorCatalog, latestConnectors, connectorHealthSummary }: HeaderProps) {
+export function Header({ systemStatus, onStatusToggle, onLoadProject, onSaveProject, projectName, onProjectNameChange, isDark, onThemeToggle, connectorCatalog, latestConnectors, connectorHealthSummary }: HeaderProps) {
   const [showSettings, setShowSettings] = useState(false);
   const [showCatalog, setShowCatalog] = useState(false);
+  const [loadingState, setLoadingState] = useState(false);
   const isRunning = systemStatus === 'running';
 
   return (
@@ -240,10 +243,36 @@ export function Header({ systemStatus, onStatusToggle, projectName, onProjectNam
 
       {/* File actions */}
       <div className="flex items-center gap-1">
-        <button className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-[var(--c-br1)] text-xs text-[var(--c-tx3)] hover:text-[var(--c-tx1)] hover:border-[var(--c-br3)] hover:bg-[var(--c-bg5)] transition-all">
+        <button
+          onClick={async () => {
+            setLoadingState(true);
+            try {
+              await onLoadProject();
+            } catch (error) {
+              console.error('[Header] Load project error:', error);
+            } finally {
+              setLoadingState(false);
+            }
+          }}
+          disabled={loadingState}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-[var(--c-br1)] text-xs text-[var(--c-tx3)] hover:text-[var(--c-tx1)] hover:border-[var(--c-br3)] hover:bg-[var(--c-bg5)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        >
           <FolderOpen size={12} /> Load
         </button>
-        <button className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-[var(--c-br1)] text-xs text-[var(--c-tx3)] hover:text-[var(--c-tx1)] hover:border-[var(--c-br3)] hover:bg-[var(--c-bg5)] transition-all">
+        <button
+          onClick={async () => {
+            setLoadingState(true);
+            try {
+              await onSaveProject();
+            } catch (error) {
+              console.error('[Header] Save project error:', error);
+            } finally {
+              setLoadingState(false);
+            }
+          }}
+          disabled={loadingState}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-[var(--c-br1)] text-xs text-[var(--c-tx3)] hover:text-[var(--c-tx1)] hover:border-[var(--c-br3)] hover:bg-[var(--c-bg5)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        >
           <Save size={12} /> Save
         </button>
       </div>

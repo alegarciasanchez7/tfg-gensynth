@@ -51,6 +51,8 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         "DELETE_VARIABLE",
         "UPDATE_VARIABLE",
         "GET_INITIAL_STATE",
+        "LOAD_STATE",
+        "SAVE_STATE",
         "GET_CONNECTOR_CATALOG",
         "GET_LATEST_CONNECTOR",
         "SUBSCRIBE_METRICS",
@@ -143,27 +145,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
     }
 
     private void initializeRuntime() {
-        synchronized (stateLock) {
-            try {
-                List<GroupDefinition> persistedGroups = stateRepository.loadGroups();
-                List<Variable> persistedVariables = stateRepository.loadVariables();
-
-                if (persistedGroups.isEmpty()) {
-                    createDefaultRuntime();
-                    persistState();
-                } else {
-                    for (GroupDefinition definition : persistedGroups) {
-                        groupsById.put(definition.getGroupId(), GroupRuntime.fromDefinition(definition));
-                    }
-                }
-
-                for (Variable variable : persistedVariables) {
-                    variablesById.put(variable.getId(), variable);
-                }
-            } catch (StateRepository.StateRepositoryException e) {
-                createDefaultRuntime();
-            }
-        }
+        loadRuntimeState(true);
     }
 
     private void createDefaultRuntime() {
@@ -210,6 +192,42 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         }
     }
 
+    private void loadRuntimeState(boolean createDefaultIfEmpty) {
+        synchronized (stateLock) {
+            for (GroupRuntime group : groupsById.values()) {
+                stopGroupInternal(group);
+            }
+
+            groupsById.clear();
+            variablesById.clear();
+            connectorByFlowId.clear();
+            publisherTasksByFlowId.clear();
+
+            try {
+                List<GroupDefinition> persistedGroups = stateRepository.loadGroups();
+                List<Variable> persistedVariables = stateRepository.loadVariables();
+
+                if (persistedGroups.isEmpty() && createDefaultIfEmpty) {
+                    createDefaultRuntime();
+                    persistState();
+                } else {
+                    for (GroupDefinition definition : persistedGroups) {
+                        groupsById.put(definition.getGroupId(), GroupRuntime.fromDefinition(definition));
+                    }
+                }
+
+                for (Variable variable : persistedVariables) {
+                    variablesById.put(variable.getId(), variable);
+                }
+
+                systemRunning = false;
+            } catch (StateRepository.StateRepositoryException e) {
+                createDefaultRuntime();
+                systemRunning = false;
+            }
+        }
+    }
+
     private void handleCommand(WebSocket conn, String rawMessage) {
         String commandId = null;
         try {
@@ -243,15 +261,15 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
 
             switch (type) {
                 case "GET_INITIAL_STATE" -> {
-                    sendSystemStatus(conn, commandId);
-                    sendGroupsUpdate(conn);
-                    List<Map<String, Object>> variablesPayload = new ArrayList<>();
-                    synchronized (stateLock) {
-                        for (Variable variable : variablesById.values()) {
-                            variablesPayload.add(normalizeVariablePayloadForUi(variable.toPayload()));
-                        }
-                    }
-                    sendMessage(conn, "VARIABLE_UPDATE", variablesPayload);
+                    sendInitialState(conn, commandId);
+                }
+                case "LOAD_STATE" -> {
+                    loadRuntimeState(true);
+                    sendInitialState(conn, commandId);
+                }
+                case "SAVE_STATE" -> {
+                    persistState();
+                    sendAck(conn, commandId, "state_saved");
                 }
                 case "SUBSCRIBE_METRICS" -> {
                     metricSubscribers.add(conn);
@@ -918,6 +936,31 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
     }
 
     private void sendMetrics(WebSocket conn, String commandId) {
+        Map<String, Object> payload = buildMetricsPayload(commandId);
+        sendMessage(conn, "METRICS_UPDATE", payload);
+    }
+
+    private static long bytesToMb(long bytes) {
+        return Math.max(1, bytes / (1024 * 1024));
+    }
+
+    private void sendSystemStatus(WebSocket conn, String commandId) {
+        sendMessage(conn, "SYSTEM_STATUS", buildSystemStatusPayload(commandId));
+    }
+
+    private Map<String, Object> buildSystemStatusPayload(String commandId) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        if (commandId != null) {
+            payload.put("commandId", commandId);
+        }
+        payload.put("status", systemRunning ? "running" : "stopped");
+        payload.put("uptime", Math.max(0, (System.currentTimeMillis() - startedAtMillis) / 1000));
+        payload.put("totalMessages", totalMessages.get());
+        payload.put("messagesPerSecond", messagesPerSecond);
+        return payload;
+    }
+
+    private Map<String, Object> buildMetricsPayload(String commandId) {
         Map<String, Object> payload = new LinkedHashMap<>();
         if (commandId != null) {
             payload.put("commandId", commandId);
@@ -934,25 +977,32 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         payload.put("totalMessages", totalMessages.get());
         payload.put("activeConnections", getConnections().size());
         payload.put("errorCount", totalErrors.get());
-
-        sendMessage(conn, "METRICS_UPDATE", payload);
+        return payload;
     }
 
-    private static long bytesToMb(long bytes) {
-        return Math.max(1, bytes / (1024 * 1024));
-    }
-
-    private void sendSystemStatus(WebSocket conn, String commandId) {
+    private Map<String, Object> buildInitialStatePayload(String commandId) {
         Map<String, Object> payload = new LinkedHashMap<>();
         if (commandId != null) {
             payload.put("commandId", commandId);
         }
-        payload.put("status", systemRunning ? "running" : "stopped");
-        payload.put("uptime", Math.max(0, (System.currentTimeMillis() - startedAtMillis) / 1000));
-        payload.put("totalMessages", totalMessages.get());
-        payload.put("messagesPerSecond", messagesPerSecond);
 
-        sendMessage(conn, "SYSTEM_STATUS", payload);
+        payload.put("systemStatus", buildSystemStatusPayload(null));
+        payload.put("groups", toGroupsPayload());
+
+        List<Map<String, Object>> variablesPayload = new ArrayList<>();
+        synchronized (stateLock) {
+            for (Variable variable : variablesById.values()) {
+                variablesPayload.add(normalizeVariablePayloadForUi(variable.toPayload()));
+            }
+        }
+        payload.put("variables", variablesPayload);
+        payload.put("metrics", buildMetricsPayload(null));
+        payload.put("connectorCatalog", connectorCatalogService.listAvailableConnectors());
+        return payload;
+    }
+
+    private void sendInitialState(WebSocket conn, String commandId) {
+        sendMessage(conn, "INITIAL_STATE", buildInitialStatePayload(commandId));
     }
 
     private void sendGroupsUpdate(WebSocket conn) {

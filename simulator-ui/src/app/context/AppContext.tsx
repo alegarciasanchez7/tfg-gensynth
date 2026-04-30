@@ -13,7 +13,17 @@ import React, {
   useRef,
   type ReactNode,
 } from 'react';
+import { toast } from 'sonner';
 import bridge, { CoreCommands } from '../core/bridge';
+import {
+  createProjectSnapshot,
+  downloadProjectSnapshot,
+  loadProjectSnapshotFromFile,
+  triggerFileSelection,
+  normalizeGroupFromSnapshot,
+  normalizeVariableFromSnapshot,
+  type ProjectSnapshot,
+} from '../core/fileStorage';
 import type {
   SystemStatusPayload,
   MetricsPayload,
@@ -21,6 +31,7 @@ import type {
   GroupState,
   FlowMetricsPayload,
   ConnectorPluginDescriptor,
+  InitialStatePayload,
 } from '../core/types';
 import type { Selection, Group, Variable, LogEntry, SystemStatus, Flow, ConnectorHealthStatus } from '../types';
 import type { ConnectorHealthSummary } from '../types';
@@ -108,7 +119,17 @@ type AppAction =
   | { type: 'SET_FLOW_CONNECTOR_CONFIG'; payload: { flowId: string; config: Record<string, unknown> } }
   | { type: 'SET_METRICS'; payload: MetricsPayload }
   | { type: 'SET_FLOW_METRICS'; payload: FlowMetricsPayload }
-  | { type: 'LOAD_INITIAL_STATE'; payload: { groups: Group[]; variables: Variable[]; logs: LogEntry[] } };
+  | {
+      type: 'LOAD_INITIAL_STATE';
+      payload: {
+        groups: Group[];
+        variables: Variable[];
+        logs?: LogEntry[];
+        connectorCatalog?: ConnectorPluginDescriptor[];
+        metrics?: MetricsPayload | null;
+        systemStatus?: SystemStatus;
+      };
+    };
 
 function compareVersions(leftVersion: string, rightVersion: string): number {
   const leftParts = leftVersion.split('.').map((part) => Number(part) || 0);
@@ -139,6 +160,33 @@ function latestConnectorsFromCatalog(catalog: ConnectorPluginDescriptor[]): Conn
     left.displayName.localeCompare(right.displayName) ||
     left.pluginId.localeCompare(right.pluginId)
   );
+}
+
+function mapGroupsFromCore(groups: GroupState[], previousGroups: Group[] = []): Group[] {
+  return groups.map((group) => ({
+    id: group.id,
+    name: group.name,
+    status: group.status,
+    throughput: `${group.throughput} msg/s`,
+    description: group.description,
+    threads: group.threads,
+    outputMode: group.outputMode,
+    expanded: previousGroups.find((existing) => existing.id === group.id)?.expanded ?? false,
+    flows: group.flows.map((flow) => ({
+      id: flow.id,
+      name: flow.name,
+      technology: flow.technology,
+      connectionStatus: flow.connectionStatus,
+      throughput: `${flow.throughput} msg/s`,
+      hasError: flow.hasError,
+      errorMessage: flow.errorMessage,
+      interval: flow.interval,
+      burst: flow.burst,
+      topic: flow.topic,
+      host: flow.host,
+      port: flow.port,
+    })),
+  }));
 }
 
 function getConnectorProperties(schema: Record<string, unknown>): Record<string, Record<string, unknown>> {
@@ -472,9 +520,10 @@ function appReducer(state: AppState, action: AppAction): AppState {
 
     case 'LOAD_INITIAL_STATE':
       return (() => {
+        const connectorCatalog = action.payload.connectorCatalog ?? state.connectorCatalog;
         const { selections, configs, healthSummary } = normalizeConnectorState(
           action.payload.groups,
-          state.connectorCatalog,
+          connectorCatalog,
           state.flowConnectorSelections,
           state.flowConnectorConfigs,
         );
@@ -483,10 +532,14 @@ function appReducer(state: AppState, action: AppAction): AppState {
           ...state,
           groups: action.payload.groups,
           variables: normalizeVariableListFromCore(action.payload.variables),
-          logs: action.payload.logs,
+          logs: action.payload.logs ?? state.logs,
+          connectorCatalog,
+          latestConnectors: latestConnectorsFromCatalog(connectorCatalog),
           flowConnectorSelections: selections,
           flowConnectorConfigs: configs,
           connectorHealthSummary: healthSummary,
+          metrics: action.payload.metrics ?? state.metrics,
+          systemStatus: action.payload.systemStatus ?? state.systemStatus,
         };
       })();
 
@@ -507,6 +560,8 @@ interface AppContextValue {
     startSystem: () => Promise<void>;
     stopSystem: () => Promise<void>;
     toggleSystem: () => Promise<void>;
+    loadProjectState: () => Promise<void>;
+    saveProjectState: () => Promise<void>;
     
     // Selection
     selectGroup: (groupId: string) => void;
@@ -585,6 +640,7 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
   const [state, dispatch] = useReducer(appReducer, initialState);
   const connectionAttempted = useRef(false);
   const lastConnectorHealthSignature = useRef('');
+  const preserveLocalSnapshotRef = useRef(false);
 
   // Initial connection to the Core
   useEffect(() => {
@@ -600,9 +656,9 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
             groups: mockGroups,
             variables: mockVariables,
             logs: mockLogs,
+            connectorCatalog: mockConnectorCatalog,
           },
         });
-        dispatch({ type: 'SET_CONNECTOR_CATALOG', payload: mockConnectorCatalog });
         dispatch({ type: 'SET_CONNECTED', payload: { connected: true, mode: 'mock' } });
         return;
       }
@@ -614,15 +670,9 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
           payload: { connected: true, mode: bridge.getMode() } 
         });
 
-        // Get initial state and catalog from Core
+        // Get initial state from Core; the listener below will hydrate state.
         await CoreCommands.getInitialState();
         await CoreCommands.subscribeMetrics();
-
-        const catalogResponse = await CoreCommands.getConnectorCatalog();
-        const catalogPayload = Array.isArray(catalogResponse)
-          ? catalogResponse
-          : (catalogResponse as { catalog?: ConnectorPluginDescriptor[] } | null)?.catalog ?? [];
-        dispatch({ type: 'SET_CONNECTOR_CATALOG', payload: catalogPayload });
       } catch (error) {
         console.error('[AppContext] Error connecting to the Core:', error);
         // Data fallback if connection fails
@@ -632,9 +682,9 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
             groups: mockGroups,
             variables: mockVariables,
             logs: mockLogs,
+            connectorCatalog: mockConnectorCatalog,
           },
         });
-        dispatch({ type: 'SET_CONNECTOR_CATALOG', payload: mockConnectorCatalog });
         dispatch({ type: 'SET_CONNECTED', payload: { connected: false, mode: 'mock' } });
       }
     };
@@ -678,42 +728,70 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
       bridge.on('metrics', (metrics: MetricsPayload) => {
         dispatch({ type: 'SET_METRICS', payload: metrics });
       }),
+
+      bridge.on('initial-state', (snapshot: InitialStatePayload) => {
+        dispatch({
+          type: 'LOAD_INITIAL_STATE',
+          payload: {
+            groups: mapGroupsFromCore(snapshot.groups, state.groups),
+            variables: normalizeVariableListFromCore(snapshot.variables),
+            connectorCatalog: snapshot.connectorCatalog,
+            metrics: snapshot.metrics,
+            systemStatus: snapshot.systemStatus.status,
+          },
+        });
+      }),
       
       bridge.on('log', (log: LogPayload) => {
         dispatch({ type: 'ADD_LOG', payload: log });
       }),
       
       bridge.on('groups-update', (groups: GroupState[]) => {
-        // Convert GroupState from Core to Group for UI, preserving expanded state and normalizing connector info
-        const uiGroups: Group[] = groups.map(g => ({
-          id: g.id,
-          name: g.name,
-          status: g.status,
-          throughput: `${g.throughput} msg/s`,
-          description: g.description,
-          threads: g.threads,
-          outputMode: g.outputMode,
-          expanded: state.groups.find(sg => sg.id === g.id)?.expanded ?? false,
-          flows: g.flows.map(f => ({
-            id: f.id,
-            name: f.name,
-            technology: f.technology,
-            connectionStatus: f.connectionStatus,
-            throughput: `${f.throughput} msg/s`,
-            hasError: f.hasError,
-            errorMessage: f.errorMessage,
-            interval: f.interval,
-            burst: f.burst,
-            topic: f.topic,
-            host: f.host,
-            port: f.port,
-          })),
-        }));
-        dispatch({ type: 'SET_GROUPS', payload: uiGroups });
+        // Convert GroupState from Core to Group for UI, preserving expanded state and normalizing connector info.
+        // If a local snapshot was imported, keep current UI groups that the backend does not know about yet.
+        const uiGroups = mapGroupsFromCore(groups, state.groups);
+        const nextGroups = preserveLocalSnapshotRef.current
+          ? [
+              ...state.groups.map((currentGroup) => {
+                const matchingCoreGroup = uiGroups.find((group) => group.id === currentGroup.id);
+                return matchingCoreGroup ? { ...matchingCoreGroup, expanded: currentGroup.expanded } : currentGroup;
+              }),
+              ...uiGroups.filter(
+                (incomingGroup) => !state.groups.some((currentGroup) => currentGroup.id === incomingGroup.id),
+              ),
+            ]
+          : uiGroups;
+
+        dispatch({ type: 'SET_GROUPS', payload: nextGroups });
       }),
       
       bridge.on('flow-update', (flowMetrics: FlowMetricsPayload) => {
         dispatch({ type: 'SET_FLOW_METRICS', payload: flowMetrics });
+      }),
+
+      bridge.on('error', ({ error, commandId, code, details, recoverable }) => {
+        dispatch({
+          type: 'ADD_LOG',
+          payload: {
+            id: `bridge_error_${Date.now()}`,
+            timestamp: new Date().toLocaleTimeString('en-GB', { hour12: false }),
+            level: recoverable ? 'warn' : 'error',
+            source: 'BRIDGE',
+            message: `${code ?? 'BRIDGE_ERROR'}${commandId ? ` (${commandId})` : ''}: ${error.message}`,
+          },
+        });
+        if (details && Object.keys(details).length > 0) {
+          dispatch({
+            type: 'ADD_LOG',
+            payload: {
+              id: `bridge_error_details_${Date.now()}`,
+              timestamp: new Date().toLocaleTimeString('en-GB', { hour12: false }),
+              level: 'debug',
+              source: 'BRIDGE',
+              message: JSON.stringify(details),
+            },
+          });
+        }
       }),
       
       bridge.on('disconnected', () => {
@@ -878,6 +956,122 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
   const clearLogs = useCallback(() => {
     dispatch({ type: 'CLEAR_LOGS' });
   }, []);
+
+  const loadProjectState = useCallback(async () => {
+    try {
+      // Open file selector
+      const file = await triggerFileSelection();
+      if (!file) {
+        // User cancelled the file selection
+        return;
+      }
+
+      // Load and parse the snapshot
+      const snapshot = await loadProjectSnapshotFromFile(file);
+        console.log('[loadProjectState] Snapshot cargado:', { groups: snapshot.groups.length, variables: snapshot.variables.length });
+        console.log('[loadProjectState] Grupos cargados:', snapshot.groups);
+
+      // Normalize all data to ensure valid structure
+      const normalizedGroups = snapshot.groups.map(normalizeGroupFromSnapshot);
+      const normalizedVariables = snapshot.variables.map(normalizeVariableFromSnapshot);
+        console.log('[loadProjectState] Grupos normalizados:', normalizedGroups);
+
+      // Dispatch state update
+      dispatch({
+        type: 'LOAD_INITIAL_STATE',
+        payload: {
+          groups: normalizedGroups,
+          variables: normalizedVariables,
+          connectorCatalog: state.connectorCatalog,
+        },
+      });
+      preserveLocalSnapshotRef.current = true;
+
+      const selectionStillExists =
+        state.selection.type === 'group'
+          ? normalizedGroups.some((group) => group.id === state.selection.groupId)
+          : state.selection.type === 'flow'
+            ? normalizedGroups.some((group) =>
+                group.id === state.selection.groupId && group.flows.some((flow) => flow.id === state.selection.flowId),
+              )
+            : state.selection.type === 'variable'
+              ? normalizedVariables.some((variable) => variable.id === state.selection.variableId)
+              : true;
+
+      if (!selectionStillExists) {
+        dispatch({ type: 'SET_SELECTION', payload: { type: 'none' } });
+      }
+
+        // Log success with details
+        const totalFlows = normalizedGroups.reduce((acc, g) => acc + g.flows.length, 0);
+        dispatch({
+          type: 'ADD_LOG',
+          payload: {
+            id: `load_success_${Date.now()}`,
+            timestamp: new Date().toLocaleTimeString('en-GB', { hour12: false }),
+            level: 'info',
+            source: 'SYSTEM',
+            message: `Proyecto cargado: ${normalizedGroups.length} grupos, ${totalFlows} flows, ${normalizedVariables.length} variables`,
+          },
+        });
+      // Log success
+      toast.success(`Proyecto cargado desde: ${file.name}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Error desconocido al cargar proyecto';
+      dispatch({
+        type: 'ADD_LOG',
+        payload: {
+          id: `load_error_${Date.now()}`,
+          timestamp: new Date().toLocaleTimeString('en-GB', { hour12: false }),
+          level: 'error',
+          source: 'SYSTEM',
+          message: `Error al cargar proyecto: ${message}`,
+        },
+      });
+      toast.error(message);
+    }
+  }, [state.connectorCatalog]);
+
+  const saveProjectState = useCallback(async () => {
+    try {
+      // Create snapshot from current state
+      const snapshot = createProjectSnapshot(state.groups, state.variables);
+
+      // Generate filename with timestamp
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+      const filename = `gen-synth-${timestamp}.json`;
+
+      // Download to local file
+      downloadProjectSnapshot(snapshot, filename);
+
+      // Log success
+      dispatch({
+        type: 'ADD_LOG',
+        payload: {
+          id: `save_success_${Date.now()}`,
+          timestamp: new Date().toLocaleTimeString('en-GB', { hour12: false }),
+          level: 'info',
+          source: 'SYSTEM',
+          message: `Proyecto guardado en: ${filename}`,
+        },
+      });
+
+      toast.success(`Proyecto guardado: ${filename}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Error desconocido al guardar proyecto';
+      dispatch({
+        type: 'ADD_LOG',
+        payload: {
+          id: `save_error_${Date.now()}`,
+          timestamp: new Date().toLocaleTimeString('en-GB', { hour12: false }),
+          level: 'error',
+          source: 'SYSTEM',
+          message: `Error al guardar proyecto: ${message}`,
+        },
+      });
+      toast.error(message);
+    }
+  }, [state.groups, state.variables]);
 
   // ─────────────────────────────────────────────────────────
   // CRUD Actions: Groups, Flows, Variables
@@ -1048,6 +1242,8 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
     startSystem,
     stopSystem,
     toggleSystem,
+    loadProjectState,
+    saveProjectState,
     selectGroup,
     selectFlow,
     selectVariable,
