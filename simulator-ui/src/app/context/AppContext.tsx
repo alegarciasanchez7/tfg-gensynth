@@ -22,7 +22,6 @@ import {
   triggerFileSelection,
   normalizeGroupFromSnapshot,
   normalizeVariableFromSnapshot,
-  type ProjectSnapshot,
 } from '../core/fileStorage';
 import type {
   SystemStatusPayload,

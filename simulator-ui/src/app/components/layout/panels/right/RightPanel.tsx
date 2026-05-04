@@ -147,15 +147,6 @@ export function RightPanel({ variables, selection, onSelectVariable, onInsertVar
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          {isFlowSelected && (
-            <span
-              className="text-[9px] text-cyan-500 bg-cyan-500/10 border border-cyan-500/30 px-1.5 py-0.5 rounded whitespace-nowrap"
-              style={{ fontFamily: 'JetBrains Mono, monospace' }}
-            >
-              click → to insert
-            </span>
-          )}
-
           <div className="relative shrink-0">
             <button
               onClick={() => setShowAdd(!showAdd)}

@@ -1,7 +1,7 @@
 import { Header } from './components/layout/header/Header';
 import { ResourceBar } from './components/layout/resource-bar/ResourceBar';
 import { LeftPanel } from './components/layout/panels/left/LeftPanel';
-import { Workspace } from './components/Workspace';
+import { Workspace } from './components/workspace/Workspace';
 import { RightPanel } from './components/layout/panels/right/RightPanel';
 import { BottomPanel } from './components/layout/panels/bottom/BottomPanel';
 import { useApp } from './context';
@@ -72,7 +72,6 @@ export default function App() {
         <LeftPanel
           groups={groups}
           selection={selection}
-          variables={variables}
           formatTemplate={mergedTemplates}
           latestConnectors={latestConnectors}
           onSelectGroup={actions.selectGroup}

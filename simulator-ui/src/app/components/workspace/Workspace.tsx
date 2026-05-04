@@ -1,8 +1,8 @@
-import type { Selection, Group, Variable } from '../types';
-import { EmptyWorkspace } from './workspace/EmptyWorkspace';
-import { GroupWorkspace } from './workspace/GroupWorkspace';
-import { FlowWorkspace } from './workspace/FlowWorkspace';
-import { VariableEditorWorkspace } from './workspace/variables/VariableEditorWorkspace';
+import type { Selection, Group, Variable } from '../../types';
+import { EmptyWorkspace } from './EmptyWorkspace';
+import { GroupWorkspace } from './GroupWorkspace';
+import { FlowWorkspace } from './FlowWorkspace';
+import { VariableEditorWorkspace } from './variables/VariableEditorWorkspace';
 
 interface WorkspaceProps {
   selection: Selection;
@@ -18,7 +18,6 @@ export function Workspace({
   selection,
   groups,
   variables,
-  onSelectVariable,
   formatTemplate,
   onFormatChange,
   onClearVariableSelection,
