@@ -14,6 +14,14 @@ interface RightPanelProps {
   onInsertVariable: (name: string, scope: VariableScope) => void;
 }
 
+type CreateState = {
+  name: string;
+  type: VariableType;
+  scope: VariableScope;
+  description: string;
+  configText: string;
+};
+
 const scopeLabels: Record<VariableScope, string> = {
   local: 'LOCAL',
   group: 'GROUP',
@@ -62,9 +70,9 @@ export function RightPanel({ variables, selection, onSelectVariable, onInsertVar
   const [showAdd, setShowAdd] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [createState, setCreateState] = useState({
+  const [createState, setCreateState] = useState<CreateState>({
     name: '',
-    type: 'numeric' as const,
+    type: 'numeric',
     scope: activeScope,
     description: '',
     configText: '{\n  "min": 0,\n  "max": 100,\n  "step": 1\n}',
