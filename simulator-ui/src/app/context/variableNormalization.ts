@@ -3,7 +3,7 @@ import type { Variable } from '../types';
 export function normalizeVariableFromCore(variable: Variable): Variable {
   return {
     ...variable,
-    type: variable.type === 'date' ? 'temporal' : variable.type,
+    type: (variable.type as string) === 'date' ? 'temporal' : variable.type,
     scope: variable.scope.toLowerCase() as Variable['scope'],
   };
 }

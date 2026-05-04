@@ -12,19 +12,6 @@ const connBadge: Record<ConnectionStatus, { color: string; bg: string; label: st
   warning:      { color: 'text-amber-500',   bg: 'bg-amber-500/10 border-amber-500/30',    label: 'WARNING' },
 };
 
-function Field({ label, value, wide }: { label: string; value: React.ReactNode; wide?: boolean }) {
-  return (
-    <div className={`flex flex-col gap-1 ${wide ? 'col-span-2' : ''}`}>
-      <label className="text-[10px] text-[var(--c-tx4)] tracking-wider uppercase"
-        style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-        {label}
-      </label>
-      <div className="bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded px-2.5 py-1.5">
-        {value}
-      </div>
-    </div>
-  );
-}
 
 function EditableField({ label, value, wide }: { label: string; value: string; wide?: boolean }) {
   const [val, setVal] = useState(value);

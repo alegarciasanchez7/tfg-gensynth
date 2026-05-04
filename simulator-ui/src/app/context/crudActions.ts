@@ -350,7 +350,6 @@ export async function createVariable(
   try {
     if (ctx.connectionMode !== 'mock') {
       const response = await bridge.send('CREATE_VARIABLE', {
-        variableId,
         name: name.trim(),
         type,
         scope,
