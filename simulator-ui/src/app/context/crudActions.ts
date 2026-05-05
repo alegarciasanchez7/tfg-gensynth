@@ -16,6 +16,7 @@
 import type React from 'react';
 import bridge from '../core/bridge';
 import type { Group, Flow, Variable } from '../types';
+import type { OptimisticManager } from './optimisticManager';
 
 // ─────────────────────────────────────────────────────────────
 // Helper Types
@@ -31,6 +32,7 @@ export interface CRUDActionContext {
   dispatch: React.Dispatch<any>;
   reportError: (source: string, action: string, error: unknown) => void;
   connectionMode: 'websocket' | 'jcef' | 'mock';
+  optimisticManager: OptimisticManager | null;
 }
 
 // ─────────────────────────────────────────────────────────────

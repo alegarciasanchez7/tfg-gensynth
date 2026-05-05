@@ -36,6 +36,7 @@ export interface CoreMessage<T = unknown> {
 
 export interface CoreCommandErrorPayload {
   commandId?: string;
+  clientRequestId?: string; // Re-emitted by backend for CREATE_* correlation
   status: 'error';
   code:
     | 'INVALID_ENVELOPE'
@@ -54,6 +55,7 @@ export interface CoreCommandErrorPayload {
 
 export interface CoreCommandOkPayload {
   commandId?: string;
+  clientRequestId?: string; // Re-emitted by backend for CREATE_* correlation
   status: 'ok';
   result?: string;
 }
@@ -145,6 +147,7 @@ export interface CreateGroupCommandPayload {
   threads?: number;
   outputMode?: string;
   description?: string;
+  clientRequestId?: string; // For optimistic UI correlation
 }
 
 export interface DeleteGroupCommandPayload {
@@ -161,6 +164,7 @@ export interface CreateFlowCommandPayload {
   interval?: number;
   burst?: number;
   template?: string;
+  clientRequestId?: string; // For optimistic UI correlation
 }
 
 export interface DeleteFlowCommandPayload {
@@ -195,6 +199,7 @@ export interface CreateVariableCommandPayload {
   scope: 'local' | 'group' | 'global';
   groupId?: string;
   config?: Record<string, unknown>;
+  clientRequestId?: string; // For optimistic UI correlation
 }
 
 export interface DeleteVariableCommandPayload {

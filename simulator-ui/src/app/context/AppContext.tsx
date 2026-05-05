@@ -38,6 +38,26 @@ import { mockGroups, mockVariables, mockLogs, mockConnectorCatalog } from '../da
 import * as CRUDActions from './crudActions';
 import type { CRUDActionContext } from './crudActions';
 import { normalizeVariableFromCore, normalizeVariableListFromCore } from './variableNormalization';
+import { OptimisticManager } from './optimisticManager';
+import { 
+  executeOptimisticUpdate, 
+  createGroupUpdatePayload,
+  createFlowUpdatePayload,
+  createVariableUpdatePayload,
+} from './optimisticUpdateHelper';
+import {
+  executeCreateOptimistic,
+  generateOptimisticId,
+  createOptimisticGroup,
+  createOptimisticFlow,
+  createOptimisticVariable,
+} from './createOptimisticHelper';
+import { executeDeleteOptimistic } from './deleteOptimisticHelper';
+import {
+  reconcileState,
+  applyReconciliation,
+  logReconciliationResults,
+} from './reconciliationHelper';
 
 // ─────────────────────────────────────────────────────────────
 // Application State
@@ -640,6 +660,12 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
   const connectionAttempted = useRef(false);
   const lastConnectorHealthSignature = useRef('');
   const preserveLocalSnapshotRef = useRef(false);
+  const optimisticManager = useRef<OptimisticManager | null>(null);
+
+  // Initialize OptimisticManager once
+  if (!optimisticManager.current) {
+    optimisticManager.current = new OptimisticManager();
+  }
 
   // Initial connection to the Core
   useEffect(() => {
@@ -729,11 +755,46 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
       }),
 
       bridge.on('initial-state', (snapshot: InitialStatePayload) => {
+        const serverGroups = mapGroupsFromCore(snapshot.groups, state.groups);
+        const serverVariables = normalizeVariableListFromCore(snapshot.variables);
+
+        // Reconcile state between local and server
+        const reconciliation = reconcileState({
+          optimisticManager: optimisticManager.current,
+          localState: {
+            groups: state.groups,
+            variables: state.variables,
+          },
+          serverState: {
+            groups: serverGroups,
+            variables: serverVariables,
+          },
+        });
+
+        // Apply reconciliation results to OptimisticManager
+        applyReconciliation(reconciliation, optimisticManager.current);
+
+        // Log reconciliation results if there are conflicts or resolved operations
+        if (reconciliation.operationsResolved.length > 0 || reconciliation.conflicts.length > 0) {
+          const reconciliationLog = logReconciliationResults(reconciliation);
+          dispatch({
+            type: 'ADD_LOG',
+            payload: {
+              id: `reconciliation_${Date.now()}`,
+              timestamp: new Date().toLocaleTimeString('en-GB', { hour12: false }),
+              level: reconciliation.conflicts.length > 0 ? 'warn' : 'info',
+              source: 'RECONCILIATION',
+              message: reconciliationLog,
+            },
+          });
+        }
+
+        // Update state with server state
         dispatch({
           type: 'LOAD_INITIAL_STATE',
           payload: {
-            groups: mapGroupsFromCore(snapshot.groups, state.groups),
-            variables: normalizeVariableListFromCore(snapshot.variables),
+            groups: serverGroups,
+            variables: serverVariables,
             connectorCatalog: snapshot.connectorCatalog,
             metrics: snapshot.metrics,
             systemStatus: snapshot.systemStatus.status,
@@ -1080,36 +1141,127 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
     dispatch,
     reportError: reportCommandError,
     connectionMode: state.connectionMode,
+    optimisticManager: optimisticManager.current,
   };
 
   const createGroupAction = useCallback(async (name: string, description?: string) => {
-    const createdGroup = await CRUDActions.createGroup(crudContext, name, description);
+    const optimisticId = generateOptimisticId('group');
+    const optimisticGroup = createOptimisticGroup(optimisticId, name, description);
 
-    if (state.connectionMode === 'mock') {
-      dispatch({
-        type: 'SET_GROUPS',
-        payload: [...state.groups, createdGroup],
-      });
+    try {
+      const createdGroup = await executeCreateOptimistic(
+        {
+          optimisticManager: optimisticManager.current,
+          commandType: 'CREATE_GROUP',
+          optimisticId,
+        },
+        {
+          applyOptimistic: () => {
+            dispatch({
+              type: 'SET_GROUPS',
+              payload: [...state.groups, optimisticGroup],
+            });
+          },
+          rollback: () => {
+            dispatch({
+              type: 'SET_GROUPS',
+              payload: state.groups.filter(g => g.id !== optimisticId),
+            });
+          },
+          send: () => CRUDActions.createGroup(crudContext, name, description),
+          reconcileId: (serverGroup) => {
+            // If server returned different ID, replace optimistic with real
+            dispatch({
+              type: 'SET_GROUPS',
+              payload: state.groups.map(g => 
+                g.id === optimisticId ? serverGroup : g
+              ),
+            });
+          },
+        }
+      );
+
+      return createdGroup;
+    } catch (error) {
+      reportCommandError('GROUPS', `createGroup(${name})`, error);
+      throw error;
     }
-
-    return createdGroup;
-  }, [crudContext, state.connectionMode, state.groups]);
+  }, [crudContext, state.groups, reportCommandError]);
 
   const deleteGroupAction = useCallback(async (groupId: string) => {
-    await CRUDActions.deleteGroup(crudContext, groupId);
-
-    if (state.connectionMode === 'mock') {
-      dispatch({
-        type: 'SET_GROUPS',
-        payload: state.groups.filter((group) => group.id !== groupId),
-      });
+    const previousGroup = state.groups.find(g => g.id === groupId);
+    if (!previousGroup) {
+      throw new Error(`Group ${groupId} not found`);
     }
-  }, [crudContext, state.connectionMode, state.groups]);
+
+    try {
+      await executeDeleteOptimistic(
+        {
+          optimisticManager: optimisticManager.current,
+          commandType: 'DELETE_GROUP',
+          resourceId: groupId,
+        },
+        {
+          applyOptimistic: () => {
+            dispatch({
+              type: 'SET_GROUPS',
+              payload: state.groups.filter(g => g.id !== groupId),
+            });
+          },
+          rollback: () => {
+            dispatch({
+              type: 'SET_GROUPS',
+              payload: [...state.groups, previousGroup],
+            });
+          },
+          send: () => CRUDActions.deleteGroup(crudContext, groupId),
+        }
+      );
+    } catch (error) {
+      reportCommandError('GROUPS', `deleteGroup(${groupId})`, error);
+      throw error;
+    }
+  }, [crudContext, state.groups, reportCommandError]);
 
   const updateGroupConfigAction = useCallback(
-    (groupId: string, config: Partial<Omit<Group, 'id' | 'flows'>>) =>
-      CRUDActions.updateGroupConfig(crudContext, groupId, config),
-    [crudContext, state.connectionMode],
+    async (groupId: string, config: Partial<Omit<Group, 'id' | 'flows'>>) => {
+      const previousGroup = state.groups.find(g => g.id === groupId);
+      if (!previousGroup) {
+        throw new Error(`Group ${groupId} not found`);
+      }
+
+      const { optimistic: optimisticPayload, rollback: rollbackPayload } = 
+        createGroupUpdatePayload(previousGroup, config);
+
+      try {
+        await executeOptimisticUpdate(
+          {
+            optimisticManager: optimisticManager.current,
+            commandType: 'UPDATE_GROUP_CONFIG',
+            resourceId: groupId,
+          },
+          {
+            applyOptimistic: () => {
+              dispatch({
+                type: 'UPDATE_GROUP',
+                payload: optimisticPayload as any,
+              });
+            },
+            rollback: () => {
+              dispatch({
+                type: 'UPDATE_GROUP',
+                payload: rollbackPayload as any,
+              });
+            },
+            send: () => CRUDActions.updateGroupConfig(crudContext, groupId, config),
+          }
+        );
+      } catch (error) {
+        reportCommandError('GROUPS', `updateGroupConfig(${groupId})`, error);
+        throw error;
+      }
+    },
+    [crudContext, state.groups, reportCommandError],
   );
 
   const createFlowAction = useCallback(async (
@@ -1123,71 +1275,207 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
     burst?: number,
     template?: string,
   ) => {
-    const createdFlow = await CRUDActions.createFlow(crudContext, groupId, name, technology, host, port, topic, interval, burst, template);
+    const optimisticId = generateOptimisticId('flow');
+    const optimisticFlow = createOptimisticFlow(
+      optimisticId,
+      name,
+      technology,
+      host,
+      port,
+      topic,
+      interval,
+      burst
+    );
 
-    if (state.connectionMode === 'mock') {
-      dispatch({
-        type: 'SET_GROUPS',
-        payload: state.groups.map((group) =>
-          group.id === groupId
-            ? {
-                ...group,
-                flows: [...group.flows, createdFlow],
-              }
-            : group,
-        ),
-      });
+    try {
+      const createdFlow = await executeCreateOptimistic(
+        {
+          optimisticManager: optimisticManager.current,
+          commandType: 'CREATE_FLOW',
+          optimisticId,
+        },
+        {
+          applyOptimistic: () => {
+            dispatch({
+              type: 'SET_GROUPS',
+              payload: state.groups.map(g =>
+                g.id === groupId
+                  ? {
+                      ...g,
+                      flows: [...g.flows, optimisticFlow],
+                    }
+                  : g
+              ),
+            });
+          },
+          rollback: () => {
+            dispatch({
+              type: 'SET_GROUPS',
+              payload: state.groups.map(g =>
+                g.id === groupId
+                  ? {
+                      ...g,
+                      flows: g.flows.filter(f => f.id !== optimisticId),
+                    }
+                  : g
+              ),
+            });
+          },
+          send: () =>
+            CRUDActions.createFlow(
+              crudContext,
+              groupId,
+              name,
+              technology,
+              host,
+              port,
+              topic,
+              interval,
+              burst,
+              template
+            ),
+          reconcileId: (serverFlow) => {
+            // If server returned different ID, replace optimistic with real
+            dispatch({
+              type: 'SET_GROUPS',
+              payload: state.groups.map(g =>
+                g.id === groupId
+                  ? {
+                      ...g,
+                      flows: g.flows.map(f => 
+                        f.id === optimisticId ? serverFlow : f
+                      ),
+                    }
+                  : g
+              ),
+            });
+          },
+        }
+      );
+
+      return createdFlow;
+    } catch (error) {
+      reportCommandError('FLOWS', `createFlow(${name})`, error);
+      throw error;
     }
-
-    return createdFlow;
-  }, [crudContext, state.connectionMode, state.groups]);
+  }, [crudContext, state.groups, reportCommandError]);
 
   const deleteFlowAction = useCallback(async (groupId: string, flowId: string) => {
-    await CRUDActions.deleteFlow(crudContext, groupId, flowId);
-
-    if (state.connectionMode === 'mock') {
-      dispatch({
-        type: 'SET_GROUPS',
-        payload: state.groups.map((group) =>
-          group.id === groupId
-            ? {
-                ...group,
-                flows: group.flows.filter((flow) => flow.id !== flowId),
-              }
-            : group,
-        ),
-      });
+    const group = state.groups.find(g => g.id === groupId);
+    const flow = group?.flows.find(f => f.id === flowId);
+    
+    if (!flow) {
+      throw new Error(`Flow ${flowId} not found in group ${groupId}`);
     }
-  }, [crudContext, state.connectionMode, state.groups]);
+
+    try {
+      await executeDeleteOptimistic(
+        {
+          optimisticManager: optimisticManager.current,
+          commandType: 'DELETE_FLOW',
+          resourceId: flowId,
+        },
+        {
+          applyOptimistic: () => {
+            dispatch({
+              type: 'SET_GROUPS',
+              payload: state.groups.map((g) =>
+                g.id === groupId
+                  ? {
+                      ...g,
+                      flows: g.flows.filter(f => f.id !== flowId),
+                    }
+                  : g
+              ),
+            });
+          },
+          rollback: () => {
+            dispatch({
+              type: 'SET_GROUPS',
+              payload: state.groups.map((g) =>
+                g.id === groupId
+                  ? {
+                      ...g,
+                      flows: [...g.flows, flow],
+                    }
+                  : g
+              ),
+            });
+          },
+          send: () => CRUDActions.deleteFlow(crudContext, groupId, flowId),
+        }
+      );
+    } catch (error) {
+      reportCommandError('FLOWS', `deleteFlow(${flowId})`, error);
+      throw error;
+    }
+  }, [crudContext, state.groups, reportCommandError]);
 
   const updateFlowConfigAction = useCallback(async (
     groupId: string,
     flowId: string,
     config: Partial<Omit<Flow, 'id' | 'connectionStatus' | 'throughput' | 'hasError' | 'errorMessage'>> & { template?: string },
   ) => {
-    await CRUDActions.updateFlowConfig(crudContext, groupId, flowId, config);
-
-    if (state.connectionMode === 'mock') {
-      dispatch({
-        type: 'SET_GROUPS',
-        payload: state.groups.map((group) =>
-          group.id === groupId
-            ? {
-                ...group,
-                flows: group.flows.map((flow) =>
-                  flow.id === flowId
-                    ? {
-                        ...flow,
-                        ...config,
-                      }
-                    : flow,
-                ),
-              }
-            : group,
-        ),
-      });
+    const group = state.groups.find(g => g.id === groupId);
+    const flow = group?.flows.find(f => f.id === flowId);
+    
+    if (!flow) {
+      throw new Error(`Flow ${flowId} not found in group ${groupId}`);
     }
-  }, [crudContext, state.connectionMode, state.groups]);
+
+    const { optimistic: optimisticPayload, rollback: rollbackPayload } = 
+      createFlowUpdatePayload(flow, config as any);
+
+    try {
+      await executeOptimisticUpdate(
+        {
+          optimisticManager: optimisticManager.current,
+          commandType: 'UPDATE_FLOW_CONFIG',
+          resourceId: flowId,
+        },
+        {
+          applyOptimistic: () => {
+            dispatch({
+              type: 'SET_GROUPS',
+              payload: state.groups.map((g) =>
+                g.id === groupId
+                  ? {
+                      ...g,
+                      flows: g.flows.map((f) =>
+                        f.id === flowId
+                          ? { ...f, ...optimisticPayload }
+                          : f,
+                      ),
+                    }
+                  : g,
+              ),
+            });
+          },
+          rollback: () => {
+            dispatch({
+              type: 'SET_GROUPS',
+              payload: state.groups.map((g) =>
+                g.id === groupId
+                  ? {
+                      ...g,
+                      flows: g.flows.map((f) =>
+                        f.id === flowId
+                          ? { ...f, ...rollbackPayload }
+                          : f,
+                      ),
+                    }
+                  : g,
+              ),
+            });
+          },
+          send: () => CRUDActions.updateFlowConfig(crudContext, groupId, flowId, config),
+        }
+      );
+    } catch (error) {
+      reportCommandError('FLOWS', `updateFlowConfig(${flowId})`, error);
+      throw error;
+    }
+  }, [crudContext, state.groups, reportCommandError]);
 
   const createVariableAction = useCallback(async (
     name: string,
@@ -1196,46 +1484,137 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
     config?: Record<string, unknown>,
     variableId?: string,
   ) => {
-    const createdVariable = normalizeVariableFromCore(
-      await CRUDActions.createVariable(crudContext, name, type, scope, config, variableId),
-    );
+    const optimisticId = variableId || generateOptimisticId('var');
+    const optimisticVariable = createOptimisticVariable(optimisticId, name, type, scope);
 
-    const nextVariables = state.variables.some(variable => variable.id === createdVariable.id)
-      ? state.variables.map(variable => (
-        variable.id === createdVariable.id ? createdVariable : variable
-      ))
-      : [...state.variables, createdVariable];
+    try {
+      const createdVariable = await executeCreateOptimistic(
+        {
+          optimisticManager: optimisticManager.current,
+          commandType: 'CREATE_VARIABLE',
+          optimisticId,
+        },
+        {
+          applyOptimistic: () => {
+            const nextVariables = state.variables.some(v => v.id === optimisticId)
+              ? state.variables
+              : [...state.variables, optimisticVariable];
+            dispatch({
+              type: 'SET_VARIABLES',
+              payload: nextVariables,
+            });
+          },
+          rollback: () => {
+            dispatch({
+              type: 'SET_VARIABLES',
+              payload: state.variables.filter(v => v.id !== optimisticId),
+            });
+          },
+          send: () =>
+            CRUDActions.createVariable(crudContext, name, type, scope, config, variableId),
+          reconcileId: (serverVariable) => {
+            // If server returned different ID, replace optimistic with real
+            const normalizedServer = normalizeVariableFromCore(serverVariable);
+            dispatch({
+              type: 'SET_VARIABLES',
+              payload: state.variables.map(v =>
+                v.id === optimisticId ? normalizedServer : v
+              ),
+            });
+          },
+        }
+      );
 
-    dispatch({
-      type: 'SET_VARIABLES',
-      payload: nextVariables,
-    });
-
-    return createdVariable;
-  }, [crudContext, state.connectionMode, state.variables]);
+      return normalizeVariableFromCore(createdVariable);
+    } catch (error) {
+      reportCommandError('VARIABLES', `createVariable(${name})`, error);
+      throw error;
+    }
+  }, [crudContext, state.variables, reportCommandError]);
 
   const deleteVariableAction = useCallback(async (variableId: string) => {
-    await CRUDActions.deleteVariable(crudContext, variableId);
+    const previousVariable = state.variables.find(v => v.id === variableId);
+    if (!previousVariable) {
+      throw new Error(`Variable ${variableId} not found`);
+    }
 
-    dispatch({
-      type: 'SET_VARIABLES',
-      payload: state.variables.filter((variable) => variable.id !== variableId),
-    });
-  }, [crudContext, state.connectionMode, state.variables]);
+    try {
+      await executeDeleteOptimistic(
+        {
+          optimisticManager: optimisticManager.current,
+          commandType: 'DELETE_VARIABLE',
+          resourceId: variableId,
+        },
+        {
+          applyOptimistic: () => {
+            dispatch({
+              type: 'SET_VARIABLES',
+              payload: state.variables.filter(v => v.id !== variableId),
+            });
+          },
+          rollback: () => {
+            dispatch({
+              type: 'SET_VARIABLES',
+              payload: [...state.variables, previousVariable],
+            });
+          },
+          send: () => CRUDActions.deleteVariable(crudContext, variableId),
+        }
+      );
+    } catch (error) {
+      reportCommandError('VARIABLES', `deleteVariable(${variableId})`, error);
+      throw error;
+    }
+  }, [crudContext, state.variables, reportCommandError]);
 
   const updateVariableAction = useCallback(async (
     variableId: string,
     updates: Partial<Omit<Variable, 'id'>>,
   ) => {
-    await CRUDActions.updateVariable(crudContext, variableId, updates);
+    const previousVariable = state.variables.find(v => v.id === variableId);
+    if (!previousVariable) {
+      throw new Error(`Variable ${variableId} not found`);
+    }
 
-    dispatch({
-      type: 'SET_VARIABLES',
-      payload: state.variables.map((variable) => (
-        variable.id === variableId ? normalizeVariableFromCore({ ...variable, ...updates }) : variable
-      )),
-    });
-  }, [crudContext, state.connectionMode, state.variables]);
+    const { optimistic: optimisticPayload, rollback: rollbackPayload } = 
+      createVariableUpdatePayload(previousVariable, updates);
+
+    try {
+      await executeOptimisticUpdate(
+        {
+          optimisticManager: optimisticManager.current,
+          commandType: 'UPDATE_VARIABLE',
+          resourceId: variableId,
+        },
+        {
+          applyOptimistic: () => {
+            dispatch({
+              type: 'SET_VARIABLES',
+              payload: state.variables.map((v) =>
+                v.id === variableId
+                  ? normalizeVariableFromCore({ ...v, ...optimisticPayload })
+                  : v
+              ),
+            });
+          },
+          rollback: () => {
+            dispatch({
+              type: 'SET_VARIABLES',
+              payload: state.variables.map((v) =>
+                v.id === variableId
+                  ? normalizeVariableFromCore({ ...v, ...rollbackPayload })
+                  : v
+              ),
+            });
+          },
+          send: () => CRUDActions.updateVariable(crudContext, variableId, updates),
+        }
+      );
+    } catch (error) {
+      reportCommandError('VARIABLES', `updateVariable(${variableId})`, error);
+      throw error;
+    }
+  }, [crudContext, state.variables, reportCommandError]);
 
   const actions = {
     startSystem,
