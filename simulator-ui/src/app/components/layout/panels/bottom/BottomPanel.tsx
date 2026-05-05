@@ -7,6 +7,7 @@ import { mockPreviewSamples } from '../../../../data/mockData';
 import { useApp } from '../../../../context';
 import type { ConnectorHealthSummary } from '../../../../types';
 import type { SystemStatus } from '../../../../types';
+import type { Group } from '../../../../types';
 
 const levelCfg = {
   info:  { color: 'text-sky-500',     dot: 'bg-sky-500',     label: 'INFO ' },
@@ -30,10 +31,59 @@ interface BottomPanelProps {
   systemStatus: SystemStatus;
 }
 
-function LogsView({ entries, connectorHealthSummary }: { entries: Array<{ id: string; timestamp: string; level: 'info' | 'warn' | 'error' | 'debug'; source: string; message: string }>; connectorHealthSummary: ConnectorHealthSummary[] }) {
+function LogsView({ entries, connectorHealthSummary, groups }: { entries: Array<{ id: string; timestamp: string; level: 'info' | 'warn' | 'error' | 'debug'; source: string; message: string }>; connectorHealthSummary: ConnectorHealthSummary[]; groups: Group[] }) {
   const endRef = useRef<HTMLDivElement>(null);
   const [filter, setFilter] = useState<string>('all');
-  const filtered = filter === 'all' ? entries : entries.filter(l => l.level === filter);
+  const [groupFilter, setGroupFilter] = useState<string>('all');
+  const [flowFilter, setFlowFilter] = useState<string>('all');
+  const [onlyFile, setOnlyFile] = useState<boolean>(false);
+
+  const fileFlows = groups.flatMap((g) => g.flows.filter((f) => f.technology.toLowerCase() === 'file').map((f) => ({
+    id: f.id,
+    name: f.name,
+    groupId: g.id,
+    groupName: g.name,
+  })));
+
+  const availableFlows = groupFilter === 'all'
+    ? fileFlows
+    : fileFlows.filter((f) => f.groupId === groupFilter);
+
+  const flowIdsInGroup = groupFilter === 'all'
+    ? new Set<string>()
+    : new Set((groups.find((g) => g.id === groupFilter)?.flows ?? []).map((f) => f.id));
+
+  const filtered = entries.filter((entry) => {
+    if (filter !== 'all' && entry.level !== filter) {
+      return false;
+    }
+
+    if (onlyFile) {
+      const isFileSource = fileFlows.some((f) => f.id === entry.source);
+      const isFileMessage = entry.message.startsWith('File output ->');
+      if (!isFileSource && !isFileMessage) {
+        return false;
+      }
+    }
+
+    if (groupFilter !== 'all') {
+      const isGroupSource = entry.source === groupFilter;
+      const isFlowInGroup = flowIdsInGroup.has(entry.source);
+      if (!isGroupSource && !isFlowInGroup) {
+        return false;
+      }
+    }
+
+    if (flowFilter !== 'all' && entry.source !== flowFilter) {
+      return false;
+    }
+
+    return true;
+  });
+
+  useEffect(() => {
+    setFlowFilter('all');
+  }, [groupFilter]);
 
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
@@ -83,6 +133,41 @@ function LogsView({ entries, connectorHealthSummary }: { entries: Array<{ id: st
             {f.toUpperCase()}
           </button>
         ))}
+        <select
+          value={groupFilter}
+          onChange={(event) => setGroupFilter(event.target.value)}
+          className="h-6 rounded border border-[var(--c-br1)] bg-[var(--c-bg1)] px-2 text-[10px] text-[var(--c-tx2)]"
+          style={{ fontFamily: 'JetBrains Mono, monospace' }}
+          aria-label="filter-group"
+        >
+          <option value="all">Group: all</option>
+          {groups.map((g) => (
+            <option key={g.id} value={g.id}>{`Group: ${g.name}`}</option>
+          ))}
+        </select>
+        <select
+          value={flowFilter}
+          onChange={(event) => setFlowFilter(event.target.value)}
+          className="h-6 rounded border border-[var(--c-br1)] bg-[var(--c-bg1)] px-2 text-[10px] text-[var(--c-tx2)]"
+          style={{ fontFamily: 'JetBrains Mono, monospace' }}
+          aria-label="filter-flow"
+        >
+          <option value="all">Flow: all</option>
+          {availableFlows.map((f) => (
+            <option key={f.id} value={f.id}>{`Flow: ${f.name}`}</option>
+          ))}
+        </select>
+        <button
+          onClick={() => setOnlyFile(!onlyFile)}
+          className={`px-2 py-0.5 rounded text-[10px] transition-all ${
+            onlyFile
+              ? 'bg-cyan-500/15 border border-cyan-500/30 text-cyan-500'
+              : 'text-[var(--c-tx4)] hover:text-[var(--c-tx2)]'
+          }`}
+          style={{ fontFamily: 'JetBrains Mono, monospace' }}
+        >
+          only file
+        </button>
         <div className="flex-1" />
         <button className="p-1 rounded text-[var(--c-tx4)] hover:text-[var(--c-tx2)] hover:bg-[var(--c-bg6)] transition-all">
           <Trash2 size={10} />
@@ -316,7 +401,7 @@ export function BottomPanel({ tab, onTabChange, systemStatus }: BottomPanelProps
       {/* Content */}
       {!collapsed && (
         <div className="flex-1 overflow-hidden flex">
-          {tab === 'logs'    && <LogsView entries={state.logs} connectorHealthSummary={state.connectorHealthSummary} />}
+          {tab === 'logs'    && <LogsView entries={state.logs} connectorHealthSummary={state.connectorHealthSummary} groups={state.groups ?? []} />}
           {tab === 'stats'   && <StatsView running={running} />}
           {tab === 'preview' && <PreviewView running={running} />}
         </div>

@@ -197,6 +197,7 @@ export async function createFlow(
   interval?: number,
   burst?: number,
   template?: string,
+  connectorConfig?: Record<string, unknown>,
 ): Promise<Flow> {
   // Validations
   if (!groupId?.trim()) throwValidationError('groupId', 'is required');
@@ -219,6 +220,7 @@ export async function createFlow(
         interval: interval ?? 1000,
         burst: burst ?? 1,
         template: template || '{}',
+        ...(connectorConfig && { connectorConfig }),
       });
 
       if (response && typeof response === 'object' && 'id' in response) {

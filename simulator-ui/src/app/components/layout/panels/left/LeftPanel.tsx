@@ -70,6 +70,7 @@ interface LeftPanelProps {
     interval?: number,
     burst?: number,
     template?: string,
+    connectorConfig?: Record<string, unknown>,
   ) => Promise<Flow>;
 }
 
@@ -251,6 +252,8 @@ function GroupItem({
   const [flowInterval, setFlowInterval] = useState('1000');
   const [flowBurst, setFlowBurst] = useState('1');
   const [flowTemplate, setFlowTemplate] = useState('{}');
+  const [flowOutputDir, setFlowOutputDir] = useState('./outputs');
+  const [flowFileFormat, setFlowFileFormat] = useState<'json' | 'txt'>('json');
 
   useEffect(() => {
     if (!flowTechnology && latestConnectors[0]) {
@@ -267,6 +270,8 @@ function GroupItem({
     setFlowInterval('1000');
     setFlowBurst('1');
     setFlowTemplate('{}');
+    setFlowOutputDir('./outputs');
+    setFlowFileFormat('json');
   };
 
   const handleDeleteConfirm = async () => {
@@ -288,6 +293,12 @@ function GroupItem({
     const interval = flowInterval.trim() ? Number(flowInterval) : undefined;
     const burst = flowBurst.trim() ? Number(flowBurst) : undefined;
 
+    // Build connector config if needed
+    const connectorConfig = flowTechnology.trim() === 'file' ? {
+      outputDir: flowOutputDir.trim() || './outputs',
+      format: flowFileFormat,
+    } : undefined;
+
     try {
       const createdFlow = await onCreateFlow(
         group.id,
@@ -299,6 +310,7 @@ function GroupItem({
         Number.isNaN(interval) ? undefined : interval,
         Number.isNaN(burst) ? undefined : burst,
         flowTemplate.trim() || '{}',
+        connectorConfig,
       );
 
       toast.success(`Flow "${createdFlow.name}" created`);
@@ -465,6 +477,38 @@ function GroupItem({
                     )}
                   </div>
 
+                  {/* File-specific configuration */}
+                  {flowTechnology.trim() === 'file' && (
+                    <>
+                      <div className="space-y-2">
+                        <label className="text-xs text-[var(--c-tx3)]" htmlFor={`flow-output-dir-${group.id}`}>
+                          Output Directory
+                        </label>
+                        <Input
+                          id={`flow-output-dir-${group.id}`}
+                          value={flowOutputDir}
+                          onChange={(event) => setFlowOutputDir(event.target.value)}
+                          placeholder="./outputs"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-xs text-[var(--c-tx3)]" htmlFor={`flow-file-format-${group.id}`}>
+                          File Format
+                        </label>
+                        <select
+                          id={`flow-file-format-${group.id}`}
+                          value={flowFileFormat}
+                          onChange={(event) => setFlowFileFormat(event.target.value as 'json' | 'txt')}
+                          className="flex h-9 w-full rounded-md border border-[var(--c-br1)] bg-[var(--c-bg1)] px-3 py-2 text-sm text-[var(--c-tx1)] shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-500"
+                        >
+                          <option value="json">JSON Lines (.json)</option>
+                          <option value="txt">Pipe-delimited (.txt)</option>
+                        </select>
+                      </div>
+                    </>
+                  )}
+
                   <div className="space-y-2">
                     <label className="text-xs text-[var(--c-tx3)]" htmlFor={`flow-host-${group.id}`}>
                       Host
@@ -591,6 +635,8 @@ export function LeftPanel({
   const [flowInterval, setFlowInterval] = useState('1000');
   const [flowBurst, setFlowBurst] = useState('1');
   const [flowTemplate, setFlowTemplate] = useState('{}');
+  const [flowOutputDir, setFlowOutputDir] = useState('./outputs');
+  const [flowFileFormat, setFlowFileFormat] = useState<'json' | 'txt'>('json');
 
   const resetCreateGroupForm = () => {
     setGroupName('');
@@ -606,6 +652,8 @@ export function LeftPanel({
     setFlowInterval('1000');
     setFlowBurst('1');
     setFlowTemplate('{}');
+    setFlowOutputDir('./outputs');
+    setFlowFileFormat('json');
     setSelectedGroupForFlow(null);
   };
 
@@ -634,6 +682,12 @@ export function LeftPanel({
     const interval = flowInterval.trim() ? Number(flowInterval) : undefined;
     const burst = flowBurst.trim() ? Number(flowBurst) : undefined;
 
+    // Build connector config if needed
+    const connectorConfig = flowTechnology.trim() === 'file' ? {
+      outputDir: flowOutputDir.trim() || './outputs',
+      format: flowFileFormat,
+    } : undefined;
+
     try {
       const createdFlow = await onCreateFlow(
         selectedGroupForFlow,
@@ -645,6 +699,7 @@ export function LeftPanel({
         Number.isNaN(interval) ? undefined : interval,
         Number.isNaN(burst) ? undefined : burst,
         flowTemplate.trim() || '{}',
+        connectorConfig,
       );
 
       toast.success(`Flow "${createdFlow.name}" created`);
@@ -843,6 +898,38 @@ export function LeftPanel({
                   />
                 )}
               </div>
+
+              {/* File-specific configuration */}
+              {flowTechnology.trim() === 'file' && (
+                <>
+                  <div className="space-y-2 sm:col-span-2">
+                    <label className="text-xs text-[var(--c-tx3)]" htmlFor="flow-output-dir">
+                      Output Directory
+                    </label>
+                    <Input
+                      id="flow-output-dir"
+                      value={flowOutputDir}
+                      onChange={(event) => setFlowOutputDir(event.target.value)}
+                      placeholder="./outputs"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs text-[var(--c-tx3)]" htmlFor="flow-file-format">
+                      File Format
+                    </label>
+                    <select
+                      id="flow-file-format"
+                      value={flowFileFormat}
+                      onChange={(event) => setFlowFileFormat(event.target.value as 'json' | 'txt')}
+                      className="flex h-9 w-full rounded-md border border-[var(--c-br1)] bg-[var(--c-bg1)] px-3 py-2 text-sm text-[var(--c-tx1)] shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-500"
+                    >
+                      <option value="json">JSON Lines (.json)</option>
+                      <option value="txt">Pipe-delimited (.txt)</option>
+                    </select>
+                  </div>
+                </>
+              )}
 
               <div className="space-y-2">
                 <label className="text-xs text-[var(--c-tx3)]" htmlFor="flow-host">
