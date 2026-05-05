@@ -377,4 +377,18 @@ export const mockConnectorCatalog: ConnectorPluginDescriptor[] = [
       },
     },
   },
+  {
+    pluginId: 'file',
+    displayName: 'File Output (TXT/JSON)',
+    pluginVersion: '1.0.0',
+    coreApiVersion: '1.0.0',
+    configSchema: {
+      type: 'object',
+      properties: {
+        outputDir: { type: 'string', title: 'Output Directory', default: './outputs' },
+        format: { type: 'string', title: 'Format', enum: ['json', 'txt'], default: 'json' },
+        fileName: { type: 'string', title: 'File Name (optional)', default: '' },
+      },
+    },
+  },
 ];

@@ -1,1 +1,2 @@
 com.gensynth.core.connectors.rabbitmq.RabbitMqConnectorPluginProvider
+com.gensynth.core.connectors.file.FileConnectorPluginProvider

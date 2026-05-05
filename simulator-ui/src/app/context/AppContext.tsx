@@ -609,6 +609,7 @@ interface AppContextValue {
       interval?: number,
       burst?: number,
       template?: string,
+      connectorConfig?: Record<string, unknown>,
     ) => Promise<Flow>;
     deleteFlow: (groupId: string, flowId: string) => Promise<void>;
     updateFlowConfig: (
@@ -1274,6 +1275,7 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
     interval?: number,
     burst?: number,
     template?: string,
+    connectorConfig?: Record<string, unknown>,
   ) => {
     const optimisticId = generateOptimisticId('flow');
     const optimisticFlow = createOptimisticFlow(
@@ -1332,7 +1334,8 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
               topic,
               interval,
               burst,
-              template
+              template,
+              connectorConfig
             ),
           reconcileId: (serverFlow) => {
             // If server returned different ID, replace optimistic with real

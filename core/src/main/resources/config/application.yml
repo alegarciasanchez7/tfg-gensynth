@@ -87,3 +87,10 @@ flowEngine:
     count: 10              # Number of virtual devices to simulate
     simulationInterval: 1000  # milliseconds between data generation per device
   useVirtualThreads: true    # Use Java 21 virtual threads (recommended for scalability)
+
+# File Output Configuration
+# Settings for writing events to .txt/.json files
+fileOutput:
+  enabled: true
+  outputDir: ./outputs  # Base directory for output files (will be created if it doesn't exist)
+  flushInterval: 5000   # milliseconds - how often to flush buffered events to disk

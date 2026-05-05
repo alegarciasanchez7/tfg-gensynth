@@ -1,5 +1,6 @@
 package com.gensynth.core.ws;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gensynth.core.connectors.runtime.ConnectorCatalogService;
@@ -72,6 +73,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
     private final Set<WebSocket> metricSubscribers = ConcurrentHashMap.newKeySet();
 
     private final ScheduledExecutorService scheduler;
+    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
     private final AtomicLong totalMessages = new AtomicLong(0);
     private final AtomicLong totalErrors = new AtomicLong(0);
@@ -82,13 +84,21 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
     private final long startedAtMillis = System.currentTimeMillis();
 
     public UiBridgeWebSocketServer(String host, int port) {
-        this(new InetSocketAddress(host, port), new ConnectorCatalogService());
+        this(new InetSocketAddress(host, port), new ConnectorCatalogService(), new JsonStateRepositoryImpl());
     }
 
     UiBridgeWebSocketServer(InetSocketAddress address, ConnectorCatalogService connectorCatalogService) {
+        this(address, connectorCatalogService, new JsonStateRepositoryImpl());
+    }
+
+    UiBridgeWebSocketServer(
+        InetSocketAddress address,
+        ConnectorCatalogService connectorCatalogService,
+        StateRepository stateRepository
+    ) {
         super(address);
         this.connectorCatalogService = connectorCatalogService;
-        this.stateRepository = new JsonStateRepositoryImpl();
+        this.stateRepository = stateRepository;
         this.scheduler = Executors.newScheduledThreadPool(2);
         initializeRuntime();
     }
@@ -172,7 +182,8 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             "gensynth.data",
             "localhost",
             5672,
-            "{\"eventId\":\"{{uuid}}\",\"timestamp\":\"{{ts}}\",\"source\":\"gen-synth\",\"value\":{{n}}}"
+            "{\"eventId\":\"{{uuid}}\",\"timestamp\":\"{{ts}}\",\"source\":\"gen-synth\",\"value\":{{n}}}",
+            Map.of()
         ));
 
         groupsById.put(rabbitGroup.id, rabbitGroup);
@@ -550,6 +561,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             int interval = Math.max(50, payload.path("interval").asInt(1000));
             int burst = Math.max(1, payload.path("burst").asInt(1));
             String template = payload.path("template").asText("{\"eventId\":\"{{uuid}}\",\"timestamp\":\"{{ts}}\",\"source\":\"gen-synth\",\"value\":{{n}}}");
+            Map<String, Object> connectorConfig = parseConnectorConfig(payload.path("connectorConfig"));
 
             group.flows.add(new FlowRuntime(
                 flowId,
@@ -565,7 +577,8 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                 topic,
                 host,
                 port,
-                template
+                template,
+                connectorConfig
             ));
 
             persistState();
@@ -662,6 +675,9 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             }
             if (payload.hasNonNull("template")) {
                 flow.template = payload.path("template").asText(flow.template);
+            }
+            if (payload.hasNonNull("connectorConfig") && payload.get("connectorConfig").isObject()) {
+                flow.connectorConfig = parseConnectorConfig(payload.get("connectorConfig"));
             }
 
             if (wasRunning) {
@@ -856,12 +872,14 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
 
         long startedAt = System.nanoTime();
         int sent = 0;
+        String lastPayload = null;
 
         try {
             for (int i = 0; i < Math.max(1, flow.burst); i++) {
                 String payload = buildPayload(flow, i);
                 connector.publish(flow.topic, payload.getBytes(StandardCharsets.UTF_8), Map.of("content-type", "application/json"));
                 sent++;
+                lastPayload = payload;
             }
 
             long elapsedNanos = System.nanoTime() - startedAt;
@@ -873,6 +891,11 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
 
             totalMessages.addAndGet(sent);
             messagesLastWindow.addAndGet(sent);
+
+            if ("file".equalsIgnoreCase(flow.technology) && lastPayload != null) {
+                String preview = lastPayload.length() > 140 ? lastPayload.substring(0, 140) + "..." : lastPayload;
+                sendLogToAll("debug", flow.id, "File output -> " + preview);
+            }
 
             broadcastFlowUpdate(flow);
         } catch (Exception ex) {
@@ -895,16 +918,41 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
 
     private Map<String, Object> buildFlowConnectorConfig(FlowRuntime flow) {
         Map<String, Object> config = new LinkedHashMap<>();
-        config.put("host", flow.host);
-        config.put("port", flow.port);
-        config.put("username", "guest");
-        config.put("password", "guest");
-        config.put("virtualHost", "/");
-        config.put("exchange", "gensynth.exchange");
-        config.put("exchangeType", "topic");
-        config.put("exchangeDurable", true);
-        config.put("routingKey", flow.topic);
+        if (flow.connectorConfig != null && !flow.connectorConfig.isEmpty()) {
+            config.putAll(flow.connectorConfig);
+        }
+
+        if ("file".equalsIgnoreCase(flow.technology)) {
+            config.putIfAbsent("outputDir", "./outputs");
+            config.putIfAbsent("format", "json");
+            config.putIfAbsent("fileName", flow.id + "_" + sanitizeFileName(flow.name));
+            return config;
+        }
+
+        config.putIfAbsent("host", flow.host);
+        config.putIfAbsent("port", flow.port);
+        config.putIfAbsent("username", "guest");
+        config.putIfAbsent("password", "guest");
+        config.putIfAbsent("virtualHost", "/");
+        config.putIfAbsent("exchange", "gensynth.exchange");
+        config.putIfAbsent("exchangeType", "topic");
+        config.putIfAbsent("exchangeDurable", true);
+        config.putIfAbsent("routingKey", flow.topic);
         return config;
+    }
+
+    private Map<String, Object> parseConnectorConfig(JsonNode connectorConfigNode) {
+        if (connectorConfigNode == null || connectorConfigNode.isMissingNode() || connectorConfigNode.isNull() || !connectorConfigNode.isObject()) {
+            return Map.of();
+        }
+        return objectMapper.convertValue(connectorConfigNode, MAP_TYPE);
+    }
+
+    private String sanitizeFileName(String value) {
+        if (value == null || value.isBlank()) {
+            return "flow";
+        }
+        return value.replaceAll("[^a-zA-Z0-9._-]", "_");
     }
 
     private boolean hasAnyRunningGroup() {
@@ -1244,6 +1292,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         private String host;
         private int port;
         private String template;
+        private Map<String, Object> connectorConfig;
 
         private FlowRuntime(
             String id,
@@ -1259,7 +1308,8 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             String topic,
             String host,
             int port,
-            String template
+            String template,
+            Map<String, Object> connectorConfig
         ) {
             this.id = id;
             this.name = name;
@@ -1275,6 +1325,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             this.host = host;
             this.port = port;
             this.template = template;
+            this.connectorConfig = connectorConfig != null ? new LinkedHashMap<>(connectorConfig) : new LinkedHashMap<>();
         }
 
         private static FlowRuntime fromDefinition(FlowDefinition definition) {
@@ -1292,7 +1343,8 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                 definition.getTopic(),
                 definition.getHost(),
                 definition.getPort(),
-                definition.getTemplate()
+                definition.getTemplate(),
+                definition.getConnectorConfig()
             );
         }
 
@@ -1309,7 +1361,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                 burst,
                 template,
                 technology,
-                Map.of()
+                connectorConfig
             );
         }
 
@@ -1331,6 +1383,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             payload.put("host", host);
             payload.put("port", port);
             payload.put("template", template);
+            payload.put("connectorConfig", connectorConfig);
             return payload;
         }
     }
