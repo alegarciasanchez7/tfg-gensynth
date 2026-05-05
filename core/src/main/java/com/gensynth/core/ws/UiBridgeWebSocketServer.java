@@ -236,16 +236,17 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             commandId = root.path("id").asText(null);
             String protocolVersion = root.path("protocolVersion").asText("");
             JsonNode payload = root.path("payload");
+            String clientRequestId = payload != null ? payload.path("clientRequestId").asText(null) : null;
 
             if (type.isBlank() || commandId == null || commandId.isBlank()) {
-                sendError(conn, commandId, "INVALID_ENVELOPE", "Invalid command envelope", Map.of(
+                sendError(conn, commandId, clientRequestId, "INVALID_ENVELOPE", "Invalid command envelope", Map.of(
                     "reason", "Missing type or id"
                 ));
                 return;
             }
 
             if (!PROTOCOL_VERSION.equals(protocolVersion)) {
-                sendError(conn, commandId, "PROTOCOL_VERSION_MISMATCH", "Unsupported protocol version: " + protocolVersion, Map.of(
+                sendError(conn, commandId, clientRequestId, "PROTOCOL_VERSION_MISMATCH", "Unsupported protocol version: " + protocolVersion, Map.of(
                     "expected", PROTOCOL_VERSION,
                     "received", protocolVersion
                 ));
@@ -253,7 +254,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             }
 
             if (!SUPPORTED_COMMANDS.contains(type)) {
-                sendError(conn, commandId, "UNSUPPORTED_COMMAND", "Unsupported command: " + type, Map.of(
+                sendError(conn, commandId, clientRequestId, "UNSUPPORTED_COMMAND", "Unsupported command: " + type, Map.of(
                     "command", type
                 ));
                 return;
@@ -412,11 +413,13 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         if (name == null) {
             return;
         }
+        
+        String clientRequestId = payload.path("clientRequestId").asText(null);
 
         synchronized (stateLock) {
             for (GroupRuntime group : groupsById.values()) {
                 if (group.name.equalsIgnoreCase(name)) {
-                    sendError(conn, commandId, "INVALID_PAYLOAD", "Group name already exists", Map.of("name", name));
+                    sendError(conn, commandId, clientRequestId, "INVALID_PAYLOAD", "Group name already exists", Map.of("name", name));
                     return;
                 }
             }
@@ -433,7 +436,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             persistState();
         }
 
-        sendAck(conn, commandId, "group_created");
+        sendAck(conn, commandId, clientRequestId, "group_created");
         broadcastGroupsUpdate();
     }
 
@@ -517,16 +520,18 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         if (groupId == null || name == null || technology == null || host == null) {
             return;
         }
+        
+        String clientRequestId = payload.path("clientRequestId").asText(null);
 
         if (connectorCatalogService.findLatestConnector(technology).isEmpty()) {
-            sendError(conn, commandId, "INVALID_PAYLOAD", "Connector not found for technology: " + technology, Map.of("technology", technology));
+            sendError(conn, commandId, clientRequestId, "INVALID_PAYLOAD", "Connector not found for technology: " + technology, Map.of("technology", technology));
             return;
         }
 
         synchronized (stateLock) {
             GroupRuntime group = groupsById.get(groupId);
             if (group == null) {
-                sendError(conn, commandId, "NOT_FOUND", "Group not found: " + groupId, Map.of("groupId", groupId));
+                sendError(conn, commandId, clientRequestId, "NOT_FOUND", "Group not found: " + groupId, Map.of("groupId", groupId));
                 return;
             }
 
@@ -536,7 +541,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             }
 
             if (findFlowById(group, flowId) != null) {
-                sendError(conn, commandId, "INVALID_PAYLOAD", "Flow already exists: " + flowId, Map.of("flowId", flowId));
+                sendError(conn, commandId, clientRequestId, "INVALID_PAYLOAD", "Flow already exists: " + flowId, Map.of("flowId", flowId));
                 return;
             }
 
@@ -566,7 +571,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             persistState();
         }
 
-        sendAck(conn, commandId, "flow_created");
+        sendAck(conn, commandId, clientRequestId, "flow_created");
         broadcastGroupsUpdate();
     }
 
@@ -677,6 +682,8 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         if (name == null || type == null || scope == null) {
             return;
         }
+        
+        String clientRequestId = payload.path("clientRequestId").asText(null);
 
         String coreType = normalizeVariableTypeForCore(type);
         Object defaultValue = payload.has("config") ? payload.get("config").toString() : "";
@@ -694,13 +701,16 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                 variablesById.put(variableId, createdVariable);
                 persistState();
             } catch (IllegalArgumentException ex) {
-                sendError(conn, commandId, "INVALID_PAYLOAD", ex.getMessage(), Map.of("name", name, "type", type, "scope", scope));
+                sendError(conn, commandId, clientRequestId, "INVALID_PAYLOAD", ex.getMessage(), Map.of("name", name, "type", type, "scope", scope));
                 return;
             }
         }
 
         Map<String, Object> response = new LinkedHashMap<>(createdVariable.toPayload());
         response.put("commandId", commandId);
+        if (clientRequestId != null) {
+            response.put("clientRequestId", clientRequestId);
+        }
         response.put("status", "ok");
         response.put("result", "variable_created");
         response.put("type", type);
@@ -714,17 +724,19 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         if (variableId == null) {
             return;
         }
+        
+        String clientRequestId = payload.path("clientRequestId").asText(null);
 
         synchronized (stateLock) {
             Variable removed = variablesById.remove(variableId);
             if (removed == null) {
-                sendError(conn, commandId, "NOT_FOUND", "Variable not found: " + variableId, Map.of("variableId", variableId));
+                sendError(conn, commandId, clientRequestId, "NOT_FOUND", "Variable not found: " + variableId, Map.of("variableId", variableId));
                 return;
             }
             persistState();
         }
 
-        sendAck(conn, commandId, "variable_deleted");
+        sendAck(conn, commandId, clientRequestId, "variable_deleted");
         sendVariablesUpdate();
     }
 
@@ -1058,17 +1070,31 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
     }
 
     private void sendAck(WebSocket conn, String commandId, String result) {
+        sendAck(conn, commandId, null, result);
+    }
+
+    private void sendAck(WebSocket conn, String commandId, String clientRequestId, String result) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("commandId", commandId);
+        if (clientRequestId != null) {
+            payload.put("clientRequestId", clientRequestId);
+        }
         payload.put("status", "ok");
         payload.put("result", result);
         sendMessage(conn, "CONNECTION_STATUS", payload);
     }
 
     private void sendError(WebSocket conn, String commandId, String code, String message, Map<String, Object> details) {
+        sendError(conn, commandId, null, code, message, details);
+    }
+
+    private void sendError(WebSocket conn, String commandId, String clientRequestId, String code, String message, Map<String, Object> details) {
         Map<String, Object> payload = new LinkedHashMap<>();
         if (commandId != null) {
             payload.put("commandId", commandId);
+        }
+        if (clientRequestId != null) {
+            payload.put("clientRequestId", clientRequestId);
         }
         payload.put("status", "error");
         payload.put("code", code);

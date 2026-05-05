@@ -244,7 +244,7 @@ function GroupItem({
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [isCreateFlowOpen, setIsCreateFlowOpen] = useState(false);
   const [flowName, setFlowName] = useState('');
-  const [flowTechnology, setFlowTechnology] = useState(latestConnectors[0]?.pluginId ?? '');
+  const [flowTechnology, setFlowTechnology] = useState(latestConnectors[0]?.pluginId ?? 'HTTP');
   const [flowHost, setFlowHost] = useState('localhost');
   const [flowPort, setFlowPort] = useState('8080');
   const [flowTopic, setFlowTopic] = useState('');
@@ -260,7 +260,7 @@ function GroupItem({
 
   const resetCreateFlowForm = () => {
     setFlowName('');
-    setFlowTechnology(latestConnectors[0]?.pluginId ?? '');
+    setFlowTechnology(latestConnectors[0]?.pluginId ?? 'HTTP');
     setFlowHost('localhost');
     setFlowPort('8080');
     setFlowTopic('');
@@ -584,7 +584,7 @@ export function LeftPanel({
   const [isCreateFlowOpen, setIsCreateFlowOpen] = useState(false);
   const [selectedGroupForFlow, setSelectedGroupForFlow] = useState<string | null>(null);
   const [flowName, setFlowName] = useState('');
-  const [flowTechnology, setFlowTechnology] = useState(latestConnectors[0]?.pluginId ?? '');
+  const [flowTechnology, setFlowTechnology] = useState(latestConnectors[0]?.pluginId ?? 'HTTP');
   const [flowHost, setFlowHost] = useState('localhost');
   const [flowPort, setFlowPort] = useState('8080');
   const [flowTopic, setFlowTopic] = useState('');
@@ -599,7 +599,7 @@ export function LeftPanel({
 
   const resetCreateFlowForm = () => {
     setFlowName('');
-    setFlowTechnology(latestConnectors[0]?.pluginId ?? '');
+    setFlowTechnology(latestConnectors[0]?.pluginId ?? 'HTTP');
     setFlowHost('localhost');
     setFlowPort('8080');
     setFlowTopic('');
