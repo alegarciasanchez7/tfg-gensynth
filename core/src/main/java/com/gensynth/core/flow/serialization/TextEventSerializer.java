@@ -1,8 +1,6 @@
 package com.gensynth.core.flow.serialization;
 
 import com.gensynth.core.flow.DataEvent;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
