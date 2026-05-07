@@ -32,6 +32,7 @@ import type {
   VariableState,
   ConnectorPluginDescriptor,
   InitialStatePayload,
+  TracePayload,
 } from '../core/types';
 import type { Selection, Group, Variable, LogEntry, SystemStatus, Flow, ConnectorHealthStatus } from '../types';
 import type { ConnectorHealthSummary } from '../types';
@@ -811,7 +812,26 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
       }),
       
       bridge.on('log', (log: LogPayload) => {
-        dispatch({ type: 'ADD_LOG', payload: log });
+        let formattedTime = log.timestamp;
+        const date = new Date(log.timestamp);
+        if (!isNaN(date.getTime())) {
+          formattedTime = date.toLocaleTimeString('en-GB', { hour12: false });
+        }
+        dispatch({ type: 'ADD_LOG', payload: { ...log, timestamp: formattedTime } });
+      }),
+
+      bridge.on('trace', (trace: TracePayload) => {
+        dispatch({
+          type: 'ADD_LOG',
+          payload: {
+            id: `trace_${trace.commandId}_${trace.type}`,
+            timestamp: new Date(trace.timestamp).toLocaleTimeString('en-GB', { hour12: false }),
+            level: trace.status === 'error' ? 'error' : 'debug',
+            source: 'TRACE',
+            message: `[${trace.type}] ${trace.operation} ${trace.durationMs ? `(${trace.durationMs}ms)` : ''}`,
+            commandId: trace.commandId,
+          },
+        });
       }),
       
       bridge.on('groups-update', (groups: GroupState[]) => {
@@ -852,7 +872,8 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
             timestamp: new Date().toLocaleTimeString('en-GB', { hour12: false }),
             level: recoverable ? 'warn' : 'error',
             source: 'BRIDGE',
-            message: `${code ?? 'BRIDGE_ERROR'}${commandId ? ` (${commandId})` : ''}: ${error.message}`,
+            message: `${code ?? 'BRIDGE_ERROR'}: ${error.message}`,
+            commandId,
           },
         });
         if (details && Object.keys(details).length > 0) {
@@ -1434,7 +1455,7 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
               ),
             });
           },
-          send: () => CRUDActions.deleteFlow(crudContext, groupId, flowId),
+          send: () => CRUDActions.deleteFlow(crudContext, groupId, flowId, flow.name),
         }
       );
     } catch (error) {
@@ -1500,7 +1521,7 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
               ),
             });
           },
-          send: () => CRUDActions.updateFlowConfig(crudContext, groupId, flowId, config),
+          send: () => CRUDActions.updateFlowConfig(crudContext, groupId, flowId, config, flow.name),
         }
       );
     } catch (error) {
@@ -1596,7 +1617,7 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
               payload: [...state.variables, previousVariable],
             });
           },
-          send: () => CRUDActions.deleteVariable(crudContext, variableId),
+          send: () => CRUDActions.deleteVariable(crudContext, variableId, previousVariable.name),
         }
       );
     } catch (error) {
@@ -1645,7 +1666,7 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
               ),
             });
           },
-          send: () => CRUDActions.updateVariable(crudContext, variableId, updates),
+          send: () => CRUDActions.updateVariable(crudContext, variableId, updates, previousVariable.name),
         }
       );
     } catch (error) {

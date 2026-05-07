@@ -30,12 +30,16 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 
 /**
  * Lightweight WebSocket bridge between simulator-ui and core runtime.
  */
 public class UiBridgeWebSocketServer extends WebSocketServer {
 
+    private static final Logger logger = LoggerFactory.getLogger(UiBridgeWebSocketServer.class);
     private static final String PROTOCOL_VERSION = "1.0.0";
     private static final Set<String> SUPPORTED_COMMANDS = Set.of(
         "START_SYSTEM",
@@ -241,26 +245,34 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
 
     private void handleCommand(WebSocket conn, String rawMessage) {
         String commandId = null;
+        long startTime = System.currentTimeMillis();
         try {
             JsonNode root = objectMapper.readTree(rawMessage);
             String type = root.path("type").asText("");
-            commandId = root.path("id").asText(null);
+            
+            // Normalize commandId: prefer 'commandId', fallback to 'id' (backward compatibility)
+            commandId = root.has("commandId") ? root.path("commandId").asText(null) : root.path("id").asText(null);
+            
             String protocolVersion = root.path("protocolVersion").asText("");
             JsonNode payload = root.path("payload");
             String clientRequestId = payload != null ? payload.path("clientRequestId").asText(null) : null;
 
             if (type.isBlank() || commandId == null || commandId.isBlank()) {
                 sendError(conn, commandId, clientRequestId, "INVALID_ENVELOPE", "Invalid command envelope", Map.of(
-                    "reason", "Missing type or id"
+                    "reason", "Missing type or id/commandId"
                 ));
                 return;
             }
+
+            MDC.put("commandId", commandId);
+            sendTrace(conn, commandId, "START", type, null, null);
 
             if (!PROTOCOL_VERSION.equals(protocolVersion)) {
                 sendError(conn, commandId, clientRequestId, "PROTOCOL_VERSION_MISMATCH", "Unsupported protocol version: " + protocolVersion, Map.of(
                     "expected", PROTOCOL_VERSION,
                     "received", protocolVersion
                 ));
+                sendTrace(conn, commandId, "END", type, System.currentTimeMillis() - startTime, "error");
                 return;
             }
 
@@ -268,6 +280,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                 sendError(conn, commandId, clientRequestId, "UNSUPPORTED_COMMAND", "Unsupported command: " + type, Map.of(
                     "command", type
                 ));
+                sendTrace(conn, commandId, "END", type, System.currentTimeMillis() - startTime, "error");
                 return;
             }
 
@@ -277,10 +290,12 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                 }
                 case "LOAD_STATE" -> {
                     loadRuntimeState(true);
+                    logToBackend("info", "SYSTEM", "State loaded from repository", commandId);
                     sendInitialState(conn, commandId);
                 }
                 case "SAVE_STATE" -> {
                     persistState();
+                    logToBackend("info", "SYSTEM", "State saved to repository", commandId);
                     sendAck(conn, commandId, "state_saved");
                 }
                 case "SUBSCRIBE_METRICS" -> {
@@ -297,7 +312,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                     response.put("commandId", commandId);
                     response.put("status", "ok");
                     response.put("catalog", connectorCatalogService.listAvailableConnectors());
-                    sendMessage(conn, "CONNECTION_STATUS", response);
+                    sendMessage(conn, "CONNECTION_STATUS", commandId, response);
                 }
                 case "GET_LATEST_CONNECTOR" -> {
                     String pluginId = requireTextField(conn, commandId, payload, "pluginId", "INVALID_PAYLOAD", "GET_LATEST_CONNECTOR");
@@ -309,7 +324,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                     response.put("commandId", commandId);
                     response.put("status", "ok");
                     response.put("connector", connectorCatalogService.findLatestConnector(pluginId).orElse(null));
-                    sendMessage(conn, "CONNECTION_STATUS", response);
+                    sendMessage(conn, "CONNECTION_STATUS", commandId, response);
                 }
                 case "START_SYSTEM" -> {
                     synchronized (stateLock) {
@@ -392,11 +407,18 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                     "command", type
                 ));
             }
+            sendTrace(conn, commandId, "END", type, System.currentTimeMillis() - startTime, "ok");
         } catch (Exception ex) {
             totalErrors.incrementAndGet();
+            logger.error("Failed to process command {}: {}", commandId, ex.getMessage(), ex);
             sendError(conn, commandId, "INTERNAL_ERROR", "Failed to process command: " + ex.getMessage(), Map.of(
                 "exception", ex.getClass().getSimpleName()
             ));
+            if (commandId != null) {
+                sendTrace(conn, commandId, "END", "UNKNOWN", System.currentTimeMillis() - startTime, "error");
+            }
+        } finally {
+            MDC.remove("commandId");
         }
     }
 
@@ -448,6 +470,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         }
 
         sendAck(conn, commandId, clientRequestId, "group_created");
+        logToBackend("info", "GROUPS", "Created group '" + name + "'", commandId);
         broadcastGroupsUpdate();
     }
 
@@ -457,12 +480,14 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             return;
         }
 
+        String groupName;
         synchronized (stateLock) {
             GroupRuntime group = groupsById.remove(groupId);
             if (group == null) {
                 sendError(conn, commandId, "NOT_FOUND", "Group not found: " + groupId, Map.of("groupId", groupId));
                 return;
             }
+            groupName = group.name;
 
             stopGroupInternal(group);
             persistState();
@@ -470,6 +495,9 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         }
 
         sendAck(conn, commandId, "group_deleted");
+        // We removed it from the map, but we saved the name
+        logToBackend("info", "GROUPS", "Deleted group '" + groupName + "'", commandId);
+
         broadcastGroupsUpdate();
         broadcastSystemStatus();
     }
@@ -520,6 +548,8 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         }
 
         sendAck(conn, commandId, "group_updated");
+        GroupRuntime group = groupsById.get(groupId); // It exists, otherwise would have returned early
+        logToBackend("info", "GROUPS", "Updated config for group '" + (group != null ? group.name : groupId) + "'", commandId);
         broadcastGroupsUpdate();
     }
 
@@ -585,6 +615,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         }
 
         sendAck(conn, commandId, clientRequestId, "flow_created");
+        logToBackend("info", "FLOWS", "Created flow '" + name + "'", commandId);
         broadcastGroupsUpdate();
     }
 
@@ -618,6 +649,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                 }
             }
 
+            logToBackend("info", "FLOWS", "Deleted flow '" + flow.name + "'", commandId);
             group.flows.remove(flow);
             persistState();
         }
@@ -633,6 +665,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             return;
         }
 
+        String updatedFlowName;
         synchronized (stateLock) {
             GroupRuntime group = groupsById.get(groupId);
             if (group == null) {
@@ -685,9 +718,11 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             }
 
             persistState();
+            updatedFlowName = flow.name;
         }
 
         sendAck(conn, commandId, "flow_updated");
+        logToBackend("info", "FLOWS", "Updated config for flow '" + updatedFlowName + "'", commandId);
         broadcastGroupsUpdate();
     }
 
@@ -731,7 +766,8 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         response.put("result", "variable_created");
         response.put("type", type);
         response.put("scope", scope.toLowerCase());
-        sendMessage(conn, "CONNECTION_STATUS", response);
+        sendMessage(conn, "CONNECTION_STATUS", commandId, response);
+        logToBackend("info", "VARIABLES", "Created variable '" + name + "'", commandId);
         sendVariablesUpdate();
     }
 
@@ -749,6 +785,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                 sendError(conn, commandId, clientRequestId, "NOT_FOUND", "Variable not found: " + variableId, Map.of("variableId", variableId));
                 return;
             }
+            logToBackend("info", "VARIABLES", "Deleted variable '" + removed.getName() + "'", commandId);
             persistState();
         }
 
@@ -762,6 +799,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             return;
         }
 
+        String updatedVariableName;
         synchronized (stateLock) {
             Variable existing = variablesById.get(variableId);
             if (existing == null) {
@@ -770,6 +808,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             }
 
             String name = payload.path("name").asText(existing.getName());
+            updatedVariableName = name;
             String type = normalizeVariableTypeForCore(payload.path("type").asText(existing.getType()));
             String scope = payload.path("scope").asText(existing.getScope()).toUpperCase();
             Object defaultValue = payload.has("config") ? payload.get("config").toString() : existing.getDefaultValue();
@@ -785,6 +824,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         }
 
         sendAck(conn, commandId, "variable_updated");
+        logToBackend("info", "VARIABLES", "Updated variable '" + updatedVariableName + "'", commandId);
         sendVariablesUpdate();
     }
 
@@ -997,7 +1037,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
 
     private void sendMetrics(WebSocket conn, String commandId) {
         Map<String, Object> payload = buildMetricsPayload(commandId);
-        sendMessage(conn, "METRICS_UPDATE", payload);
+        sendMessage(conn, "METRICS_UPDATE", commandId, payload);
     }
 
     private static long bytesToMb(long bytes) {
@@ -1005,7 +1045,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
     }
 
     private void sendSystemStatus(WebSocket conn, String commandId) {
-        sendMessage(conn, "SYSTEM_STATUS", buildSystemStatusPayload(commandId));
+        sendMessage(conn, "SYSTEM_STATUS", commandId, buildSystemStatusPayload(commandId));
     }
 
     private Map<String, Object> buildSystemStatusPayload(String commandId) {
@@ -1062,7 +1102,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
     }
 
     private void sendInitialState(WebSocket conn, String commandId) {
-        sendMessage(conn, "INITIAL_STATE", buildInitialStatePayload(commandId));
+        sendMessage(conn, "INITIAL_STATE", commandId, buildInitialStatePayload(commandId));
     }
 
     private void sendGroupsUpdate(WebSocket conn) {
@@ -1129,7 +1169,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         }
         payload.put("status", "ok");
         payload.put("result", result);
-        sendMessage(conn, "CONNECTION_STATUS", payload);
+        sendMessage(conn, "CONNECTION_STATUS", commandId, payload);
     }
 
     private void sendError(WebSocket conn, String commandId, String code, String message, Map<String, Object> details) {
@@ -1150,7 +1190,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         if (details != null && !details.isEmpty()) {
             payload.put("details", details);
         }
-        sendMessage(conn, "ERROR", payload);
+        sendMessage(conn, "ERROR", commandId, payload);
     }
 
     private String normalizeVariableTypeForCore(String type) {
@@ -1170,35 +1210,93 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         return normalized;
     }
 
+    private void logToBackend(String level, String source, String message, String commandId) {
+        if (commandId != null) {
+            MDC.put("commandId", commandId);
+        }
+        String formattedMessage = String.format("[%s] %s", source, message);
+        switch (level.toLowerCase()) {
+            case "error" -> logger.error(formattedMessage);
+            case "warn" -> logger.warn(formattedMessage);
+            case "debug" -> logger.debug(formattedMessage);
+            default -> logger.info(formattedMessage);
+        }
+        if (commandId != null) {
+            MDC.remove("commandId");
+        }
+    }
+
     private void sendLog(WebSocket conn, String level, String source, String message) {
+        sendLog(conn, level, source, message, MDC.get("commandId"));
+    }
+
+    private void sendLog(WebSocket conn, String level, String source, String message, String commandId) {
+        logToBackend(level, source, message, commandId);
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("id", UUID.randomUUID().toString());
         payload.put("timestamp", Instant.now().toString());
         payload.put("level", level);
         payload.put("source", source);
         payload.put("message", message);
-        sendMessage(conn, "LOG_ENTRY", payload);
+        if (commandId != null) {
+            payload.put("commandId", commandId);
+        }
+        sendMessage(conn, "LOG_ENTRY", commandId, payload);
     }
 
     private void sendLogToAll(String level, String source, String message) {
+        sendLogToAll(level, source, message, MDC.get("commandId"));
+    }
+
+    private void sendLogToAll(String level, String source, String message, String commandId) {
+        logToBackend(level, source, message, commandId);
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("id", UUID.randomUUID().toString());
         payload.put("timestamp", Instant.now().toString());
         payload.put("level", level);
         payload.put("source", source);
         payload.put("message", message);
-        broadcastMessage("LOG_ENTRY", payload);
+        if (commandId != null) {
+            payload.put("commandId", commandId);
+        }
+        broadcastMessage("LOG_ENTRY", commandId, payload);
     }
 
+    private void sendTrace(WebSocket conn, String commandId, String type, String operation, Long durationMs, String status) {
+        String msg = String.format("[%s] %s%s", type, operation, durationMs != null ? " (" + durationMs + "ms)" : "");
+        logToBackend(status != null && status.equals("error") ? "error" : "debug", "TRACE", msg, commandId);
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("commandId", commandId);
+        payload.put("type", type);
+        payload.put("operation", operation);
+        payload.put("timestamp", System.currentTimeMillis());
+        if (durationMs != null) {
+            payload.put("durationMs", durationMs);
+        }
+        if (status != null) {
+            payload.put("status", status);
+        }
+        sendMessage(conn, "TRACE_EVENT", commandId, payload);
+    }
+
+
     private void broadcastMessage(String type, Object payload) {
+        broadcastMessage(type, null, payload);
+    }
+
+    private void broadcastMessage(String type, String commandId, Object payload) {
         for (WebSocket connection : getConnections()) {
             if (connection != null && connection.isOpen()) {
-                sendMessage(connection, type, payload);
+                sendMessage(connection, type, commandId, payload);
             }
         }
     }
 
     private void sendMessage(WebSocket conn, String type, Object payload) {
+        sendMessage(conn, type, null, payload);
+    }
+
+    private void sendMessage(WebSocket conn, String type, String commandId, Object payload) {
         if (conn == null || !conn.isOpen()) {
             return;
         }
@@ -1208,10 +1306,14 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             envelope.put("type", type);
             envelope.put("timestamp", System.currentTimeMillis());
             envelope.put("protocolVersion", PROTOCOL_VERSION);
+            if (commandId != null) {
+                envelope.put("commandId", commandId);
+            }
             envelope.put("payload", payload);
             conn.send(objectMapper.writeValueAsString(envelope));
         } catch (Exception ex) {
             totalErrors.incrementAndGet();
+            logger.error("Failed to send message: {}", ex.getMessage());
         }
     }
 

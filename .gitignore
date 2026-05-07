@@ -45,6 +45,7 @@ coverage/
 .env
 .env.local
 .env.*.local
+.agents
 
 # Logs
 *.log
@@ -63,3 +64,4 @@ matriz_compatibilidad
 
 # Local-only execution/testing guide
 LOCAL_RUN_TESTING.md
+/core/SMOKE_EVIDENCE.txt

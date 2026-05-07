@@ -23,6 +23,7 @@ export type CoreMessageType =
   | 'INITIAL_STATE'
   | 'CONNECTION_STATUS'
   | 'ERROR'
+  | 'TRACE_EVENT'
   | 'BRIDGE_TIMEOUT'
   | 'BRIDGE_RECONNECTING'
   | 'BRIDGE_RECONNECT_EXHAUSTED';
@@ -31,6 +32,7 @@ export interface CoreMessage<T = unknown> {
   type: CoreMessageType;
   timestamp: number;
   protocolVersion?: string;
+  commandId?: string; // For correlation
   payload: T;
 }
 
@@ -93,6 +95,16 @@ export interface LogPayload {
   level: 'info' | 'warn' | 'error' | 'debug';
   source: string;
   message: string;
+  commandId?: string; // Correlated command
+}
+
+export interface TracePayload {
+  commandId: string;
+  type: 'START' | 'END';
+  operation: string;
+  timestamp: number;
+  durationMs?: number;
+  status?: 'ok' | 'error';
 }
 
 export interface ConnectorPluginDescriptor {
@@ -245,7 +257,8 @@ export interface UICommandPayloadMap {
 
 export interface UICommand<T extends UICommandType = UICommandType> {
   type: T;
-  id: string; // ID único para correlacionar respuestas
+  id: string; // Backward compatibility
+  commandId: string; // Normalized correlation ID
   protocolVersion: string;
   payload?: UICommandPayloadMap[T];
 }

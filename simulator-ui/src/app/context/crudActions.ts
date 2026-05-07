@@ -260,6 +260,7 @@ export async function updateFlowConfig(
   groupId: string,
   flowId: string,
   config: Partial<Omit<Flow, 'id' | 'connectionStatus' | 'throughput' | 'hasError' | 'errorMessage'>> & { template?: string },
+  flowName?: string,
 ): Promise<void> {
   if (!groupId?.trim()) throwValidationError('groupId', 'is required');
   if (!flowId?.trim()) throwValidationError('flowId', 'is required');
@@ -281,7 +282,7 @@ export async function updateFlowConfig(
         timestamp: new Date().toLocaleTimeString('en-GB', { hour12: false }),
         level: 'info',
         source: 'FLOWS',
-        message: `Flow ${flowId} configuration updated`,
+        message: `Flow '${flowName || flowId}' configuration updated`,
       },
     });
   } catch (error) {
@@ -297,6 +298,7 @@ export async function deleteFlow(
   ctx: CRUDActionContext,
   groupId: string,
   flowId: string,
+  flowName?: string,
 ): Promise<void> {
   if (!groupId?.trim()) throwValidationError('groupId', 'is required');
   if (!flowId?.trim()) throwValidationError('flowId', 'is required');
@@ -316,7 +318,7 @@ export async function deleteFlow(
         timestamp: new Date().toLocaleTimeString('en-GB', { hour12: false }),
         level: 'info',
         source: 'FLOWS',
-        message: `Flow ${flowId} deleted`,
+        message: `Flow '${flowName || flowId}' deleted`,
       },
     });
   } catch (error) {
@@ -388,6 +390,7 @@ export async function updateVariable(
   ctx: CRUDActionContext,
   variableId: string,
   updates: Partial<Omit<Variable, 'id'>>,
+  variableName?: string,
 ): Promise<void> {
   if (!variableId?.trim()) {
     throwValidationError('variableId', 'is required');
@@ -409,7 +412,7 @@ export async function updateVariable(
         timestamp: new Date().toLocaleTimeString('en-GB', { hour12: false }),
         level: 'info',
         source: 'VARIABLES',
-        message: `Variable ${variableId} updated`,
+        message: `Variable '${variableName || variableId}' updated`,
       },
     });
   } catch (error) {
@@ -424,6 +427,7 @@ export async function updateVariable(
 export async function deleteVariable(
   ctx: CRUDActionContext,
   variableId: string,
+  variableName?: string,
 ): Promise<void> {
   if (!variableId?.trim()) {
     throwValidationError('variableId', 'is required');
@@ -443,7 +447,7 @@ export async function deleteVariable(
         timestamp: new Date().toLocaleTimeString('en-GB', { hour12: false }),
         level: 'info',
         source: 'VARIABLES',
-        message: `Variable ${variableId} deleted`,
+        message: `Variable '${variableName || variableId}' deleted`,
       },
     });
   } catch (error) {

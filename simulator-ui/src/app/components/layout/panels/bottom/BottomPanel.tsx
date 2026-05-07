@@ -85,6 +85,12 @@ function LogsView({ entries, connectorHealthSummary, groups }: { entries: Array<
     setFlowFilter('all');
   }, [groupFilter]);
 
+  useEffect(() => {
+    if (endRef.current) {
+      endRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [filtered]);
+
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
       <div className="px-3 py-2 border-b border-[var(--c-br2)] bg-[var(--c-bg1)]">
