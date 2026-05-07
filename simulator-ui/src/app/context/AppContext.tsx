@@ -29,6 +29,7 @@ import type {
   LogPayload,
   GroupState,
   FlowMetricsPayload,
+  VariableState,
   ConnectorPluginDescriptor,
   InitialStatePayload,
 } from '../core/types';
@@ -662,6 +663,11 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
   const lastConnectorHealthSignature = useRef('');
   const preserveLocalSnapshotRef = useRef(false);
   const optimisticManager = useRef<OptimisticManager | null>(null);
+  const stateRef = useRef(state);
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
 
   // Initialize OptimisticManager once
   if (!optimisticManager.current) {
@@ -756,15 +762,16 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
       }),
 
       bridge.on('initial-state', (snapshot: InitialStatePayload) => {
-        const serverGroups = mapGroupsFromCore(snapshot.groups, state.groups);
+        const currentState = stateRef.current;
+        const serverGroups = mapGroupsFromCore(snapshot.groups, currentState.groups);
         const serverVariables = normalizeVariableListFromCore(snapshot.variables);
 
         // Reconcile state between local and server
         const reconciliation = reconcileState({
           optimisticManager: optimisticManager.current,
           localState: {
-            groups: state.groups,
-            variables: state.variables,
+            groups: currentState.groups,
+            variables: currentState.variables,
           },
           serverState: {
             groups: serverGroups,
@@ -810,20 +817,27 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
       bridge.on('groups-update', (groups: GroupState[]) => {
         // Convert GroupState from Core to Group for UI, preserving expanded state and normalizing connector info.
         // If a local snapshot was imported, keep current UI groups that the backend does not know about yet.
-        const uiGroups = mapGroupsFromCore(groups, state.groups);
+        const uiGroups = mapGroupsFromCore(groups, stateRef.current.groups);
         const nextGroups = preserveLocalSnapshotRef.current
           ? [
-              ...state.groups.map((currentGroup) => {
+              ...stateRef.current.groups.map((currentGroup) => {
                 const matchingCoreGroup = uiGroups.find((group) => group.id === currentGroup.id);
                 return matchingCoreGroup ? { ...matchingCoreGroup, expanded: currentGroup.expanded } : currentGroup;
               }),
               ...uiGroups.filter(
-                (incomingGroup) => !state.groups.some((currentGroup) => currentGroup.id === incomingGroup.id),
+                (incomingGroup) => !stateRef.current.groups.some((currentGroup) => currentGroup.id === incomingGroup.id),
               ),
             ]
           : uiGroups;
 
         dispatch({ type: 'SET_GROUPS', payload: nextGroups });
+      }),
+
+      bridge.on('variables-update', (variables: VariableState[]) => {
+        dispatch({
+          type: 'SET_VARIABLES',
+          payload: normalizeVariableListFromCore(variables as unknown as Variable[]),
+        });
       }),
       
       bridge.on('flow-update', (flowMetrics: FlowMetricsPayload) => {
@@ -1150,6 +1164,25 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
     const optimisticGroup = createOptimisticGroup(optimisticId, name, description);
 
     try {
+      const applyOptimisticGroup = () => {
+        const currentGroups = stateRef.current.groups;
+        const nextGroups = currentGroups.some((g) => g.id === optimisticId)
+          ? currentGroups
+          : [...currentGroups, optimisticGroup];
+
+        dispatch({
+          type: 'SET_GROUPS',
+          payload: nextGroups,
+        });
+      };
+
+      const rollbackOptimisticGroup = () => {
+        dispatch({
+          type: 'SET_GROUPS',
+          payload: stateRef.current.groups.filter((g) => g.id !== optimisticId),
+        });
+      };
+
       const createdGroup = await executeCreateOptimistic(
         {
           optimisticManager: optimisticManager.current,
@@ -1157,24 +1190,14 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
           optimisticId,
         },
         {
-          applyOptimistic: () => {
-            dispatch({
-              type: 'SET_GROUPS',
-              payload: [...state.groups, optimisticGroup],
-            });
-          },
-          rollback: () => {
-            dispatch({
-              type: 'SET_GROUPS',
-              payload: state.groups.filter(g => g.id !== optimisticId),
-            });
-          },
+          applyOptimistic: applyOptimisticGroup,
+          rollback: rollbackOptimisticGroup,
           send: () => CRUDActions.createGroup(crudContext, name, description),
           reconcileId: (serverGroup) => {
             // If server returned different ID, replace optimistic with real
             dispatch({
               type: 'SET_GROUPS',
-              payload: state.groups.map(g => 
+              payload: stateRef.current.groups.map((g) =>
                 g.id === optimisticId ? serverGroup : g
               ),
             });
@@ -1187,7 +1210,7 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
       reportCommandError('GROUPS', `createGroup(${name})`, error);
       throw error;
     }
-  }, [crudContext, state.groups, reportCommandError]);
+  }, [crudContext, reportCommandError]);
 
   const deleteGroupAction = useCallback(async (groupId: string) => {
     const previousGroup = state.groups.find(g => g.id === groupId);
@@ -1290,6 +1313,36 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
     );
 
     try {
+      const applyOptimisticFlow = () => {
+        dispatch({
+          type: 'SET_GROUPS',
+          payload: stateRef.current.groups.map((g) =>
+            g.id === groupId
+              ? {
+                  ...g,
+                  flows: g.flows.some((f) => f.id === optimisticId)
+                    ? g.flows
+                    : [...g.flows, optimisticFlow],
+                }
+              : g
+          ),
+        });
+      };
+
+      const rollbackOptimisticFlow = () => {
+        dispatch({
+          type: 'SET_GROUPS',
+          payload: stateRef.current.groups.map((g) =>
+            g.id === groupId
+              ? {
+                  ...g,
+                  flows: g.flows.filter((f) => f.id !== optimisticId),
+                }
+              : g
+          ),
+        });
+      };
+
       const createdFlow = await executeCreateOptimistic(
         {
           optimisticManager: optimisticManager.current,
@@ -1297,32 +1350,8 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
           optimisticId,
         },
         {
-          applyOptimistic: () => {
-            dispatch({
-              type: 'SET_GROUPS',
-              payload: state.groups.map(g =>
-                g.id === groupId
-                  ? {
-                      ...g,
-                      flows: [...g.flows, optimisticFlow],
-                    }
-                  : g
-              ),
-            });
-          },
-          rollback: () => {
-            dispatch({
-              type: 'SET_GROUPS',
-              payload: state.groups.map(g =>
-                g.id === groupId
-                  ? {
-                      ...g,
-                      flows: g.flows.filter(f => f.id !== optimisticId),
-                    }
-                  : g
-              ),
-            });
-          },
+          applyOptimistic: applyOptimisticFlow,
+          rollback: rollbackOptimisticFlow,
           send: () =>
             CRUDActions.createFlow(
               crudContext,
@@ -1341,11 +1370,11 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
             // If server returned different ID, replace optimistic with real
             dispatch({
               type: 'SET_GROUPS',
-              payload: state.groups.map(g =>
+              payload: stateRef.current.groups.map((g) =>
                 g.id === groupId
                   ? {
                       ...g,
-                      flows: g.flows.map(f => 
+                      flows: g.flows.map((f) =>
                         f.id === optimisticId ? serverFlow : f
                       ),
                     }
@@ -1361,7 +1390,7 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
       reportCommandError('FLOWS', `createFlow(${name})`, error);
       throw error;
     }
-  }, [crudContext, state.groups, reportCommandError]);
+  }, [crudContext, reportCommandError]);
 
   const deleteFlowAction = useCallback(async (groupId: string, flowId: string) => {
     const group = state.groups.find(g => g.id === groupId);
@@ -1491,6 +1520,25 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
     const optimisticVariable = createOptimisticVariable(optimisticId, name, type, scope);
 
     try {
+      const applyOptimisticVariable = () => {
+        const currentVariables = stateRef.current.variables;
+        const nextVariables = currentVariables.some((v) => v.id === optimisticId)
+          ? currentVariables
+          : [...currentVariables, optimisticVariable];
+
+        dispatch({
+          type: 'SET_VARIABLES',
+          payload: nextVariables,
+        });
+      };
+
+      const rollbackOptimisticVariable = () => {
+        dispatch({
+          type: 'SET_VARIABLES',
+          payload: stateRef.current.variables.filter((v) => v.id !== optimisticId),
+        });
+      };
+
       const createdVariable = await executeCreateOptimistic(
         {
           optimisticManager: optimisticManager.current,
@@ -1498,21 +1546,8 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
           optimisticId,
         },
         {
-          applyOptimistic: () => {
-            const nextVariables = state.variables.some(v => v.id === optimisticId)
-              ? state.variables
-              : [...state.variables, optimisticVariable];
-            dispatch({
-              type: 'SET_VARIABLES',
-              payload: nextVariables,
-            });
-          },
-          rollback: () => {
-            dispatch({
-              type: 'SET_VARIABLES',
-              payload: state.variables.filter(v => v.id !== optimisticId),
-            });
-          },
+          applyOptimistic: applyOptimisticVariable,
+          rollback: rollbackOptimisticVariable,
           send: () =>
             CRUDActions.createVariable(crudContext, name, type, scope, config, variableId),
           reconcileId: (serverVariable) => {
@@ -1520,7 +1555,7 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
             const normalizedServer = normalizeVariableFromCore(serverVariable);
             dispatch({
               type: 'SET_VARIABLES',
-              payload: state.variables.map(v =>
+              payload: stateRef.current.variables.map((v) =>
                 v.id === optimisticId ? normalizedServer : v
               ),
             });
@@ -1533,7 +1568,7 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
       reportCommandError('VARIABLES', `createVariable(${name})`, error);
       throw error;
     }
-  }, [crudContext, state.variables, reportCommandError]);
+  }, [crudContext, reportCommandError]);
 
   const deleteVariableAction = useCallback(async (variableId: string) => {
     const previousVariable = state.variables.find(v => v.id === variableId);

@@ -21,6 +21,7 @@ import type {
   LogPayload,
   GroupState,
   FlowMetricsPayload,
+  VariableState,
   ConnectorPluginDescriptor,
 } from './types';
 
@@ -96,6 +97,7 @@ interface EventMap {
   'log': LogPayload;
   'groups-update': GroupState[];
   'flow-update': FlowMetricsPayload;
+  'variables-update': VariableState[];
   'initial-state': InitialStatePayload;
   'connector-catalog': ConnectorPluginDescriptor[];
   'message': CoreMessage;
@@ -452,6 +454,9 @@ class CoreBridge {
           break;
         case 'FLOW_UPDATE':
           this.emit('flow-update', message.payload as FlowMetricsPayload);
+          break;
+        case 'VARIABLE_UPDATE':
+          this.emit('variables-update', message.payload as VariableState[]);
           break;
         case 'INITIAL_STATE':
           this.emit('initial-state', message.payload as InitialStatePayload);
