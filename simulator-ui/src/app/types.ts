@@ -62,6 +62,7 @@ export interface LogEntry {
   level: 'info' | 'warn' | 'error' | 'debug';
   source: string;
   message: string;
+  commandId?: string;
 }
 
 export type ConnectorHealthStatus = 'healthy' | 'degraded' | 'offline';

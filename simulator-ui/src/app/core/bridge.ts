@@ -23,6 +23,7 @@ import type {
   FlowMetricsPayload,
   VariableState,
   ConnectorPluginDescriptor,
+  TracePayload,
 } from './types';
 
 // ─────────────────────────────────────────────────────────────
@@ -101,6 +102,7 @@ interface EventMap {
   'initial-state': InitialStatePayload;
   'connector-catalog': ConnectorPluginDescriptor[];
   'message': CoreMessage;
+  'trace': TracePayload;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -172,6 +174,7 @@ class CoreBridge {
           this.reconnectAttempts = 0;
           this.emit('connected', undefined);
           console.log('[Bridge] Connected to the Java core via WebSocket');
+          this.resync().catch(err => console.error('[Bridge] Error during post-connect resync:', err));
           resolve();
         };
 
@@ -242,7 +245,6 @@ class CoreBridge {
       console.error('[Bridge] Maximum reconnect attempts reached');
       return;
     }
-
     this.reconnectTimer = window.setTimeout(() => {
       this.reconnectAttempts++;
       console.log(`[Bridge] Reconnect attempt ${this.reconnectAttempts}/${this.config.maxReconnectAttempts}`);
@@ -250,6 +252,25 @@ class CoreBridge {
         // Will be handled on the next cycle
       });
     }, this.config.reconnectInterval);
+  }
+
+  /**
+   * Resynchronizes state after reconnection
+   */
+  private async resync(): Promise<void> {
+    if (!this.connected) return;
+    
+    console.log('[Bridge] Resyncing system state...');
+    try {
+      // Execute required resync commands
+      await CoreCommands.getInitialState();
+      await CoreCommands.getConnectorCatalog();
+      await CoreCommands.subscribeMetrics();
+      
+      console.log('[Bridge] Resync complete');
+    } catch (error) {
+      console.error('[Bridge] Resync failed:', error);
+    }
   }
 
   // ─────────────────────────────────────────────────────────
@@ -271,6 +292,7 @@ class CoreBridge {
       const command: UICommand<T> = {
         type,
         id,
+        commandId: id,
         protocolVersion: CORE_PROTOCOL_VERSION,
         payload,
       };
@@ -464,11 +486,14 @@ class CoreBridge {
         case 'ERROR':
           this.emit('error', this.createErrorEvent(message.payload as CoreCommandErrorPayload));
           break;
+        case 'TRACE_EVENT':
+          this.emit('trace', message.payload as TracePayload);
+          break;
       }
 
       // Check whether this is a response to a pending command
       const responsePayload = message.payload as { commandId?: string; status?: string } | null;
-      const responseId = responsePayload?.commandId;
+      const responseId = message.commandId || responsePayload?.commandId;
       if (responseId && this.pendingCommands.has(responseId)) {
         const pending = this.pendingCommands.get(responseId)!;
         window.clearTimeout(pending.timerId);

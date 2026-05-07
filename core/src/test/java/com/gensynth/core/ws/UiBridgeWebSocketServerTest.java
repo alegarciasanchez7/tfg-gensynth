@@ -13,6 +13,11 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.Assert.*;
+import static org.mockito.Mockito.*;
+import org.java_websocket.WebSocket;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.mockito.ArgumentCaptor;
 
 public class UiBridgeWebSocketServerTest {
 
@@ -87,5 +92,47 @@ public class UiBridgeWebSocketServerTest {
         assertEquals("./outputs-e2e", cfg.get("outputDir"));
         assertEquals("txt", cfg.get("format"));
         assertEquals("flow_test_output", cfg.get("fileName"));
+    }
+
+    @Test
+    public void handleCommandCorrelatesCommandIdInResponse() throws Exception {
+        UiBridgeWebSocketServer server = new UiBridgeWebSocketServer(new InetSocketAddress("localhost", 0), new ConnectorCatalogService());
+        WebSocket mockConn = mock(WebSocket.class);
+        when(mockConn.isOpen()).thenReturn(true);
+        
+        String commandId = "test-command-id-123";
+        String command = "{\"type\":\"GET_INITIAL_STATE\",\"commandId\":\"" + commandId + "\",\"protocolVersion\":\"1.0.0\"}";
+        
+        server.onMessage(mockConn, command);
+        
+        ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
+        // Should send TRACE_EVENT (START), INITIAL_STATE, TRACE_EVENT (END)
+        verify(mockConn, atLeastOnce()).send(captor.capture());
+        
+        List<String> sentMessages = captor.getAllValues();
+        boolean foundInitialStateWithCommandId = false;
+        boolean foundStartTrace = false;
+        boolean foundEndTrace = false;
+        
+        ObjectMapper mapper = new ObjectMapper();
+        for (String msg : sentMessages) {
+            JsonNode root = mapper.readTree(msg);
+            String type = root.path("type").asText();
+            if ("INITIAL_STATE".equals(type)) {
+                if (commandId.equals(root.path("commandId").asText())) {
+                    foundInitialStateWithCommandId = true;
+                }
+            } else if ("TRACE_EVENT".equals(type)) {
+                JsonNode payload = root.path("payload");
+                if (commandId.equals(payload.path("commandId").asText())) {
+                    if ("START".equals(payload.path("type").asText())) foundStartTrace = true;
+                    if ("END".equals(payload.path("type").asText())) foundEndTrace = true;
+                }
+            }
+        }
+        
+        assertTrue("INITIAL_STATE should have correlated commandId", foundInitialStateWithCommandId);
+        assertTrue("Should have sent START trace", foundStartTrace);
+        assertTrue("Should have sent END trace", foundEndTrace);
     }
 }

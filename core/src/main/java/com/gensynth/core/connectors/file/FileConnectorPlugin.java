@@ -1,9 +1,6 @@
 package com.gensynth.core.connectors.file;
 
 import com.gensynth.core.connectors.spi.ConnectorPlugin;
-import com.gensynth.core.flow.serialization.EventSerializer;
-import com.gensynth.core.flow.serialization.JsonEventSerializer;
-import com.gensynth.core.flow.serialization.TextEventSerializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -30,7 +27,6 @@ public class FileConnectorPlugin implements ConnectorPlugin {
     private Path outputDir;
     private String format = "json";  // "json" or "txt"
     private String fileName;
-    private EventSerializer serializer;
     private File outputFile;
     private FileOutputStream fileStream;
     private boolean healthy = false;
@@ -63,8 +59,6 @@ public class FileConnectorPlugin implements ConnectorPlugin {
                 fileName = config.get("fileName").toString();
             }
 
-            // Select appropriate serializer
-            serializer = format.equals("txt") ? new TextEventSerializer() : new JsonEventSerializer();
 
             healthy = true;
         } catch (IOException e) {
