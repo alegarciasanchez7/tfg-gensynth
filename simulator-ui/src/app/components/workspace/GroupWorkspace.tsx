@@ -1,9 +1,13 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Play, Square, Pause, RefreshCw, Layers, ChevronRight,
   Clock, Cpu, AlertCircle, CheckCircle, Wifi, WifiOff,
+  Save, Trash2, RotateCcw,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import type { Group, Flow, ConnectionStatus } from '../../types';
+import { Button } from '../ui/button';
+import { useApp } from '../../context';
 
 const connBadge: Record<ConnectionStatus, { color: string; bg: string; label: string }> = {
   connected:    { color: 'text-emerald-500', bg: 'bg-emerald-500/10 border-emerald-500/30', label: 'CONNECTED' },
@@ -13,8 +17,17 @@ const connBadge: Record<ConnectionStatus, { color: string; bg: string; label: st
 };
 
 
-function EditableField({ label, value, wide }: { label: string; value: string; wide?: boolean }) {
-  const [val, setVal] = useState(value);
+function EditableField({
+  label,
+  value,
+  onChange,
+  wide,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  wide?: boolean;
+}) {
   return (
     <div className={`flex flex-col gap-1 ${wide ? 'col-span-2' : ''}`}>
       <label className="text-[10px] text-[var(--c-tx4)] tracking-wider uppercase"
@@ -22,8 +35,8 @@ function EditableField({ label, value, wide }: { label: string; value: string; w
         {label}
       </label>
       <input
-        value={val}
-        onChange={e => setVal(e.target.value)}
+        value={value}
+        onChange={e => onChange(e.target.value)}
         className="bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded px-2.5 py-1.5 text-xs text-[var(--c-tx1)] outline-none focus:border-cyan-500/50 focus:bg-[var(--c-bg4)] transition-all"
         style={{ fontFamily: 'JetBrains Mono, monospace' }}
       />
@@ -31,8 +44,17 @@ function EditableField({ label, value, wide }: { label: string; value: string; w
   );
 }
 
-function SelectField({ label, options, value }: { label: string; options: string[]; value: string }) {
-  const [val, setVal] = useState(value);
+function SelectField({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  options: string[];
+  value: string;
+  onChange: (value: string) => void;
+}) {
   return (
     <div className="flex flex-col gap-1">
       <label className="text-[10px] text-[var(--c-tx4)] tracking-wider uppercase"
@@ -40,8 +62,8 @@ function SelectField({ label, options, value }: { label: string; options: string
         {label}
       </label>
       <select
-        value={val}
-        onChange={e => setVal(e.target.value)}
+        value={value}
+        onChange={e => onChange(e.target.value)}
         className="bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded px-2.5 py-1.5 text-xs text-[var(--c-tx1)] outline-none focus:border-cyan-500/50 transition-all appearance-none"
         style={{ fontFamily: 'JetBrains Mono, monospace' }}
       >
@@ -51,8 +73,17 @@ function SelectField({ label, options, value }: { label: string; options: string
   );
 }
 
-function NumberField({ label, value, unit }: { label: string; value: number; unit?: string }) {
-  const [val, setVal] = useState(value);
+function NumberField({
+  label,
+  value,
+  unit,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  unit?: string;
+  onChange?: (value: number) => void;
+}) {
   return (
     <div className="flex flex-col gap-1">
       <label className="text-[10px] text-[var(--c-tx4)] tracking-wider uppercase"
@@ -62,8 +93,9 @@ function NumberField({ label, value, unit }: { label: string; value: number; uni
       <div className="flex items-center">
         <input
           type="number"
-          value={val}
-          onChange={e => setVal(Number(e.target.value))}
+          value={value}
+          readOnly={!onChange}
+          onChange={e => onChange?.(Number(e.target.value))}
           className="bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded-l px-2.5 py-1.5 text-xs text-[var(--c-tx1)] outline-none focus:border-cyan-500/50 transition-all w-full"
           style={{ fontFamily: 'JetBrains Mono, monospace' }}
         />
@@ -105,11 +137,92 @@ interface GroupWorkspaceProps {
 }
 
 export function GroupWorkspace({ group }: GroupWorkspaceProps) {
+  const { actions } = useApp();
+  const [draft, setDraft] = useState({
+    name: group.name,
+    description: group.description,
+    threads: group.threads,
+    outputMode: group.outputMode,
+  });
+  const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  useEffect(() => {
+    setDraft({
+      name: group.name,
+      description: group.description,
+      threads: group.threads,
+      outputMode: group.outputMode,
+    });
+  }, [group.description, group.id, group.name, group.outputMode, group.threads]);
+
   const statusCfg = {
     running: { color: 'text-emerald-500', bg: 'bg-emerald-500/10 border-emerald-500/40', label: 'RUNNING' },
     stopped: { color: 'text-slate-400',   bg: 'bg-slate-500/10 border-slate-400/30',    label: 'STOPPED' },
     paused:  { color: 'text-amber-500',   bg: 'bg-amber-500/10 border-amber-500/40',    label: 'PAUSED' },
   }[group.status];
+
+  const hasChanges =
+    draft.name !== group.name ||
+    draft.description !== group.description ||
+    draft.threads !== group.threads ||
+    draft.outputMode !== group.outputMode;
+
+  const handleSave = async () => {
+    if (!hasChanges || isSaving || isDeleting) {
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      await actions.updateGroupConfig(group.id, {
+        name: draft.name.trim(),
+        description: draft.description,
+        threads: draft.threads,
+        outputMode: draft.outputMode,
+      });
+      toast.success('Group changes saved');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to save group changes';
+      toast.error(message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDiscard = () => {
+    if (isSaving || isDeleting) {
+      return;
+    }
+
+    setDraft({
+      name: group.name,
+      description: group.description,
+      threads: group.threads,
+      outputMode: group.outputMode,
+    });
+  };
+
+  const handleDelete = async () => {
+    if (isSaving || isDeleting) {
+      return;
+    }
+
+    const confirmed = window.confirm(`Delete group \"${group.name}\"? This action cannot be undone.`);
+    if (!confirmed) {
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      await actions.deleteGroup(group.id);
+      toast.success('Group deleted');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to delete group';
+      toast.error(message);
+      setIsDeleting(false);
+    }
+  };
 
   return (
     <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
@@ -172,11 +285,30 @@ export function GroupWorkspace({ group }: GroupWorkspaceProps) {
           <Cpu size={10} /> Configuration
         </span>
         <div className="grid grid-cols-2 gap-3">
-          <EditableField label="Group Name" value={group.name} />
-          <SelectField label="Output Mode" options={['parallel', 'sequential', 'round-robin']} value={group.outputMode} />
-          <NumberField label="Threads" value={group.threads} unit="threads" />
+          <EditableField
+            label="Group Name"
+            value={draft.name}
+            onChange={name => setDraft(current => ({ ...current, name }))}
+          />
+          <SelectField
+            label="Output Mode"
+            options={['parallel', 'sequential', 'round-robin']}
+            value={draft.outputMode}
+            onChange={outputMode => setDraft(current => ({ ...current, outputMode }))}
+          />
+          <NumberField
+            label="Threads"
+            value={draft.threads}
+            unit="threads"
+            onChange={threads => setDraft(current => ({ ...current, threads }))}
+          />
           <NumberField label="Global Rate Limit" value={5000} unit="msg/s" />
-          <EditableField label="Description" value={group.description} wide />
+          <EditableField
+            label="Description"
+            value={draft.description}
+            onChange={description => setDraft(current => ({ ...current, description }))}
+            wide
+          />
         </div>
       </div>
 
@@ -202,6 +334,38 @@ export function GroupWorkspace({ group }: GroupWorkspaceProps) {
         <div className="flex flex-col gap-1.5">
           {group.flows.map(f => <FlowSummaryRow key={f.id} flow={f} />)}
         </div>
+      </div>
+
+      {/* Actions */}
+      <div className="flex items-center gap-2 rounded border border-[var(--c-br1)] bg-[var(--c-bg4)] p-3">
+        <Button
+          onClick={handleSave}
+          disabled={!hasChanges || isSaving || isDeleting}
+          variant="outline"
+          className="border-cyan-500/40 bg-cyan-500/10 text-cyan-500 hover:bg-cyan-500/20"
+        >
+          <Save size={12} />
+          {isSaving ? 'Saving...' : 'Save changes'}
+        </Button>
+        <Button
+          onClick={handleDiscard}
+          disabled={!hasChanges || isSaving || isDeleting}
+          variant="ghost"
+          className="border border-[var(--c-br1)] text-[var(--c-tx3)] hover:bg-[var(--c-bg6)]"
+        >
+          <RotateCcw size={12} />
+          Discard
+        </Button>
+        <div className="flex-1" />
+        <Button
+          onClick={handleDelete}
+          disabled={isSaving || isDeleting}
+          variant="destructive"
+          className="border border-red-500/30 bg-red-500/10 text-red-500 hover:bg-red-500/20"
+        >
+          <Trash2 size={12} />
+          {isDeleting ? 'Deleting...' : 'Delete'}
+        </Button>
       </div>
     </div>
   );
