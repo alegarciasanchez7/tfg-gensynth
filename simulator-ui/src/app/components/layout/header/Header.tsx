@@ -11,7 +11,6 @@ interface HeaderProps {
   projectName: string;
   isDark: boolean;
   onThemeToggle: () => void;
-  connectorCatalog: ConnectorPluginDescriptor[];
   latestConnectors: ConnectorPluginDescriptor[];
   connectorHealthSummary: ConnectorHealthSummary[];
 }
@@ -187,7 +186,7 @@ function SettingsPanel({ isDark, onThemeToggle, onClose }: {
   );
 }
 
-export function Header({ systemStatus, onStatusToggle, onLoadProject, onSaveProject, projectName, isDark, onThemeToggle, connectorCatalog, latestConnectors, connectorHealthSummary }: HeaderProps) {
+export function Header({ systemStatus, onStatusToggle, onLoadProject, onSaveProject, projectName, isDark, onThemeToggle, latestConnectors, connectorHealthSummary }: HeaderProps) {
   const [showSettings, setShowSettings] = useState(false);
   const [showCatalog, setShowCatalog] = useState(false);
   const [loadingState, setLoadingState] = useState(false);

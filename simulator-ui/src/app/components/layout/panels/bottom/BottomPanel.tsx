@@ -1,9 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import {
   Terminal, BarChart2, Eye, ChevronUp, ChevronDown,
-  Circle, AlertTriangle, AlertCircle, Bug, Trash2, RefreshCw, Send
+  Circle, AlertTriangle, AlertCircle, Bug, Trash2, Send
 } from 'lucide-react';
-import { mockPreviewSamples } from '../../../../data/mockData';
 import { useApp } from '../../../../context';
 import type { ConnectorHealthSummary } from '../../../../types';
 import type { SystemStatus } from '../../../../types';
