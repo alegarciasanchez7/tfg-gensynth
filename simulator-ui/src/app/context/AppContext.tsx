@@ -340,14 +340,14 @@ function buildConnectorHealthSummary(
 
       entry.flowCount += 1;
 
-      if (flow.connectionStatus === 'connected' && !flow.hasError) {
-        entry.connectedCount += 1;
+      if (flow.hasError || flow.connectionStatus === 'error') {
+        entry.errorCount += 1;
+        entry.lastMessage = flow.errorMessage ?? entry.lastMessage ?? `Flow ${flow.name} is in error state`;
       } else if (flow.connectionStatus === 'warning') {
         entry.warningCount += 1;
         entry.lastMessage = flow.errorMessage ?? entry.lastMessage;
-      } else {
-        entry.errorCount += 1;
-        entry.lastMessage = flow.errorMessage ?? entry.lastMessage ?? `Flow ${flow.name} is ${flow.connectionStatus}`;
+      } else if (flow.connectionStatus === 'connected') {
+        entry.connectedCount += 1;
       }
 
       summaryByKey.set(key, entry);

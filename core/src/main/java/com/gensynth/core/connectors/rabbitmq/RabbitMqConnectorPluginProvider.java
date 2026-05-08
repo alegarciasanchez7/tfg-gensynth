@@ -52,6 +52,8 @@ public class RabbitMqConnectorPluginProvider implements ConnectorPluginProvider 
         properties.put("exchange", stringField("Exchange", "gensynth.exchange", "Exchange to publish to"));
         properties.put("exchangeType", enumField("Exchange type", "topic", Arrays.asList("direct", "topic", "fanout", "headers")));
         properties.put("exchangeDurable", booleanField("Durable exchange", true, "Declare exchange as durable"));
+        properties.put("declareQueue", stringField("Auto-declare Queue", "", "Optional: Queue name to create automatically. Leave empty to disable."));
+        properties.put("bindQueue", booleanField("Auto-bind Queue", true, "Automatically bind the declared queue to the exchange using the routing key"));
         properties.put("routingKey", stringField("Routing key", "gensynth.data", "Default routing key when destination is not provided"));
         return properties;
     }

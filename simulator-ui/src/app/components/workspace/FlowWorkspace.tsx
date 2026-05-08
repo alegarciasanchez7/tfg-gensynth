@@ -484,6 +484,7 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
         topic: draftTopic.trim(),
         interval: draftInterval,
         burst: draftBurst,
+        connectorConfig: connectorConfig,
       });
       toast.success('Flow configuration updated');
     } catch (error) {
@@ -676,12 +677,6 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
                   onChange={handleConnectorConfigChange}
                 />
               )}
-              <div
-                className="rounded border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-[9px] text-amber-400"
-                style={{ fontFamily: 'JetBrains Mono, monospace' }}
-              >
-                Advanced connector schema fields are local draft only for now. Update Config currently persists technology, host, port, topic, interval, burst and template.
-              </div>
             </div>
 
             {/* Generation */}

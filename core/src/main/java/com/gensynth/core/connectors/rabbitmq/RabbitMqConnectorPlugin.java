@@ -31,6 +31,8 @@ public class RabbitMqConnectorPlugin implements ConnectorPlugin {
     private String exchange;
     private String exchangeType;
     private boolean exchangeDurable;
+    private String declareQueue;
+    private boolean bindQueue;
     private String defaultRoutingKey;
 
     private volatile boolean initialized;
@@ -52,6 +54,8 @@ public class RabbitMqConnectorPlugin implements ConnectorPlugin {
             this.exchange = stringValue(safeConfig, "exchange", "gensynth.exchange");
             this.exchangeType = stringValue(safeConfig, "exchangeType", "topic");
             this.exchangeDurable = booleanValue(safeConfig, "exchangeDurable", true);
+            this.declareQueue = stringValue(safeConfig, "declareQueue", "");
+            this.bindQueue = booleanValue(safeConfig, "bindQueue", true);
             this.defaultRoutingKey = stringValue(safeConfig, "routingKey", "gensynth.data");
 
             if (host.isBlank() || exchange.isBlank() || exchangeType.isBlank()) {
@@ -90,6 +94,14 @@ public class RabbitMqConnectorPlugin implements ConnectorPlugin {
                 this.connection = factory.newConnection("gen-synth-rabbitmq-plugin");
                 this.channel = connection.createChannel();
                 channel.exchangeDeclare(exchange, exchangeType, exchangeDurable);
+                
+                if (declareQueue != null && !declareQueue.isBlank()) {
+                    // Declare a durable, non-exclusive, non-autodelete queue
+                    channel.queueDeclare(declareQueue, true, false, false, null);
+                    if (bindQueue) {
+                        channel.queueBind(declareQueue, exchange, defaultRoutingKey);
+                    }
+                }
             } catch (IOException | TimeoutException e) {
                 closeQuietly(channel);
                 closeQuietly(connection);
