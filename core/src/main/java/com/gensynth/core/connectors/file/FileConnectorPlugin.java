@@ -30,6 +30,7 @@ public class FileConnectorPlugin implements ConnectorPlugin {
     private File outputFile;
     private FileOutputStream fileStream;
     private boolean healthy = false;
+    private boolean isFirstMessage = true;
 
     @Override
     public void initialize(Map<String, Object> config) {
@@ -42,6 +43,12 @@ public class FileConnectorPlugin implements ConnectorPlugin {
 
             outputDir = Paths.get(outputDirObj.toString());
             
+            Object groupNameObj = config.get("groupName");
+            if (groupNameObj != null) {
+                String safeGroupName = groupNameObj.toString().replaceAll("[^a-zA-Z0-9_\\-]", "_");
+                outputDir = outputDir.resolve(safeGroupName);
+            }
+
             // Create directory if it doesn't exist
             Files.createDirectories(outputDir);
             LOGGER.info("File connector initialized with output directory: {}", outputDir.toAbsolutePath());
@@ -49,9 +56,6 @@ public class FileConnectorPlugin implements ConnectorPlugin {
             // Optional: format override
             if (config.containsKey("format")) {
                 format = config.get("format").toString().toLowerCase();
-                if (!format.equals("json") && !format.equals("txt")) {
-                    throw new IllegalArgumentException("format must be 'json' or 'txt'");
-                }
             }
 
             // Optional: custom filename
@@ -76,11 +80,17 @@ public class FileConnectorPlugin implements ConnectorPlugin {
                 fileName = "output_" + System.currentTimeMillis();
             }
 
-            String fileExtension = format.equals("txt") ? ".txt" : ".json";
+            String fileExtension = switch (format) {
+                case "xml" -> ".xml";
+                case "csv" -> ".csv";
+                case "txt", "plain" -> ".txt";
+                default -> ".json";
+            };
             outputFile = outputDir.resolve(fileName + fileExtension).toFile();
 
             // Open file in append mode
             fileStream = new FileOutputStream(outputFile, true);
+            isFirstMessage = true;
             LOGGER.info("FileConnectorPlugin started: {}", outputFile.getAbsolutePath());
             healthy = true;
         } catch (IOException e) {
@@ -99,6 +109,21 @@ public class FileConnectorPlugin implements ConnectorPlugin {
 
         try {
             synchronized (this) {
+                if (isFirstMessage) {
+                    if ("json".equals(format)) {
+                        fileStream.write("[\n".getBytes());
+                    } else if ("xml".equals(format)) {
+                        fileStream.write("<dataset>\n".getBytes());
+                    }
+                } else {
+                    if ("json".equals(format)) {
+                        fileStream.write(",\n".getBytes());
+                    } else {
+                        fileStream.write('\n');
+                    }
+                }
+                isFirstMessage = false;
+                
                 fileStream.write(payload);
                 fileStream.flush();
             }
@@ -112,6 +137,23 @@ public class FileConnectorPlugin implements ConnectorPlugin {
     public void stop() {
         try {
             if (fileStream != null) {
+                synchronized (this) {
+                    if (!isFirstMessage) {
+                        if ("json".equals(format)) {
+                            fileStream.write("\n]".getBytes());
+                        } else if ("xml".equals(format)) {
+                            fileStream.write("\n</dataset>".getBytes());
+                        } else {
+                            fileStream.write('\n');
+                        }
+                    } else {
+                        if ("json".equals(format)) {
+                            fileStream.write("[]".getBytes());
+                        } else if ("xml".equals(format)) {
+                            fileStream.write("<dataset></dataset>".getBytes());
+                        }
+                    }
+                }
                 fileStream.close();
                 fileStream = null;
                 LOGGER.info("FileConnectorPlugin stopped");

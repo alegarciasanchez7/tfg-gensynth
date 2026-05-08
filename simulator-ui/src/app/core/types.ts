@@ -331,6 +331,7 @@ export interface FlowState {
   host: string;
   port: number;
   template?: string;
+  connectorConfig?: Record<string, any>;
 }
 
 export interface VariableState {

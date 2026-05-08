@@ -199,6 +199,7 @@ function mapGroupsFromCore(groups: GroupState[], previousGroups: Group[] = []): 
       technology: flow.technology,
       connectionStatus: flow.connectionStatus,
       throughput: `${flow.throughput} msg/s`,
+      latency: flow.latency,
       hasError: flow.hasError,
       errorMessage: flow.errorMessage,
       interval: flow.interval,
@@ -206,6 +207,8 @@ function mapGroupsFromCore(groups: GroupState[], previousGroups: Group[] = []): 
       topic: flow.topic,
       host: flow.host,
       port: flow.port,
+      template: flow.template,
+      connectorConfig: flow.connectorConfig,
     })),
   }));
 }
@@ -549,6 +552,15 @@ function appReducer(state: AppState, action: AppAction): AppState {
           state.flowConnectorConfigs,
         );
 
+        const newTemplates = { ...state.formatTemplates };
+        action.payload.groups.forEach((group: Group) => {
+          group.flows.forEach((flow: Flow) => {
+            if (flow.template) {
+              newTemplates[flow.id] = flow.template;
+            }
+          });
+        });
+
         return {
           ...state,
           groups: action.payload.groups,
@@ -561,6 +573,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
           connectorHealthSummary: healthSummary,
           metrics: action.payload.metrics ?? state.metrics,
           systemStatus: action.payload.systemStatus ?? state.systemStatus,
+          formatTemplates: newTemplates,
         };
       })();
 

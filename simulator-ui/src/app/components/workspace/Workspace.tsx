@@ -60,7 +60,7 @@ export function Workspace({
           <FlowWorkspace
             flow={flow}
             group={group}
-            template={formatTemplate[flow.id] ?? ''}
+            template={formatTemplate[flow.id]}
             onTemplateChange={(t) => onFormatChange(flow.id, t)}
           />
         </div>

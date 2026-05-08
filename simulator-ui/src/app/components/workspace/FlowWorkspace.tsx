@@ -387,7 +387,7 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
     (entry) => entry.pluginId === (connectorSelection?.pluginId ?? latestConnectorForFlow?.pluginId) && entry.pluginVersion === (connectorSelection?.pluginVersion ?? latestConnectorForFlow?.pluginVersion),
   ) ?? null;
 
-  const currentTemplate = template ?? defaultTemplates[formatMode];
+  const currentTemplate = template ?? flow.template ?? '';
   const [draftHost, setDraftHost] = useState(flow.host);
   const [draftPort, setDraftPort] = useState(flow.port);
   const [draftTopic, setDraftTopic] = useState(flow.topic);
@@ -821,6 +821,20 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
               ref={textareaRef}
               value={currentTemplate}
               onChange={e => onTemplateChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Tab') {
+                  e.preventDefault();
+                  const target = e.target as HTMLTextAreaElement;
+                  const start = target.selectionStart;
+                  const end = target.selectionEnd;
+                  const newVal = currentTemplate.slice(0, start) + '  ' + currentTemplate.slice(end);
+                  onTemplateChange(newVal);
+                  requestAnimationFrame(() => {
+                    target.focus();
+                    target.setSelectionRange(start + 2, start + 2);
+                  });
+                }
+              }}
               spellCheck={false}
               className="absolute inset-0 w-full h-full bg-[var(--c-bg1)] text-[var(--c-tx2)] text-[11px] p-3 outline-none resize-none border-0 leading-relaxed"
               style={{ fontFamily: 'JetBrains Mono, monospace', tabSize: 2 }}
