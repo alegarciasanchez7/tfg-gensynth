@@ -9,7 +9,6 @@ interface HeaderProps {
   onLoadProject: () => Promise<void>;
   onSaveProject: () => Promise<void>;
   projectName: string;
-  onProjectNameChange: (n: string) => void;
   isDark: boolean;
   onThemeToggle: () => void;
   connectorCatalog: ConnectorPluginDescriptor[];
@@ -188,7 +187,7 @@ function SettingsPanel({ isDark, onThemeToggle, onClose }: {
   );
 }
 
-export function Header({ systemStatus, onStatusToggle, onLoadProject, onSaveProject, projectName, onProjectNameChange, isDark, onThemeToggle, connectorCatalog, latestConnectors, connectorHealthSummary }: HeaderProps) {
+export function Header({ systemStatus, onStatusToggle, onLoadProject, onSaveProject, projectName, isDark, onThemeToggle, connectorCatalog, latestConnectors, connectorHealthSummary }: HeaderProps) {
   const [showSettings, setShowSettings] = useState(false);
   const [showCatalog, setShowCatalog] = useState(false);
   const [loadingState, setLoadingState] = useState(false);
@@ -204,13 +203,12 @@ export function Header({ systemStatus, onStatusToggle, onLoadProject, onSaveProj
         <div className="flex items-center justify-center w-7 h-7 bg-cyan-500/10 border border-cyan-500/40 rounded">
           <Zap size={14} className="text-cyan-400" />
         </div>
-        <input
-          className="text-sm text-[var(--c-tx1)] bg-transparent border-none outline-none w-40 truncate cursor-pointer hover:text-cyan-600 transition-colors"
+        <span
+          className="text-sm font-bold text-[var(--c-tx1)] tracking-tight"
           style={{ fontFamily: 'JetBrains Mono, monospace' }}
-          value={projectName}
-          onChange={e => onProjectNameChange(e.target.value)}
-          spellCheck={false}
-        />
+        >
+          {projectName}
+        </span>
       </div>
 
       {/* Separator */}

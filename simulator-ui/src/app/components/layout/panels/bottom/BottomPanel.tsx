@@ -25,6 +25,16 @@ const levelIcon = {
   data:  <Send size={9} />,
 };
 
+function formatShortNumber(num: number): string {
+  if (num >= 1000000) {
+    return (num / 1000000).toFixed(2) + ' M';
+  }
+  if (num >= 1000) {
+    return (num / 1000).toFixed(1) + ' K';
+  }
+  return num.toString();
+}
+
 type Tab = 'logs' | 'stats' | 'preview';
 
 interface BottomPanelProps {
@@ -212,20 +222,59 @@ function LogsView({ entries, connectorHealthSummary, groups }: { entries: Array<
 }
 
 function StatsView({ running }: { running: boolean }) {
-  const bars = [
-    { label: 'Kafka',     value: running ? 78 : 0, color: 'bg-cyan-500',   msgs: running ? '1.65K/s' : '0' },
-    { label: 'HTTP',      value: running ? 47 : 0, color: 'bg-violet-500', msgs: running ? '1.07K/s' : '0' },
-    { label: 'MQTT',      value: 0,                color: 'bg-red-500',    msgs: '0 (error)' },
-    { label: 'TCP',       value: running ? 34 : 0, color: 'bg-amber-500',  msgs: running ? '770/s' : '0' },
-    { label: 'WebSocket', value: 0,                color: 'bg-slate-400',  msgs: '0 (stopped)' },
-    { label: 'gRPC',      value: 0,                color: 'bg-slate-400',  msgs: '0 (stopped)' },
-  ];
+  const { state } = useApp();
+  const { metrics, groups, flowMetrics } = state;
+
+  // Group flows by technology to show throughput
+  const techStats = new Map<string, { label: string; throughput: number; color: string }>();
+  
+  const techColors: Record<string, string> = {
+    kafka: 'bg-cyan-500',
+    rabbitmq: 'bg-orange-500',
+    mqtt: 'bg-emerald-500',
+    http: 'bg-violet-500',
+    websocket: 'bg-amber-500',
+    tcp: 'bg-blue-500',
+    grpc: 'bg-indigo-500',
+    file: 'bg-slate-500',
+  };
+
+  groups.forEach(group => {
+    group.flows.forEach(flow => {
+      const tech = flow.technology.toLowerCase();
+      const current = techStats.get(tech) || { 
+        label: flow.technology.toUpperCase(), 
+        throughput: 0, 
+        color: techColors[tech] || 'bg-slate-400' 
+      };
+      
+      const metricsForFlow = flowMetrics[flow.id];
+      if (metricsForFlow) {
+        current.throughput += metricsForFlow.throughput;
+      } else {
+        // Fallback to parsing the string throughput if metrics not available yet
+        const match = flow.throughput.match(/^(\d+)/);
+        if (match) current.throughput += parseInt(match[1], 10);
+      }
+      
+      techStats.set(tech, current);
+    });
+  });
+
+  const bars = Array.from(techStats.values()).sort((a, b) => b.throughput - a.throughput);
+  const maxThroughput = Math.max(1, ...bars.map(b => b.throughput));
+
+  // Latency calculation (average across all running flows)
+  const activeFlowMetrics = Object.values(flowMetrics).filter(fm => fm.throughput > 0);
+  const avgLatency = activeFlowMetrics.length > 0
+    ? Math.round(activeFlowMetrics.reduce((acc, curr) => acc + curr.latency, 0) / activeFlowMetrics.length)
+    : 0;
 
   const counters = [
-    { label: 'TOTAL SENT',  value: running ? '2,847,394' : '0',  color: 'text-cyan-500' },
-    { label: 'ERRORS',      value: running ? '3' : '0',          color: running ? 'text-red-500' : 'text-slate-400' },
-    { label: 'DROPPED',     value: '0',                          color: 'text-slate-400' },
-    { label: 'AVG LATENCY', value: running ? '12ms' : '--',      color: 'text-emerald-500' },
+    { label: 'TOTAL SENT',  value: running ? formatShortNumber(metrics?.totalMessages ?? 0) : '0',  color: 'text-cyan-500' },
+    { label: 'ERRORS',      value: running ? (metrics?.errorCount ?? 0).toLocaleString() : '0', color: (metrics?.errorCount ?? 0) > 0 ? 'text-red-500' : 'text-slate-400' },
+    { label: 'ACTIVE FLOWS', value: activeFlowMetrics.length.toString(), color: 'text-violet-500' },
+    { label: 'AVG LATENCY', value: running && avgLatency > 0 ? `${avgLatency}ms` : '--', color: 'text-emerald-500' },
   ];
 
   return (
@@ -237,7 +286,7 @@ function StatsView({ running }: { running: boolean }) {
             <span className="text-[9px] text-[var(--c-tx4)] tracking-widest" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
               {c.label}
             </span>
-            <span className={`text-sm ${c.color}`} style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+            <span className={`text-sm font-bold ${c.color}`} style={{ fontFamily: 'JetBrains Mono, monospace' }}>
               {c.value}
             </span>
           </div>
@@ -249,7 +298,7 @@ function StatsView({ running }: { running: boolean }) {
         <span className="text-[9px] text-[var(--c-tx5)] tracking-widest uppercase" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
           Throughput by technology
         </span>
-        {bars.map(b => (
+        {bars.length > 0 ? bars.map(b => (
           <div key={b.label} className="flex items-center gap-2">
             <span className="text-[10px] text-[var(--c-tx4)] w-20 shrink-0 text-right" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
               {b.label}
@@ -257,49 +306,62 @@ function StatsView({ running }: { running: boolean }) {
             <div className="flex-1 h-3 bg-[var(--c-bg1)] border border-[var(--c-br2)] rounded-full overflow-hidden">
               <div
                 className={`h-full rounded-full transition-all duration-1000 ${b.color}`}
-                style={{ width: `${b.value}%`, opacity: b.value === 0 ? 0.3 : 1 }}
+                style={{ width: `${(b.throughput / maxThroughput) * 100}%`, opacity: b.throughput === 0 ? 0.3 : 1 }}
               />
             </div>
             <span className="text-[10px] text-[var(--c-tx4)] w-20 shrink-0" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-              {b.msgs}
+              {b.throughput.toLocaleString()} msg/s
             </span>
           </div>
-        ))}
+        )) : (
+          <div className="flex items-center justify-center h-20 text-[var(--c-tx5)] text-[11px]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+            No technologies detected
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
 function PreviewView({ running }: { running: boolean }) {
-  const [selectedFlow, setSelectedFlow] = useState<string>('f1');
-  const flows = [
-    { id: 'f1', label: 'Kafka · sensor.temp' },
-    { id: 'f2', label: 'HTTP · telemetry' },
-    { id: 'f6', label: 'Kafka · access.raw' },
-    { id: 'f9', label: 'TCP · syslog' },
-  ];
+  const { state } = useApp();
+  const { groups, logs } = state;
+  const [selectedFlowId, setSelectedFlowId] = useState<string | null>(null);
 
-  const sample = mockPreviewSamples[selectedFlow] ?? '// no preview available';
+  const allFlows = groups.flatMap(g => g.flows.map(f => ({ ...f, groupName: g.name })));
+  
+  useEffect(() => {
+    if (!selectedFlowId && allFlows.length > 0) {
+      setSelectedFlowId(allFlows[0].id);
+    }
+  }, [allFlows, selectedFlowId]);
+
+  const currentFlow = allFlows.find(f => f.id === selectedFlowId);
+  
+  // Find the latest 'data' log for this flow
+  const latestDataLog = logs
+    .filter(l => l.source === selectedFlowId && l.level === 'data')
+    .slice(-1)[0];
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-[var(--c-br2)] shrink-0">
-        <span className="text-[10px] text-[var(--c-tx4)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-[var(--c-br2)] shrink-0 overflow-x-auto">
+        <span className="text-[10px] text-[var(--c-tx4)] whitespace-nowrap" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
           Flow:
         </span>
         <div className="flex gap-1">
-          {flows.map(f => (
+          {allFlows.map(f => (
             <button
               key={f.id}
-              onClick={() => setSelectedFlow(f.id)}
-              className={`px-2 py-0.5 rounded text-[10px] transition-all ${
-                selectedFlow === f.id
+              onClick={() => setSelectedFlowId(f.id)}
+              className={`px-2 py-0.5 rounded text-[10px] transition-all whitespace-nowrap ${
+                selectedFlowId === f.id
                   ? 'bg-cyan-500/15 border border-cyan-500/30 text-cyan-500'
                   : 'text-[var(--c-tx4)] hover:text-[var(--c-tx2)]'
               }`}
               style={{ fontFamily: 'JetBrains Mono, monospace' }}
             >
-              {f.label}
+              {f.name}
             </button>
           ))}
         </div>
@@ -310,21 +372,47 @@ function PreviewView({ running }: { running: boolean }) {
             live
           </span>
         )}
-        <button className="p-1 rounded text-[var(--c-tx4)] hover:text-[var(--c-tx2)] hover:bg-[var(--c-bg6)] transition-all">
-          <RefreshCw size={10} />
-        </button>
       </div>
 
-      <div className="flex-1 overflow-auto p-3">
-        {running ? (
-          <pre className="text-[11px] text-[var(--c-tx2)] leading-relaxed" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-            {sample}
-          </pre>
-        ) : (
-          <div className="flex items-center justify-center h-full text-[var(--c-tx5)] text-[11px]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-            Start the system to see live preview
+      <div className="flex-1 flex overflow-hidden">
+        {/* Left: Template */}
+        <div className="flex-1 border-r border-[var(--c-br2)] flex flex-col overflow-hidden">
+          <div className="px-3 py-1.5 bg-[var(--c-bg1)] border-b border-[var(--c-br2)]">
+            <span className="text-[9px] text-[var(--c-tx5)] tracking-widest uppercase" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+              Template
+            </span>
           </div>
-        )}
+          <div className="flex-1 overflow-auto p-3 bg-[var(--c-bg3)]">
+            <pre className="text-[11px] text-violet-400 leading-relaxed" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+              {currentFlow?.template || '// no template defined'}
+            </pre>
+          </div>
+        </div>
+
+        {/* Right: Last Payload */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="px-3 py-1.5 bg-[var(--c-bg1)] border-b border-[var(--c-br2)] flex justify-between items-center">
+            <span className="text-[9px] text-[var(--c-tx5)] tracking-widest uppercase" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+              Last Payload
+            </span>
+            {latestDataLog && (
+              <span className="text-[9px] text-[var(--c-tx5)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+                {latestDataLog.timestamp}
+              </span>
+            )}
+          </div>
+          <div className="flex-1 overflow-auto p-3">
+            {running ? (
+              <pre className="text-[11px] text-emerald-400 leading-relaxed" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+                {latestDataLog ? latestDataLog.message.split('==> ')[1] || latestDataLog.message : '// waiting for data...'}
+              </pre>
+            ) : (
+              <div className="flex items-center justify-center h-full text-[var(--c-tx5)] text-[11px]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+                Start the system to see live preview
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -395,7 +483,7 @@ export function BottomPanel({ tab, onTabChange, systemStatus }: BottomPanelProps
         {running && (
           <div className="flex items-center gap-1.5 text-[10px] text-emerald-500 mr-3" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
             <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
-            4,950 msg/s
+            {(state.metrics?.messagesPerSecond ?? 0).toLocaleString()} msg/s
           </div>
         )}
         <button

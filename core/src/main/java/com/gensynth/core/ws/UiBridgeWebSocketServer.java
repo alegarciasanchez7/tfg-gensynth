@@ -83,10 +83,12 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
     private final AtomicLong totalMessages = new AtomicLong(0);
     private final AtomicLong totalErrors = new AtomicLong(0);
     private final AtomicLong messagesLastWindow = new AtomicLong(0);
+    private final AtomicLong bytesSentLastWindow = new AtomicLong(0);
     private volatile double messagesPerSecond = 0.0;
+    private volatile double networkUpPerSecond = 0.0;
 
     private volatile boolean systemRunning = false;
-    private final long startedAtMillis = System.currentTimeMillis();
+    private volatile long systemStartedAt = 0;
 
     private final TemplateEngine templateEngine = new TemplateEngine();
     private String currentOutputDir = null;
@@ -107,7 +109,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         super(address);
         this.connectorCatalogService = connectorCatalogService;
         this.stateRepository = stateRepository;
-        this.scheduler = Executors.newScheduledThreadPool(2);
+        this.scheduler = Executors.newScheduledThreadPool(Math.max(4, Runtime.getRuntime().availableProcessors() * 2));
         initializeRuntime();
     }
 
@@ -333,6 +335,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                 case "START_SYSTEM" -> {
                     synchronized (stateLock) {
                         systemRunning = true;
+                        systemStartedAt = System.currentTimeMillis();
                         String timestamp = new java.text.SimpleDateFormat("yyyy_MM_dd_HH_mm_ss").format(new java.util.Date());
                         currentOutputDir = "OUTPUT_FILES_" + timestamp;
 
@@ -376,6 +379,9 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                         if (currentOutputDir == null) {
                             String timestamp = new java.text.SimpleDateFormat("yyyy_MM_dd_HH_mm_ss").format(new java.util.Date());
                             currentOutputDir = "OUTPUT_FILES_" + timestamp;
+                        }
+                        if (!systemRunning) {
+                            systemStartedAt = System.currentTimeMillis();
                         }
                         startGroupInternal(group);
                         systemRunning = true;
@@ -947,6 +953,14 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
 
             totalMessages.addAndGet(sent);
             messagesLastWindow.addAndGet(sent);
+            
+            int burstBytes = 0;
+            if (lastPayload != null) {
+                // Approximate burst bytes using the last payload size multiplied by 'sent'
+                // For exact accuracy, we should sum sizes inside the loop.
+                burstBytes = lastPayload.getBytes(StandardCharsets.UTF_8).length * sent;
+            }
+            bytesSentLastWindow.addAndGet(burstBytes);
 
             if (lastPayload != null) {
                 String preview = lastPayload.length() > 250 ? lastPayload.substring(0, 250) + "..." : lastPayload;
@@ -1029,6 +1043,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
     private void emitMetricsTick() {
         try {
             messagesPerSecond = messagesLastWindow.getAndSet(0);
+            networkUpPerSecond = bytesSentLastWindow.getAndSet(0);
             if (metricSubscribers.isEmpty()) {
                 return;
             }
@@ -1069,7 +1084,8 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             payload.put("commandId", commandId);
         }
         payload.put("status", systemRunning ? "running" : "stopped");
-        payload.put("uptime", Math.max(0, (System.currentTimeMillis() - startedAtMillis) / 1000));
+        long uptime = systemRunning ? Math.max(0, (System.currentTimeMillis() - systemStartedAt) / 1000) : 0;
+        payload.put("uptime", uptime);
         payload.put("totalMessages", totalMessages.get());
         payload.put("messagesPerSecond", messagesPerSecond);
         return payload;
@@ -1083,13 +1099,31 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
 
         Runtime runtime = Runtime.getRuntime();
         long usedMemory = runtime.totalMemory() - runtime.freeMemory();
+        
+        double cpuLoad = 0.0;
+        try {
+            java.lang.management.OperatingSystemMXBean osBean = java.lang.management.ManagementFactory.getOperatingSystemMXBean();
+            if (osBean instanceof com.sun.management.OperatingSystemMXBean) {
+                com.sun.management.OperatingSystemMXBean sunOsBean = (com.sun.management.OperatingSystemMXBean) osBean;
+                cpuLoad = sunOsBean.getProcessCpuLoad();
+                if (cpuLoad < 0.0) {
+                    cpuLoad = 0.0;
+                }
+            }
+        } catch (Exception ignored) {
+            // Fallback to 0 if not available
+        }
 
-        payload.put("cpu", 0);
+        payload.put("cpu", cpuLoad * 100.0);
         payload.put("memory", bytesToMb(usedMemory));
         payload.put("heap", bytesToMb(runtime.totalMemory()));
         payload.put("threads", Thread.activeCount());
         payload.put("messagesPerSecond", messagesPerSecond);
         payload.put("totalMessages", totalMessages.get());
+        payload.put("networkUp", networkUpPerSecond);
+        payload.put("networkDown", 0.0);
+        long uptime = systemRunning ? Math.max(0, (System.currentTimeMillis() - systemStartedAt) / 1000) : 0;
+        payload.put("uptime", uptime);
         payload.put("activeConnections", getConnections().size());
         payload.put("errorCount", totalErrors.get());
         return payload;
@@ -1139,7 +1173,19 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         broadcastMessage("GROUPS_UPDATE", payload);
     }
 
+    private final Map<String, Long> lastFlowUpdateByFlowId = new ConcurrentHashMap<>();
+
     private void broadcastFlowUpdate(FlowRuntime flow) {
+        long now = System.currentTimeMillis();
+        Long lastUpdate = lastFlowUpdateByFlowId.get(flow.id);
+        
+        // Throttle updates to 2 times per second (500ms) to avoid flooding the UI
+        if (lastUpdate != null && (now - lastUpdate) < 500) {
+            return;
+        }
+        
+        lastFlowUpdateByFlowId.put(flow.id, now);
+        
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("flowId", flow.id);
         payload.put("throughput", flow.throughput);
@@ -1166,7 +1212,8 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
     private void broadcastSystemStatus() {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("status", systemRunning ? "running" : "stopped");
-        payload.put("uptime", Math.max(0, (System.currentTimeMillis() - startedAtMillis) / 1000));
+        long uptime = systemRunning ? Math.max(0, (System.currentTimeMillis() - systemStartedAt) / 1000) : 0;
+        payload.put("uptime", uptime);
         payload.put("totalMessages", totalMessages.get());
         payload.put("messagesPerSecond", messagesPerSecond);
         broadcastMessage("SYSTEM_STATUS", payload);
