@@ -6,6 +6,7 @@ import { RightPanel } from './components/layout/panels/right/RightPanel';
 import { BottomPanel } from './components/layout/panels/bottom/BottomPanel';
 import { useApp } from './context';
 import { Toaster } from 'sonner';
+import { RestartOverlay } from './components/layout/header/RestartOverlay';
 
 export default function App() {
   const { state, actions } = useApp();
@@ -19,9 +20,9 @@ export default function App() {
     variables,
     bottomTab,
     formatTemplates,
-    connectorCatalog,
     latestConnectors,
     connectorHealthSummary,
+    isRestarting,
   } = state;
 
   // Usar templates del estado directamente
@@ -36,6 +37,7 @@ export default function App() {
         fontFamily: 'JetBrains Mono, monospace',
       }}
     >
+      <RestartOverlay isVisible={isRestarting} />
       {/* ── Header ─────────────────────────────────── */}
       <Header
         systemStatus={systemStatus}

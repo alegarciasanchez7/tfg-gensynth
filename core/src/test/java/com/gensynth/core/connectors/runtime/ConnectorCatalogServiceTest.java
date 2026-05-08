@@ -17,14 +17,14 @@ public class ConnectorCatalogServiceTest {
         List<ConnectorPluginDescriptor> connectors = service.listAvailableConnectors();
         assertFalse("Connector catalog should not be empty", connectors.isEmpty());
 
-        ConnectorPluginDescriptor rabbit = connectors.stream()
-            .filter(d -> "rabbitmq".equals(d.getPluginId()))
+        ConnectorPluginDescriptor file = connectors.stream()
+            .filter(d -> "file".equals(d.getPluginId()))
             .findFirst()
             .orElse(null);
 
-        assertNotNull("RabbitMQ plugin should be discovered", rabbit);
-        assertEquals("1.0.0", rabbit.getPluginVersion());
-        assertNotNull(rabbit.getConfigSchema().get("properties"));
+        assertNotNull("File connector plugin should be discovered", file);
+        assertEquals("1.0.0", file.getPluginVersion());
+        assertNotNull(file.getConfigSchema().get("properties"));
     }
 
     @Test
@@ -33,7 +33,7 @@ public class ConnectorCatalogServiceTest {
 
         String json = service.getCatalogAsJson();
 
-        assertTrue(json.contains("rabbitmq"));
+        assertTrue(json.contains("file"));
         assertTrue(json.contains("pluginVersion"));
     }
 
@@ -41,9 +41,9 @@ public class ConnectorCatalogServiceTest {
     public void testFindLatestConnector() {
         ConnectorCatalogService service = new ConnectorCatalogService();
 
-        Optional<ConnectorPluginDescriptor> latest = service.findLatestConnector("rabbitmq");
+        Optional<ConnectorPluginDescriptor> latest = service.findLatestConnector("file");
 
         assertTrue(latest.isPresent());
-        assertEquals("rabbitmq", latest.get().getPluginId());
+        assertEquals("file", latest.get().getPluginId());
     }
 }

@@ -93,6 +93,7 @@ interface AppState {
   // Metrics
   metrics: MetricsPayload | null;
   flowMetrics: Record<string, FlowMetricsPayload>;
+  isRestarting: boolean;
 }
 
 const initialState: AppState = {
@@ -114,6 +115,7 @@ const initialState: AppState = {
   connectorHealthSummary: [],
   metrics: null,
   flowMetrics: {},
+  isRestarting: false,
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -139,6 +141,7 @@ type AppAction =
   | { type: 'SET_FLOW_CONNECTOR_CONFIG'; payload: { flowId: string; config: Record<string, unknown> } }
   | { type: 'SET_METRICS'; payload: MetricsPayload }
   | { type: 'SET_FLOW_METRICS'; payload: FlowMetricsPayload }
+  | { type: 'SET_RESTARTING'; payload: boolean }
   | {
       type: 'LOAD_INITIAL_STATE';
       payload: {
@@ -579,6 +582,9 @@ function appReducer(state: AppState, action: AppAction): AppState {
           formatTemplates: newTemplates,
         };
       })();
+      
+    case 'SET_RESTARTING':
+      return { ...state, isRestarting: action.payload };
 
     default:
       return state;
@@ -910,7 +916,18 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
       }),
       
       bridge.on('connected', () => {
+        const currentState = stateRef.current;
         dispatch({ type: 'SET_CONNECTED', payload: { connected: true, mode: bridge.getMode() } });
+        
+        // If we were waiting for a restart, trigger a full page reload to get fresh catalog and state
+        if (currentState.isRestarting) {
+          console.log('[AppContext] Reconnected after restart. Reloading UI...');
+          window.location.reload();
+        }
+      }),
+
+      bridge.on('restart-required', () => {
+        dispatch({ type: 'SET_RESTARTING', payload: true });
       }),
     ];
 

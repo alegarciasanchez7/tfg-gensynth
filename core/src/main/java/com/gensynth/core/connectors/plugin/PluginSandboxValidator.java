@@ -217,7 +217,7 @@ public class PluginSandboxValidator {
                 byte[] classBytes = readEntryBytes(jis);
                 List<String> violations = scanClassForBlockedApis(classBytes);
                 if (!violations.isEmpty()) {
-                    errors.add("Plugin contains code that is not allowed for security reasons.");
+                    errors.add("Blocked API usage found: " + String.join(", ", violations));
                     logger.warn("Blocked API usage found in {}: {}", entry.getName(), violations);
                     return false;
                 }
@@ -296,7 +296,8 @@ public class PluginSandboxValidator {
             return null;
         } catch (Exception e) {
             logger.debug("Error loading plugin descriptor in sandbox", e);
-            errors.add("Failed to load plugin descriptor. Ensure the plugin is correctly structured.");
+            String message = (e.getCause() != null) ? e.getCause().getMessage() : e.getMessage();
+            errors.add("Failed to load plugin descriptor: " + message);
             return null;
         } finally {
             if (tempFile != null) {

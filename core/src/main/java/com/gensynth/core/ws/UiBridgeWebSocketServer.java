@@ -136,6 +136,9 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         this.connectorCatalogService = connectorCatalogService;
         this.stateRepository = stateRepository;
         this.pluginInstaller = pluginInstaller;
+        if (this.pluginInstaller instanceof PluginInstallerImpl) {
+            ((PluginInstallerImpl) this.pluginInstaller).setPluginManager(this.connectorCatalogService.getPluginManager());
+        }
         this.scheduler = Executors.newScheduledThreadPool(Math.max(4, Runtime.getRuntime().availableProcessors() * 2));
         initializeRuntime();
     }
@@ -196,35 +199,35 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
     }
 
     private void createDefaultRuntime() {
-        GroupRuntime rabbitGroup = new GroupRuntime(
-            "g-rabbit",
-            "RabbitMQ Local",
+        GroupRuntime demoGroup = new GroupRuntime(
+            "g-demo",
+            "Demo Group (File Output)",
             "stopped",
-            "Flujo base para validacion E2E con RabbitMQ local",
+            "Base group for demonstration using local file output",
             1,
             "parallel"
         );
 
-        rabbitGroup.flows.add(new FlowRuntime(
-            "f-rabbit",
-            "RabbitMQ Publisher",
-            "rabbitmq",
+        demoGroup.flows.add(new FlowRuntime(
+            "f-demo",
+            "Local File Publisher",
+            "file",
             "disconnected",
             0,
             0,
             false,
             null,
-            1000,
+            2000,
             1,
-            "gensynth.data",
-            "localhost",
-            5672,
+            "demo-events",
+            "local",
+            0,
             "{\"eventId\":\"{{uuid}}\",\"timestamp\":\"{{ts}}\",\"source\":\"gen-synth\",\"value\":{{n}}}",
             "json",
-            Map.of()
+            Map.of("outputDir", "./outputs")
         ));
 
-        groupsById.put(rabbitGroup.id, rabbitGroup);
+        groupsById.put(demoGroup.id, demoGroup);
     }
 
     private void persistState() {
@@ -916,6 +919,10 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         response.put("coreApiVersion", result.getCoreApiVersion());
         response.put("errors", result.getErrors());
         response.put("warnings", result.getWarnings());
+        
+        logger.info("[PLUGINS] Sending validation result for '{}': valid={}, errors={}", 
+                   pluginName, result.isValid(), result.getErrors());
+                   
         sendMessage(conn, "PLUGIN_VALIDATION_RESULT", commandId, response);
 
         logToBackend(result.isValid() ? "info" : "warn", "PLUGINS",
@@ -959,8 +966,8 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
 
             // Schedule JVM exit (the process wrapper/script will restart)
             scheduler.schedule(() -> {
-                logger.info("Restarting Gen-Synth Core to load new plugin...");
-                System.exit(0);
+                logger.info("Restarting Gen-Synth Core after plugin installation...");
+                com.gensynth.core.util.RestartUtil.restart();
             }, 3, TimeUnit.SECONDS);
         } else {
             logToBackend("error", "PLUGINS", "Plugin install failed: " + result.getMessage(), commandId);
@@ -992,7 +999,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
 
             scheduler.schedule(() -> {
                 logger.info("Restarting Gen-Synth Core after plugin removal...");
-                System.exit(0);
+                com.gensynth.core.util.RestartUtil.restart();
             }, 3, TimeUnit.SECONDS);
         } else {
             logToBackend("error", "PLUGINS", "Plugin uninstall failed: " + result.getMessage(), commandId);
