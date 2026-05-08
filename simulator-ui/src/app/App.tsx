@@ -5,12 +5,11 @@ import { Workspace } from './components/workspace/Workspace';
 import { RightPanel } from './components/layout/panels/right/RightPanel';
 import { BottomPanel } from './components/layout/panels/bottom/BottomPanel';
 import { useApp } from './context';
-import { defaultTemplates } from './data/mockData';
 import { Toaster } from 'sonner';
 
 export default function App() {
   const { state, actions } = useApp();
-  
+
   const {
     isDark,
     systemStatus,
@@ -25,19 +24,8 @@ export default function App() {
     connectorHealthSummary,
   } = state;
 
-  // Combinar templates por defecto con los del estado
-  const mergedTemplates = {
-    f1: defaultTemplates.json,
-    f2: defaultTemplates.json,
-    f3: defaultTemplates.json,
-    f4: defaultTemplates.json,
-    f5: defaultTemplates.json,
-    f6: defaultTemplates.plain,
-    f7: defaultTemplates.plain,
-    f8: defaultTemplates.json,
-    f9: defaultTemplates.plain,
-    ...formatTemplates,
-  };
+  // Usar templates del estado directamente
+  const mergedTemplates = formatTemplates;
 
   return (
     <div
@@ -68,7 +56,7 @@ export default function App() {
 
       {/* ── Main 3-column layout ────────────────────── */}
       <div className="flex flex-1 overflow-hidden">
-      {/* Left: Groups & Flows */}
+        {/* Left: Groups & Flows */}
         <LeftPanel
           groups={groups}
           selection={selection}

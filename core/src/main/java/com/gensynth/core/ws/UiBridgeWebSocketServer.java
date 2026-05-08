@@ -9,6 +9,7 @@ import com.gensynth.core.connectors.spi.ConnectorPluginDescriptor;
 import com.gensynth.core.model.FlowDefinition;
 import com.gensynth.core.model.GroupDefinition;
 import com.gensynth.core.model.Variable;
+import com.gensynth.core.flow.TemplateEngine;
 import com.gensynth.core.persistence.JsonStateRepositoryImpl;
 import com.gensynth.core.persistence.StateRepository;
 import org.java_websocket.WebSocket;
@@ -86,6 +87,9 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
 
     private volatile boolean systemRunning = false;
     private final long startedAtMillis = System.currentTimeMillis();
+
+    private final TemplateEngine templateEngine = new TemplateEngine();
+    private String currentOutputDir = null;
 
     public UiBridgeWebSocketServer(String host, int port) {
         this(new InetSocketAddress(host, port), new ConnectorCatalogService(), new JsonStateRepositoryImpl());
@@ -329,6 +333,14 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                 case "START_SYSTEM" -> {
                     synchronized (stateLock) {
                         systemRunning = true;
+                        String timestamp = new java.text.SimpleDateFormat("yyyy_MM_dd_HH_mm_ss").format(new java.util.Date());
+                        currentOutputDir = "OUTPUT_FILES_" + timestamp;
+
+                        for (GroupRuntime group : groupsById.values()) {
+                            if (!"running".equals(group.status)) {
+                                startGroupInternal(group);
+                            }
+                        }
                     }
                     sendAck(conn, commandId, "system_started");
                     broadcastSystemStatus();
@@ -361,6 +373,10 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                     }
 
                     synchronized (stateLock) {
+                        if (currentOutputDir == null) {
+                            String timestamp = new java.text.SimpleDateFormat("yyyy_MM_dd_HH_mm_ss").format(new java.util.Date());
+                            currentOutputDir = "OUTPUT_FILES_" + timestamp;
+                        }
                         startGroupInternal(group);
                         systemRunning = true;
                     }
@@ -850,7 +866,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                     .findLatestConnector(flow.technology)
                     .orElseThrow(() -> new IllegalStateException("No connector found for " + flow.technology));
 
-                Map<String, Object> connectorConfig = buildFlowConnectorConfig(flow);
+                Map<String, Object> connectorConfig = buildFlowConnectorConfig(group, flow);
                 ConnectorPlugin plugin = connectorCatalogService.createAndInitialize(
                     descriptor.getPluginId(),
                     descriptor.getPluginVersion(),
@@ -950,22 +966,21 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
 
     private String buildPayload(FlowRuntime flow, int indexInBurst) {
         long sequence = totalMessages.get() + indexInBurst + 1;
-        return flow.template
-            .replace("{{uuid}}", UUID.randomUUID().toString())
-            .replace("{{ts}}", Instant.now().toString())
-            .replace("{{n}}", String.valueOf(sequence));
+        return templateEngine.evaluate(flow.template, sequence, variablesById);
     }
 
-    private Map<String, Object> buildFlowConnectorConfig(FlowRuntime flow) {
+    private Map<String, Object> buildFlowConnectorConfig(GroupRuntime group, FlowRuntime flow) {
         Map<String, Object> config = new LinkedHashMap<>();
         if (flow.connectorConfig != null && !flow.connectorConfig.isEmpty()) {
             config.putAll(flow.connectorConfig);
         }
 
         if ("file".equalsIgnoreCase(flow.technology)) {
-            config.putIfAbsent("outputDir", "./outputs");
+            config.putIfAbsent("outputDir", currentOutputDir == null ? "OUTPUT_FILES" : currentOutputDir);
+            config.putIfAbsent("groupName", group.name);
+            // Default to json if not set
             config.putIfAbsent("format", "json");
-            config.putIfAbsent("fileName", flow.id + "_" + sanitizeFileName(flow.name));
+            config.putIfAbsent("fileName", sanitizeFileName(flow.name));
             return config;
         }
 
