@@ -16,7 +16,7 @@ public class FileConnectorPluginProvider implements ConnectorPluginProvider {
 
     private static final ConnectorPluginDescriptor DESCRIPTOR = new ConnectorPluginDescriptor(
         "file",
-        "File Output (TXT/JSON)",
+        "File Output (JSON/TXT/XML/CSV)",
         "1.0.0",
         "1.x",
         buildConfigSchema()
@@ -50,7 +50,7 @@ public class FileConnectorPluginProvider implements ConnectorPluginProvider {
         properties.put("format", enumField(
             "Output Format",
             "json",
-            Arrays.asList("json", "txt")
+            Arrays.asList("json", "txt", "xml", "csv")
         ));
         properties.put("fileName", stringField(
             "File Name (optional)",

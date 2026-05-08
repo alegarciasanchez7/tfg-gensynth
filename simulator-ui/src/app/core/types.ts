@@ -179,6 +179,7 @@ export interface CreateFlowCommandPayload {
   interval?: number;
   burst?: number;
   template?: string;
+  format?: 'json' | 'xml' | 'csv' | 'plain';
   clientRequestId?: string; // For optimistic UI correlation
 }
 
@@ -206,6 +207,7 @@ export interface UpdateFlowCommandPayload {
   interval?: number;
   burst?: number;
   template?: string;
+  format?: 'json' | 'xml' | 'csv' | 'plain';
 }
 
 export interface CreateVariableCommandPayload {
@@ -285,6 +287,7 @@ export interface FlowConfigPayload {
   interval?: number;
   burst?: number;
   template?: string;
+  format?: 'json' | 'xml' | 'csv' | 'plain';
 }
 
 export interface VariableConfigPayload {
@@ -334,6 +337,7 @@ export interface FlowState {
   host: string;
   port: number;
   template?: string;
+  format?: 'json' | 'xml' | 'csv' | 'plain';
   connectorConfig?: Record<string, any>;
 }
 

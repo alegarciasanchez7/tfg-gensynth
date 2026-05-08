@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react';
 import {
-  Play, Square, Pause, RefreshCw, Layers, ChevronRight,
+  Layers, ChevronRight,
   Clock, Cpu, AlertCircle, CheckCircle, Wifi, WifiOff,
   Save, Trash2, RotateCcw,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Group, Flow, ConnectionStatus } from '../../types';
-import { Button } from '../ui/button';
 import { useApp } from '../../context';
 
 const connBadge: Record<ConnectionStatus, { color: string; bg: string; label: string }> = {
@@ -244,17 +243,33 @@ export function GroupWorkspace({ group }: GroupWorkspaceProps) {
           </p>
         </div>
         <div className="flex gap-1.5 shrink-0">
-          <button className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-emerald-500/40 bg-emerald-500/10 text-emerald-500 text-xs hover:bg-emerald-500/20 transition-all">
-            <Play size={10} fill="currentColor" /> Start
+          <button
+            onClick={handleSave}
+            disabled={!hasChanges || isSaving || isDeleting}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-xs transition-all disabled:opacity-30 disabled:cursor-not-allowed ${
+              hasChanges 
+                ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20' 
+                : 'border-[var(--c-br1)] text-[var(--c-tx4)]'
+            }`}
+            style={{ fontFamily: 'JetBrains Mono, monospace' }}
+          >
+            <Save size={11} /> {isSaving ? 'Saving...' : 'Save Changes'}
           </button>
-          <button className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-amber-500/40 bg-amber-500/10 text-amber-500 text-xs hover:bg-amber-500/20 transition-all">
-            <Pause size={10} /> Pause
+          <button
+            onClick={handleDiscard}
+            disabled={!hasChanges || isSaving || isDeleting}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-[var(--c-br1)] bg-[var(--c-bg1)] text-[var(--c-tx4)] text-xs hover:text-[var(--c-tx1)] hover:bg-[var(--c-bg5)] transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+            style={{ fontFamily: 'JetBrains Mono, monospace' }}
+          >
+            <RotateCcw size={11} /> Discard
           </button>
-          <button className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-[var(--c-br1)] text-[var(--c-tx3)] text-xs hover:bg-[var(--c-bg6)] transition-all">
-            <Square size={10} fill="currentColor" /> Stop
-          </button>
-          <button className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-[var(--c-br1)] text-[var(--c-tx3)] text-xs hover:bg-[var(--c-bg6)] transition-all">
-            <RefreshCw size={10} /> Restart
+          <button
+            onClick={handleDelete}
+            disabled={isSaving || isDeleting}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-red-500/40 bg-red-500/10 text-red-500 text-xs hover:bg-red-500/20 transition-all disabled:opacity-50"
+            style={{ fontFamily: 'JetBrains Mono, monospace' }}
+          >
+            <Trash2 size={11} /> {isDeleting ? 'Deleting...' : 'Delete'}
           </button>
         </div>
       </div>
@@ -302,7 +317,7 @@ export function GroupWorkspace({ group }: GroupWorkspaceProps) {
             unit="threads"
             onChange={threads => setDraft(current => ({ ...current, threads }))}
           />
-          <NumberField label="Global Rate Limit" value={5000} unit="msg/s" />
+          <NumberField label="Global Rate Limit" value={5000} unit="msg/s" onChange={() => {}} />
           <EditableField
             label="Description"
             value={draft.description}
@@ -319,9 +334,9 @@ export function GroupWorkspace({ group }: GroupWorkspaceProps) {
           <Clock size={10} /> Timing &amp; Scheduling
         </span>
         <div className="grid grid-cols-3 gap-3">
-          <SelectField label="Schedule Mode" options={['continuous', 'interval', 'cron', 'burst']} value="continuous" />
-          <NumberField label="Warmup Delay" value={0} unit="ms" />
-          <NumberField label="Shutdown Grace" value={2000} unit="ms" />
+          <SelectField label="Schedule Mode" options={['continuous', 'interval', 'cron', 'burst']} value="continuous" onChange={() => {}} />
+          <NumberField label="Warmup Delay" value={0} unit="ms" onChange={() => {}} />
+          <NumberField label="Shutdown Grace" value={2000} unit="ms" onChange={() => {}} />
         </div>
       </div>
 
@@ -336,37 +351,7 @@ export function GroupWorkspace({ group }: GroupWorkspaceProps) {
         </div>
       </div>
 
-      {/* Actions */}
-      <div className="flex items-center gap-2 rounded border border-[var(--c-br1)] bg-[var(--c-bg4)] p-3">
-        <Button
-          onClick={handleSave}
-          disabled={!hasChanges || isSaving || isDeleting}
-          variant="outline"
-          className="border-cyan-500/40 bg-cyan-500/10 text-cyan-500 hover:bg-cyan-500/20"
-        >
-          <Save size={12} />
-          {isSaving ? 'Saving...' : 'Save changes'}
-        </Button>
-        <Button
-          onClick={handleDiscard}
-          disabled={!hasChanges || isSaving || isDeleting}
-          variant="ghost"
-          className="border border-[var(--c-br1)] text-[var(--c-tx3)] hover:bg-[var(--c-bg6)]"
-        >
-          <RotateCcw size={12} />
-          Discard
-        </Button>
-        <div className="flex-1" />
-        <Button
-          onClick={handleDelete}
-          disabled={isSaving || isDeleting}
-          variant="destructive"
-          className="border border-red-500/30 bg-red-500/10 text-red-500 hover:bg-red-500/20"
-        >
-          <Trash2 size={12} />
-          {isDeleting ? 'Deleting...' : 'Delete'}
-        </Button>
-      </div>
+
     </div>
   );
 }

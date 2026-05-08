@@ -24,6 +24,7 @@ export interface Flow {
   host: string;
   port: number;
   template?: string;
+  format?: 'json' | 'xml' | 'csv' | 'plain';
   connectorConfig?: Record<string, any>;
 }
 

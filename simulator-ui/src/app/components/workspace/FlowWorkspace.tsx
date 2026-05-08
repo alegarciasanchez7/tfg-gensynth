@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Radio, Globe, Wifi, Zap, Cpu, Layers, AlertTriangle,
   CheckCircle, Code2, Settings2, Hash,
-  AlignLeft, Copy, RotateCcw,
+  AlignLeft, Copy, RotateCcw, Save, Trash2, Braces, TableProperties, FileCode, FileText
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Flow, Group, ConnectionStatus } from '../../types';
@@ -339,7 +339,7 @@ interface FlowWorkspaceProps {
 export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowWorkspaceProps) {
   const conn = connCfg[flow.connectionStatus];
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [formatMode, setFormatMode] = useState<'json' | 'xml' | 'csv' | 'plain'>('json');
+  const [formatMode, setFormatMode] = useState<'json' | 'xml' | 'csv' | 'plain'>(flow.format || (flow.technology === 'file' ? 'plain' : 'json'));
   const [activeTab, setActiveTab] = useState<'technical' | 'format'>('technical');
   const { state, actions } = useApp();
 
@@ -393,9 +393,29 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
   const [draftTopic, setDraftTopic] = useState(flow.topic);
   const [draftInterval, setDraftInterval] = useState(flow.interval);
   const [draftBurst, setDraftBurst] = useState(flow.burst);
-  const [isSavingTemplate, setIsSavingTemplate] = useState(false);
-  const [isUpdatingConfig, setIsUpdatingConfig] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [isDeletingFlow, setIsDeletingFlow] = useState(false);
+
+  const hasChanges = useMemo(() => {
+    const templateChanged = currentTemplate !== flow.template;
+    const formatChanged = formatMode !== (flow.format || 'json');
+    const configChanged = 
+      draftHost !== flow.host ||
+      draftPort !== flow.port ||
+      draftTopic !== flow.topic ||
+      draftInterval !== flow.interval ||
+      draftBurst !== flow.burst;
+    
+    // Check if connector selection or its config changed
+    const connectorChanged = 
+      (connectorSelection !== null && (
+        connectorSelection.pluginId !== flow.technology || 
+        connectorSelection.pluginVersion !== (flow.connectorVersion ?? '')
+      )) ||
+      JSON.stringify(connectorConfig) !== JSON.stringify(flow.connectorConfig ?? {});
+
+    return templateChanged || formatChanged || configChanged || connectorChanged;
+  }, [currentTemplate, flow, formatMode, draftHost, draftPort, draftTopic, draftInterval, draftBurst, connectorSelection, connectorConfig]);
 
   useEffect(() => {
     setDraftHost(flow.host);
@@ -403,11 +423,16 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
     setDraftTopic(flow.topic);
     setDraftInterval(flow.interval);
     setDraftBurst(flow.burst);
-  }, [flow.host, flow.port, flow.topic, flow.interval, flow.burst, flow.id]);
+    setFormatMode(flow.format || (flow.technology === 'file' ? 'plain' : 'json'));
+  }, [flow.host, flow.port, flow.topic, flow.interval, flow.burst, flow.format, flow.technology, flow.id]);
 
   const handleFormatModeChange = (mode: 'json' | 'xml' | 'csv' | 'plain') => {
     setFormatMode(mode);
-    onTemplateChange(defaultTemplates[mode]);
+    if (mode === flow.format) {
+      onTemplateChange(flow.template || '');
+    } else {
+      onTemplateChange('');
+    }
   };
 
   const handleConnectorChange = (pluginId: string) => {
@@ -439,45 +464,27 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
     actions.setFlowConnectorConfig(flow.id, nextConfig);
   };
 
-  const handleSaveTemplate = async () => {
-    try {
-      setIsSavingTemplate(true);
-      await actions.updateFlowConfig(group.id, flow.id, {
-        template: currentTemplate,
-      });
-      toast.success('Template saved');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to save template';
-      toast.error(message);
-    } finally {
-      setIsSavingTemplate(false);
-    }
+  const handleDiscard = () => {
+    setDraftHost(flow.host);
+    setDraftPort(flow.port);
+    setDraftTopic(flow.topic);
+    setDraftInterval(flow.interval);
+    setDraftBurst(flow.burst);
+    onTemplateChange(flow.template || '');
+    setFormatMode(flow.format || (flow.technology === 'file' ? 'plain' : 'json'));
   };
 
-  const handleUpdateConfig = async () => {
+  const handleSaveChanges = async () => {
     if (!draftHost.trim()) {
       toast.error('Host is required');
       return;
     }
 
-    if (!Number.isInteger(draftPort) || draftPort < 1 || draftPort > 65535) {
-      toast.error('Port must be between 1 and 65535');
-      return;
-    }
-
-    if (!Number.isInteger(draftInterval) || draftInterval < 1) {
-      toast.error('Interval must be greater than 0');
-      return;
-    }
-
-    if (!Number.isInteger(draftBurst) || draftBurst < 1) {
-      toast.error('Burst must be greater than 0');
-      return;
-    }
-
     try {
-      setIsUpdatingConfig(true);
+      setIsSaving(true);
       await actions.updateFlowConfig(group.id, flow.id, {
+        template: currentTemplate,
+        format: formatMode,
         technology: connectorSelection?.pluginId ?? latestConnectorForFlow?.pluginId ?? flow.technology,
         host: draftHost.trim(),
         port: draftPort,
@@ -486,12 +493,12 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
         burst: draftBurst,
         connectorConfig: connectorConfig,
       });
-      toast.success('Flow configuration updated');
+      toast.success('Flow changes saved');
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to update flow configuration';
+      const message = error instanceof Error ? error.message : 'Unable to save flow changes';
       toast.error(message);
     } finally {
-      setIsUpdatingConfig(false);
+      setIsSaving(false);
     }
   };
 
@@ -554,28 +561,32 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
         )}
         <div className="ml-auto flex items-center gap-1.5">
           <button
-            onClick={handleSaveTemplate}
-            disabled={isSavingTemplate}
-            className="px-2.5 py-1 rounded border border-cyan-500/40 text-cyan-500 hover:bg-cyan-500/10 disabled:opacity-50 text-[10px] tracking-wider uppercase"
+            onClick={handleSaveChanges}
+            disabled={!hasChanges || isSaving}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[10px] tracking-wider transition-all disabled:opacity-30 disabled:cursor-not-allowed ${
+              hasChanges 
+                ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20' 
+                : 'border-[var(--c-br1)] text-[var(--c-tx4)]'
+            }`}
             style={{ fontFamily: 'JetBrains Mono, monospace' }}
           >
-            {isSavingTemplate ? 'Saving...' : 'Save Template'}
+            <Save size={11} /> {isSaving ? 'Saving...' : 'Save Changes'}
           </button>
           <button
-            onClick={handleUpdateConfig}
-            disabled={isUpdatingConfig}
-            className="px-2.5 py-1 rounded border border-[var(--c-br1)] text-[var(--c-tx3)] hover:text-[var(--c-tx1)] hover:bg-[var(--c-bg4)] disabled:opacity-50 text-[10px] tracking-wider uppercase"
+            onClick={handleDiscard}
+            disabled={!hasChanges || isSaving}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-[var(--c-br1)] bg-[var(--c-bg1)] text-[var(--c-tx4)] text-[10px] tracking-wider hover:text-[var(--c-tx1)] hover:bg-[var(--c-bg5)] transition-all disabled:opacity-30 disabled:cursor-not-allowed"
             style={{ fontFamily: 'JetBrains Mono, monospace' }}
           >
-            {isUpdatingConfig ? 'Updating...' : 'Update Config'}
+            <RotateCcw size={11} /> Discard
           </button>
           <button
             onClick={handleDeleteFlow}
-            disabled={isDeletingFlow}
-            className="px-2.5 py-1 rounded border border-red-500/40 text-red-500 hover:bg-red-500/10 disabled:opacity-50 text-[10px] tracking-wider uppercase"
+            disabled={isSaving || isDeletingFlow}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-red-500/40 bg-red-500/10 text-red-500 text-[10px] tracking-wider hover:bg-red-500/20 transition-all disabled:opacity-50"
             style={{ fontFamily: 'JetBrains Mono, monospace' }}
           >
-            {isDeletingFlow ? 'Deleting...' : 'Delete Flow'}
+            <Trash2 size={11} /> {isDeletingFlow ? 'Deleting...' : 'Delete'}
           </button>
         </div>
         {!flow.hasError && flow.connectionStatus === 'connected' && (
@@ -769,20 +780,29 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
               <Code2 size={10} /> Message Format
             </span>
             <div className="flex items-center gap-1 ml-auto">
-              {(['json', 'xml', 'csv', 'plain'] as const).map(mode => (
-                <button
-                  key={mode}
-                  onClick={() => handleFormatModeChange(mode)}
-                  className={`px-2 py-0.5 rounded text-[10px] tracking-wider transition-all ${
-                    formatMode === mode
-                      ? 'bg-cyan-500/15 border border-cyan-500/40 text-cyan-500'
-                      : 'text-[var(--c-tx4)] hover:text-[var(--c-tx2)] border border-transparent'
-                  }`}
-                  style={{ fontFamily: 'JetBrains Mono, monospace' }}
-                >
-                  {mode.toUpperCase()}
-                </button>
-              ))}
+              {(['json', 'xml', 'csv', 'plain'] as const).map(mode => {
+                const icons = {
+                  json: <Braces size={10} />,
+                  xml: <FileCode size={10} />,
+                  csv: <TableProperties size={10} />,
+                  plain: <FileText size={10} />,
+                };
+                return (
+                  <button
+                    key={mode}
+                    onClick={() => handleFormatModeChange(mode)}
+                    className={`flex items-center gap-1.5 px-2 py-1 rounded text-[10px] tracking-wider transition-all border ${
+                      formatMode === mode
+                        ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-500'
+                        : 'text-[var(--c-tx4)] border-transparent hover:text-[var(--c-tx2)] hover:bg-[var(--c-bg5)]'
+                    }`}
+                    style={{ fontFamily: 'JetBrains Mono, monospace' }}
+                  >
+                    {icons[mode]}
+                    {mode.toUpperCase()}
+                  </button>
+                );
+              })}
             </div>
             <div className="flex gap-1">
               <button className="p-1.5 rounded border border-[var(--c-br1)] text-[var(--c-tx4)] hover:text-[var(--c-tx2)] hover:bg-[var(--c-bg6)] transition-all">
