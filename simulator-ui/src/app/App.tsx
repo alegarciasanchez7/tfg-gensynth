@@ -45,7 +45,6 @@ export default function App() {
         projectName={projectName}
         isDark={isDark}
         onThemeToggle={actions.toggleTheme}
-        connectorCatalog={connectorCatalog}
         latestConnectors={latestConnectors}
         connectorHealthSummary={connectorHealthSummary}
       />

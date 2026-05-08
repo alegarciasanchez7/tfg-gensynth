@@ -26,6 +26,7 @@ export interface Flow {
   template?: string;
   format?: 'json' | 'xml' | 'csv' | 'plain';
   connectorConfig?: Record<string, any>;
+  connectorVersion?: string;
 }
 
 export interface Group {
