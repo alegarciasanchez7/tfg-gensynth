@@ -24,6 +24,9 @@ import type {
   VariableState,
   ConnectorPluginDescriptor,
   TracePayload,
+  PluginValidationResultPayload,
+  PluginInstallResultPayload,
+  RestartRequiredPayload,
 } from './types';
 
 // ─────────────────────────────────────────────────────────────
@@ -87,6 +90,9 @@ const SUPPORTED_COMMANDS = new Set<UICommandType>([
   'CREATE_VARIABLE',
   'DELETE_VARIABLE',
   'UPDATE_VARIABLE',
+  'VALIDATE_PLUGIN',
+  'INSTALL_PLUGIN',
+  'UNINSTALL_PLUGIN',
 ]);
 
 interface EventMap {
@@ -103,6 +109,9 @@ interface EventMap {
   'connector-catalog': ConnectorPluginDescriptor[];
   'message': CoreMessage;
   'trace': TracePayload;
+  'plugin-validation-result': PluginValidationResultPayload;
+  'plugin-install-result': PluginInstallResultPayload;
+  'restart-required': RestartRequiredPayload;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -425,6 +434,20 @@ class CoreBridge {
           : new Error('El comando CREATE_VARIABLE requiere name, type y scope');
       case 'UPDATE_VARIABLE':
         return requireStringField('variableId', 'El comando UPDATE_VARIABLE requiere variableId');
+      case 'VALIDATE_PLUGIN':
+      case 'INSTALL_PLUGIN':
+        return isObjectPayload
+          && typeof readField('jarBase64') === 'string'
+          && typeof readField('pluginName') === 'string'
+          && typeof readField('pluginVersion') === 'string'
+          ? null
+          : new Error(`El comando ${type} requiere jarBase64, pluginName y pluginVersion`);
+      case 'UNINSTALL_PLUGIN':
+        return isObjectPayload
+          && typeof readField('pluginId') === 'string'
+          && typeof readField('pluginVersion') === 'string'
+          ? null
+          : new Error('El comando UNINSTALL_PLUGIN requiere pluginId y pluginVersion');
       default:
         return new Error(`Validation not implemented for ${type}`);
     }
@@ -488,6 +511,15 @@ class CoreBridge {
           break;
         case 'TRACE_EVENT':
           this.emit('trace', message.payload as TracePayload);
+          break;
+        case 'PLUGIN_VALIDATION_RESULT':
+          this.emit('plugin-validation-result', message.payload as PluginValidationResultPayload);
+          break;
+        case 'PLUGIN_INSTALL_RESULT':
+          this.emit('plugin-install-result', message.payload as PluginInstallResultPayload);
+          break;
+        case 'RESTART_REQUIRED':
+          this.emit('restart-required', message.payload as RestartRequiredPayload);
           break;
       }
 
@@ -728,6 +760,14 @@ export const CoreCommands = {
   // Metrics
   subscribeMetrics: () => bridge.send('SUBSCRIBE_METRICS'),
   unsubscribeMetrics: () => bridge.send('UNSUBSCRIBE_METRICS'),
+
+  // Plugin management
+  validatePlugin: (jarBase64: string, pluginName: string, pluginVersion: string) =>
+    bridge.send('VALIDATE_PLUGIN', { jarBase64, pluginName, pluginVersion }),
+  installPlugin: (jarBase64: string, pluginName: string, pluginVersion: string) =>
+    bridge.send('INSTALL_PLUGIN', { jarBase64, pluginName, pluginVersion }),
+  uninstallPlugin: (pluginId: string, pluginVersion: string) =>
+    bridge.send('UNINSTALL_PLUGIN', { pluginId, pluginVersion }),
 };
 
 export default bridge;

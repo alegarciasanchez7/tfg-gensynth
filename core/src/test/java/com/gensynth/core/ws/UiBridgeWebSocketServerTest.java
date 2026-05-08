@@ -1,5 +1,6 @@
 package com.gensynth.core.ws;
 
+import com.gensynth.core.connectors.plugin.PluginInstallerImpl;
 import com.gensynth.core.connectors.runtime.ConnectorCatalogService;
 import com.gensynth.core.persistence.JsonStateRepositoryImpl;
 import com.gensynth.core.persistence.StateRepository;
@@ -29,7 +30,8 @@ public class UiBridgeWebSocketServerTest {
         UiBridgeWebSocketServer server = new UiBridgeWebSocketServer(
             new InetSocketAddress("localhost", 0),
             new ConnectorCatalogService(),
-            repository
+            repository,
+            new PluginInstallerImpl(tempDir)
         );
 
         String command = """

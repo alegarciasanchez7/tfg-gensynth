@@ -1,7 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
-import { Power, Square, FolderOpen, Save, Settings, Zap, Activity, Moon, Sun, X, Package } from 'lucide-react';
+import { Power, Square, FolderOpen, Save, Settings, Zap, Activity, Moon, Sun, X, Package, Plus, Trash2, Loader2 } from 'lucide-react';
 import type { SystemStatus, ConnectorHealthSummary } from '../../../types';
 import type { ConnectorPluginDescriptor } from '../../../core/types';
+import { CoreCommands } from '../../../core/bridge';
+import bridge from '../../../core/bridge';
+import { PluginImportPanel } from './PluginImportPanel';
 
 interface HeaderProps {
   systemStatus: SystemStatus;
@@ -43,6 +46,8 @@ function ConnectorCatalogPanel({ latestConnectors, connectorHealthSummary, onClo
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const [uninstalling, setUninstalling] = useState<string | null>(null);
+  const [confirmUninstall, setConfirmUninstall] = useState<string | null>(null);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -51,6 +56,16 @@ function ConnectorCatalogPanel({ latestConnectors, connectorHealthSummary, onClo
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [onClose]);
+
+  const handleUninstall = async (pluginId: string, pluginVersion: string) => {
+    setUninstalling(pluginId + '@' + pluginVersion);
+    try {
+      await CoreCommands.uninstallPlugin(pluginId, pluginVersion);
+    } catch {
+      setUninstalling(null);
+      setConfirmUninstall(null);
+    }
+  };
 
   const healthColor = (status: ConnectorHealthSummary['status']) => {
     switch (status) {
@@ -84,10 +99,11 @@ function ConnectorCatalogPanel({ latestConnectors, connectorHealthSummary, onClo
             const health = connectorHealthSummary.find(
               (entry) => entry.pluginId === connector.pluginId && entry.pluginVersion === connector.pluginVersion,
             );
+            const key = connector.pluginId + '@' + connector.pluginVersion;
 
             return (
               <div
-                key={connector.pluginId}
+                key={key}
                 className="flex flex-col gap-1.5 rounded border border-[var(--c-br1)] bg-[var(--c-bg1)] px-2.5 py-2"
               >
                 <div className="flex items-start justify-between gap-2">
@@ -110,6 +126,44 @@ function ConnectorCatalogPanel({ latestConnectors, connectorHealthSummary, onClo
                     <span>{health.connectedCount}/{health.flowCount} flows</span>
                     {health.warningCount > 0 && <span className="text-amber-500">⚠ {health.warningCount} warn</span>}
                     {health.errorCount > 0 && <span className="text-red-500">✕ {health.errorCount} err</span>}
+                  </div>
+                )}
+
+                {/* Uninstall button for external plugins — shown for all plugins that come from plugins/ */}
+                {connector.coreApiVersion && (
+                  <div className="mt-1">
+                    {confirmUninstall === key ? (
+                      <div className="flex gap-1">
+                        <button
+                          onClick={() => setConfirmUninstall(null)}
+                          className="flex-1 text-[8px] px-1.5 py-0.5 rounded border border-[var(--c-br1)] text-[var(--c-tx4)] hover:bg-[var(--c-bg5)] transition-colors"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={() => handleUninstall(connector.pluginId, connector.pluginVersion)}
+                          disabled={uninstalling === key}
+                          className="flex-1 flex items-center justify-center gap-0.5 text-[8px] px-1.5 py-0.5 rounded border border-red-500/40 text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50"
+                        >
+                          {uninstalling === key ? (
+                            <Loader2 size={8} className="animate-spin" />
+                          ) : (
+                            <Trash2 size={8} />
+                          )}
+                          Remove
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setConfirmUninstall(key);
+                        }}
+                        className="text-[8px] text-[var(--c-tx5)] hover:text-red-400 transition-colors"
+                      >
+                        Uninstall
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -189,6 +243,7 @@ function SettingsPanel({ isDark, onThemeToggle, onClose }: {
 export function Header({ systemStatus, onStatusToggle, onLoadProject, onSaveProject, projectName, isDark, onThemeToggle, latestConnectors, connectorHealthSummary }: HeaderProps) {
   const [showSettings, setShowSettings] = useState(false);
   const [showCatalog, setShowCatalog] = useState(false);
+  const [showPluginImport, setShowPluginImport] = useState(false);
   const [loadingState, setLoadingState] = useState(false);
   const isRunning = systemStatus === 'running';
 
@@ -296,6 +351,25 @@ export function Header({ systemStatus, onStatusToggle, onLoadProject, onSaveProj
             connectorHealthSummary={connectorHealthSummary}
             onClose={() => setShowCatalog(false)}
           />
+        )}
+      </div>
+
+      {/* Plugin import button */}
+      <div className="relative">
+        <button
+          id="plugin-import-toggle"
+          onClick={() => setShowPluginImport(s => !s)}
+          className={`flex items-center justify-center w-7 h-7 rounded border transition-all ${
+            showPluginImport
+              ? 'border-cyan-500/50 bg-cyan-500/10 text-cyan-400'
+              : 'border-[var(--c-br1)] text-[var(--c-tx3)] hover:text-[var(--c-tx1)] hover:border-[var(--c-br3)] hover:bg-[var(--c-bg5)]'
+          }`}
+          title="Import Plugin"
+        >
+          <Plus size={13} />
+        </button>
+        {showPluginImport && (
+          <PluginImportPanel onClose={() => setShowPluginImport(false)} />
         )}
       </div>
 
