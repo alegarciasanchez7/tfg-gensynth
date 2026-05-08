@@ -61,24 +61,24 @@
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
+  --background: oklch(0.270 0 0);
   --foreground: oklch(0.985 0 0);
-  --card: oklch(0.145 0 0);
+  --card: oklch(0.290 0 0);
   --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.145 0 0);
+  --popover: oklch(0.270 0 0);
   --popover-foreground: oklch(0.985 0 0);
   --primary: oklch(0.985 0 0);
   --primary-foreground: oklch(0.205 0 0);
   --secondary: oklch(0.269 0 0);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
+  --muted-foreground: oklch(0.820 0 0);
   --accent: oklch(0.269 0 0);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.396 0.141 25.723);
   --destructive-foreground: oklch(0.637 0.237 25.331);
-  --border: oklch(0.269 0 0);
-  --input: oklch(0.269 0 0);
+  --border: oklch(0.400 0 0);
+  --input: oklch(0.400 0 0);
   --ring: oklch(0.439 0 0);
   --font-weight-medium: 500;
   --font-weight-normal: 400;
@@ -97,23 +97,23 @@
   --sidebar-ring: oklch(0.439 0 0);
 
   /* ── App UI tokens (dark mode) ───────────────────────────── */
-  --c-bg1: #0b0c13;
-  --c-bg2: #0e0f1a;
-  --c-bg3: #0d0e18;
-  --c-bg4: #111220;
-  --c-bg5: #181929;
-  --c-bg6: #1a1b2e;
-  --c-bg7: #1e2038;
-  --c-bg8: #12131e;
-  --c-br1: #252840;
-  --c-br2: #1e2035;
-  --c-br3: #353858;
-  --c-tx1: #e2e8f0;
-  --c-tx2: #c8ccd8;
-  --c-tx3: #94a3b8;
-  --c-tx4: #475569;
-  --c-tx5: #353858;
-  --c-tx6: #2a2b3d;
+  --c-bg1: #1e2030;
+  --c-bg2: #24263a;
+  --c-bg3: #222538;
+  --c-bg4: #2a2d46;
+  --c-bg5: #323552;
+  --c-bg6: #353957;
+  --c-bg7: #3b3e60;
+  --c-bg8: #272a40;
+  --c-br1: #4f547c;
+  --c-br2: #43486b;
+  --c-br3: #626894;
+  --c-tx1: #f8fafc;
+  --c-tx2: #e2e8f0;
+  --c-tx3: #cbd5e1;
+  --c-tx4: #94a3b8;
+  --c-tx5: #64748b;
+  --c-tx6: #475569;
 }
 
 @theme inline {
@@ -164,6 +164,30 @@
 
   body {
     @apply bg-background text-foreground;
+  }
+
+  /* Custom Scrollbar Styles */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: var(--radius);
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--muted-foreground);
   }
 
   /**
