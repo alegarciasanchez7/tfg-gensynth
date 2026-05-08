@@ -26,7 +26,10 @@ export type CoreMessageType =
   | 'TRACE_EVENT'
   | 'BRIDGE_TIMEOUT'
   | 'BRIDGE_RECONNECTING'
-  | 'BRIDGE_RECONNECT_EXHAUSTED';
+  | 'BRIDGE_RECONNECT_EXHAUSTED'
+  | 'PLUGIN_VALIDATION_RESULT'
+  | 'PLUGIN_INSTALL_RESULT'
+  | 'RESTART_REQUIRED';
 
 export interface CoreMessage<T = unknown> {
   type: CoreMessageType;
@@ -143,7 +146,10 @@ export type UICommandType =
   | 'GET_CONNECTOR_CATALOG'
   | 'GET_LATEST_CONNECTOR'
   | 'SUBSCRIBE_METRICS'
-  | 'UNSUBSCRIBE_METRICS';
+  | 'UNSUBSCRIBE_METRICS'
+  | 'VALIDATE_PLUGIN'
+  | 'INSTALL_PLUGIN'
+  | 'UNINSTALL_PLUGIN';
 
 export interface StartGroupCommandPayload {
   groupId: string;
@@ -258,6 +264,9 @@ export interface UICommandPayloadMap {
   GET_LATEST_CONNECTOR: GetLatestConnectorCommandPayload;
   SUBSCRIBE_METRICS: undefined;
   UNSUBSCRIBE_METRICS: undefined;
+  VALIDATE_PLUGIN: ValidatePluginCommandPayload;
+  INSTALL_PLUGIN: InstallPluginCommandPayload;
+  UNINSTALL_PLUGIN: UninstallPluginCommandPayload;
 }
 
 export interface UICommand<T extends UICommandType = UICommandType> {
@@ -349,4 +358,50 @@ export interface VariableState {
   groupId?: string;
   config: Record<string, unknown>;
   description?: string;
+}
+
+// ─────────────────────────────────────────────────────────────
+// Plugin Management Types
+// ─────────────────────────────────────────────────────────────
+
+export interface ValidatePluginCommandPayload {
+  jarBase64: string;
+  pluginName: string;
+  pluginVersion: string;
+}
+
+export interface InstallPluginCommandPayload {
+  jarBase64: string;
+  pluginName: string;
+  pluginVersion: string;
+}
+
+export interface UninstallPluginCommandPayload {
+  pluginId: string;
+  pluginVersion: string;
+}
+
+export interface PluginValidationResultPayload {
+  commandId?: string;
+  status: string;
+  valid: boolean;
+  pluginId?: string;
+  displayName?: string;
+  pluginVersion?: string;
+  coreApiVersion?: string;
+  errors: string[];
+  warnings: string[];
+}
+
+export interface PluginInstallResultPayload {
+  commandId?: string;
+  status: string;
+  success: boolean;
+  message: string;
+  restartRequired: boolean;
+}
+
+export interface RestartRequiredPayload {
+  message: string;
+  delaySeconds: number;
 }

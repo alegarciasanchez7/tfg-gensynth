@@ -91,6 +91,13 @@
             <artifactId>datafaker</artifactId>
             <version>2.0.2</version>
         </dependency>
+
+        <!-- ASM for bytecode analysis (plugin security validation) -->
+        <dependency>
+            <groupId>org.ow2.asm</groupId>
+            <artifactId>asm</artifactId>
+            <version>9.7</version>
+        </dependency>
     </dependencies>
 
     <build>

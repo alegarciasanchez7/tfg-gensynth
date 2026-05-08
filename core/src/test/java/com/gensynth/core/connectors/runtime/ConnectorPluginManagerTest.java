@@ -18,12 +18,19 @@ import static org.junit.Assert.assertTrue;
 
 public class ConnectorPluginManagerTest {
 
-    @Test(expected = IllegalStateException.class)
-    public void testDuplicateProviderRegistrationThrows() {
+    @Test
+    public void testDuplicateProviderRegistrationSkipsDuplicate() {
         ConnectorPluginProvider providerA = new RabbitMqConnectorPluginProvider();
         ConnectorPluginProvider providerB = new RabbitMqConnectorPluginProvider();
 
-        new ConnectorPluginManager(Arrays.asList(providerA, providerB));
+        // Should not throw — duplicates are logged and skipped
+        ConnectorPluginManager manager = new ConnectorPluginManager(Arrays.asList(providerA, providerB));
+
+        // Only one registration should exist
+        long count = manager.listDescriptors().stream()
+                .filter(d -> d.getPluginId().equals(providerA.descriptor().getPluginId()))
+                .count();
+        assertEquals(1, count);
     }
 
     @Test
