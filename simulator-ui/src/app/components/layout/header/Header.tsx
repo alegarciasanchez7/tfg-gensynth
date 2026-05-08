@@ -3,7 +3,7 @@ import { Power, Square, FolderOpen, Save, Settings, Zap, Activity, Moon, Sun, X,
 import type { SystemStatus, ConnectorHealthSummary } from '../../../types';
 import type { ConnectorPluginDescriptor } from '../../../core/types';
 import { CoreCommands } from '../../../core/bridge';
-import bridge from '../../../core/bridge';
+import { toast } from 'sonner';
 import { PluginImportPanel } from './PluginImportPanel';
 
 interface HeaderProps {
@@ -20,9 +20,9 @@ interface HeaderProps {
 
 const StatusBadge = ({ status }: { status: SystemStatus }) => {
   const cfg = {
-    running:    { color: 'text-emerald-400', dot: 'bg-emerald-400', label: 'RUNNING',    pulse: true },
-    stopped:    { color: 'text-slate-500',   dot: 'bg-slate-400',   label: 'STOPPED',    pulse: false },
-    processing: { color: 'text-amber-400',   dot: 'bg-amber-400',   label: 'PROCESSING', pulse: true },
+    running: { color: 'text-emerald-400', dot: 'bg-emerald-400', label: 'RUNNING', pulse: true },
+    stopped: { color: 'text-slate-500', dot: 'bg-slate-400', label: 'STOPPED', pulse: false },
+    processing: { color: 'text-amber-400', dot: 'bg-amber-400', label: 'PROCESSING', pulse: true },
   }[status];
 
   return (
@@ -60,8 +60,17 @@ function ConnectorCatalogPanel({ latestConnectors, connectorHealthSummary, onClo
   const handleUninstall = async (pluginId: string, pluginVersion: string) => {
     setUninstalling(pluginId + '@' + pluginVersion);
     try {
-      await CoreCommands.uninstallPlugin(pluginId, pluginVersion);
-    } catch {
+      const response = await CoreCommands.uninstallPlugin(pluginId, pluginVersion);
+      if (response.success) {
+        toast.success(response.message || 'Plugin uninstalled successfully. Restarting...');
+        // The backend will broadcast a restart-required event, which App.tsx handles
+      } else {
+        toast.error(response.message || 'Failed to uninstall plugin');
+        setUninstalling(null);
+        setConfirmUninstall(null);
+      }
+    } catch (err) {
+      toast.error('An error occurred while communicating with the core');
       setUninstalling(null);
       setConfirmUninstall(null);
     }
@@ -115,9 +124,8 @@ function ConnectorCatalogPanel({ latestConnectors, connectorHealthSummary, onClo
                       {connector.pluginId}@{connector.pluginVersion}
                     </span>
                   </div>
-                  <span className={`inline-flex items-center justify-center rounded border px-1.5 py-0.5 text-[9px] uppercase whitespace-nowrap ${
-                    health ? healthColor(health.status) : 'text-[var(--c-tx4)] border-[var(--c-br1)] bg-transparent'
-                  }`} style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+                  <span className={`inline-flex items-center justify-center rounded border px-1.5 py-0.5 text-[9px] uppercase whitespace-nowrap ${health ? healthColor(health.status) : 'text-[var(--c-tx4)] border-[var(--c-br1)] bg-transparent'
+                    }`} style={{ fontFamily: 'JetBrains Mono, monospace' }}>
                     {health ? health.status : 'unknown'}
                   </span>
                 </div>
@@ -275,11 +283,10 @@ export function Header({ systemStatus, onStatusToggle, onLoadProject, onSaveProj
       <div className="flex items-center gap-1">
         <button
           onClick={onStatusToggle}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-xs transition-all ${
-            isRunning
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-xs transition-all ${isRunning
               ? 'border-red-500/50 bg-red-500/10 text-red-400 hover:bg-red-500/20'
               : 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
-          }`}
+            }`}
           style={{ fontFamily: 'JetBrains Mono, monospace' }}
         >
           {isRunning ? (
@@ -336,11 +343,10 @@ export function Header({ systemStatus, onStatusToggle, onLoadProject, onSaveProj
       <div className="relative">
         <button
           onClick={() => setShowCatalog(s => !s)}
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded border text-xs transition-all ${
-            showCatalog
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded border text-xs transition-all ${showCatalog
               ? 'border-cyan-500/50 bg-cyan-500/10 text-cyan-400'
               : 'border-[var(--c-br1)] text-[var(--c-tx3)] hover:text-[var(--c-tx1)] hover:border-[var(--c-br3)] hover:bg-[var(--c-bg5)]'
-          }`}
+            }`}
           style={{ fontFamily: 'JetBrains Mono, monospace' }}
         >
           <Package size={12} /> Connectors ({latestConnectors.length})
@@ -359,11 +365,10 @@ export function Header({ systemStatus, onStatusToggle, onLoadProject, onSaveProj
         <button
           id="plugin-import-toggle"
           onClick={() => setShowPluginImport(s => !s)}
-          className={`flex items-center justify-center w-7 h-7 rounded border transition-all ${
-            showPluginImport
+          className={`flex items-center justify-center w-7 h-7 rounded border transition-all ${showPluginImport
               ? 'border-cyan-500/50 bg-cyan-500/10 text-cyan-400'
               : 'border-[var(--c-br1)] text-[var(--c-tx3)] hover:text-[var(--c-tx1)] hover:border-[var(--c-br3)] hover:bg-[var(--c-bg5)]'
-          }`}
+            }`}
           title="Import Plugin"
         >
           <Plus size={13} />
@@ -383,11 +388,10 @@ export function Header({ systemStatus, onStatusToggle, onLoadProject, onSaveProj
       <div className="relative">
         <button
           onClick={() => setShowSettings(s => !s)}
-          className={`flex items-center justify-center w-7 h-7 rounded border transition-all ${
-            showSettings
+          className={`flex items-center justify-center w-7 h-7 rounded border transition-all ${showSettings
               ? 'border-cyan-500/50 bg-cyan-500/10 text-cyan-400'
               : 'border-[var(--c-br1)] text-[var(--c-tx3)] hover:text-[var(--c-tx1)] hover:border-[var(--c-br3)] hover:bg-[var(--c-bg5)]'
-          }`}
+            }`}
         >
           <Settings size={13} />
         </button>

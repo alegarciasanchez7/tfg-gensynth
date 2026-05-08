@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Upload, X, Check, AlertTriangle, Loader2, FileArchive } from 'lucide-react';
+import { Upload, X, Check, AlertTriangle, Loader2, FileArchive, ArrowRight, ShieldCheck } from 'lucide-react';
 import { CoreCommands } from '../../../core/bridge';
-import bridge from '../../../core/bridge';
 import type { PluginValidationResultPayload } from '../../../core/types';
 
 type ValidationState = 'idle' | 'validating' | 'success' | 'error';
@@ -10,13 +9,6 @@ interface PluginImportPanelProps {
   onClose: () => void;
 }
 
-/**
- * Panel for importing external connector plugins (.jar files).
- *
- * Provides a form for plugin name/version, a drag-and-drop zone for
- * JAR file upload, automatic validation on file drop, and installation
- * with restart confirmation.
- */
 export function PluginImportPanel({ onClose }: PluginImportPanelProps) {
   const ref = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -30,33 +22,23 @@ export function PluginImportPanel({ onClose }: PluginImportPanelProps) {
   const [validationResult, setValidationResult] = useState<PluginValidationResultPayload | null>(null);
   const [showRestartConfirm, setShowRestartConfirm] = useState(false);
   const [isInstalling, setIsInstalling] = useState(false);
-  const [isRestarting, setIsRestarting] = useState(false);
 
   // Close on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node) && !showRestartConfirm && !isRestarting) {
+      if (ref.current && !ref.current.contains(e.target as Node) && !showRestartConfirm) {
         onClose();
       }
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, [onClose, showRestartConfirm, isRestarting]);
-
-  // Listen for restart-required events
-  useEffect(() => {
-    const unsub = bridge.on('restart-required', () => {
-      setIsRestarting(true);
-    });
-    return unsub;
-  }, []);
+  }, [onClose, showRestartConfirm]);
 
   const readFileAsBase64 = useCallback((file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => {
         const result = reader.result as string;
-        // Remove data URL prefix (data:application/java-archive;base64,)
         const base64 = result.split(',')[1] || result;
         resolve(base64);
       };
@@ -88,12 +70,16 @@ export function PluginImportPanel({ onClose }: PluginImportPanelProps) {
       const name = pluginName.trim() || file.name.replace('.jar', '');
       const version = pluginVersion.trim() || '1.0.0';
 
-      const response = await CoreCommands.validatePlugin(base64, name, version) as PluginValidationResultPayload;
+      console.log('[PluginImportPanel] Validation request sent for:', name);
+      const response = await CoreCommands.validatePlugin(base64, name, version);
+      console.log('[PluginImportPanel] Received validation response:', response);
 
       setValidationResult(response);
-      setValidationState(response.valid ? 'success' : 'error');
+      
+      // Be more robust with boolean check
+      const isValid = response.valid === true || (response.valid as unknown) === 'true';
+      setValidationState(isValid ? 'success' : 'error');
 
-      // Auto-fill name from descriptor if user didn't provide one
       if (response.displayName && !pluginName.trim()) {
         setPluginName(response.displayName);
       }
@@ -111,36 +97,6 @@ export function PluginImportPanel({ onClose }: PluginImportPanelProps) {
     }
   }, [pluginName, pluginVersion, readFileAsBase64]);
 
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(true);
-  }, []);
-
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
-  }, []);
-
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
-
-    const files = e.dataTransfer.files;
-    if (files.length > 0) {
-      handleFileSelected(files[0]);
-    }
-  }, [handleFileSelected]);
-
-  const handleFileInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (files && files.length > 0) {
-      handleFileSelected(files[0]);
-    }
-  }, [handleFileSelected]);
-
   const handleInstall = useCallback(async () => {
     if (!jarBase64 || !validationResult?.valid) return;
 
@@ -150,205 +106,221 @@ export function PluginImportPanel({ onClose }: PluginImportPanelProps) {
       const version = pluginVersion.trim() || validationResult.pluginVersion || '1.0.0';
 
       await CoreCommands.installPlugin(jarBase64, name, version);
-      // The restart-required event will trigger the restart overlay
     } catch (err) {
       setIsInstalling(false);
       setShowRestartConfirm(false);
     }
   }, [jarBase64, pluginName, pluginVersion, validationResult]);
 
-  // Restart overlay
-  if (isRestarting) {
-    return (
-      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm">
-        <div className="flex flex-col items-center gap-4 text-center">
-          <Loader2 size={40} className="text-cyan-400 animate-spin" />
-          <span className="text-lg text-white font-semibold" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-            Restarting application...
-          </span>
-          <span className="text-sm text-slate-400" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-            Loading new plugin. The UI will reconnect automatically.
-          </span>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div
-      ref={ref}
-      className="absolute left-0 top-full mt-1 z-50 bg-[var(--c-bg2)] border border-[var(--c-br1)] rounded shadow-xl shadow-black/20 py-3 px-4"
-      style={{ fontFamily: 'JetBrains Mono, monospace', width: 360 }}
-    >
-      {/* Header */}
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-[10px] text-[var(--c-tx4)] tracking-widest uppercase">Import Plugin</span>
-        <button onClick={onClose} className="text-[var(--c-tx4)] hover:text-[var(--c-tx2)] transition-colors">
-          <X size={12} />
-        </button>
-      </div>
-
-      {/* Form fields */}
-      <div className="flex flex-col gap-2 mb-3">
-        <div>
-          <label className="text-[9px] text-[var(--c-tx4)] uppercase tracking-wider block mb-0.5">Plugin Name</label>
-          <input
-            id="plugin-name-input"
-            type="text"
-            value={pluginName}
-            onChange={(e) => setPluginName(e.target.value)}
-            placeholder="e.g. My MQTT Connector"
-            className="w-full px-2 py-1.5 text-[11px] bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded text-[var(--c-tx2)] placeholder:text-[var(--c-tx5)] focus:outline-none focus:border-cyan-500/50 transition-colors"
-          />
-        </div>
-        <div>
-          <label className="text-[9px] text-[var(--c-tx4)] uppercase tracking-wider block mb-0.5">Version</label>
-          <input
-            id="plugin-version-input"
-            type="text"
-            value={pluginVersion}
-            onChange={(e) => setPluginVersion(e.target.value)}
-            placeholder="e.g. 1.0.0"
-            className="w-full px-2 py-1.5 text-[11px] bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded text-[var(--c-tx2)] placeholder:text-[var(--c-tx5)] focus:outline-none focus:border-cyan-500/50 transition-colors"
-          />
-        </div>
-      </div>
-
-      {/* Separator */}
-      <div className="h-px bg-[var(--c-br2)] mb-3" />
-
-      {/* Drop zone */}
-      <div
-        className={`relative border-2 border-dashed rounded-lg p-4 flex flex-col items-center justify-center gap-2 cursor-pointer transition-all ${
-          isDragging
-            ? 'border-cyan-400 bg-cyan-500/10'
-            : fileName
-              ? 'border-[var(--c-br2)] bg-[var(--c-bg1)]'
-              : 'border-[var(--c-br1)] hover:border-[var(--c-br3)] hover:bg-[var(--c-bg5)]'
-        }`}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-        onClick={() => fileInputRef.current?.click()}
+        ref={ref}
+        className="absolute left-0 top-full mt-2 z-50 bg-[var(--c-bg2)] border border-[var(--c-br1)] rounded-lg shadow-2xl shadow-black/40 py-4 px-5 animate-in fade-in slide-in-from-top-2 duration-200"
+        style={{ fontFamily: 'JetBrains Mono, monospace', width: 380 }}
       >
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".jar"
-          className="hidden"
-          onChange={handleFileInput}
-        />
-        {fileName ? (
-          <>
-            <FileArchive size={20} className="text-cyan-400" />
-            <span className="text-[10px] text-[var(--c-tx2)] text-center">{fileName}</span>
-          </>
-        ) : (
-          <>
-            <Upload size={20} className={isDragging ? 'text-cyan-400' : 'text-[var(--c-tx4)]'} />
-            <span className="text-[10px] text-[var(--c-tx4)] text-center">
-              Drag & drop a .jar file here
-            </span>
-            <span className="text-[9px] text-[var(--c-tx5)]">or click to browse</span>
-          </>
-        )}
-      </div>
+        {/* Header */}
+        <div className="flex items-center justify-between mb-5">
+          <div className="flex items-center gap-2">
+            <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+            <span className="text-[10px] text-[var(--c-tx4)] tracking-widest uppercase font-bold">Import Plugin</span>
+          </div>
+          <button onClick={onClose} className="p-1 hover:bg-[var(--c-bg5)] rounded transition-colors text-[var(--c-tx4)] hover:text-[var(--c-tx2)]">
+            <X size={14} />
+          </button>
+        </div>
 
-      {/* Validation status */}
-      {validationState !== 'idle' && (
-        <div className="mt-3">
-          {validationState === 'validating' && (
-            <div className="flex items-center gap-2 text-[10px] text-amber-400">
-              <Loader2 size={12} className="animate-spin" />
-              <span>Validating plugin...</span>
+        {/* Form fields */}
+        <div className="grid grid-cols-3 gap-3 mb-4">
+          <div className="col-span-2">
+            <label className="text-[9px] text-[var(--c-tx4)] uppercase tracking-wider block mb-1 font-semibold">Plugin Name</label>
+            <input
+              type="text"
+              value={pluginName}
+              onChange={(e) => setPluginName(e.target.value)}
+              placeholder="Display name"
+              className="w-full px-2.5 py-1.5 text-[11px] bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded text-[var(--c-tx2)] placeholder:text-[var(--c-tx5)] focus:outline-none focus:border-cyan-500/50 transition-all"
+            />
+          </div>
+          <div>
+            <label className="text-[9px] text-[var(--c-tx4)] uppercase tracking-wider block mb-1 font-semibold">Version</label>
+            <input
+              type="text"
+              value={pluginVersion}
+              onChange={(e) => setPluginVersion(e.target.value)}
+              placeholder="1.0.0"
+              className="w-full px-2.5 py-1.5 text-[11px] bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded text-[var(--c-tx2)] placeholder:text-[var(--c-tx5)] focus:outline-none focus:border-cyan-500/50 transition-all"
+            />
+          </div>
+        </div>
+
+        {/* Drop zone */}
+        <div
+          className={`relative border-2 border-dashed rounded-xl p-6 flex flex-col items-center justify-center gap-3 cursor-pointer transition-all duration-300 ${
+            isDragging
+              ? 'border-cyan-400 bg-cyan-400/5 scale-[1.02]'
+              : validationState === 'validating'
+                ? 'border-amber-400/50 bg-amber-400/5'
+                : validationState === 'success'
+                  ? 'border-emerald-500/40 bg-emerald-500/5'
+                  : fileName
+                    ? 'border-[var(--c-br2)] bg-[var(--c-bg1)]'
+                    : 'border-[var(--c-br1)] hover:border-[var(--c-br3)] hover:bg-[var(--c-bg5)]'
+          }`}
+          onDragOver={validationState !== 'validating' ? (e) => { e.preventDefault(); setIsDragging(true); } : undefined}
+          onDragLeave={() => setIsDragging(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setIsDragging(false);
+            if (e.dataTransfer.files.length > 0) handleFileSelected(e.dataTransfer.files[0]);
+          }}
+          onClick={() => fileInputRef.current?.click()}
+        >
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".jar"
+            className="hidden"
+            onChange={(e) => e.target.files?.[0] && handleFileSelected(e.target.files[0])}
+          />
+          
+          {validationState === 'validating' ? (
+            <div className="flex flex-col items-center gap-3 py-2">
+              <Loader2 size={24} className="text-amber-400 animate-spin" />
+              <span className="text-[11px] text-amber-300 font-medium animate-pulse">Verifying bytecode integrity...</span>
             </div>
+          ) : validationState === 'success' ? (
+            <div className="flex flex-col items-center gap-2">
+              <div className="w-10 h-10 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-400">
+                <ShieldCheck size={24} />
+              </div>
+              <span className="text-[11px] text-emerald-300 font-bold">{fileName}</span>
+              <span className="text-[9px] text-emerald-500/70 uppercase tracking-tighter">Integrity Verified</span>
+            </div>
+          ) : fileName ? (
+            <>
+              <FileArchive size={24} className="text-cyan-400" />
+              <span className="text-[11px] text-[var(--c-tx2)] text-center font-medium">{fileName}</span>
+              <span className="text-[9px] text-[var(--c-tx5)] uppercase">Ready to Validate</span>
+            </>
+          ) : (
+            <>
+              <div className="w-10 h-10 rounded-full bg-[var(--c-bg4)] flex items-center justify-center text-[var(--c-tx4)] mb-1">
+                <Upload size={20} />
+              </div>
+              <div className="text-center">
+                <span className="text-[11px] text-[var(--c-tx4)] block font-medium">Drop plugin .jar here</span>
+                <span className="text-[9px] text-[var(--c-tx5)]">or click to browse filesystem</span>
+              </div>
+            </>
           )}
+        </div>
 
-          {validationState === 'success' && validationResult && (
-            <div className="flex flex-col gap-1.5">
-              <div className="flex items-center gap-2 text-[10px] text-emerald-400">
-                <Check size={12} />
-                <span>Validation passed</span>
+        {/* Validation Feedback & Results */}
+        {validationState === 'success' && validationResult && (
+          <div className="mt-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+            <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-3 text-[10px]">
+              <div className="grid grid-cols-2 gap-y-1.5">
+                <span className="text-[var(--c-tx4)]">Plugin ID:</span>
+                <span className="text-emerald-300 text-right">{validationResult.pluginId}</span>
+                <span className="text-[var(--c-tx4)]">Core Version:</span>
+                <span className="text-emerald-300 text-right">{validationResult.coreApiVersion}</span>
+                <span className="text-[var(--c-tx4)]">Security:</span>
+                <span className="text-emerald-300 text-right flex items-center justify-end gap-1">
+                  <Check size={10} /> Passed
+                </span>
               </div>
-              <div className="bg-emerald-500/10 border border-emerald-500/20 rounded px-2 py-1.5 text-[9px] text-[var(--c-tx3)]">
-                <div><span className="text-[var(--c-tx4)]">ID:</span> {validationResult.pluginId}</div>
-                <div><span className="text-[var(--c-tx4)]">Name:</span> {validationResult.displayName}</div>
-                <div><span className="text-[var(--c-tx4)]">Version:</span> {validationResult.pluginVersion}</div>
-                <div><span className="text-[var(--c-tx4)]">API:</span> {validationResult.coreApiVersion}</div>
-              </div>
-              {validationResult.warnings.length > 0 && (
-                <div className="flex items-start gap-1.5 text-[9px] text-amber-400">
-                  <AlertTriangle size={10} className="mt-0.5 shrink-0" />
-                  <div>{validationResult.warnings.join('; ')}</div>
+              {validationResult.warnings && validationResult.warnings.length > 0 && (
+                <div className="mt-2 pt-2 border-t border-emerald-500/10 flex items-start gap-2 text-amber-400/80 italic text-[9px]">
+                  <AlertTriangle size={10} className="shrink-0 mt-0.5" />
+                  <span>{(validationResult.warnings || []).join('. ')}</span>
                 </div>
               )}
             </div>
-          )}
+          </div>
+        )}
 
-          {validationState === 'error' && validationResult && (
-            <div className="flex flex-col gap-1.5">
-              <div className="flex items-center gap-2 text-[10px] text-red-400">
-                <X size={12} />
-                <span>Validation failed</span>
+        {validationState === 'error' && validationResult && (
+          <div className="mt-4 animate-in shake-1 duration-300">
+            <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3">
+              <div className="flex items-center gap-2 text-[10px] text-red-400 font-bold mb-2">
+                <X size={14} />
+                <span>Plugin Rejected</span>
               </div>
-              <div className="bg-red-500/10 border border-red-500/20 rounded px-2 py-1.5 text-[9px] text-red-300">
-                {validationResult.errors.map((err, i) => (
-                  <div key={i}>• {err}</div>
-                ))}
+              <ul className="text-[9px] text-red-300/80 space-y-1 leading-relaxed">
+                {(validationResult.errors || []).length > 0 ? (
+                  (validationResult.errors || []).map((err, i) => (
+                    <li key={i} className="flex items-start gap-1.5">
+                      <span className="mt-1 w-1 h-1 rounded-full bg-red-400 shrink-0" />
+                      {err}
+                    </li>
+                  ))
+                ) : (
+                  <li className="flex items-start gap-1.5 text-red-300/60">
+                    <span className="mt-1 w-1 h-1 rounded-full bg-red-500/40 shrink-0" />
+                    Validation failed without specific error messages. Check core logs.
+                  </li>
+                )}
+              </ul>
+            </div>
+          </div>
+        )}
+
+        {/* Action Button Section */}
+        <div className="mt-5">
+          {!showRestartConfirm ? (
+            <button
+              onClick={() => setShowRestartConfirm(true)}
+              disabled={validationState !== 'success' || isInstalling}
+              className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border text-[11px] font-bold uppercase tracking-wider transition-all duration-300 transform active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed disabled:grayscale ${
+                validationState === 'success'
+                  ? 'border-emerald-500 bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 shadow-lg shadow-emerald-500/10'
+                  : 'border-cyan-500/50 bg-cyan-500/5 text-cyan-400 hover:bg-cyan-500/10'
+              }`}
+            >
+              {validationState === 'success' ? (
+                <>
+                  <ArrowRight size={14} />
+                  Import Validated Plugin
+                </>
+              ) : (
+                <>
+                  <Upload size={14} />
+                  Import Plugin
+                </>
+              )}
+            </button>
+          ) : (
+            <div className="flex flex-col gap-3 animate-in fade-in zoom-in-95 duration-200">
+              <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2.5 text-[10px] text-amber-300 flex items-start gap-3">
+                <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+                <span className="leading-relaxed">The system will restart to finalize installation. Active flows will be interrupted. Proceed?</span>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowRestartConfirm(false)}
+                  disabled={isInstalling}
+                  className="flex-1 px-4 py-2 rounded-lg border border-[var(--c-br1)] text-[10px] font-bold text-[var(--c-tx4)] hover:bg-[var(--c-bg5)] hover:text-[var(--c-tx2)] transition-all disabled:opacity-50"
+                >
+                  ABORT
+                </button>
+                <button
+                  onClick={handleInstall}
+                  disabled={isInstalling}
+                  className="flex-2 flex items-center justify-center gap-2 px-4 py-2 rounded-lg border border-emerald-500 bg-emerald-500 text-black text-[10px] font-black hover:bg-emerald-400 transition-all disabled:opacity-50"
+                >
+                  {isInstalling ? (
+                    <Loader2 size={12} className="animate-spin" />
+                  ) : (
+                    <>
+                      <Check size={12} />
+                      INSTALL & RESTART
+                    </>
+                  )}
+                </button>
               </div>
             </div>
           )}
         </div>
-      )}
-
-      {/* Install button */}
-      <div className="mt-3">
-        {!showRestartConfirm ? (
-          <button
-            id="import-plugin-button"
-            disabled={validationState !== 'success' || isInstalling}
-            onClick={() => setShowRestartConfirm(true)}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded border text-[11px] transition-all disabled:opacity-30 disabled:cursor-not-allowed border-cyan-500/50 bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20 disabled:hover:bg-cyan-500/10"
-          >
-            <Upload size={12} />
-            Import Plugin
-          </button>
-        ) : (
-          <div className="flex flex-col gap-2">
-            <div className="bg-amber-500/10 border border-amber-500/30 rounded px-2.5 py-2 text-[10px] text-amber-300 flex items-start gap-2">
-              <AlertTriangle size={12} className="mt-0.5 shrink-0" />
-              <span>The application will restart to load the new plugin. All active flows will be stopped. Continue?</span>
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setShowRestartConfirm(false)}
-                disabled={isInstalling}
-                className="flex-1 px-3 py-1.5 rounded border border-[var(--c-br1)] text-[10px] text-[var(--c-tx3)] hover:bg-[var(--c-bg5)] transition-colors disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                id="confirm-install-button"
-                onClick={handleInstall}
-                disabled={isInstalling}
-                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded border border-emerald-500/50 bg-emerald-500/10 text-[10px] text-emerald-400 hover:bg-emerald-500/20 transition-colors disabled:opacity-50"
-              >
-                {isInstalling ? (
-                  <>
-                    <Loader2 size={10} className="animate-spin" />
-                    Installing...
-                  </>
-                ) : (
-                  <>
-                    <Check size={10} />
-                    Confirm & Restart
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        )}
       </div>
-    </div>
-  );
+    );
 }

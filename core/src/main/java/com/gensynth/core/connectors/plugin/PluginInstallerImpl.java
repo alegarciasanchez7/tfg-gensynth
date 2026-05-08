@@ -31,6 +31,7 @@ public class PluginInstallerImpl implements IPluginInstaller {
     private static final Logger logger = LoggerFactory.getLogger(PluginInstallerImpl.class);
 
     private final Path pluginsDirectory;
+    private com.gensynth.core.connectors.runtime.ConnectorPluginManager pluginManager;
 
     /**
      * Constructs the installer targeting the specified plugins directory.
@@ -40,6 +41,14 @@ public class PluginInstallerImpl implements IPluginInstaller {
     public PluginInstallerImpl(Path pluginsDirectory) {
         this.pluginsDirectory = pluginsDirectory;
         ensurePluginsDirectoryExists();
+    }
+
+    /**
+     * Sets the plugin manager to allow unloading plugins before uninstallation.
+     * @param pluginManager the active plugin manager
+     */
+    public void setPluginManager(com.gensynth.core.connectors.runtime.ConnectorPluginManager pluginManager) {
+        this.pluginManager = pluginManager;
     }
 
     @Override
@@ -87,16 +96,28 @@ public class PluginInstallerImpl implements IPluginInstaller {
         // Find the JAR file by scanning and matching descriptors
         try (DirectoryStream<Path> stream = Files.newDirectoryStream(pluginsDirectory, "*.jar")) {
             for (Path jarPath : stream) {
+                logger.debug("Scanning JAR for uninstall: {}", jarPath.getFileName());
                 InstalledPluginInfo info = loadPluginInfoFromJar(jarPath);
-                if (info != null
-                        && info.getPluginId().equals(pluginId)
-                        && info.getPluginVersion().equals(pluginVersion)) {
-                    Files.delete(jarPath);
-                    logger.info("Plugin uninstalled: {}@{} ({})", pluginId, pluginVersion, jarPath.getFileName());
-                    return PluginInstallResult.success(
-                            "Plugin '" + info.getDisplayName() + "' removed. Restart required.",
-                            pluginId
-                    );
+                
+                if (info != null) {
+                    logger.info("Checking plugin: id={}, version={} against target: id={}, version={}", 
+                            info.getPluginId(), info.getPluginVersion(), pluginId, pluginVersion);
+                    
+                    if (info.getPluginId().equals(pluginId) && info.getPluginVersion().equals(pluginVersion)) {
+                        // CRITICAL FOR WINDOWS: Unload the plugin from the manager to release file locks
+                        if (pluginManager != null) {
+                            pluginManager.unloadPlugin(pluginId, pluginVersion);
+                        }
+                        
+                        Files.delete(jarPath);
+                        logger.info("Plugin uninstalled: {}@{} ({})", pluginId, pluginVersion, jarPath.getFileName());
+                        return PluginInstallResult.success(
+                                "Plugin '" + info.getDisplayName() + "' removed. Restart required.",
+                                pluginId
+                        );
+                    }
+                } else {
+                    logger.warn("Could not extract plugin info from JAR: {}", jarPath.getFileName());
                 }
             }
         } catch (IOException e) {
@@ -144,16 +165,20 @@ public class PluginInstallerImpl implements IPluginInstaller {
                 ServiceLoader<ConnectorPluginProvider> sl =
                         ServiceLoader.load(ConnectorPluginProvider.class, loader);
                 for (ConnectorPluginProvider provider : sl) {
-                    ConnectorPluginDescriptor d = provider.descriptor();
-                    Instant modifiedAt = Files.getLastModifiedTime(jarPath).toInstant();
-                    return new InstalledPluginInfo(
-                            d.getPluginId(),
-                            d.getDisplayName(),
-                            d.getPluginVersion(),
-                            jarPath.getFileName().toString(),
-                            modifiedAt,
-                            true // always external when loaded from plugins dir
-                    );
+                    // CRITICAL: Only consider providers that are actually defined in this JAR,
+                    // not the ones inherited from the parent classloader (like bundled connectors).
+                    if (provider.getClass().getClassLoader() == loader) {
+                        ConnectorPluginDescriptor d = provider.descriptor();
+                        Instant modifiedAt = Files.getLastModifiedTime(jarPath).toInstant();
+                        return new InstalledPluginInfo(
+                                d.getPluginId(),
+                                d.getDisplayName(),
+                                d.getPluginVersion(),
+                                jarPath.getFileName().toString(),
+                                modifiedAt,
+                                true // always external when loaded from plugins dir
+                        );
+                    }
                 }
             }
         } catch (Exception e) {

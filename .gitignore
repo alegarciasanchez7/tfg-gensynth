@@ -67,3 +67,4 @@ LOCAL_RUN_TESTING.md
 /core/SMOKE_EVIDENCE.txt
 docs/
 /core/outputs
+/rabbitmq-plugin/

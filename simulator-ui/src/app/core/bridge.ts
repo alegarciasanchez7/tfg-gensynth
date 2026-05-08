@@ -48,7 +48,7 @@ const DEFAULT_CONFIG: BridgeConfig = {
   mode: 'auto',
   websocketUrl: import.meta.env.VITE_WEBSOCKET_URL || 'ws://localhost:8765',
   reconnectInterval: 3000,
-  maxReconnectAttempts: 10,
+  maxReconnectAttempts: 100,
   commandTimeoutMs: 30000,
   maxCommandRetries: 2,
   retryBackoffMs: 500,
@@ -62,7 +62,7 @@ const DEFAULT_CONFIG: BridgeConfig = {
 type EventCallback<T = unknown> = (data: T) => void;
 
 type PendingCommand = {
-  resolve: (value: unknown) => void;
+  resolve: (value: any) => void;
   reject: (error: Error) => void;
   timerId: number;
   command: UICommand;
@@ -189,6 +189,14 @@ class CoreBridge {
 
         this.ws.onclose = (event) => {
           this.connected = false;
+          
+          // Reject all pending commands
+          this.pendingCommands.forEach(pending => {
+            window.clearTimeout(pending.timerId);
+            pending.reject(new Error('Connection lost'));
+          });
+          this.pendingCommands.clear();
+
           this.emit('disconnected', { reason: event.reason || 'Connection closed' });
           console.log('[Bridge] Disconnected from the Java core');
           this.scheduleReconnect();
@@ -289,7 +297,7 @@ class CoreBridge {
   /**
    * Sends a command to the Java core
    */
-  send<T extends UICommandType>(type: T, payload?: UICommandPayloadMap[T]): Promise<unknown> {
+  send<T extends UICommandType, R = any>(type: T, payload?: UICommandPayloadMap[T]): Promise<R> {
     const validationError = this.validateCommand(type, payload);
     if (validationError) {
       return Promise.reject(validationError);
@@ -527,6 +535,9 @@ class CoreBridge {
       const responsePayload = message.payload as { commandId?: string; status?: string } | null;
       const responseId = message.commandId || responsePayload?.commandId;
       if (responseId && this.pendingCommands.has(responseId)) {
+        if (message.type === 'TRACE_EVENT') {
+          return; // Skip trace events for command resolution
+        }
         const pending = this.pendingCommands.get(responseId)!;
         window.clearTimeout(pending.timerId);
 
@@ -762,12 +773,12 @@ export const CoreCommands = {
   unsubscribeMetrics: () => bridge.send('UNSUBSCRIBE_METRICS'),
 
   // Plugin management
-  validatePlugin: (jarBase64: string, pluginName: string, pluginVersion: string) =>
-    bridge.send('VALIDATE_PLUGIN', { jarBase64, pluginName, pluginVersion }),
-  installPlugin: (jarBase64: string, pluginName: string, pluginVersion: string) =>
-    bridge.send('INSTALL_PLUGIN', { jarBase64, pluginName, pluginVersion }),
-  uninstallPlugin: (pluginId: string, pluginVersion: string) =>
-    bridge.send('UNINSTALL_PLUGIN', { pluginId, pluginVersion }),
+  validatePlugin: (jarBase64: string, pluginName: string, pluginVersion: string): Promise<PluginValidationResultPayload> =>
+    bridge.send<'VALIDATE_PLUGIN', PluginValidationResultPayload>('VALIDATE_PLUGIN', { jarBase64, pluginName, pluginVersion }),
+  installPlugin: (jarBase64: string, pluginName: string, pluginVersion: string): Promise<PluginInstallResultPayload> =>
+    bridge.send<'INSTALL_PLUGIN', PluginInstallResultPayload>('INSTALL_PLUGIN', { jarBase64, pluginName, pluginVersion }),
+  uninstallPlugin: (pluginId: string, pluginVersion: string): Promise<PluginInstallResultPayload> =>
+    bridge.send<'UNINSTALL_PLUGIN', PluginInstallResultPayload>('UNINSTALL_PLUGIN', { pluginId, pluginVersion }),
 };
 
 export default bridge;

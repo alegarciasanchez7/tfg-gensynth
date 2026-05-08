@@ -33,6 +33,7 @@ public class ConnectorPluginManager {
     private final Map<String, ConnectorPluginProvider> providersByKey;
     private final List<ConnectorPluginDescriptor> descriptors;
     private final Set<String> externalPluginKeys;
+    private final Map<String, URLClassLoader> classLoadersByKey;
 
     /**
      * Load providers through ServiceLoader (classpath only).
@@ -49,6 +50,7 @@ public class ConnectorPluginManager {
     public ConnectorPluginManager(Path pluginsDirectory) {
         this.providersByKey = new LinkedHashMap<>();
         this.externalPluginKeys = new HashSet<>();
+        this.classLoadersByKey = new LinkedHashMap<>();
 
         // Load bundled (classpath) providers
         registerProviders(ServiceLoader.load(ConnectorPluginProvider.class), false);
@@ -65,6 +67,7 @@ public class ConnectorPluginManager {
     public ConnectorPluginManager(Iterable<ConnectorPluginProvider> providers) {
         this.providersByKey = new LinkedHashMap<>();
         this.externalPluginKeys = new HashSet<>();
+        this.classLoadersByKey = new LinkedHashMap<>();
         registerProviders(providers, false);
         this.descriptors = buildSortedCatalog();
     }
@@ -73,6 +76,10 @@ public class ConnectorPluginManager {
      * Registers providers into the internal map.
      */
     private void registerProviders(Iterable<ConnectorPluginProvider> providers, boolean external) {
+        registerProviders(providers, external, null);
+    }
+
+    private void registerProviders(Iterable<ConnectorPluginProvider> providers, boolean external, URLClassLoader loader) {
         for (ConnectorPluginProvider provider : providers) {
             ConnectorPluginDescriptor descriptor = provider.descriptor();
             String key = descriptor.key();
@@ -83,6 +90,9 @@ public class ConnectorPluginManager {
             providersByKey.put(key, provider);
             if (external) {
                 externalPluginKeys.add(key);
+                if (loader != null) {
+                    classLoadersByKey.put(key, loader);
+                }
             }
         }
     }
@@ -117,7 +127,7 @@ public class ConnectorPluginManager {
 
             ServiceLoader<ConnectorPluginProvider> loader =
                     ServiceLoader.load(ConnectorPluginProvider.class, pluginClassLoader);
-            registerProviders(loader, true);
+            registerProviders(loader, true, pluginClassLoader);
 
             logger.info("Loaded external plugin from: {}", jarPath.getFileName());
         } catch (Exception e) {
@@ -148,6 +158,37 @@ public class ConnectorPluginManager {
      */
     public boolean isExternalPlugin(String pluginId, String pluginVersion) {
         return externalPluginKeys.contains(pluginId + "@" + pluginVersion);
+    }
+
+    /**
+     * Unregisters a plugin and closes its ClassLoader to release file locks.
+     *
+     * @param pluginId      plugin identifier
+     * @param pluginVersion plugin version
+     * @return true if the plugin was found and unloaded
+     */
+    public boolean unloadPlugin(String pluginId, String pluginVersion) {
+        String key = pluginId + "@" + pluginVersion;
+        if (!providersByKey.containsKey(key)) {
+            return false;
+        }
+
+        providersByKey.remove(key);
+        externalPluginKeys.remove(key);
+        
+        URLClassLoader loader = classLoadersByKey.remove(key);
+        if (loader != null) {
+            try {
+                loader.close();
+                logger.info("Closed ClassLoader for plugin: {}", key);
+            } catch (IOException e) {
+                logger.warn("Failed to close ClassLoader for {}: {}", key, e.getMessage());
+            }
+        }
+
+        // Note: we don't rebuild 'descriptors' list here because the system
+        // is usually about to restart after an uninstall.
+        return true;
     }
 
     /**
