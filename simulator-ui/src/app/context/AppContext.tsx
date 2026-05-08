@@ -99,8 +99,8 @@ const initialState: AppState = {
   isConnected: false,
   connectionMode: 'mock',
   systemStatus: 'stopped',
-  projectName: 'SYN·GEN Project',
-  isDark: false,
+  projectName: 'GenSynth',
+  isDark: typeof localStorage !== 'undefined' ? localStorage.getItem('gensynth-theme') === 'dark' : false,
   selection: { type: 'none' },
   bottomTab: 'logs',
   groups: [],
@@ -123,7 +123,6 @@ const initialState: AppState = {
 type AppAction =
   | { type: 'SET_CONNECTED'; payload: { connected: boolean; mode: 'websocket' | 'jcef' | 'mock' } }
   | { type: 'SET_SYSTEM_STATUS'; payload: SystemStatus }
-  | { type: 'SET_PROJECT_NAME'; payload: string }
   | { type: 'TOGGLE_THEME' }
   | { type: 'SET_SELECTION'; payload: Selection }
   | { type: 'SET_BOTTOM_TAB'; payload: 'logs' | 'stats' | 'preview' }
@@ -390,11 +389,14 @@ function appReducer(state: AppState, action: AppAction): AppState {
     case 'SET_SYSTEM_STATUS':
       return { ...state, systemStatus: action.payload };
 
-    case 'SET_PROJECT_NAME':
-      return { ...state, projectName: action.payload };
 
-    case 'TOGGLE_THEME':
-      return { ...state, isDark: !state.isDark };
+    case 'TOGGLE_THEME': {
+      const nextIsDark = !state.isDark;
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('gensynth-theme', nextIsDark ? 'dark' : 'light');
+      }
+      return { ...state, isDark: nextIsDark };
+    }
 
     case 'SET_SELECTION':
       return { ...state, selection: action.payload };
@@ -655,7 +657,6 @@ interface AppContextValue {
     // UI
     setBottomTab: (tab: 'logs' | 'stats' | 'preview') => void;
     toggleTheme: () => void;
-    setProjectName: (name: string) => void;
     clearLogs: () => void;
   };
 }
@@ -1058,9 +1059,6 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
     dispatch({ type: 'TOGGLE_THEME' });
   }, []);
 
-  const setProjectName = useCallback((name: string) => {
-    dispatch({ type: 'SET_PROJECT_NAME', payload: name });
-  }, []);
 
   const clearLogs = useCallback(() => {
     dispatch({ type: 'CLEAR_LOGS' });
@@ -1716,7 +1714,6 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
     insertVariable,
     setBottomTab,
     toggleTheme,
-    setProjectName,
     clearLogs,
   };
 

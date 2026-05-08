@@ -76,6 +76,9 @@ export interface MetricsPayload {
   threads: number;
   messagesPerSecond: number;
   totalMessages: number;
+  networkUp: number;
+  networkDown: number;
+  uptime: number;
   activeConnections: number;
   errorCount: number;
 }

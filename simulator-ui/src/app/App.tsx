@@ -43,7 +43,6 @@ export default function App() {
         onLoadProject={actions.loadProjectState}
         onSaveProject={actions.saveProjectState}
         projectName={projectName}
-        onProjectNameChange={actions.setProjectName}
         isDark={isDark}
         onThemeToggle={actions.toggleTheme}
         connectorCatalog={connectorCatalog}
@@ -52,7 +51,7 @@ export default function App() {
       />
 
       {/* ── Resource monitor bar ────────────────────── */}
-      <ResourceBar systemStatus={systemStatus} />
+      <ResourceBar />
 
       {/* ── Main 3-column layout ────────────────────── */}
       <div className="flex flex-1 overflow-hidden">
