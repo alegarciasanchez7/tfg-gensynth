@@ -31,6 +31,7 @@ public class FlowDefinition {
     private int interval;
     private int burst;
     private String template;
+    private String format; // "json", "xml", "csv", "plain"
     private String connectorId;
     private final Map<String, Object> connectorConfig;
     private final Instant createdAt;
@@ -63,6 +64,7 @@ public class FlowDefinition {
         int interval,
         int burst,
         String template,
+        String format,
         String connectorId,
         Map<String, Object> connectorConfig
     ) {
@@ -76,6 +78,7 @@ public class FlowDefinition {
         this.interval = Math.max(50, interval); // Minimum 50ms
         this.burst = Math.max(1, burst);
         this.template = Objects.requireNonNull(template, "template cannot be null");
+        this.format = format != null ? format : "json";
         this.connectorId = connectorId;
         this.connectorConfig = connectorConfig != null ? new HashMap<>(connectorConfig) : new HashMap<>();
         this.createdAt = Instant.now();
@@ -124,6 +127,10 @@ public class FlowDefinition {
 
     public String getTemplate() {
         return template;
+    }
+
+    public String getFormat() {
+        return format;
     }
 
     public String getConnectorId() {
@@ -186,6 +193,11 @@ public class FlowDefinition {
         this.updatedAt = Instant.now();
     }
 
+    public void setFormat(String format) {
+        this.format = format;
+        this.updatedAt = Instant.now();
+    }
+
     public void setConnectorId(String connectorId) {
         this.connectorId = connectorId;
         this.updatedAt = Instant.now();
@@ -220,6 +232,7 @@ public class FlowDefinition {
         payload.put("interval", interval);
         payload.put("burst", burst);
         payload.put("template", template);
+        payload.put("format", format);
         payload.put("connectorId", connectorId);
         payload.put("connectorConfig", connectorConfig);
         payload.put("createdAt", createdAt.toString());
@@ -244,11 +257,12 @@ public class FlowDefinition {
         int interval = ((Number) payload.get("interval")).intValue();
         int burst = ((Number) payload.get("burst")).intValue();
         String template = (String) payload.get("template");
+        String format = (String) payload.get("format");
         String connectorId = (String) payload.get("connectorId");
         @SuppressWarnings("unchecked")
         Map<String, Object> connectorConfig = (Map<String, Object>) payload.get("connectorConfig");
 
-        return new FlowDefinition(flowId, groupId, name, technology, host, port, topic, interval, burst, template, connectorId, connectorConfig);
+        return new FlowDefinition(flowId, groupId, name, technology, host, port, topic, interval, burst, template, format, connectorId, connectorConfig);
     }
 
     @Override

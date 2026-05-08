@@ -207,6 +207,7 @@ function mapGroupsFromCore(groups: GroupState[], previousGroups: Group[] = []): 
       host: flow.host,
       port: flow.port,
       template: flow.template,
+      format: flow.format,
       connectorConfig: flow.connectorConfig,
     })),
   }));

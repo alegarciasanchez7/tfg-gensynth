@@ -193,6 +193,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             "localhost",
             5672,
             "{\"eventId\":\"{{uuid}}\",\"timestamp\":\"{{ts}}\",\"source\":\"gen-synth\",\"value\":{{n}}}",
+            "json",
             Map.of()
         ));
 
@@ -613,6 +614,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             int interval = Math.max(50, payload.path("interval").asInt(1000));
             int burst = Math.max(1, payload.path("burst").asInt(1));
             String template = payload.path("template").asText("{\"eventId\":\"{{uuid}}\",\"timestamp\":\"{{ts}}\",\"source\":\"gen-synth\",\"value\":{{n}}}");
+            String format = payload.path("format").asText(technology.equalsIgnoreCase("file") ? "plain" : "json");
             Map<String, Object> connectorConfig = parseConnectorConfig(payload.path("connectorConfig"));
 
             group.flows.add(new FlowRuntime(
@@ -630,6 +632,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                 host,
                 port,
                 template,
+                format,
                 connectorConfig
             ));
 
@@ -730,6 +733,9 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             }
             if (payload.hasNonNull("template")) {
                 flow.template = payload.path("template").asText(flow.template);
+            }
+            if (payload.hasNonNull("format")) {
+                flow.format = payload.path("format").asText(flow.format);
             }
             if (payload.hasNonNull("connectorConfig") && payload.get("connectorConfig").isObject()) {
                 flow.connectorConfig = parseConnectorConfig(payload.get("connectorConfig"));
@@ -1456,6 +1462,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         private String host;
         private int port;
         private String template;
+        private String format;
         private Map<String, Object> connectorConfig;
 
         private FlowRuntime(
@@ -1473,6 +1480,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             String host,
             int port,
             String template,
+            String format,
             Map<String, Object> connectorConfig
         ) {
             this.id = id;
@@ -1489,6 +1497,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             this.host = host;
             this.port = port;
             this.template = template;
+            this.format = format != null ? format : "json";
             this.connectorConfig = connectorConfig != null ? new LinkedHashMap<>(connectorConfig) : new LinkedHashMap<>();
         }
 
@@ -1508,6 +1517,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                 definition.getHost(),
                 definition.getPort(),
                 definition.getTemplate(),
+                definition.getFormat(),
                 definition.getConnectorConfig()
             );
         }
@@ -1524,6 +1534,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                 interval,
                 burst,
                 template,
+                format,
                 technology,
                 connectorConfig
             );
@@ -1547,6 +1558,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             payload.put("host", host);
             payload.put("port", port);
             payload.put("template", template);
+            payload.put("format", format);
             payload.put("connectorConfig", connectorConfig);
             return payload;
         }
