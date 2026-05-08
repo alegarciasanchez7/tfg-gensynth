@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import {
   Terminal, BarChart2, Eye, ChevronUp, ChevronDown,
-  Circle, AlertTriangle, AlertCircle, Bug, Trash2, RefreshCw,
+  Circle, AlertTriangle, AlertCircle, Bug, Trash2, RefreshCw, Send
 } from 'lucide-react';
 import { mockPreviewSamples } from '../../../../data/mockData';
 import { useApp } from '../../../../context';
@@ -14,6 +14,7 @@ const levelCfg = {
   warn:  { color: 'text-amber-500',   dot: 'bg-amber-500',   label: 'WARN ' },
   error: { color: 'text-red-500',     dot: 'bg-red-500',     label: 'ERROR' },
   debug: { color: 'text-[var(--c-tx4)]', dot: 'bg-[var(--c-tx4)]', label: 'DEBUG' },
+  data:  { color: 'text-emerald-500', dot: 'bg-emerald-500', label: 'DATA ' },
 };
 
 const levelIcon = {
@@ -21,6 +22,7 @@ const levelIcon = {
   warn:  <AlertTriangle size={9} />,
   error: <AlertCircle size={9} />,
   debug: <Bug size={9} />,
+  data:  <Send size={9} />,
 };
 
 type Tab = 'logs' | 'stats' | 'preview';
@@ -31,14 +33,14 @@ interface BottomPanelProps {
   systemStatus: SystemStatus;
 }
 
-function LogsView({ entries, connectorHealthSummary, groups }: { entries: Array<{ id: string; timestamp: string; level: 'info' | 'warn' | 'error' | 'debug'; source: string; message: string }>; connectorHealthSummary: ConnectorHealthSummary[]; groups: Group[] }) {
+function LogsView({ entries, connectorHealthSummary, groups }: { entries: Array<{ id: string; timestamp: string; level: 'info' | 'warn' | 'error' | 'debug' | 'data'; source: string; message: string }>; connectorHealthSummary: ConnectorHealthSummary[]; groups: Group[] }) {
   const endRef = useRef<HTMLDivElement>(null);
   const [filter, setFilter] = useState<string>('all');
   const [groupFilter, setGroupFilter] = useState<string>('all');
   const [flowFilter, setFlowFilter] = useState<string>('all');
   const [onlyFile, setOnlyFile] = useState<boolean>(false);
 
-  const fileFlows = groups.flatMap((g) => g.flows.filter((f) => f.technology.toLowerCase() === 'file').map((f) => ({
+  const allFlows = groups.flatMap((g) => g.flows.map((f) => ({
     id: f.id,
     name: f.name,
     groupId: g.id,
@@ -46,8 +48,8 @@ function LogsView({ entries, connectorHealthSummary, groups }: { entries: Array<
   })));
 
   const availableFlows = groupFilter === 'all'
-    ? fileFlows
-    : fileFlows.filter((f) => f.groupId === groupFilter);
+    ? allFlows
+    : allFlows.filter((f) => f.groupId === groupFilter);
 
   const flowIdsInGroup = groupFilter === 'all'
     ? new Set<string>()
@@ -59,9 +61,8 @@ function LogsView({ entries, connectorHealthSummary, groups }: { entries: Array<
     }
 
     if (onlyFile) {
-      const isFileSource = fileFlows.some((f) => f.id === entry.source);
-      const isFileMessage = entry.message.startsWith('File output ->');
-      if (!isFileSource && !isFileMessage) {
+      // Allow only logs where the level is 'data' to act as the "only data" equivalent
+      if (entry.level !== 'data') {
         return false;
       }
     }
@@ -121,7 +122,7 @@ function LogsView({ entries, connectorHealthSummary, groups }: { entries: Array<
 
       {/* Toolbar */}
       <div className="flex items-center gap-2 px-3 py-1.5 border-b border-[var(--c-br2)] shrink-0">
-        {(['all', 'info', 'warn', 'error', 'debug'] as const).map(f => (
+        {(['all', 'info', 'warn', 'error', 'debug', 'data'] as const).map(f => (
           <button
             key={f}
             onClick={() => setFilter(f)}
@@ -130,6 +131,7 @@ function LogsView({ entries, connectorHealthSummary, groups }: { entries: Array<
                 ? f === 'all' ? 'bg-[var(--c-bg7)] text-[var(--c-tx1)] border border-[var(--c-br3)]'
                   : f === 'error' ? 'bg-red-500/15 text-red-500 border border-red-500/30'
                   : f === 'warn' ? 'bg-amber-500/15 text-amber-500 border border-amber-500/30'
+                  : f === 'data' ? 'bg-emerald-500/15 text-emerald-500 border border-emerald-500/30'
                   : f === 'debug' ? 'bg-[var(--c-bg7)] text-[var(--c-tx4)] border border-[var(--c-br3)]'
                   : 'bg-sky-500/15 text-sky-500 border border-sky-500/30'
                 : 'text-[var(--c-tx4)] hover:text-[var(--c-tx2)]'
@@ -172,7 +174,7 @@ function LogsView({ entries, connectorHealthSummary, groups }: { entries: Array<
           }`}
           style={{ fontFamily: 'JetBrains Mono, monospace' }}
         >
-          only file
+          only data
         </button>
         <div className="flex-1" />
         <button className="p-1 rounded text-[var(--c-tx4)] hover:text-[var(--c-tx2)] hover:bg-[var(--c-bg6)] transition-all">

@@ -881,7 +881,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                 flow.errorMessage = null;
 
                 ScheduledFuture<?> task = scheduler.scheduleAtFixedRate(
-                    () -> publishBurst(flow),
+                    () -> publishBurst(group, flow),
                     0,
                     Math.max(50L, flow.interval),
                     TimeUnit.MILLISECONDS
@@ -920,7 +920,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         group.status = "stopped";
     }
 
-    private void publishBurst(FlowRuntime flow) {
+    private void publishBurst(GroupRuntime group, FlowRuntime flow) {
         ConnectorPlugin connector = connectorByFlowId.get(flow.id);
         if (connector == null) {
             return;
@@ -948,9 +948,9 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             totalMessages.addAndGet(sent);
             messagesLastWindow.addAndGet(sent);
 
-            if ("file".equalsIgnoreCase(flow.technology) && lastPayload != null) {
-                String preview = lastPayload.length() > 140 ? lastPayload.substring(0, 140) + "..." : lastPayload;
-                sendLogToAll("debug", flow.id, "File output -> " + preview);
+            if (lastPayload != null) {
+                String preview = lastPayload.length() > 250 ? lastPayload.substring(0, 250) + "..." : lastPayload;
+                sendLogToAll("data", flow.id, "[" + group.name + " - " + flow.name + "] ==> " + preview);
             }
 
             broadcastFlowUpdate(flow);

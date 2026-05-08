@@ -61,7 +61,7 @@ export interface Selection {
 export interface LogEntry {
   id: string;
   timestamp: string;
-  level: 'info' | 'warn' | 'error' | 'debug';
+  level: 'info' | 'warn' | 'error' | 'debug' | 'data';
   source: string;
   message: string;
   commandId?: string;

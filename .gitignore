@@ -65,3 +65,4 @@ matriz_compatibilidad
 # Local-only execution/testing guide
 LOCAL_RUN_TESTING.md
 /core/SMOKE_EVIDENCE.txt
+docs/
