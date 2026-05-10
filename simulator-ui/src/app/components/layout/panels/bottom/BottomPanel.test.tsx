@@ -66,7 +66,7 @@ describe('BottomPanel', () => {
           {
             id: 'l2',
             timestamp: '14:32:02',
-            level: 'debug',
+            level: 'data',
             source: 'f-file',
             message: 'File output -> {"value":1}',
           },
@@ -95,7 +95,7 @@ describe('BottomPanel', () => {
     expect(screen.getByText('RabbitMQ Connector@1.1.0:healthy')).toBeInTheDocument()
   })
 
-  it('filters only file logs when toggled', () => {
+  it('filters only data logs when toggled', () => {
     render(
       <BottomPanel
         tab="logs"
@@ -105,7 +105,7 @@ describe('BottomPanel', () => {
     )
 
     expect(screen.getAllByText('RabbitMQ Connector@1.1.0:healthy').length).toBeGreaterThan(0)
-    fireEvent.click(screen.getAllByText('only file')[0])
+    fireEvent.click(screen.getAllByText('only data')[0])
     expect(screen.queryAllByText('RabbitMQ Connector@1.1.0:healthy')).toHaveLength(0)
     expect(screen.getByText('File output -> {"value":1}')).toBeInTheDocument()
   })
