@@ -236,6 +236,12 @@ public class FlowEngineImpl implements IFlowEngine, ILifecycleListener {
                     continue;
                 }
 
+                // Check if flow is enabled
+                if (!flow.isEnabled()) {
+                    Thread.sleep(100);
+                    continue;
+                }
+
                 // Generate events from all variables in the flow
                 List<DataEvent> events = flow.generateEvents();
 
