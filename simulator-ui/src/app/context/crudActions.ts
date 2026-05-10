@@ -112,6 +112,7 @@ export async function createGroup(
       threads: 1,
       outputMode: 'serial',
       expanded: true,
+      enabled: true,
       flows: [],
     };
 
@@ -131,6 +132,7 @@ export async function updateGroupConfig(
   ctx: CRUDActionContext,
   groupId: string,
   config: Partial<Omit<Group, 'id' | 'flows'>>,
+  groupName?: string,
 ): Promise<void> {
   if (!groupId?.trim()) {
     throwValidationError('groupId', 'is required');
@@ -148,6 +150,19 @@ export async function updateGroupConfig(
       type: 'UPDATE_GROUP',
       payload: { id: groupId, ...config },
     });
+
+    if (config.enabled !== undefined) {
+      ctx.dispatch({
+        type: 'ADD_LOG',
+        payload: {
+          id: `group_enabled_${Date.now()}`,
+          timestamp: new Date().toLocaleTimeString('en-GB', { hour12: false }),
+          level: 'info',
+          source: 'GROUPS',
+          message: `Group '${groupName || groupId}' ${config.enabled ? 'unblocked' : 'blocked'}`,
+        },
+      });
+    }
   } catch (error) {
     ctx.reportError('GROUPS', `updateGroupConfig(${groupId})`, error);
     throw extractCommandError(error);
@@ -243,6 +258,7 @@ export async function createFlow(
       topic: topic?.trim() || '',
       host: host.trim(),
       port,
+      enabled: true,
     };
 
     return newFlow;
@@ -285,6 +301,19 @@ export async function updateFlowConfig(
         message: `Flow '${flowName || flowId}' configuration updated`,
       },
     });
+
+    if (config.enabled !== undefined) {
+      ctx.dispatch({
+        type: 'ADD_LOG',
+        payload: {
+          id: `flow_enabled_${Date.now()}`,
+          timestamp: new Date().toLocaleTimeString('en-GB', { hour12: false }),
+          level: 'info',
+          source: 'FLOWS',
+          message: `Flow '${flowName || flowId}' ${config.enabled ? 'unblocked' : 'blocked'}`,
+        },
+      });
+    }
   } catch (error) {
     ctx.reportError('FLOWS', `updateFlowConfig(${flowId})`, error);
     throw extractCommandError(error);

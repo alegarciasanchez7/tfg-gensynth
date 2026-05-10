@@ -30,6 +30,7 @@ public class Flow {
 
     private final String flowId;
     private final Map<String, IVariable> variables;
+    private volatile boolean enabled = true;
     private final long createdAt;
 
     /**
@@ -122,6 +123,14 @@ public class Flow {
      */
     public String getFlowId() {
         return flowId;
+    }
+
+    public boolean isEnabled() {
+        return enabled;
+    }
+
+    public void setEnabled(boolean enabled) {
+        this.enabled = enabled;
     }
 
     /**
