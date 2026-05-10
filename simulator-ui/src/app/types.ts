@@ -27,6 +27,7 @@ export interface Flow {
   format?: 'json' | 'xml' | 'csv' | 'plain';
   connectorConfig?: Record<string, any>;
   connectorVersion?: string;
+  enabled: boolean;
 }
 
 export interface Group {
@@ -39,6 +40,7 @@ export interface Group {
   outputMode: string;
   flows: Flow[];
   expanded: boolean;
+  enabled: boolean;
 }
 
 export interface Variable {

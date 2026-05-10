@@ -191,6 +191,7 @@ function mapGroupsFromCore(groups: GroupState[], previousGroups: Group[] = []): 
     description: group.description,
     threads: group.threads,
     outputMode: group.outputMode,
+    enabled: group.enabled,
     expanded: previousGroups.find((existing) => existing.id === group.id)?.expanded ?? false,
     flows: group.flows.map((flow) => ({
       id: flow.id,
@@ -209,6 +210,7 @@ function mapGroupsFromCore(groups: GroupState[], previousGroups: Group[] = []): 
       template: flow.template,
       format: flow.format,
       connectorConfig: flow.connectorConfig,
+      enabled: flow.enabled,
     })),
   }));
 }
@@ -614,7 +616,7 @@ interface AppContextValue {
     // Groups: CRUD
     createGroup: (name: string, description?: string) => Promise<Group>;
     deleteGroup: (groupId: string) => Promise<void>;
-    updateGroupConfig: (groupId: string, config: Partial<Omit<Group, 'id' | 'flows'>>) => Promise<void>;
+    updateGroupConfig: (groupId: string, config: Partial<Omit<Group, 'id' | 'flows'>>, name?: string) => Promise<void>;
     
     // Flows: CRUD
     createFlow: (
@@ -1281,7 +1283,7 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
   }, [crudContext, state.groups, reportCommandError]);
 
   const updateGroupConfigAction = useCallback(
-    async (groupId: string, config: Partial<Omit<Group, 'id' | 'flows'>>) => {
+    async (groupId: string, config: Partial<Omit<Group, 'id' | 'flows'>>, name?: string) => {
       const previousGroup = state.groups.find(g => g.id === groupId);
       if (!previousGroup) {
         throw new Error(`Group ${groupId} not found`);
@@ -1310,7 +1312,7 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
                 payload: rollbackPayload as any,
               });
             },
-            send: () => CRUDActions.updateGroupConfig(crudContext, groupId, config),
+            send: () => CRUDActions.updateGroupConfig(crudContext, groupId, config, name),
           }
         );
       } catch (error) {

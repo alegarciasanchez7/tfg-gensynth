@@ -43,11 +43,13 @@ interface BottomPanelProps {
 }
 
 function LogsView({ entries, connectorHealthSummary, groups }: { entries: Array<{ id: string; timestamp: string; level: 'info' | 'warn' | 'error' | 'debug' | 'data'; source: string; message: string }>; connectorHealthSummary: ConnectorHealthSummary[]; groups: Group[] }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const [filter, setFilter] = useState<string>('all');
   const [groupFilter, setGroupFilter] = useState<string>('all');
   const [flowFilter, setFlowFilter] = useState<string>('all');
   const [onlyFile, setOnlyFile] = useState<boolean>(false);
+  const [atBottom, setAtBottom] = useState(true);
 
   const allFlows = groups.flatMap((g) => g.flows.map((f) => ({
     id: f.id,
@@ -95,11 +97,24 @@ function LogsView({ entries, connectorHealthSummary, groups }: { entries: Array<
     setFlowFilter('all');
   }, [groupFilter]);
 
-  useEffect(() => {
-    if (endRef.current) {
-      endRef.current.scrollIntoView({ behavior: 'smooth' });
+  const handleScroll = () => {
+    if (scrollRef.current) {
+      const container = scrollRef.current;
+      const nearBottom = container.scrollHeight - container.scrollTop <= container.clientHeight + 80;
+      setAtBottom(nearBottom);
     }
-  }, [filtered]);
+  };
+
+  useEffect(() => {
+    if (atBottom && endRef.current) {
+      endRef.current.scrollIntoView?.({ behavior: 'smooth' });
+    }
+  }, [filtered, atBottom]);
+
+  const scrollToBottom = () => {
+    endRef.current?.scrollIntoView?.({ behavior: 'smooth' });
+    setAtBottom(true);
+  };
 
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
@@ -192,29 +207,56 @@ function LogsView({ entries, connectorHealthSummary, groups }: { entries: Array<
       </div>
 
       {/* Log entries */}
-      <div className="flex-1 overflow-y-auto px-3 py-1 font-mono">
-        {filtered.map(entry => {
-          const cfg = levelCfg[entry.level];
-          return (
-            <div key={entry.id} className="flex items-start gap-2 py-0.5 group hover:bg-[var(--c-bg4)] px-1 rounded">
-              <span className="text-[10px] text-[var(--c-tx5)] shrink-0 pt-px" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-                {entry.timestamp}
-              </span>
-              <span className={`flex items-center gap-0.5 text-[10px] shrink-0 pt-px ${cfg.color}`}
-                style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-                {levelIcon[entry.level]}
-                {cfg.label}
-              </span>
-              <span className="text-[10px] text-[var(--c-tx4)] shrink-0 pt-px" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-                [{entry.source}]
-              </span>
-              <span className="text-[11px] text-[var(--c-tx3)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-                {entry.message}
-              </span>
-            </div>
-          );
-        })}
-        <div ref={endRef} />
+      <div className="flex-1 relative overflow-hidden flex flex-col">
+        <div 
+          ref={scrollRef}
+          onScroll={handleScroll}
+          className="flex-1 overflow-y-auto px-3 py-1 font-mono"
+        >
+          {(() => {
+            const sourceNameMap = new Map<string, string>();
+            groups.forEach(g => {
+              sourceNameMap.set(g.id, g.name);
+              g.flows.forEach(f => sourceNameMap.set(f.id, f.name));
+            });
+
+            return filtered.map(entry => {
+              const cfg = levelCfg[entry.level];
+              const sourceDisplay = sourceNameMap.get(entry.source) || entry.source;
+              return (
+                <div key={entry.id} className="flex items-start gap-2 py-0.5 group hover:bg-[var(--c-bg4)] px-1 rounded">
+                  <span className="text-[10px] text-[var(--c-tx5)] shrink-0 pt-px" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+                    {entry.timestamp}
+                  </span>
+                  <span className={`flex items-center gap-0.5 text-[10px] shrink-0 pt-px ${cfg.color}`}
+                    style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+                    {levelIcon[entry.level]}
+                    {cfg.label}
+                  </span>
+                  <span className="text-[10px] text-[var(--c-tx4)] shrink-0 pt-px" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+                    [{sourceDisplay}]
+                  </span>
+                  <span className="text-[11px] text-[var(--c-tx3)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+                    {entry.message}
+                  </span>
+                </div>
+              );
+            });
+          })()}
+          <div ref={endRef} />
+        </div>
+
+        {/* Scroll bottom button */}
+        {!atBottom && (
+          <button
+            onClick={scrollToBottom}
+            className="absolute bottom-4 right-6 flex items-center gap-2 px-3 py-1.5 bg-cyan-500 text-white rounded-full shadow-lg hover:bg-cyan-600 transition-all text-[10px] animate-in fade-in slide-in-from-bottom-2 duration-300"
+            style={{ fontFamily: 'JetBrains Mono, monospace' }}
+          >
+            <ChevronDown size={12} />
+            <span>Latest logs</span>
+          </button>
+        )}
       </div>
     </div>
   );
