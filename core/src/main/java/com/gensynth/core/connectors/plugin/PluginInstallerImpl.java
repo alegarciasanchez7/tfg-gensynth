@@ -53,10 +53,17 @@ public class PluginInstallerImpl implements IPluginInstaller {
 
     @Override
     public PluginValidationResult validate(byte[] jarBytes, String pluginName, String pluginVersion) {
-        Set<String> existingKeys = collectExistingPluginKeys();
-        Path sharedLibDir = pluginsDirectory.resolve("../lib/shared").normalize();
-        PluginSandboxValidator validator = new PluginSandboxValidator(existingKeys, sharedLibDir);
-        return validator.validate(jarBytes, pluginName, pluginVersion);
+        try {
+            Set<String> existingKeys = collectExistingPluginKeys();
+            Path sharedLibDir = pluginsDirectory.resolve("../lib/shared").normalize();
+            PluginSandboxValidator validator = new PluginSandboxValidator(existingKeys, sharedLibDir);
+            return validator.validate(jarBytes, pluginName, pluginVersion);
+        } catch (Exception e) {
+            logger.error("Unexpected error during plugin validation", e);
+            return new PluginValidationResult.Builder()
+                    .log(PluginValidationResult.ValidationLevel.ERROR, "Unexpected validation error: " + e.getMessage())
+                    .build();
+        }
     }
 
     @Override
@@ -64,28 +71,82 @@ public class PluginInstallerImpl implements IPluginInstaller {
         // Step 1: Validate first
         PluginValidationResult validation = validate(jarBytes, pluginName, pluginVersion);
         if (!validation.isValid()) {
-            String errorSummary = String.join("; ", validation.getErrors());
-            return PluginInstallResult.failure("Plugin validation failed: " + errorSummary);
+            return PluginInstallResult.failure("Plugin validation failed. See logs for details.");
         }
 
-        // Step 2: Build file name from validated descriptor metadata
-        String safeId = sanitizeFileName(validation.getPluginId());
-        String safeVersion = sanitizeFileName(validation.getPluginVersion());
-        String jarFileName = safeId + "-" + safeVersion + ".jar";
+        String pluginId = validation.getPluginId();
+        String newVersion = validation.getPluginVersion();
+
+        // Step 2: Handle Versioning (Backup existing versions)
+        handleVersioning(pluginId, newVersion);
+
+        // Step 3: Build target path
+        String jarFileName = sanitizeFileName(pluginId) + "-" + sanitizeFileName(newVersion) + ".jar";
         Path targetPath = pluginsDirectory.resolve(jarFileName);
 
-        // Step 3: Copy JAR to plugins directory
+        // Step 4: Create Rollback Marker
+        createRollbackMarker(targetPath, pluginId);
+
+        // Step 5: Copy JAR to plugins directory
         try {
             Files.write(targetPath, jarBytes);
-            logger.info("Plugin installed: {} -> {}", validation.getPluginId(), targetPath);
+            logger.info("Plugin installed: {}@{} -> {}", pluginId, newVersion, targetPath);
             return PluginInstallResult.success(
-                    "Plugin '" + validation.getDisplayName() + "' installed successfully. Restart required.",
-                    validation.getPluginId()
+                    "Plugin '" + validation.getDisplayName() + "' installed successfully. Restarting...",
+                    pluginId
             );
         } catch (IOException e) {
             logger.error("Failed to write plugin JAR to {}", targetPath, e);
-            return PluginInstallResult.failure("Failed to install plugin. Please try again.");
+            clearRollbackMarker();
+            return PluginInstallResult.failure("Failed to install plugin: " + e.getMessage());
         }
+    }
+
+    /**
+     * Finds existing versions of the same plugin and moves them to a backup folder.
+     */
+    private void handleVersioning(String pluginId, String newVersion) {
+        Path backupDir = pluginsDirectory.resolve("backup");
+        try {
+            if (!Files.exists(backupDir)) {
+                Files.createDirectories(backupDir);
+            }
+
+            try (DirectoryStream<Path> stream = Files.newDirectoryStream(pluginsDirectory, "*.jar")) {
+                for (Path jarPath : stream) {
+                    InstalledPluginInfo info = loadPluginInfoFromJar(jarPath);
+                    if (info != null && info.getPluginId().equals(pluginId)) {
+                        // It's the same plugin. Move it to backup.
+                        Path backupPath = backupDir.resolve(jarPath.getFileName() + ".bak_" + System.currentTimeMillis());
+                        Files.move(jarPath, backupPath);
+                        logger.info("Moved existing version of {} ({}) to backup: {}", 
+                                pluginId, info.getPluginVersion(), backupPath.getFileName());
+                    }
+                }
+            }
+        } catch (IOException e) {
+            logger.warn("Failed to manage plugin versioning/backup: {}", e.getMessage());
+        }
+    }
+
+    private void createRollbackMarker(Path jarPath, String pluginId) {
+        Path markerPath = pluginsDirectory.resolve(".pending_install.json");
+        String json = String.format("{\"path\": \"%s\", \"pluginId\": \"%s\", \"timestamp\": %d}", 
+                jarPath.toAbsolutePath().toString().replace("\\", "\\\\"), 
+                pluginId, 
+                System.currentTimeMillis());
+        try {
+            Files.writeString(markerPath, json);
+            logger.debug("Created rollback marker: {}", markerPath);
+        } catch (IOException e) {
+            logger.error("Failed to create rollback marker", e);
+        }
+    }
+
+    private void clearRollbackMarker() {
+        try {
+            Files.deleteIfExists(pluginsDirectory.resolve(".pending_install.json"));
+        } catch (IOException ignored) {}
     }
 
     @Override

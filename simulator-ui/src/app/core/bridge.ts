@@ -27,6 +27,7 @@ import type {
   PluginValidationResultPayload,
   PluginInstallResultPayload,
   RestartRequiredPayload,
+  RollbackReportPayload,
 } from './types';
 
 // ─────────────────────────────────────────────────────────────
@@ -48,7 +49,7 @@ const DEFAULT_CONFIG: BridgeConfig = {
   mode: 'auto',
   websocketUrl: import.meta.env.VITE_WEBSOCKET_URL || 'ws://localhost:8765',
   reconnectInterval: 3000,
-  maxReconnectAttempts: 100,
+  maxReconnectAttempts: 10,
   commandTimeoutMs: 30000,
   maxCommandRetries: 2,
   retryBackoffMs: 500,
@@ -112,6 +113,7 @@ interface EventMap {
   'plugin-validation-result': PluginValidationResultPayload;
   'plugin-install-result': PluginInstallResultPayload;
   'restart-required': RestartRequiredPayload;
+  'rollback-report': RollbackReportPayload;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -528,6 +530,9 @@ class CoreBridge {
           break;
         case 'RESTART_REQUIRED':
           this.emit('restart-required', message.payload as RestartRequiredPayload);
+          break;
+        case 'ROLLBACK_REPORT':
+          this.emit('rollback-report', message.payload as RollbackReportPayload);
           break;
       }
 

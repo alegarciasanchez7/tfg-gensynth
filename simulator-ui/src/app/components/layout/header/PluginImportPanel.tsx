@@ -53,8 +53,9 @@ export function PluginImportPanel({ onClose }: PluginImportPanelProps) {
       setValidationResult({
         status: 'error',
         valid: false,
-        errors: ['Only .jar files are accepted.'],
-        warnings: [],
+        logs: [
+          { level: 'ERROR', message: 'Only .jar files are accepted.', context: 'Validation' }
+        ],
       });
       return;
     }
@@ -70,15 +71,10 @@ export function PluginImportPanel({ onClose }: PluginImportPanelProps) {
       const name = pluginName.trim() || file.name.replace('.jar', '');
       const version = pluginVersion.trim() || '1.0.0';
 
-      console.log('[PluginImportPanel] Validation request sent for:', name);
       const response = await CoreCommands.validatePlugin(base64, name, version);
-      console.log('[PluginImportPanel] Received validation response:', response);
 
       setValidationResult(response);
-      
-      // Be more robust with boolean check
-      const isValid = response.valid === true || (response.valid as unknown) === 'true';
-      setValidationState(isValid ? 'success' : 'error');
+      setValidationState(response.valid ? 'success' : 'error');
 
       if (response.displayName && !pluginName.trim()) {
         setPluginName(response.displayName);
@@ -91,8 +87,7 @@ export function PluginImportPanel({ onClose }: PluginImportPanelProps) {
       setValidationResult({
         status: 'error',
         valid: false,
-        errors: ['Validation request failed. Is the backend running?'],
-        warnings: [],
+        logs: [{ level: 'ERROR', message: 'Validation request failed. Is the backend running?' }],
       });
     }
   }, [pluginName, pluginVersion, readFileAsBase64]);
@@ -116,7 +111,7 @@ export function PluginImportPanel({ onClose }: PluginImportPanelProps) {
     <div
         ref={ref}
         className="absolute left-0 top-full mt-2 z-50 bg-[var(--c-bg2)] border border-[var(--c-br1)] rounded-lg shadow-2xl shadow-black/40 py-4 px-5 animate-in fade-in slide-in-from-top-2 duration-200"
-        style={{ fontFamily: 'JetBrains Mono, monospace', width: 380 }}
+        style={{ fontFamily: 'JetBrains Mono, monospace', width: 420 }}
       >
         {/* Header */}
         <div className="flex items-center justify-between mb-5">
@@ -215,52 +210,37 @@ export function PluginImportPanel({ onClose }: PluginImportPanelProps) {
           )}
         </div>
 
-        {/* Validation Feedback & Results */}
-        {validationState === 'success' && validationResult && (
+        {/* Validation Logs (Terminal Style) */}
+        {validationResult && (
           <div className="mt-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-            <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-3 text-[10px]">
-              <div className="grid grid-cols-2 gap-y-1.5">
-                <span className="text-[var(--c-tx4)]">Plugin ID:</span>
-                <span className="text-emerald-300 text-right">{validationResult.pluginId}</span>
-                <span className="text-[var(--c-tx4)]">Core Version:</span>
-                <span className="text-emerald-300 text-right">{validationResult.coreApiVersion}</span>
-                <span className="text-[var(--c-tx4)]">Security:</span>
-                <span className="text-emerald-300 text-right flex items-center justify-end gap-1">
-                  <Check size={10} /> Passed
-                </span>
-              </div>
-              {validationResult.warnings && validationResult.warnings.length > 0 && (
-                <div className="mt-2 pt-2 border-t border-emerald-500/10 flex items-start gap-2 text-amber-400/80 italic text-[9px]">
-                  <AlertTriangle size={10} className="shrink-0 mt-0.5" />
-                  <span>{(validationResult.warnings || []).join('. ')}</span>
-                </div>
-              )}
+            <div className="flex items-center gap-2 mb-2">
+              <ShieldCheck size={12} className={validationState === 'success' ? 'text-emerald-400' : 'text-red-400'} />
+              <span className="text-[10px] text-[var(--c-tx4)] font-bold uppercase tracking-wider">Validation Logs</span>
             </div>
-          </div>
-        )}
-
-        {validationState === 'error' && validationResult && (
-          <div className="mt-4 animate-in shake-1 duration-300">
-            <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3">
-              <div className="flex items-center gap-2 text-[10px] text-red-400 font-bold mb-2">
-                <X size={14} />
-                <span>Plugin Rejected</span>
-              </div>
-              <ul className="text-[9px] text-red-300/80 space-y-1 leading-relaxed">
-                {(validationResult.errors || []).length > 0 ? (
-                  (validationResult.errors || []).map((err, i) => (
-                    <li key={i} className="flex items-start gap-1.5">
-                      <span className="mt-1 w-1 h-1 rounded-full bg-red-400 shrink-0" />
-                      {err}
-                    </li>
-                  ))
-                ) : (
-                  <li className="flex items-start gap-1.5 text-red-300/60">
-                    <span className="mt-1 w-1 h-1 rounded-full bg-red-500/40 shrink-0" />
-                    Validation failed without specific error messages. Check core logs.
-                  </li>
-                )}
-              </ul>
+            <div className="bg-black/60 border border-[var(--c-br1)] rounded-lg p-2.5 font-mono text-[10px] max-h-40 overflow-y-auto custom-scrollbar shadow-inner">
+              {validationResult.logs && validationResult.logs.length > 0 ? (
+                validationResult.logs.map((log, i) => (
+                  <div key={i} className="mb-2 last:mb-0 border-l border-white/5 pl-2">
+                    <div className="flex items-center gap-2">
+                      <span className={
+                        log.level === 'ERROR' ? 'text-red-400' :
+                        log.level === 'WARN' ? 'text-amber-400' :
+                        'text-cyan-400'
+                      }>
+                        [{log.level}]
+                      </span>
+                      <span className="text-[var(--c-tx3)]">{log.message}</span>
+                    </div>
+                    {log.context && (
+                      <div className="text-[9px] text-[var(--c-tx5)] italic ml-6 mt-0.5 break-all">
+                        ↳ {log.context}
+                      </div>
+                    )}
+                  </div>
+                ))
+              ) : (
+                <div className="text-[var(--c-tx5)] italic">No detailed logs available.</div>
+              )}
             </div>
           </div>
         )}

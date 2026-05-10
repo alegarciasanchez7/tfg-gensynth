@@ -5,8 +5,6 @@ import org.junit.Before;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Set;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
@@ -30,27 +28,27 @@ public class PluginSandboxValidatorTest {
 
     @Test
     public void testNullBytesReturnError() {
-        List<String> errors = new ArrayList<>();
-        boolean result = validator.isValidJar(null, errors);
+        PluginValidationResult.Builder builder = new PluginValidationResult.Builder();
+        boolean result = validator.isValidJar(null, builder);
 
         assertFalse(result);
-        assertFalse(errors.isEmpty());
+        assertFalse(builder.build().getErrors().isEmpty());
     }
 
     @Test
     public void testEmptyBytesReturnError() {
-        List<String> errors = new ArrayList<>();
-        boolean result = validator.isValidJar(new byte[0], errors);
+        PluginValidationResult.Builder builder = new PluginValidationResult.Builder();
+        boolean result = validator.isValidJar(new byte[0], builder);
 
         assertFalse(result);
-        assertFalse(errors.isEmpty());
+        assertFalse(builder.build().getErrors().isEmpty());
     }
 
     @Test
     public void testRandomBytesAreNotValidJar() {
         byte[] randomBytes = {0x50, 0x4B, 0x00, 0x00, 0x01, 0x02, 0x03};
-        List<String> errors = new ArrayList<>();
-        boolean result = validator.isValidJar(randomBytes, errors);
+        PluginValidationResult.Builder builder = new PluginValidationResult.Builder();
+        boolean result = validator.isValidJar(randomBytes, builder);
 
         // Random bytes should fail validation (not a real JAR)
         assertFalse(result);
@@ -59,31 +57,31 @@ public class PluginSandboxValidatorTest {
     @Test
     public void testValidEmptyJar() throws IOException {
         byte[] jar = createMinimalJar();
-        List<String> errors = new ArrayList<>();
-        boolean result = validator.isValidJar(jar, errors);
+        PluginValidationResult.Builder builder = new PluginValidationResult.Builder();
+        boolean result = validator.isValidJar(jar, builder);
 
         assertTrue(result);
-        assertTrue(errors.isEmpty());
+        assertTrue(builder.build().getErrors().isEmpty());
     }
 
     @Test
     public void testMissingSpiFile() throws IOException {
         byte[] jar = createMinimalJar();
-        List<String> errors = new ArrayList<>();
-        boolean result = validator.containsSpiServiceFile(jar, errors);
+        PluginValidationResult.Builder builder = new PluginValidationResult.Builder();
+        boolean result = validator.containsSpiServiceFile(jar, builder);
 
         assertFalse(result);
-        assertFalse(errors.isEmpty());
+        assertFalse(builder.build().getErrors().isEmpty());
     }
 
     @Test
     public void testPresentSpiFile() throws IOException {
         byte[] jar = createJarWithSpiFile();
-        List<String> errors = new ArrayList<>();
-        boolean result = validator.containsSpiServiceFile(jar, errors);
+        PluginValidationResult.Builder builder = new PluginValidationResult.Builder();
+        boolean result = validator.containsSpiServiceFile(jar, builder);
 
         assertTrue(result);
-        assertTrue(errors.isEmpty());
+        assertTrue(builder.build().getErrors().isEmpty());
     }
 
     @Test
@@ -113,49 +111,49 @@ public class PluginSandboxValidatorTest {
 
     @Test
     public void testApiVersionCompatibleSameMajor() {
-        List<String> errors = new ArrayList<>();
-        boolean result = validator.isApiVersionCompatible("1.x", errors);
+        PluginValidationResult.Builder builder = new PluginValidationResult.Builder();
+        boolean result = validator.isApiVersionCompatible("1.x", builder);
 
         assertTrue(result);
-        assertTrue(errors.isEmpty());
+        assertTrue(builder.build().getErrors().isEmpty());
     }
 
     @Test
     public void testApiVersionIncompatibleDifferentMajor() {
-        List<String> errors = new ArrayList<>();
-        boolean result = validator.isApiVersionCompatible("2.0", errors);
+        PluginValidationResult.Builder builder = new PluginValidationResult.Builder();
+        boolean result = validator.isApiVersionCompatible("2.0", builder);
 
         assertFalse(result);
-        assertFalse(errors.isEmpty());
+        assertFalse(builder.build().getErrors().isEmpty());
     }
 
     @Test
     public void testApiVersionNullFails() {
-        List<String> errors = new ArrayList<>();
-        boolean result = validator.isApiVersionCompatible(null, errors);
+        PluginValidationResult.Builder builder = new PluginValidationResult.Builder();
+        boolean result = validator.isApiVersionCompatible(null, builder);
 
         assertFalse(result);
-        assertFalse(errors.isEmpty());
+        assertFalse(builder.build().getErrors().isEmpty());
     }
 
     @Test
     public void testApiVersionBlankFails() {
-        List<String> errors = new ArrayList<>();
-        boolean result = validator.isApiVersionCompatible("", errors);
+        PluginValidationResult.Builder builder = new PluginValidationResult.Builder();
+        boolean result = validator.isApiVersionCompatible("", builder);
 
         assertFalse(result);
-        assertFalse(errors.isEmpty());
+        assertFalse(builder.build().getErrors().isEmpty());
     }
 
     @Test
     public void testBytecodeCheckPassesForCleanJar() throws IOException {
         byte[] jar = createMinimalJar();
-        List<String> errors = new ArrayList<>();
-        boolean result = validator.passesBytecodeCheck(jar, errors);
+        PluginValidationResult.Builder builder = new PluginValidationResult.Builder();
+        boolean result = validator.passesBytecodeCheck(jar, builder);
 
         // Minimal JAR with no classes should pass
         assertTrue(result);
-        assertTrue(errors.isEmpty());
+        assertTrue(builder.build().getErrors().isEmpty());
     }
 
     // ─── Helper methods ─────────────────────────────────────────

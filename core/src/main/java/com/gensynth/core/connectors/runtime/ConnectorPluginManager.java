@@ -134,11 +134,11 @@ public class ConnectorPluginManager {
                 }
             }
 
-            URLClassLoader pluginClassLoader = new URLClassLoader(
+            PluginClassLoader pluginClassLoader = new PluginClassLoader(
                     urls.toArray(new URL[0]),
                     ConnectorPluginProvider.class.getClassLoader()
             );
-
+ 
             ServiceLoader<ConnectorPluginProvider> loader =
                     ServiceLoader.load(ConnectorPluginProvider.class, pluginClassLoader);
             registerProviders(loader, true, pluginClassLoader);
