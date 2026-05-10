@@ -95,7 +95,7 @@ describe('BottomPanel', () => {
     expect(screen.getByText('RabbitMQ Connector@1.1.0:healthy')).toBeInTheDocument()
   })
 
-  it('filters only file logs when toggled', () => {
+  it('filters only data logs when toggled', () => {
     render(
       <BottomPanel
         tab="logs"

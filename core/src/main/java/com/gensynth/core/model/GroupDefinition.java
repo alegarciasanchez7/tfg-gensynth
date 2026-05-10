@@ -111,6 +111,10 @@ public class GroupDefinition {
     public void setEnabled(boolean enabled) {
         this.enabled = enabled;
         this.updatedAt = Instant.now();
+        // Propagate to all flows
+        for (FlowDefinition flow : flows.values()) {
+            flow.setEnabled(enabled);
+        }
     }
 
     public void setThreads(int threads) {
