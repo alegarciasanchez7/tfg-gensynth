@@ -1,6 +1,5 @@
 package com.gensynth.core.connectors.runtime;
 
-import com.gensynth.core.connectors.rabbitmq.RabbitMqConnectorPluginProvider;
 import com.gensynth.core.connectors.spi.ConnectorPlugin;
 import com.gensynth.core.connectors.spi.ConnectorPluginDescriptor;
 import com.gensynth.core.connectors.spi.ConnectorPluginProvider;
@@ -18,22 +17,29 @@ import static org.junit.Assert.assertTrue;
 
 public class ConnectorPluginManagerTest {
 
-    @Test(expected = IllegalStateException.class)
-    public void testDuplicateProviderRegistrationThrows() {
-        ConnectorPluginProvider providerA = new RabbitMqConnectorPluginProvider();
-        ConnectorPluginProvider providerB = new RabbitMqConnectorPluginProvider();
+    @Test
+    public void testDuplicateProviderRegistrationSkipsDuplicate() {
+        ConnectorPluginProvider providerA = new FakeProvider("test", "1.0.0");
+        ConnectorPluginProvider providerB = new FakeProvider("test", "1.0.0");
 
-        new ConnectorPluginManager(Arrays.asList(providerA, providerB));
+        // Should not throw — duplicates are logged and skipped
+        ConnectorPluginManager manager = new ConnectorPluginManager(Arrays.asList(providerA, providerB));
+
+        // Only one registration should exist
+        long count = manager.listDescriptors().stream()
+                .filter(d -> d.getPluginId().equals(providerA.descriptor().getPluginId()))
+                .count();
+        assertEquals(1, count);
     }
 
     @Test
     public void testListDescriptorsSorted() {
         ConnectorPluginManager manager = new ConnectorPluginManager(Arrays.asList(
-            new RabbitMqConnectorPluginProvider()
+            new FakeProvider("test", "1.0.0")
         ));
 
         ConnectorPluginDescriptor first = manager.listDescriptors().get(0);
-        assertTrue(first.getPluginId().compareTo("rabbitmq") <= 0);
+        assertTrue(first.getPluginId().compareTo("test") <= 0);
     }
 
     @Test

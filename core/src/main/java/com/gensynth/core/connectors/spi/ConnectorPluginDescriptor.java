@@ -15,6 +15,7 @@ public final class ConnectorPluginDescriptor {
     private final String pluginVersion;
     private final String coreApiVersion;
     private final Map<String, Object> configSchema;
+    private boolean external;
 
     public ConnectorPluginDescriptor(
         String pluginId,
@@ -50,6 +51,14 @@ public final class ConnectorPluginDescriptor {
 
     public Map<String, Object> getConfigSchema() {
         return configSchema;
+    }
+
+    public boolean isExternal() {
+        return external;
+    }
+
+    public void setExternal(boolean external) {
+        this.external = external;
     }
 
     public String key() {

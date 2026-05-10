@@ -1,8 +1,13 @@
 package com.gensynth.core.ws;
 
+import com.fasterxml.jackson.core.StreamReadConstraints;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.gensynth.core.api.IPluginInstaller;
+import com.gensynth.core.connectors.plugin.PluginInstallerImpl;
+import com.gensynth.core.connectors.plugin.PluginInstallResult;
+import com.gensynth.core.connectors.plugin.PluginValidationResult;
 import com.gensynth.core.connectors.runtime.ConnectorCatalogService;
 import com.gensynth.core.connectors.spi.ConnectorPlugin;
 import com.gensynth.core.connectors.spi.ConnectorPluginDescriptor;
@@ -18,8 +23,11 @@ import org.java_websocket.server.WebSocketServer;
 
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -62,14 +70,27 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         "GET_CONNECTOR_CATALOG",
         "GET_LATEST_CONNECTOR",
         "SUBSCRIBE_METRICS",
-        "UNSUBSCRIBE_METRICS"
+        "UNSUBSCRIBE_METRICS",
+        "VALIDATE_PLUGIN",
+        "INSTALL_PLUGIN",
+        "UNINSTALL_PLUGIN"
     );
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper = createConfiguredMapper();
+
+    private static ObjectMapper createConfiguredMapper() {
+        ObjectMapper mapper = new ObjectMapper();
+        // Increase the string length limit to allow uploading large plugin JARs (100MB)
+        mapper.getFactory().setStreamReadConstraints(
+            StreamReadConstraints.builder().maxStringLength(100_000_000).build()
+        );
+        return mapper;
+    }
     private final Object stateLock = new Object();
 
     private final ConnectorCatalogService connectorCatalogService;
     private final StateRepository stateRepository;
+    private final IPluginInstaller pluginInstaller;
 
     private final Map<String, GroupRuntime> groupsById = new LinkedHashMap<>();
     private final Map<String, Variable> variablesById = new ConcurrentHashMap<>();
@@ -94,28 +115,46 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
     private String currentOutputDir = null;
 
     public UiBridgeWebSocketServer(String host, int port) {
-        this(new InetSocketAddress(host, port), new ConnectorCatalogService(), new JsonStateRepositoryImpl());
+        this(host, port, Paths.get("plugins"));
+    }
+
+    /**
+     * Constructor with external plugins directory support.
+     *
+     * @param host             WebSocket host
+     * @param port             WebSocket port
+     * @param pluginsDirectory path to the directory containing external plugin JARs
+     */
+    public UiBridgeWebSocketServer(String host, int port, Path pluginsDirectory) {
+        this(new InetSocketAddress(host, port),
+             new ConnectorCatalogService(pluginsDirectory),
+             new JsonStateRepositoryImpl(),
+             new PluginInstallerImpl(pluginsDirectory));
     }
 
     UiBridgeWebSocketServer(InetSocketAddress address, ConnectorCatalogService connectorCatalogService) {
-        this(address, connectorCatalogService, new JsonStateRepositoryImpl());
+        this(address, connectorCatalogService, new JsonStateRepositoryImpl(), new PluginInstallerImpl(Paths.get("plugins")));
     }
 
     UiBridgeWebSocketServer(
         InetSocketAddress address,
         ConnectorCatalogService connectorCatalogService,
-        StateRepository stateRepository
+        StateRepository stateRepository,
+        IPluginInstaller pluginInstaller
     ) {
         super(address);
         this.connectorCatalogService = connectorCatalogService;
         this.stateRepository = stateRepository;
+        this.pluginInstaller = pluginInstaller;
+        if (this.pluginInstaller instanceof PluginInstallerImpl) {
+            ((PluginInstallerImpl) this.pluginInstaller).setPluginManager(this.connectorCatalogService.getPluginManager());
+        }
         this.scheduler = Executors.newScheduledThreadPool(Math.max(4, Runtime.getRuntime().availableProcessors() * 2));
         initializeRuntime();
     }
 
     @Override
     public void onOpen(WebSocket conn, ClientHandshake handshake) {
-        sendLog(conn, "info", "WS", "Client connected");
         sendSystemStatus(conn, null);
         sendGroupsUpdate(conn);
     }
@@ -169,37 +208,37 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
     }
 
     private void createDefaultRuntime() {
-        GroupRuntime rabbitGroup = new GroupRuntime(
-            "g-rabbit",
-            "RabbitMQ Local",
+        GroupRuntime demoGroup = new GroupRuntime(
+            "g-demo",
+            "Demo Group (File Output)",
             "stopped",
-            "Flujo base para validacion E2E con RabbitMQ local",
+            "Base group for demonstration using local file output",
             1,
             "parallel",
             true
         );
 
-        rabbitGroup.flows.add(new FlowRuntime(
-            "f-rabbit",
-            "RabbitMQ Publisher",
-            "rabbitmq",
+        demoGroup.flows.add(new FlowRuntime(
+            "f-demo",
+            "Local File Publisher",
+            "file",
             "disconnected",
             0,
             0,
             false,
             null,
-            1000,
+            2000,
             1,
-            "gensynth.data",
-            "localhost",
-            5672,
+            "demo-events",
+            "local",
+            0,
             "{\"eventId\":\"{{uuid}}\",\"timestamp\":\"{{ts}}\",\"source\":\"gen-synth\",\"value\":{{n}}}",
             "json",
             true,
-            Map.of()
+            Map.of("outputDir", "./outputs")
         ));
 
-        groupsById.put(rabbitGroup.id, rabbitGroup);
+        groupsById.put(demoGroup.id, demoGroup);
     }
 
     private void persistState() {
@@ -428,6 +467,9 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                 case "CREATE_VARIABLE" -> handleCreateVariable(conn, commandId, payload);
                 case "DELETE_VARIABLE" -> handleDeleteVariable(conn, commandId, payload);
                 case "UPDATE_VARIABLE" -> handleUpdateVariable(conn, commandId, payload);
+                case "VALIDATE_PLUGIN" -> handleValidatePlugin(conn, commandId, payload);
+                case "INSTALL_PLUGIN" -> handleInstallPlugin(conn, commandId, payload);
+                case "UNINSTALL_PLUGIN" -> handleUninstallPlugin(conn, commandId, payload);
                 default -> sendError(conn, commandId, "UNSUPPORTED_COMMAND", "Unsupported command: " + type, Map.of(
                     "command", type
                 ));
@@ -878,6 +920,131 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         sendVariablesUpdate();
     }
 
+    // ============ Plugin Management Handlers ============
+
+    private void handleValidatePlugin(WebSocket conn, String commandId, JsonNode payload) {
+        String jarBase64 = requireTextField(conn, commandId, payload, "jarBase64", "INVALID_PAYLOAD", "VALIDATE_PLUGIN");
+        String pluginName = requireTextField(conn, commandId, payload, "pluginName", "INVALID_PAYLOAD", "VALIDATE_PLUGIN");
+        String pluginVersion = requireTextField(conn, commandId, payload, "pluginVersion", "INVALID_PAYLOAD", "VALIDATE_PLUGIN");
+        if (jarBase64 == null || pluginName == null || pluginVersion == null) {
+            return;
+        }
+
+        byte[] jarBytes;
+        try {
+            jarBytes = Base64.getDecoder().decode(jarBase64);
+        } catch (IllegalArgumentException e) {
+            sendError(conn, commandId, "INVALID_PAYLOAD", "Invalid Base64 encoding for JAR data", Map.of());
+            return;
+        }
+
+        PluginValidationResult result = pluginInstaller.validate(jarBytes, pluginName, pluginVersion);
+ 
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("commandId", commandId);
+        response.put("status", "ok");
+        response.put("valid", result.isValid());
+        response.put("pluginId", result.getPluginId());
+        response.put("displayName", result.getDisplayName());
+        response.put("pluginVersion", result.getPluginVersion());
+        response.put("coreApiVersion", result.getCoreApiVersion());
+        response.put("logs", result.getLogs());
+        
+        logger.info("[PLUGINS] Sending validation result for '{}': valid={}, logsCount={}", 
+                   pluginName, result.isValid(), result.getLogs().size());
+                   
+        sendMessage(conn, "PLUGIN_VALIDATION_RESULT", commandId, response);
+ 
+        logToBackend(result.isValid() ? "info" : "warn", "PLUGINS",
+                "Plugin validation " + (result.isValid() ? "passed" : "failed") + " for '" + pluginName + "'", commandId);
+    }
+
+    private void handleInstallPlugin(WebSocket conn, String commandId, JsonNode payload) {
+        String jarBase64 = requireTextField(conn, commandId, payload, "jarBase64", "INVALID_PAYLOAD", "INSTALL_PLUGIN");
+        String pluginName = requireTextField(conn, commandId, payload, "pluginName", "INVALID_PAYLOAD", "INSTALL_PLUGIN");
+        String pluginVersion = requireTextField(conn, commandId, payload, "pluginVersion", "INVALID_PAYLOAD", "INSTALL_PLUGIN");
+        if (jarBase64 == null || pluginName == null || pluginVersion == null) {
+            return;
+        }
+
+        byte[] jarBytes;
+        try {
+            jarBytes = Base64.getDecoder().decode(jarBase64);
+        } catch (IllegalArgumentException e) {
+            sendError(conn, commandId, "INVALID_PAYLOAD", "Invalid Base64 encoding for JAR data", Map.of());
+            return;
+        }
+
+        PluginInstallResult result = pluginInstaller.install(jarBytes, pluginName, pluginVersion);
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("commandId", commandId);
+        response.put("status", result.isSuccess() ? "ok" : "error");
+        response.put("success", result.isSuccess());
+        response.put("message", result.getMessage());
+        response.put("restartRequired", result.isRestartRequired());
+        sendMessage(conn, "PLUGIN_INSTALL_RESULT", commandId, response);
+
+        if (result.isSuccess()) {
+            logToBackend("info", "PLUGINS", "Plugin '" + pluginName + "' installed. Restarting...", commandId);
+
+            // Persist state before restart
+            persistState();
+
+            // Broadcast restart required to all connected clients
+            broadcastRestartRequired();
+
+            // Schedule JVM exit (the process wrapper/script will restart)
+            scheduler.schedule(this::restartAfterPluginInstall, 3, TimeUnit.SECONDS);
+        } else {
+            logToBackend("error", "PLUGINS", "Plugin install failed: " + result.getMessage(), commandId);
+        }
+    }
+
+    private void handleUninstallPlugin(WebSocket conn, String commandId, JsonNode payload) {
+        String pluginId = requireTextField(conn, commandId, payload, "pluginId", "INVALID_PAYLOAD", "UNINSTALL_PLUGIN");
+        String pluginVersion = requireTextField(conn, commandId, payload, "pluginVersion", "INVALID_PAYLOAD", "UNINSTALL_PLUGIN");
+        if (pluginId == null || pluginVersion == null) {
+            return;
+        }
+
+        PluginInstallResult result = pluginInstaller.uninstall(pluginId, pluginVersion);
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("commandId", commandId);
+        response.put("status", result.isSuccess() ? "ok" : "error");
+        response.put("success", result.isSuccess());
+        response.put("message", result.getMessage());
+        response.put("restartRequired", result.isRestartRequired());
+        sendMessage(conn, "PLUGIN_INSTALL_RESULT", commandId, response);
+
+        if (result.isSuccess()) {
+            logToBackend("info", "PLUGINS", "Plugin '" + pluginId + "' uninstalled. Restarting...", commandId);
+
+            persistState();
+            broadcastRestartRequired();
+
+            scheduler.schedule(() -> {
+                logger.info("Restarting Gen-Synth Core after plugin removal...");
+                com.gensynth.core.util.RestartUtil.restart();
+            }, 3, TimeUnit.SECONDS);
+        } else {
+            logToBackend("error", "PLUGINS", "Plugin uninstall failed: " + result.getMessage(), commandId);
+        }
+    }
+
+    private void broadcastRestartRequired() {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("message", "Application is restarting to apply plugin changes...");
+        payload.put("delaySeconds", 3);
+
+        for (WebSocket conn : getConnections()) {
+            if (conn.isOpen()) {
+                sendMessage(conn, "RESTART_REQUIRED", null, payload);
+            }
+        }
+    }
+
     private FlowRuntime findFlowById(GroupRuntime group, String flowId) {
         for (FlowRuntime flow : group.flows) {
             if (flow.id.equals(flowId)) {
@@ -1175,6 +1342,20 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         payload.put("variables", variablesPayload);
         payload.put("metrics", buildMetricsPayload(null));
         payload.put("connectorCatalog", connectorCatalogService.listAvailableConnectors());
+        
+        // Include Rollback report if it exists (so the UI can show it after reload)
+        try {
+            Path reportPath = Paths.get("plugins", ".rollback_report.json");
+            if (java.nio.file.Files.exists(reportPath)) {
+                String content = java.nio.file.Files.readString(reportPath);
+                payload.put("rollbackReport", objectMapper.readTree(content));
+                java.nio.file.Files.delete(reportPath);
+                logger.info("[PLUGINS] Rollback report embedded in INITIAL_STATE and cleared.");
+            }
+        } catch (Exception e) {
+            logger.error("Failed to include rollback report in initial state", e);
+        }
+        
         return payload;
     }
 
@@ -1260,6 +1441,17 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         payload.put("status", "ok");
         payload.put("result", result);
         sendMessage(conn, "CONNECTION_STATUS", commandId, payload);
+    }
+
+    private void restartAfterPluginInstall() {
+        logger.info("Restarting Gen-Synth Core after plugin installation...");
+        try {
+            // Release the port before spawning the new process
+            this.stop(1000);
+            com.gensynth.core.util.RestartUtil.restart();
+        } catch (Exception e) {
+            logger.error("Failed to trigger restart", e);
+        }
     }
 
     private void sendError(WebSocket conn, String commandId, String code, String message, Map<String, Object> details) {

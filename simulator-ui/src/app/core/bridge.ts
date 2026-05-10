@@ -24,6 +24,10 @@ import type {
   VariableState,
   ConnectorPluginDescriptor,
   TracePayload,
+  PluginValidationResultPayload,
+  PluginInstallResultPayload,
+  RestartRequiredPayload,
+  RollbackReportPayload,
 } from './types';
 
 // ─────────────────────────────────────────────────────────────
@@ -59,7 +63,7 @@ const DEFAULT_CONFIG: BridgeConfig = {
 type EventCallback<T = unknown> = (data: T) => void;
 
 type PendingCommand = {
-  resolve: (value: unknown) => void;
+  resolve: (value: any) => void;
   reject: (error: Error) => void;
   timerId: number;
   command: UICommand;
@@ -87,6 +91,9 @@ const SUPPORTED_COMMANDS = new Set<UICommandType>([
   'CREATE_VARIABLE',
   'DELETE_VARIABLE',
   'UPDATE_VARIABLE',
+  'VALIDATE_PLUGIN',
+  'INSTALL_PLUGIN',
+  'UNINSTALL_PLUGIN',
 ]);
 
 interface EventMap {
@@ -103,6 +110,10 @@ interface EventMap {
   'connector-catalog': ConnectorPluginDescriptor[];
   'message': CoreMessage;
   'trace': TracePayload;
+  'plugin-validation-result': PluginValidationResultPayload;
+  'plugin-install-result': PluginInstallResultPayload;
+  'restart-required': RestartRequiredPayload;
+  'rollback-report': RollbackReportPayload;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -180,6 +191,14 @@ class CoreBridge {
 
         this.ws.onclose = (event) => {
           this.connected = false;
+          
+          // Reject all pending commands
+          this.pendingCommands.forEach(pending => {
+            window.clearTimeout(pending.timerId);
+            pending.reject(new Error('Connection lost'));
+          });
+          this.pendingCommands.clear();
+
           this.emit('disconnected', { reason: event.reason || 'Connection closed' });
           console.log('[Bridge] Disconnected from the Java core');
           this.scheduleReconnect();
@@ -280,7 +299,7 @@ class CoreBridge {
   /**
    * Sends a command to the Java core
    */
-  send<T extends UICommandType>(type: T, payload?: UICommandPayloadMap[T]): Promise<unknown> {
+  send<T extends UICommandType, R = any>(type: T, payload?: UICommandPayloadMap[T]): Promise<R> {
     const validationError = this.validateCommand(type, payload);
     if (validationError) {
       return Promise.reject(validationError);
@@ -425,6 +444,20 @@ class CoreBridge {
           : new Error('El comando CREATE_VARIABLE requiere name, type y scope');
       case 'UPDATE_VARIABLE':
         return requireStringField('variableId', 'El comando UPDATE_VARIABLE requiere variableId');
+      case 'VALIDATE_PLUGIN':
+      case 'INSTALL_PLUGIN':
+        return isObjectPayload
+          && typeof readField('jarBase64') === 'string'
+          && typeof readField('pluginName') === 'string'
+          && typeof readField('pluginVersion') === 'string'
+          ? null
+          : new Error(`El comando ${type} requiere jarBase64, pluginName y pluginVersion`);
+      case 'UNINSTALL_PLUGIN':
+        return isObjectPayload
+          && typeof readField('pluginId') === 'string'
+          && typeof readField('pluginVersion') === 'string'
+          ? null
+          : new Error('El comando UNINSTALL_PLUGIN requiere pluginId y pluginVersion');
       default:
         return new Error(`Validation not implemented for ${type}`);
     }
@@ -489,12 +522,27 @@ class CoreBridge {
         case 'TRACE_EVENT':
           this.emit('trace', message.payload as TracePayload);
           break;
+        case 'PLUGIN_VALIDATION_RESULT':
+          this.emit('plugin-validation-result', message.payload as PluginValidationResultPayload);
+          break;
+        case 'PLUGIN_INSTALL_RESULT':
+          this.emit('plugin-install-result', message.payload as PluginInstallResultPayload);
+          break;
+        case 'RESTART_REQUIRED':
+          this.emit('restart-required', message.payload as RestartRequiredPayload);
+          break;
+        case 'ROLLBACK_REPORT':
+          this.emit('rollback-report', message.payload as RollbackReportPayload);
+          break;
       }
 
       // Check whether this is a response to a pending command
       const responsePayload = message.payload as { commandId?: string; status?: string } | null;
       const responseId = message.commandId || responsePayload?.commandId;
       if (responseId && this.pendingCommands.has(responseId)) {
+        if (message.type === 'TRACE_EVENT') {
+          return; // Skip trace events for command resolution
+        }
         const pending = this.pendingCommands.get(responseId)!;
         window.clearTimeout(pending.timerId);
 
@@ -728,6 +776,14 @@ export const CoreCommands = {
   // Metrics
   subscribeMetrics: () => bridge.send('SUBSCRIBE_METRICS'),
   unsubscribeMetrics: () => bridge.send('UNSUBSCRIBE_METRICS'),
+
+  // Plugin management
+  validatePlugin: (jarBase64: string, pluginName: string, pluginVersion: string): Promise<PluginValidationResultPayload> =>
+    bridge.send<'VALIDATE_PLUGIN', PluginValidationResultPayload>('VALIDATE_PLUGIN', { jarBase64, pluginName, pluginVersion }),
+  installPlugin: (jarBase64: string, pluginName: string, pluginVersion: string): Promise<PluginInstallResultPayload> =>
+    bridge.send<'INSTALL_PLUGIN', PluginInstallResultPayload>('INSTALL_PLUGIN', { jarBase64, pluginName, pluginVersion }),
+  uninstallPlugin: (pluginId: string, pluginVersion: string): Promise<PluginInstallResultPayload> =>
+    bridge.send<'UNINSTALL_PLUGIN', PluginInstallResultPayload>('UNINSTALL_PLUGIN', { pluginId, pluginVersion }),
 };
 
 export default bridge;

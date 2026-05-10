@@ -1,0 +1,297 @@
+package com.gensynth.core.connectors.plugin;
+
+import com.gensynth.core.api.IPluginInstaller;
+import com.gensynth.core.connectors.spi.ConnectorPluginDescriptor;
+import com.gensynth.core.connectors.spi.ConnectorPluginProvider;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.net.URL;
+import java.net.URLClassLoader;
+import java.nio.file.DirectoryStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.ServiceLoader;
+import java.util.Set;
+
+/**
+ * Default implementation of {@link IPluginInstaller}.
+ *
+ * Manages the lifecycle of external connector plugins:
+ * validation, installation to the plugins directory, uninstallation,
+ * and discovery of currently installed plugins.
+ */
+public class PluginInstallerImpl implements IPluginInstaller {
+
+    private static final Logger logger = LoggerFactory.getLogger(PluginInstallerImpl.class);
+
+    private final Path pluginsDirectory;
+    private com.gensynth.core.connectors.runtime.ConnectorPluginManager pluginManager;
+
+    /**
+     * Constructs the installer targeting the specified plugins directory.
+     *
+     * @param pluginsDirectory path to the directory where plugin JARs are stored
+     */
+    public PluginInstallerImpl(Path pluginsDirectory) {
+        this.pluginsDirectory = pluginsDirectory;
+        ensurePluginsDirectoryExists();
+    }
+
+    /**
+     * Sets the plugin manager to allow unloading plugins before uninstallation.
+     * @param pluginManager the active plugin manager
+     */
+    public void setPluginManager(com.gensynth.core.connectors.runtime.ConnectorPluginManager pluginManager) {
+        this.pluginManager = pluginManager;
+    }
+
+    @Override
+    public PluginValidationResult validate(byte[] jarBytes, String pluginName, String pluginVersion) {
+        try {
+            Set<String> existingKeys = collectExistingPluginKeys();
+            Path sharedLibDir = pluginsDirectory.resolve("../lib/shared").normalize();
+            PluginSandboxValidator validator = new PluginSandboxValidator(existingKeys, sharedLibDir);
+            return validator.validate(jarBytes, pluginName, pluginVersion);
+        } catch (Exception e) {
+            logger.error("Unexpected error during plugin validation", e);
+            return new PluginValidationResult.Builder()
+                    .log(PluginValidationResult.ValidationLevel.ERROR, "Unexpected validation error: " + e.getMessage())
+                    .build();
+        }
+    }
+
+    @Override
+    public PluginInstallResult install(byte[] jarBytes, String pluginName, String pluginVersion) {
+        // Step 1: Validate first
+        PluginValidationResult validation = validate(jarBytes, pluginName, pluginVersion);
+        if (!validation.isValid()) {
+            return PluginInstallResult.failure("Plugin validation failed. See logs for details.");
+        }
+
+        String pluginId = validation.getPluginId();
+        String newVersion = validation.getPluginVersion();
+
+        // Step 2: Handle Versioning (Backup existing versions)
+        handleVersioning(pluginId, newVersion);
+
+        // Step 3: Build target path
+        String jarFileName = sanitizeFileName(pluginId) + "-" + sanitizeFileName(newVersion) + ".jar";
+        Path targetPath = pluginsDirectory.resolve(jarFileName);
+
+        // Step 4: Create Rollback Marker
+        createRollbackMarker(targetPath, pluginId);
+
+        // Step 5: Copy JAR to plugins directory
+        try {
+            Files.write(targetPath, jarBytes);
+            logger.info("Plugin installed: {}@{} -> {}", pluginId, newVersion, targetPath);
+            return PluginInstallResult.success(
+                    "Plugin '" + validation.getDisplayName() + "' installed successfully. Restarting...",
+                    pluginId
+            );
+        } catch (IOException e) {
+            logger.error("Failed to write plugin JAR to {}", targetPath, e);
+            clearRollbackMarker();
+            return PluginInstallResult.failure("Failed to install plugin: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Finds existing versions of the same plugin and moves them to a backup folder.
+     */
+    private void handleVersioning(String pluginId, String newVersion) {
+        Path backupDir = pluginsDirectory.resolve("backup");
+        try {
+            if (!Files.exists(backupDir)) {
+                Files.createDirectories(backupDir);
+            }
+
+            try (DirectoryStream<Path> stream = Files.newDirectoryStream(pluginsDirectory, "*.jar")) {
+                for (Path jarPath : stream) {
+                    InstalledPluginInfo info = loadPluginInfoFromJar(jarPath);
+                    if (info != null && info.getPluginId().equals(pluginId)) {
+                        // It's the same plugin. Move it to backup.
+                        Path backupPath = backupDir.resolve(jarPath.getFileName() + ".bak_" + System.currentTimeMillis());
+                        Files.move(jarPath, backupPath);
+                        logger.info("Moved existing version of {} ({}) to backup: {}", 
+                                pluginId, info.getPluginVersion(), backupPath.getFileName());
+                    }
+                }
+            }
+        } catch (IOException e) {
+            logger.warn("Failed to manage plugin versioning/backup: {}", e.getMessage());
+        }
+    }
+
+    private void createRollbackMarker(Path jarPath, String pluginId) {
+        Path markerPath = pluginsDirectory.resolve(".pending_install.json");
+        String json = String.format("{\"path\": \"%s\", \"pluginId\": \"%s\", \"timestamp\": %d}", 
+                jarPath.toAbsolutePath().toString().replace("\\", "\\\\"), 
+                pluginId, 
+                System.currentTimeMillis());
+        try {
+            Files.writeString(markerPath, json);
+            logger.debug("Created rollback marker: {}", markerPath);
+        } catch (IOException e) {
+            logger.error("Failed to create rollback marker", e);
+        }
+    }
+
+    private void clearRollbackMarker() {
+        try {
+            Files.deleteIfExists(pluginsDirectory.resolve(".pending_install.json"));
+        } catch (IOException ignored) {}
+    }
+
+    @Override
+    public PluginInstallResult uninstall(String pluginId, String pluginVersion) {
+        if (pluginId == null || pluginId.isBlank() || pluginVersion == null || pluginVersion.isBlank()) {
+            return PluginInstallResult.failure("Plugin identifier and version are required.");
+        }
+
+        // Find the JAR file by scanning and matching descriptors
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(pluginsDirectory, "*.jar")) {
+            for (Path jarPath : stream) {
+                logger.debug("Scanning JAR for uninstall: {}", jarPath.getFileName());
+                InstalledPluginInfo info = loadPluginInfoFromJar(jarPath);
+                
+                if (info != null) {
+                    logger.info("Checking plugin: id={}, version={} against target: id={}, version={}", 
+                            info.getPluginId(), info.getPluginVersion(), pluginId, pluginVersion);
+                    
+                    if (info.getPluginId().equals(pluginId) && info.getPluginVersion().equals(pluginVersion)) {
+                        // CRITICAL FOR WINDOWS: Unload the plugin from the manager to release file locks
+                        if (pluginManager != null) {
+                            pluginManager.unloadPlugin(pluginId, pluginVersion);
+                        }
+                        
+                        Files.delete(jarPath);
+                        logger.info("Plugin uninstalled: {}@{} ({})", pluginId, pluginVersion, jarPath.getFileName());
+                        return PluginInstallResult.success(
+                                "Plugin '" + info.getDisplayName() + "' removed. Restart required.",
+                                pluginId
+                        );
+                    }
+                } else {
+                    logger.warn("Could not extract plugin info from JAR: {}", jarPath.getFileName());
+                }
+            }
+        } catch (IOException e) {
+            logger.error("Error scanning plugins directory for uninstall", e);
+            return PluginInstallResult.failure("Failed to uninstall plugin. Please try again.");
+        }
+
+        return PluginInstallResult.failure("Plugin not found in the plugins directory.");
+    }
+
+    @Override
+    public List<InstalledPluginInfo> listInstalledPlugins() {
+        List<InstalledPluginInfo> plugins = new ArrayList<>();
+        if (!Files.isDirectory(pluginsDirectory)) {
+            return plugins;
+        }
+
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(pluginsDirectory, "*.jar")) {
+            for (Path jarPath : stream) {
+                InstalledPluginInfo info = loadPluginInfoFromJar(jarPath);
+                if (info != null) {
+                    plugins.add(info);
+                }
+            }
+        } catch (IOException e) {
+            logger.error("Error listing installed plugins", e);
+        }
+
+        return plugins;
+    }
+
+    /**
+     * Loads plugin metadata from a JAR file by reading its SPI descriptor.
+     *
+     * @param jarPath path to the JAR file
+     * @return plugin info, or null if the JAR is not a valid plugin
+     */
+    private InstalledPluginInfo loadPluginInfoFromJar(Path jarPath) {
+        try {
+            URL jarUrl = jarPath.toUri().toURL();
+            try (URLClassLoader loader = new URLClassLoader(
+                    new URL[]{jarUrl},
+                    ConnectorPluginProvider.class.getClassLoader())) {
+
+                ServiceLoader<ConnectorPluginProvider> sl =
+                        ServiceLoader.load(ConnectorPluginProvider.class, loader);
+                for (ConnectorPluginProvider provider : sl) {
+                    // CRITICAL: Only consider providers that are actually defined in this JAR,
+                    // not the ones inherited from the parent classloader (like bundled connectors).
+                    if (provider.getClass().getClassLoader() == loader) {
+                        ConnectorPluginDescriptor d = provider.descriptor();
+                        Instant modifiedAt = Files.getLastModifiedTime(jarPath).toInstant();
+                        return new InstalledPluginInfo(
+                                d.getPluginId(),
+                                d.getDisplayName(),
+                                d.getPluginVersion(),
+                                jarPath.getFileName().toString(),
+                                modifiedAt,
+                                true // always external when loaded from plugins dir
+                        );
+                    }
+                }
+            }
+        } catch (Exception e) {
+            logger.warn("Could not load plugin info from {}: {}", jarPath.getFileName(), e.getMessage());
+        }
+        return null;
+    }
+
+    /**
+     * Collects all existing plugin keys (pluginId@version) from both the classpath
+     * and the plugins directory for duplicate detection.
+     */
+    private Set<String> collectExistingPluginKeys() {
+        Set<String> keys = new HashSet<>();
+
+        // Classpath plugins (bundled connectors)
+        ServiceLoader<ConnectorPluginProvider> classpathLoader =
+                ServiceLoader.load(ConnectorPluginProvider.class);
+        for (ConnectorPluginProvider provider : classpathLoader) {
+            keys.add(provider.descriptor().key());
+        }
+
+        // External plugins
+        for (InstalledPluginInfo info : listInstalledPlugins()) {
+            keys.add(info.getPluginId() + "@" + info.getPluginVersion());
+        }
+
+        return keys;
+    }
+
+    /**
+     * Sanitizes a string for use as part of a file name.
+     */
+    private String sanitizeFileName(String input) {
+        if (input == null) {
+            return "unknown";
+        }
+        return input.replaceAll("[^a-zA-Z0-9._-]", "_");
+    }
+
+    /**
+     * Ensures the plugins directory exists, creating it if necessary.
+     */
+    private void ensurePluginsDirectoryExists() {
+        try {
+            if (!Files.exists(pluginsDirectory)) {
+                Files.createDirectories(pluginsDirectory);
+                logger.info("Created plugins directory: {}", pluginsDirectory);
+            }
+        } catch (IOException e) {
+            logger.error("Failed to create plugins directory: {}", pluginsDirectory, e);
+        }
+    }
+}
