@@ -208,6 +208,7 @@ export interface UpdateGroupCommandPayload {
   threads?: number;
   outputMode?: string;
   description?: string;
+  enabled?: boolean;
 }
 
 export interface UpdateFlowCommandPayload {
@@ -222,6 +223,7 @@ export interface UpdateFlowCommandPayload {
   burst?: number;
   template?: string;
   format?: 'json' | 'xml' | 'csv' | 'plain';
+  enabled?: boolean;
 }
 
 export interface CreateVariableCommandPayload {
@@ -337,6 +339,7 @@ export interface GroupState {
   description: string;
   threads: number;
   outputMode: string;
+  enabled: boolean;
   flows: FlowState[];
 }
 
@@ -357,6 +360,7 @@ export interface FlowState {
   template?: string;
   format?: 'json' | 'xml' | 'csv' | 'plain';
   connectorConfig?: Record<string, any>;
+  enabled: boolean;
 }
 
 export interface VariableState {

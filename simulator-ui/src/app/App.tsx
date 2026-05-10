@@ -68,6 +68,8 @@ export default function App() {
           onCreateGroup={actions.createGroup}
           onDeleteGroup={actions.deleteGroup}
           onCreateFlow={actions.createFlow}
+          onUpdateGroupConfig={actions.updateGroupConfig}
+          onUpdateFlowConfig={actions.updateFlowConfig}
         />
 
         {/* Center: Dynamic Workspace */}
