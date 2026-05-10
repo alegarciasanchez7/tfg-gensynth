@@ -14,6 +14,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -77,6 +78,9 @@ public class PluginSandboxValidator {
                     "createDirectories", "newOutputStream")
     );
 
+    /** Directory containing shared libraries for validation classpath resolution. */
+    private final Path sharedLibDir;
+
     /** Set of existing plugin keys (pluginId@version) for duplicate detection. */
     private final Set<String> existingPluginKeys;
 
@@ -84,9 +88,11 @@ public class PluginSandboxValidator {
      * Constructs the validator with knowledge of currently installed plugins.
      *
      * @param existingPluginKeys set of "pluginId@version" strings already loaded
+     * @param sharedLibDir       path to the directory containing shared libraries
      */
-    public PluginSandboxValidator(Set<String> existingPluginKeys) {
+    public PluginSandboxValidator(Set<String> existingPluginKeys, Path sharedLibDir) {
         this.existingPluginKeys = existingPluginKeys != null ? existingPluginKeys : Set.of();
+        this.sharedLibDir = sharedLibDir;
     }
 
     /**
@@ -217,7 +223,8 @@ public class PluginSandboxValidator {
                 byte[] classBytes = readEntryBytes(jis);
                 List<String> violations = scanClassForBlockedApis(classBytes);
                 if (!violations.isEmpty()) {
-                    errors.add("Blocked API usage found: " + String.join(", ", violations));
+                    String className = entry.getName().replace("/", ".").replace(".class", "");
+                    errors.add("Blocked API usage found in " + className + ": " + String.join(", ", violations));
                     logger.warn("Blocked API usage found in {}: {}", entry.getName(), violations);
                     return false;
                 }
@@ -245,9 +252,13 @@ public class PluginSandboxValidator {
                 public MethodVisitor visitMethod(int access, String name, String descriptor,
                                                   String signature, String[] exceptions) {
                     return new MethodVisitor(Opcodes.ASM9) {
-                        @Override
-                        public void visitMethodInsn(int opcode, String owner, String methodName,
-                                                     String methodDescriptor, boolean isInterface) {
+                            @Override
+                            public void visitMethodInsn(int opcode, String owner, String methodName,
+                                                         String methodDescriptor, boolean isInterface) {
+                                
+                                // No more whitelist. Validation is now 100% strict.
+                                // Plugins should not contain their own copies of trusted libraries.
+
                             Set<String> blockedMethods = BLOCKED_APIS.get(owner);
                             if (blockedMethods != null && blockedMethods.contains(methodName)) {
                                 violations.add(owner + "." + methodName);
@@ -275,10 +286,21 @@ public class PluginSandboxValidator {
             tempFile = Files.createTempFile("gensynth-plugin-validate-", ".jar");
             Files.write(tempFile, jarBytes);
 
-            URL jarUrl = tempFile.toUri().toURL();
+            List<URL> urls = new ArrayList<>();
+            urls.add(tempFile.toUri().toURL());
+
+            // Include shared libraries in the sandbox classpath for dependency resolution
+            if (sharedLibDir != null && Files.isDirectory(sharedLibDir)) {
+                try (DirectoryStream<Path> stream = Files.newDirectoryStream(sharedLibDir, "*.jar")) {
+                    for (Path sharedJar : stream) {
+                        urls.add(sharedJar.toUri().toURL());
+                    }
+                }
+            }
+
             // Parent is the system classloader so the plugin can see the SPI interfaces
             URLClassLoader sandboxLoader = new URLClassLoader(
-                    new URL[]{jarUrl},
+                    urls.toArray(new URL[0]),
                     ConnectorPluginProvider.class.getClassLoader()
             );
 

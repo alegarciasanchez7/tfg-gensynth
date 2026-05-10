@@ -25,7 +25,7 @@ public class PluginSandboxValidatorTest {
 
     @Before
     public void setUp() {
-        validator = new PluginSandboxValidator(Set.of());
+        validator = new PluginSandboxValidator(Set.of(), null);
     }
 
     @Test
@@ -100,7 +100,7 @@ public class PluginSandboxValidatorTest {
     public void testDuplicatePluginDetection() throws IOException {
         // Create a validator with an existing plugin key
         PluginSandboxValidator validatorWithExisting =
-                new PluginSandboxValidator(Set.of("my-plugin@1.0.0"));
+                new PluginSandboxValidator(Set.of("my-plugin@1.0.0"), null);
 
         byte[] jar = createJarWithSpiFile();
         PluginValidationResult result = validatorWithExisting.validate(jar, "my-plugin", "1.0.0");

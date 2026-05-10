@@ -54,7 +54,8 @@ public class PluginInstallerImpl implements IPluginInstaller {
     @Override
     public PluginValidationResult validate(byte[] jarBytes, String pluginName, String pluginVersion) {
         Set<String> existingKeys = collectExistingPluginKeys();
-        PluginSandboxValidator validator = new PluginSandboxValidator(existingKeys);
+        Path sharedLibDir = pluginsDirectory.resolve("../lib/shared").normalize();
+        PluginSandboxValidator validator = new PluginSandboxValidator(existingKeys, sharedLibDir);
         return validator.validate(jarBytes, pluginName, pluginVersion);
     }
 
