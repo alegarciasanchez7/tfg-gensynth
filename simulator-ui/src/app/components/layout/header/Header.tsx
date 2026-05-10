@@ -1,7 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
-import { Power, Square, FolderOpen, Save, Settings, Zap, Activity, Moon, Sun, X, Package } from 'lucide-react';
+import { Power, Square, FolderOpen, Save, Settings, Zap, Activity, Moon, Sun, X, Package, Plus, Trash2, Loader2 } from 'lucide-react';
 import type { SystemStatus, ConnectorHealthSummary } from '../../../types';
 import type { ConnectorPluginDescriptor } from '../../../core/types';
+import { CoreCommands } from '../../../core/bridge';
+import { toast } from 'sonner';
+import { PluginImportPanel } from './PluginImportPanel';
 
 interface HeaderProps {
   systemStatus: SystemStatus;
@@ -17,9 +20,9 @@ interface HeaderProps {
 
 const StatusBadge = ({ status }: { status: SystemStatus }) => {
   const cfg = {
-    running:    { color: 'text-emerald-400', dot: 'bg-emerald-400', label: 'RUNNING',    pulse: true },
-    stopped:    { color: 'text-slate-500',   dot: 'bg-slate-400',   label: 'STOPPED',    pulse: false },
-    processing: { color: 'text-amber-400',   dot: 'bg-amber-400',   label: 'PROCESSING', pulse: true },
+    running: { color: 'text-emerald-400', dot: 'bg-emerald-400', label: 'RUNNING', pulse: true },
+    stopped: { color: 'text-slate-500', dot: 'bg-slate-400', label: 'STOPPED', pulse: false },
+    processing: { color: 'text-amber-400', dot: 'bg-amber-400', label: 'PROCESSING', pulse: true },
   }[status];
 
   return (
@@ -43,6 +46,8 @@ function ConnectorCatalogPanel({ latestConnectors, connectorHealthSummary, onClo
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const [uninstalling, setUninstalling] = useState<string | null>(null);
+  const [confirmUninstall, setConfirmUninstall] = useState<string | null>(null);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -51,6 +56,25 @@ function ConnectorCatalogPanel({ latestConnectors, connectorHealthSummary, onClo
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [onClose]);
+
+  const handleUninstall = async (pluginId: string, pluginVersion: string) => {
+    setUninstalling(pluginId + '@' + pluginVersion);
+    try {
+      const response = await CoreCommands.uninstallPlugin(pluginId, pluginVersion);
+      if (response.success) {
+        toast.success(response.message || 'Plugin uninstalled successfully. Restarting...');
+        // The backend will broadcast a restart-required event, which App.tsx handles
+      } else {
+        toast.error(response.message || 'Failed to uninstall plugin');
+        setUninstalling(null);
+        setConfirmUninstall(null);
+      }
+    } catch (err) {
+      toast.error('An error occurred while communicating with the core');
+      setUninstalling(null);
+      setConfirmUninstall(null);
+    }
+  };
 
   const healthColor = (status: ConnectorHealthSummary['status']) => {
     switch (status) {
@@ -84,10 +108,11 @@ function ConnectorCatalogPanel({ latestConnectors, connectorHealthSummary, onClo
             const health = connectorHealthSummary.find(
               (entry) => entry.pluginId === connector.pluginId && entry.pluginVersion === connector.pluginVersion,
             );
+            const key = connector.pluginId + '@' + connector.pluginVersion;
 
             return (
               <div
-                key={connector.pluginId}
+                key={key}
                 className="flex flex-col gap-1.5 rounded border border-[var(--c-br1)] bg-[var(--c-bg1)] px-2.5 py-2"
               >
                 <div className="flex items-start justify-between gap-2">
@@ -99,9 +124,8 @@ function ConnectorCatalogPanel({ latestConnectors, connectorHealthSummary, onClo
                       {connector.pluginId}@{connector.pluginVersion}
                     </span>
                   </div>
-                  <span className={`inline-flex items-center justify-center rounded border px-1.5 py-0.5 text-[9px] uppercase whitespace-nowrap ${
-                    health ? healthColor(health.status) : 'text-[var(--c-tx4)] border-[var(--c-br1)] bg-transparent'
-                  }`} style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+                  <span className={`inline-flex items-center justify-center rounded border px-1.5 py-0.5 text-[9px] uppercase whitespace-nowrap ${health ? healthColor(health.status) : 'text-[var(--c-tx4)] border-[var(--c-br1)] bg-transparent'
+                    }`} style={{ fontFamily: 'JetBrains Mono, monospace' }}>
                     {health ? health.status : 'unknown'}
                   </span>
                 </div>
@@ -110,6 +134,48 @@ function ConnectorCatalogPanel({ latestConnectors, connectorHealthSummary, onClo
                     <span>{health.connectedCount}/{health.flowCount} flows</span>
                     {health.warningCount > 0 && <span className="text-amber-500">⚠ {health.warningCount} warn</span>}
                     {health.errorCount > 0 && <span className="text-red-500">✕ {health.errorCount} err</span>}
+                  </div>
+                )}
+
+                {/* Uninstall button for external plugins only */}
+                {connector.external && (
+                  <div className="mt-2 pt-2 border-t border-[var(--c-br2)]/50">
+                    {confirmUninstall === key ? (
+                      <div className="flex flex-col gap-2">
+                        <span className="text-[8px] text-red-400/80 uppercase tracking-tight text-center">Are you sure?</span>
+                        <div className="flex gap-1.5">
+                          <button
+                            onClick={() => setConfirmUninstall(null)}
+                            className="flex-1 text-[8px] px-2 py-1 rounded bg-[var(--c-bg4)] border border-[var(--c-br1)] text-[var(--c-tx3)] hover:text-[var(--c-tx1)] hover:bg-[var(--c-bg5)] transition-all"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={() => handleUninstall(connector.pluginId, connector.pluginVersion)}
+                            disabled={uninstalling === key}
+                            className="flex-1 flex items-center justify-center gap-1 text-[8px] px-2 py-1 rounded bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500/20 transition-all disabled:opacity-50"
+                          >
+                            {uninstalling === key ? (
+                              <Loader2 size={9} className="animate-spin" />
+                            ) : (
+                              <Trash2 size={9} />
+                            )}
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setConfirmUninstall(key);
+                        }}
+                        className="group flex items-center gap-1.5 text-[8px] text-[var(--c-tx4)] hover:text-red-400 transition-all px-2 py-1 rounded border border-transparent hover:border-red-500/20 hover:bg-red-500/5 w-full justify-center"
+                      >
+                        <Trash2 size={9} className="opacity-50 group-hover:opacity-100" />
+                        <span>Uninstall Plugin</span>
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -189,6 +255,7 @@ function SettingsPanel({ isDark, onThemeToggle, onClose }: {
 export function Header({ systemStatus, onStatusToggle, onLoadProject, onSaveProject, projectName, isDark, onThemeToggle, latestConnectors, connectorHealthSummary }: HeaderProps) {
   const [showSettings, setShowSettings] = useState(false);
   const [showCatalog, setShowCatalog] = useState(false);
+  const [showPluginImport, setShowPluginImport] = useState(false);
   const [loadingState, setLoadingState] = useState(false);
   const isRunning = systemStatus === 'running';
 
@@ -220,11 +287,10 @@ export function Header({ systemStatus, onStatusToggle, onLoadProject, onSaveProj
       <div className="flex items-center gap-1">
         <button
           onClick={onStatusToggle}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-xs transition-all ${
-            isRunning
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-xs transition-all ${isRunning
               ? 'border-red-500/50 bg-red-500/10 text-red-400 hover:bg-red-500/20'
               : 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
-          }`}
+            }`}
           style={{ fontFamily: 'JetBrains Mono, monospace' }}
         >
           {isRunning ? (
@@ -281,11 +347,10 @@ export function Header({ systemStatus, onStatusToggle, onLoadProject, onSaveProj
       <div className="relative">
         <button
           onClick={() => setShowCatalog(s => !s)}
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded border text-xs transition-all ${
-            showCatalog
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded border text-xs transition-all ${showCatalog
               ? 'border-cyan-500/50 bg-cyan-500/10 text-cyan-400'
               : 'border-[var(--c-br1)] text-[var(--c-tx3)] hover:text-[var(--c-tx1)] hover:border-[var(--c-br3)] hover:bg-[var(--c-bg5)]'
-          }`}
+            }`}
           style={{ fontFamily: 'JetBrains Mono, monospace' }}
         >
           <Package size={12} /> Connectors ({latestConnectors.length})
@@ -299,6 +364,24 @@ export function Header({ systemStatus, onStatusToggle, onLoadProject, onSaveProj
         )}
       </div>
 
+      {/* Plugin import button */}
+      <div className="relative">
+        <button
+          id="plugin-import-toggle"
+          onClick={() => setShowPluginImport(s => !s)}
+          className={`flex items-center justify-center w-7 h-7 rounded border transition-all ${showPluginImport
+              ? 'border-cyan-500/50 bg-cyan-500/10 text-cyan-400'
+              : 'border-[var(--c-br1)] text-[var(--c-tx3)] hover:text-[var(--c-tx1)] hover:border-[var(--c-br3)] hover:bg-[var(--c-bg5)]'
+            }`}
+          title="Import Plugin"
+        >
+          <Plus size={13} />
+        </button>
+        {showPluginImport && (
+          <PluginImportPanel onClose={() => setShowPluginImport(false)} />
+        )}
+      </div>
+
       {/* Spacer */}
       <div className="flex-1" />
 
@@ -309,11 +392,10 @@ export function Header({ systemStatus, onStatusToggle, onLoadProject, onSaveProj
       <div className="relative">
         <button
           onClick={() => setShowSettings(s => !s)}
-          className={`flex items-center justify-center w-7 h-7 rounded border transition-all ${
-            showSettings
+          className={`flex items-center justify-center w-7 h-7 rounded border transition-all ${showSettings
               ? 'border-cyan-500/50 bg-cyan-500/10 text-cyan-400'
               : 'border-[var(--c-br1)] text-[var(--c-tx3)] hover:text-[var(--c-tx1)] hover:border-[var(--c-br3)] hover:bg-[var(--c-bg5)]'
-          }`}
+            }`}
         >
           <Settings size={13} />
         </button>

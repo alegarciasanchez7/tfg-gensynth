@@ -33,6 +33,7 @@ import type {
   ConnectorPluginDescriptor,
   InitialStatePayload,
   TracePayload,
+  RollbackReportPayload,
 } from '../core/types';
 import type { Selection, Group, Variable, LogEntry, SystemStatus, Flow, ConnectorHealthStatus } from '../types';
 import type { ConnectorHealthSummary } from '../types';
@@ -93,6 +94,7 @@ interface AppState {
   // Metrics
   metrics: MetricsPayload | null;
   flowMetrics: Record<string, FlowMetricsPayload>;
+  isRestarting: boolean;
 }
 
 const initialState: AppState = {
@@ -114,6 +116,7 @@ const initialState: AppState = {
   connectorHealthSummary: [],
   metrics: null,
   flowMetrics: {},
+  isRestarting: false,
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -139,6 +142,7 @@ type AppAction =
   | { type: 'SET_FLOW_CONNECTOR_CONFIG'; payload: { flowId: string; config: Record<string, unknown> } }
   | { type: 'SET_METRICS'; payload: MetricsPayload }
   | { type: 'SET_FLOW_METRICS'; payload: FlowMetricsPayload }
+  | { type: 'SET_RESTARTING'; payload: boolean }
   | {
       type: 'LOAD_INITIAL_STATE';
       payload: {
@@ -148,6 +152,7 @@ type AppAction =
         connectorCatalog?: ConnectorPluginDescriptor[];
         metrics?: MetricsPayload | null;
         systemStatus?: SystemStatus;
+        rollbackReport?: RollbackReportPayload;
       };
     };
 
@@ -550,6 +555,20 @@ function appReducer(state: AppState, action: AppAction): AppState {
     case 'LOAD_INITIAL_STATE':
       return (() => {
         const connectorCatalog = action.payload.connectorCatalog ?? state.connectorCatalog;
+        
+        // Inject a critical recovery log if a rollback occurred
+        let rollbackLog: LogEntry | null = null;
+        if (action.payload.rollbackReport) {
+          const report = action.payload.rollbackReport;
+          rollbackLog = {
+            id: `rollback_${Date.now()}`,
+            timestamp: new Date().toLocaleTimeString('en-GB', { hour12: false }),
+            level: 'error',
+            source: 'SYSTEM',
+            message: `CRITICAL RECOVERY: ${report.message} (Plugin ID: ${report.pluginId})`,
+          };
+        }
+
         const { selections, configs, healthSummary } = normalizeConnectorState(
           action.payload.groups,
           connectorCatalog,
@@ -566,11 +585,15 @@ function appReducer(state: AppState, action: AppAction): AppState {
           });
         });
 
+        // Ensure logs are not lost if multiple initial state calls happen
+        const baseLogs = action.payload.logs ?? state.logs;
+        const finalLogs = rollbackLog ? [...baseLogs, rollbackLog] : baseLogs;
+
         return {
           ...state,
           groups: action.payload.groups,
           variables: normalizeVariableListFromCore(action.payload.variables),
-          logs: action.payload.logs ?? state.logs,
+          logs: finalLogs,
           connectorCatalog,
           latestConnectors: latestConnectorsFromCatalog(connectorCatalog),
           flowConnectorSelections: selections,
@@ -581,6 +604,9 @@ function appReducer(state: AppState, action: AppAction): AppState {
           formatTemplates: newTemplates,
         };
       })();
+      
+    case 'SET_RESTARTING':
+      return { ...state, isRestarting: action.payload };
 
     default:
       return state;
@@ -824,6 +850,7 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
             connectorCatalog: snapshot.connectorCatalog,
             metrics: snapshot.metrics,
             systemStatus: snapshot.systemStatus.status,
+            rollbackReport: snapshot.rollbackReport,
           },
         });
       }),
@@ -912,7 +939,18 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
       }),
       
       bridge.on('connected', () => {
+        const currentState = stateRef.current;
         dispatch({ type: 'SET_CONNECTED', payload: { connected: true, mode: bridge.getMode() } });
+        
+        // If we were waiting for a restart, trigger a full page reload to get fresh catalog and state
+        if (currentState.isRestarting) {
+          console.log('[AppContext] Reconnected after restart. Reloading UI...');
+          window.location.reload();
+        }
+      }),
+
+      bridge.on('restart-required', () => {
+        dispatch({ type: 'SET_RESTARTING', payload: true });
       }),
     ];
 
