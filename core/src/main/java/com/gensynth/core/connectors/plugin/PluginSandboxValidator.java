@@ -104,89 +104,69 @@ public class PluginSandboxValidator {
      * @return validation result with extracted metadata and any errors/warnings
      */
     public PluginValidationResult validate(byte[] jarBytes, String expectedName, String expectedVersion) {
-        List<String> errors = new ArrayList<>();
-        List<String> warnings = new ArrayList<>();
+        PluginValidationResult.Builder builder = new PluginValidationResult.Builder();
+        builder.log(PluginValidationResult.ValidationLevel.INFO, "Starting validation for plugin: " + expectedName);
 
         // 1. Validate JAR format
-        if (!isValidJar(jarBytes, errors)) {
-            return PluginValidationResult.failure(errors);
+        if (!isValidJar(jarBytes, builder)) {
+            return builder.build();
         }
 
         // 2. Check SPI service file
-        if (!containsSpiServiceFile(jarBytes, errors)) {
-            return PluginValidationResult.failure(errors);
+        if (!containsSpiServiceFile(jarBytes, builder)) {
+            return builder.build();
         }
 
         // 3. Bytecode scan for blocked APIs
-        if (!passesBytecodeCheck(jarBytes, errors)) {
-            return PluginValidationResult.failure(errors);
+        if (!passesBytecodeCheck(jarBytes, builder)) {
+            return builder.build();
         }
 
         // 4. Load descriptor in isolated sandbox with timeout
-        ConnectorPluginDescriptor descriptor = loadDescriptorInSandbox(jarBytes, errors);
+        ConnectorPluginDescriptor descriptor = loadDescriptorInSandbox(jarBytes, builder);
         if (descriptor == null) {
-            return PluginValidationResult.failure(errors);
+            return builder.build();
         }
 
+        builder.pluginId(descriptor.getPluginId())
+               .displayName(descriptor.getDisplayName())
+               .pluginVersion(descriptor.getPluginVersion())
+               .coreApiVersion(descriptor.getCoreApiVersion());
+
         // 5. Check API version compatibility
-        if (!isApiVersionCompatible(descriptor.getCoreApiVersion(), errors)) {
-            return new PluginValidationResult.Builder()
-                    .valid(false)
-                    .pluginId(descriptor.getPluginId())
-                    .displayName(descriptor.getDisplayName())
-                    .pluginVersion(descriptor.getPluginVersion())
-                    .coreApiVersion(descriptor.getCoreApiVersion())
-                    .errors(errors)
-                    .warnings(warnings)
-                    .build();
-        }
+        isApiVersionCompatible(descriptor.getCoreApiVersion(), builder);
 
         // 6. Check for duplicates
         String key = descriptor.getPluginId() + "@" + descriptor.getPluginVersion();
         if (existingPluginKeys.contains(key)) {
-            errors.add("A plugin with the same identifier and version is already installed.");
-            return new PluginValidationResult.Builder()
-                    .valid(false)
-                    .pluginId(descriptor.getPluginId())
-                    .displayName(descriptor.getDisplayName())
-                    .pluginVersion(descriptor.getPluginVersion())
-                    .coreApiVersion(descriptor.getCoreApiVersion())
-                    .errors(errors)
-                    .warnings(warnings)
-                    .build();
+            builder.log(PluginValidationResult.ValidationLevel.WARN, 
+                "A plugin with the same ID and version already exists. Installation will overwrite it.", key);
+        } else {
+            builder.log(PluginValidationResult.ValidationLevel.INFO, "No duplicate plugins detected.");
         }
 
-        // All checks passed
-        return new PluginValidationResult.Builder()
-                .valid(true)
-                .pluginId(descriptor.getPluginId())
-                .displayName(descriptor.getDisplayName())
-                .pluginVersion(descriptor.getPluginVersion())
-                .coreApiVersion(descriptor.getCoreApiVersion())
-                .errors(errors)
-                .warnings(warnings)
-                .build();
+        return builder.build();
     }
 
     /**
      * Checks that the bytes represent a valid JAR archive.
      */
-    boolean isValidJar(byte[] jarBytes, List<String> errors) {
+    boolean isValidJar(byte[] jarBytes, PluginValidationResult.Builder builder) {
         if (jarBytes == null || jarBytes.length == 0) {
-            errors.add("Plugin file is empty or null.");
+            builder.log(PluginValidationResult.ValidationLevel.ERROR, "Plugin file is empty or null.");
             return false;
         }
 
         try (JarInputStream jis = new JarInputStream(new ByteArrayInputStream(jarBytes))) {
-            // Try reading at least one entry to confirm it's a valid JAR
             JarEntry entry = jis.getNextJarEntry();
             if (entry == null) {
-                errors.add("The uploaded file is not a valid JAR archive.");
+                builder.log(PluginValidationResult.ValidationLevel.ERROR, "The uploaded file is not a valid JAR archive (no entries).");
                 return false;
             }
+            builder.log(PluginValidationResult.ValidationLevel.INFO, "Valid JAR format detected.");
             return true;
         } catch (IOException e) {
-            errors.add("The uploaded file is not a valid JAR archive.");
+            builder.log(PluginValidationResult.ValidationLevel.ERROR, "Failed to read JAR format: " + e.getMessage());
             return false;
         }
     }
@@ -194,44 +174,47 @@ public class PluginSandboxValidator {
     /**
      * Checks that the JAR contains the SPI service registration file.
      */
-    boolean containsSpiServiceFile(byte[] jarBytes, List<String> errors) {
+    boolean containsSpiServiceFile(byte[] jarBytes, PluginValidationResult.Builder builder) {
         try (JarInputStream jis = new JarInputStream(new ByteArrayInputStream(jarBytes))) {
             JarEntry entry;
             while ((entry = jis.getNextJarEntry()) != null) {
                 if (SPI_SERVICE_FILE.equals(entry.getName())) {
+                    builder.log(PluginValidationResult.ValidationLevel.INFO, "SPI service registration found: " + SPI_SERVICE_FILE);
                     return true;
                 }
             }
         } catch (IOException e) {
             logger.debug("Error scanning JAR for SPI file", e);
         }
-        errors.add("Plugin does not contain the required service registration. See the plugin development guide.");
+        builder.log(PluginValidationResult.ValidationLevel.ERROR, "Plugin is missing '" + SPI_SERVICE_FILE + "' registration.");
         return false;
     }
 
     /**
      * Scans all .class files in the JAR for invocations of blocked APIs.
      */
-    boolean passesBytecodeCheck(byte[] jarBytes, List<String> errors) {
+    boolean passesBytecodeCheck(byte[] jarBytes, PluginValidationResult.Builder builder) {
+        int classesScanned = 0;
         try (JarInputStream jis = new JarInputStream(new ByteArrayInputStream(jarBytes))) {
             JarEntry entry;
             while ((entry = jis.getNextJarEntry()) != null) {
                 if (!entry.getName().endsWith(".class")) {
                     continue;
                 }
-
+                classesScanned++;
                 byte[] classBytes = readEntryBytes(jis);
                 List<String> violations = scanClassForBlockedApis(classBytes);
                 if (!violations.isEmpty()) {
                     String className = entry.getName().replace("/", ".").replace(".class", "");
-                    errors.add("Blocked API usage found in " + className + ": " + String.join(", ", violations));
-                    logger.warn("Blocked API usage found in {}: {}", entry.getName(), violations);
+                    builder.log(PluginValidationResult.ValidationLevel.ERROR, 
+                        "Security violation: usage of restricted APIs", "Class: " + className + ", Violations: " + violations);
                     return false;
                 }
             }
+            builder.log(PluginValidationResult.ValidationLevel.INFO, "Bytecode scan completed. Classes analyzed: " + classesScanned);
             return true;
         } catch (IOException e) {
-            errors.add("Failed to analyze plugin bytecode.");
+            builder.log(PluginValidationResult.ValidationLevel.ERROR, "Failed to analyze bytecode: " + e.getMessage());
             return false;
         }
     }
@@ -255,20 +238,16 @@ public class PluginSandboxValidator {
                             @Override
                             public void visitMethodInsn(int opcode, String owner, String methodName,
                                                          String methodDescriptor, boolean isInterface) {
-                                
-                                // No more whitelist. Validation is now 100% strict.
-                                // Plugins should not contain their own copies of trusted libraries.
-
                             Set<String> blockedMethods = BLOCKED_APIS.get(owner);
                             if (blockedMethods != null && blockedMethods.contains(methodName)) {
-                                violations.add(owner + "." + methodName);
+                                violations.add(owner.replace("/", ".") + "." + methodName);
                             }
                         }
                     };
                 }
             }, ClassReader.SKIP_FRAMES | ClassReader.SKIP_DEBUG);
         } catch (Exception e) {
-            violations.add("Unreadable class file");
+            violations.add("Unreadable class file: " + e.getMessage());
         }
 
         return violations;
@@ -279,17 +258,15 @@ public class PluginSandboxValidator {
      *
      * @return the descriptor if successfully loaded, or null (with errors populated)
      */
-    ConnectorPluginDescriptor loadDescriptorInSandbox(byte[] jarBytes, List<String> errors) {
+    ConnectorPluginDescriptor loadDescriptorInSandbox(byte[] jarBytes, PluginValidationResult.Builder builder) {
         Path tempFile = null;
         try {
-            // Write JAR to a temp file so URLClassLoader can load it
             tempFile = Files.createTempFile("gensynth-plugin-validate-", ".jar");
             Files.write(tempFile, jarBytes);
 
             List<URL> urls = new ArrayList<>();
             urls.add(tempFile.toUri().toURL());
 
-            // Include shared libraries in the sandbox classpath for dependency resolution
             if (sharedLibDir != null && Files.isDirectory(sharedLibDir)) {
                 try (DirectoryStream<Path> stream = Files.newDirectoryStream(sharedLibDir, "*.jar")) {
                     for (Path sharedJar : stream) {
@@ -298,36 +275,36 @@ public class PluginSandboxValidator {
                 }
             }
 
-            // Parent is the system classloader so the plugin can see the SPI interfaces
             URLClassLoader sandboxLoader = new URLClassLoader(
                     urls.toArray(new URL[0]),
                     ConnectorPluginProvider.class.getClassLoader()
             );
 
             try {
+                builder.log(PluginValidationResult.ValidationLevel.INFO, "Inspecting plugin descriptor...");
                 ConnectorPluginDescriptor descriptor = loadWithTimeout(sandboxLoader);
                 if (descriptor == null) {
-                    errors.add("No valid plugin provider found in the JAR.");
+                    builder.log(PluginValidationResult.ValidationLevel.ERROR, "No ConnectorPluginProvider found in ServiceLoader.");
+                } else {
+                    builder.log(PluginValidationResult.ValidationLevel.INFO, "Found descriptor: " + descriptor.getPluginId() + " v" + descriptor.getPluginVersion());
                 }
                 return descriptor;
             } finally {
                 sandboxLoader.close();
             }
         } catch (TimeoutException e) {
-            errors.add("Plugin took too long to load. It may contain blocking or infinite code.");
+            builder.log(PluginValidationResult.ValidationLevel.ERROR, "Loading timeout: plugin took too long to respond (> " + DESCRIPTOR_LOAD_TIMEOUT_SECONDS + "s)");
             return null;
         } catch (Exception e) {
             logger.debug("Error loading plugin descriptor in sandbox", e);
             String message = (e.getCause() != null) ? e.getCause().getMessage() : e.getMessage();
-            errors.add("Failed to load plugin descriptor: " + message);
+            builder.log(PluginValidationResult.ValidationLevel.ERROR, "Failed to load plugin descriptor", message);
             return null;
         } finally {
             if (tempFile != null) {
                 try {
                     Files.deleteIfExists(tempFile);
-                } catch (IOException ignored) {
-                    // Best-effort cleanup
-                }
+                } catch (IOException ignored) {}
             }
         }
     }
@@ -349,9 +326,16 @@ public class PluginSandboxValidator {
                 ServiceLoader<ConnectorPluginProvider> loader =
                         ServiceLoader.load(ConnectorPluginProvider.class, classLoader);
                 for (ConnectorPluginProvider provider : loader) {
-                    // Ensure we only load the provider defined in the JAR being validated,
-                    // not bundled providers from the parent classloader.
+                    // Only validate the provider that comes from the current JAR
                     if (provider.getClass().getClassLoader() == classLoader) {
+                        // DRY-RUN: Try to instantiate the actual plugin.
+                        // This will execute constructors and initialization logic.
+                        try {
+                            provider.create();
+                        } catch (Throwable t) {
+                            throw new RuntimeException("Dry-run failed: Plugin could not be initialized. " + t.getMessage(), t);
+                        }
+                        
                         return provider.descriptor();
                     }
                 }
@@ -368,21 +352,22 @@ public class PluginSandboxValidator {
     /**
      * Checks if the plugin's declared core API version is compatible with the current core.
      */
-    boolean isApiVersionCompatible(String pluginApiVersion, List<String> errors) {
+    boolean isApiVersionCompatible(String pluginApiVersion, PluginValidationResult.Builder builder) {
         if (pluginApiVersion == null || pluginApiVersion.isBlank()) {
-            errors.add("Plugin does not declare a compatible API version.");
+            builder.log(PluginValidationResult.ValidationLevel.ERROR, "Plugin does not declare a core API version.");
             return false;
         }
 
-        // Simple compatibility: must match the major version pattern (e.g. "1.x" matches "1.x")
         String coreMajor = CORE_API_VERSION.split("\\.")[0];
         String pluginMajor = pluginApiVersion.split("\\.")[0];
 
         if (!coreMajor.equals(pluginMajor)) {
-            errors.add("Plugin is not compatible with the current version of Gen-Synth.");
+            builder.log(PluginValidationResult.ValidationLevel.ERROR, 
+                "Incompatible API version. Required: " + CORE_API_VERSION + ", Found: " + pluginApiVersion);
             return false;
         }
 
+        builder.log(PluginValidationResult.ValidationLevel.INFO, "API version compatibility check passed: " + pluginApiVersion);
         return true;
     }
 

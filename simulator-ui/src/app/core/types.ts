@@ -29,7 +29,8 @@ export type CoreMessageType =
   | 'BRIDGE_RECONNECT_EXHAUSTED'
   | 'PLUGIN_VALIDATION_RESULT'
   | 'PLUGIN_INSTALL_RESULT'
-  | 'RESTART_REQUIRED';
+  | 'RESTART_REQUIRED'
+  | 'ROLLBACK_REPORT';
 
 export interface CoreMessage<T = unknown> {
   type: CoreMessageType;
@@ -70,6 +71,12 @@ export interface SystemStatusPayload {
   uptime: number;
   totalMessages: number;
   messagesPerSecond: number;
+}
+
+export interface RollbackReportPayload {
+  pluginId: string;
+  message: string;
+  timestamp: number;
 }
 
 export interface MetricsPayload {
@@ -319,6 +326,7 @@ export interface InitialStatePayload {
   variables: VariableState[];
   metrics: MetricsPayload;
   connectorCatalog: ConnectorPluginDescriptor[];
+  rollbackReport?: RollbackReportPayload;
 }
 
 export interface GroupState {
@@ -382,6 +390,12 @@ export interface UninstallPluginCommandPayload {
   pluginVersion: string;
 }
 
+export interface ValidationEntry {
+  level: 'INFO' | 'WARN' | 'ERROR';
+  message: string;
+  context?: string;
+}
+ 
 export interface PluginValidationResultPayload {
   commandId?: string;
   status: string;
@@ -390,8 +404,7 @@ export interface PluginValidationResultPayload {
   displayName?: string;
   pluginVersion?: string;
   coreApiVersion?: string;
-  errors: string[];
-  warnings: string[];
+  logs: ValidationEntry[];
 }
 
 export interface PluginInstallResultPayload {

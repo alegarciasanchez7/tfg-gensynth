@@ -155,7 +155,6 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
 
     @Override
     public void onOpen(WebSocket conn, ClientHandshake handshake) {
-        sendLog(conn, "info", "WS", "Client connected");
         sendSystemStatus(conn, null);
         sendGroupsUpdate(conn);
     }
@@ -918,7 +917,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         }
 
         PluginValidationResult result = pluginInstaller.validate(jarBytes, pluginName, pluginVersion);
-
+ 
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("commandId", commandId);
         response.put("status", "ok");
@@ -927,14 +926,13 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         response.put("displayName", result.getDisplayName());
         response.put("pluginVersion", result.getPluginVersion());
         response.put("coreApiVersion", result.getCoreApiVersion());
-        response.put("errors", result.getErrors());
-        response.put("warnings", result.getWarnings());
+        response.put("logs", result.getLogs());
         
-        logger.info("[PLUGINS] Sending validation result for '{}': valid={}, errors={}", 
-                   pluginName, result.isValid(), result.getErrors());
+        logger.info("[PLUGINS] Sending validation result for '{}': valid={}, logsCount={}", 
+                   pluginName, result.isValid(), result.getLogs().size());
                    
         sendMessage(conn, "PLUGIN_VALIDATION_RESULT", commandId, response);
-
+ 
         logToBackend(result.isValid() ? "info" : "warn", "PLUGINS",
                 "Plugin validation " + (result.isValid() ? "passed" : "failed") + " for '" + pluginName + "'", commandId);
     }
@@ -975,10 +973,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             broadcastRestartRequired();
 
             // Schedule JVM exit (the process wrapper/script will restart)
-            scheduler.schedule(() -> {
-                logger.info("Restarting Gen-Synth Core after plugin installation...");
-                com.gensynth.core.util.RestartUtil.restart();
-            }, 3, TimeUnit.SECONDS);
+            scheduler.schedule(this::restartAfterPluginInstall, 3, TimeUnit.SECONDS);
         } else {
             logToBackend("error", "PLUGINS", "Plugin install failed: " + result.getMessage(), commandId);
         }
@@ -1325,6 +1320,20 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         payload.put("variables", variablesPayload);
         payload.put("metrics", buildMetricsPayload(null));
         payload.put("connectorCatalog", connectorCatalogService.listAvailableConnectors());
+        
+        // Include Rollback report if it exists (so the UI can show it after reload)
+        try {
+            Path reportPath = Paths.get("plugins", ".rollback_report.json");
+            if (java.nio.file.Files.exists(reportPath)) {
+                String content = java.nio.file.Files.readString(reportPath);
+                payload.put("rollbackReport", objectMapper.readTree(content));
+                java.nio.file.Files.delete(reportPath);
+                logger.info("[PLUGINS] Rollback report embedded in INITIAL_STATE and cleared.");
+            }
+        } catch (Exception e) {
+            logger.error("Failed to include rollback report in initial state", e);
+        }
+        
         return payload;
     }
 
@@ -1410,6 +1419,17 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         payload.put("status", "ok");
         payload.put("result", result);
         sendMessage(conn, "CONNECTION_STATUS", commandId, payload);
+    }
+
+    private void restartAfterPluginInstall() {
+        logger.info("Restarting Gen-Synth Core after plugin installation...");
+        try {
+            // Release the port before spawning the new process
+            this.stop(1000);
+            com.gensynth.core.util.RestartUtil.restart();
+        } catch (Exception e) {
+            logger.error("Failed to trigger restart", e);
+        }
     }
 
     private void sendError(WebSocket conn, String commandId, String code, String message, Map<String, Object> details) {
