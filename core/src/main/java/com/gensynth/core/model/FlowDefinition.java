@@ -32,6 +32,7 @@ public class FlowDefinition {
     private int burst;
     private String template;
     private String format; // "json", "xml", "csv", "plain"
+    private boolean enabled;
     private String connectorId;
     private final Map<String, Object> connectorConfig;
     private final Instant createdAt;
@@ -79,6 +80,7 @@ public class FlowDefinition {
         this.burst = Math.max(1, burst);
         this.template = Objects.requireNonNull(template, "template cannot be null");
         this.format = format != null ? format : "json";
+        this.enabled = true;
         this.connectorId = connectorId;
         this.connectorConfig = connectorConfig != null ? new HashMap<>(connectorConfig) : new HashMap<>();
         this.createdAt = Instant.now();
@@ -141,6 +143,10 @@ public class FlowDefinition {
         return new HashMap<>(connectorConfig);
     }
 
+    public boolean isEnabled() {
+        return enabled;
+    }
+
     public Instant getCreatedAt() {
         return createdAt;
     }
@@ -198,6 +204,11 @@ public class FlowDefinition {
         this.updatedAt = Instant.now();
     }
 
+    public void setEnabled(boolean enabled) {
+        this.enabled = enabled;
+        this.updatedAt = Instant.now();
+    }
+
     public void setConnectorId(String connectorId) {
         this.connectorId = connectorId;
         this.updatedAt = Instant.now();
@@ -233,6 +244,7 @@ public class FlowDefinition {
         payload.put("burst", burst);
         payload.put("template", template);
         payload.put("format", format);
+        payload.put("enabled", enabled);
         payload.put("connectorId", connectorId);
         payload.put("connectorConfig", connectorConfig);
         payload.put("createdAt", createdAt.toString());
@@ -262,7 +274,14 @@ public class FlowDefinition {
         @SuppressWarnings("unchecked")
         Map<String, Object> connectorConfig = (Map<String, Object>) payload.get("connectorConfig");
 
-        return new FlowDefinition(flowId, groupId, name, technology, host, port, topic, interval, burst, template, format, connectorId, connectorConfig);
+        FlowDefinition flow = new FlowDefinition(flowId, groupId, name, technology, host, port, topic, interval, burst, template, format, connectorId, connectorConfig);
+        
+        Boolean enabled = (Boolean) payload.get("enabled");
+        if (enabled != null) {
+            flow.setEnabled(enabled);
+        }
+        
+        return flow;
     }
 
     @Override

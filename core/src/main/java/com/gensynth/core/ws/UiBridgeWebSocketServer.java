@@ -175,7 +175,8 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             "stopped",
             "Flujo base para validacion E2E con RabbitMQ local",
             1,
-            "parallel"
+            "parallel",
+            true
         );
 
         rabbitGroup.flows.add(new FlowRuntime(
@@ -194,6 +195,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             5672,
             "{\"eventId\":\"{{uuid}}\",\"timestamp\":\"{{ts}}\",\"source\":\"gen-synth\",\"value\":{{n}}}",
             "json",
+            true,
             Map.of()
         ));
 
@@ -488,7 +490,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             int threads = Math.max(1, payload.path("threads").asInt(1));
             String outputMode = payload.path("outputMode").asText("parallel");
 
-            groupsById.put(id, new GroupRuntime(id, name, "stopped", description, threads, outputMode));
+            groupsById.put(id, new GroupRuntime(id, name, "stopped", description, threads, outputMode, true));
             persistState();
         }
 
@@ -567,6 +569,15 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                 group.outputMode = outputMode.isBlank() ? group.outputMode : outputMode;
             }
 
+            if (payload.hasNonNull("enabled")) {
+                boolean enabled = payload.path("enabled").asBoolean();
+                group.enabled = enabled;
+                // Propagate to all flows in runtime
+                for (FlowRuntime flow : group.flows) {
+                    flow.enabled = enabled;
+                }
+            }
+
             persistState();
         }
 
@@ -633,6 +644,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                 port,
                 template,
                 format,
+                true,
                 connectorConfig
             ));
 
@@ -739,6 +751,16 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             }
             if (payload.hasNonNull("connectorConfig") && payload.get("connectorConfig").isObject()) {
                 flow.connectorConfig = parseConnectorConfig(payload.get("connectorConfig"));
+            }
+
+            if (payload.hasNonNull("enabled")) {
+                boolean enabled = payload.path("enabled").asBoolean();
+                flow.enabled = enabled;
+                
+                // If we unblock a flow, the group should also appear as unblocked
+                if (enabled) {
+                    group.enabled = true;
+                }
             }
 
             if (wasRunning) {
@@ -934,7 +956,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
 
     private void publishBurst(GroupRuntime group, FlowRuntime flow) {
         ConnectorPlugin connector = connectorByFlowId.get(flow.id);
-        if (connector == null) {
+        if (connector == null || !flow.enabled) {
             return;
         }
 
@@ -1392,15 +1414,17 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         private String description;
         private int threads;
         private String outputMode;
+        private boolean enabled;
         private final List<FlowRuntime> flows = new ArrayList<>();
 
-        private GroupRuntime(String id, String name, String status, String description, int threads, String outputMode) {
+        private GroupRuntime(String id, String name, String status, String description, int threads, String outputMode, boolean enabled) {
             this.id = id;
             this.name = name;
             this.status = status;
             this.description = description;
             this.threads = threads;
             this.outputMode = outputMode;
+            this.enabled = enabled;
         }
 
         private static GroupRuntime fromDefinition(GroupDefinition definition) {
@@ -1410,7 +1434,8 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                 "stopped",
                 definition.getDescription(),
                 definition.getThreads(),
-                definition.getOutputMode()
+                definition.getOutputMode(),
+                definition.isEnabled()
             );
 
             for (FlowDefinition flowDefinition : definition.getAllFlows().values()) {
@@ -1422,6 +1447,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
 
         private GroupDefinition toDefinition() {
             GroupDefinition definition = new GroupDefinition(id, name, description, threads, outputMode);
+            definition.setEnabled(enabled);
             for (FlowRuntime flow : flows) {
                 definition.addFlow(flow.toDefinition(id));
             }
@@ -1437,6 +1463,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             payload.put("description", description);
             payload.put("threads", threads);
             payload.put("outputMode", outputMode);
+            payload.put("enabled", enabled);
 
             List<Map<String, Object>> flowPayload = new ArrayList<>();
             for (FlowRuntime flow : flows) {
@@ -1463,6 +1490,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         private int port;
         private String template;
         private String format;
+        private boolean enabled;
         private Map<String, Object> connectorConfig;
 
         private FlowRuntime(
@@ -1481,6 +1509,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             int port,
             String template,
             String format,
+            boolean enabled,
             Map<String, Object> connectorConfig
         ) {
             this.id = id;
@@ -1498,32 +1527,34 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             this.port = port;
             this.template = template;
             this.format = format != null ? format : "json";
+            this.enabled = enabled;
             this.connectorConfig = connectorConfig != null ? new LinkedHashMap<>(connectorConfig) : new LinkedHashMap<>();
         }
 
         private static FlowRuntime fromDefinition(FlowDefinition definition) {
-            return new FlowRuntime(
-                definition.getFlowId(),
-                definition.getName(),
-                definition.getTechnology(),
-                "disconnected",
-                0,
-                0,
-                false,
-                null,
-                definition.getInterval(),
-                definition.getBurst(),
-                definition.getTopic(),
-                definition.getHost(),
-                definition.getPort(),
-                definition.getTemplate(),
-                definition.getFormat(),
-                definition.getConnectorConfig()
-            );
+            String id = definition.getFlowId();
+            String name = definition.getName();
+            String technology = definition.getTechnology();
+            String status = "disconnected";
+            int throughput = 0;
+            int latency = 0;
+            boolean hasError = false;
+            String errorMessage = null;
+            int interval = definition.getInterval();
+            int burst = definition.getBurst();
+            String topic = definition.getTopic();
+            String host = definition.getHost();
+            int port = definition.getPort();
+            String template = definition.getTemplate();
+            String format = definition.getFormat();
+            boolean enabled = definition.isEnabled();
+            Map<String, Object> config = definition.getConnectorConfig();
+
+            return new FlowRuntime(id, name, technology, status, throughput, latency, hasError, errorMessage, interval, burst, topic, host, port, template, format, enabled, config);
         }
 
         private FlowDefinition toDefinition(String groupId) {
-            return new FlowDefinition(
+            FlowDefinition def = new FlowDefinition(
                 id,
                 groupId,
                 name,
@@ -1538,6 +1569,8 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                 technology,
                 connectorConfig
             );
+            def.setEnabled(enabled);
+            return def;
         }
 
         private Map<String, Object> toPayload() {
@@ -1559,6 +1592,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             payload.put("port", port);
             payload.put("template", template);
             payload.put("format", format);
+            payload.put("enabled", enabled);
             payload.put("connectorConfig", connectorConfig);
             return payload;
         }
