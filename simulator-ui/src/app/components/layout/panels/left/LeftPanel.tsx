@@ -15,6 +15,8 @@ import {
   Square,
   Pause,
   Trash2,
+  Lock,
+  Unlock,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '../../../ui/button';
@@ -72,6 +74,8 @@ interface LeftPanelProps {
     template?: string,
     connectorConfig?: Record<string, unknown>,
   ) => Promise<Flow>;
+  onUpdateGroupConfig: (groupId: string, config: any, name?: string) => Promise<void>;
+  onUpdateFlowConfig: (groupId: string, flowId: string, config: any, name?: string) => Promise<void>;
 }
 
 const connColor: Record<ConnectionStatus, string> = {
@@ -125,11 +129,12 @@ function parseTemplateVars(template: string): Array<{ scope: string; name: strin
   return result;
 }
 
-function FlowItem({ flow, selected, groupId, onSelect, formatTemplate }: {
+function FlowItem({ flow, selected, groupId, onSelect, onToggleEnabled, formatTemplate }: {
   flow: Flow;
   selected: boolean;
   groupId: string;
   onSelect: (gId: string, fId: string) => void;
+  onToggleEnabled: (gId: string, fId: string, enabled: boolean, name: string) => void;
   formatTemplate: Record<string, string>;
 }) {
   const connCfg = connColor[flow.connectionStatus];
@@ -138,16 +143,16 @@ function FlowItem({ flow, selected, groupId, onSelect, formatTemplate }: {
   const usedVars = parseTemplateVars(template);
 
   return (
-    <button
+    <div
       onClick={() => onSelect(groupId, flow.id)}
-      className={`w-full text-left px-3 py-2 flex flex-col gap-1 border-l-2 transition-all ${
+      className={`w-full text-left px-3 py-2 flex flex-col gap-1 border-l-2 transition-all cursor-pointer ${
         selected
           ? 'bg-violet-500/10 border-l-violet-500'
           : 'border-l-transparent hover:bg-violet-500/5 hover:border-l-violet-400/60'
       }`}
     >
-      {/* Row 1: tech badge + name */}
-      <div className="flex items-center gap-1.5">
+      {/* Row 1: tech badge + name + lock */}
+      <div className={`flex items-center gap-1.5 transition-opacity ${!flow.enabled ? 'opacity-40' : ''}`}>
           <span
             className={`inline-flex h-4 w-4 items-center justify-center rounded border ${
             selected
@@ -175,10 +180,21 @@ function FlowItem({ flow, selected, groupId, onSelect, formatTemplate }: {
         >
           {flow.name.split('·')[1]?.trim() || flow.name}
         </span>
+
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleEnabled(groupId, flow.id, !flow.enabled, flow.name);
+          }}
+          className={`ml-auto p-1 rounded hover:bg-black/10 transition-colors ${!flow.enabled ? 'text-red-400' : 'text-[var(--c-tx4)] hover:text-[var(--c-tx2)]'}`}
+          title={flow.enabled ? 'Lock flow' : 'Unlock flow'}
+        >
+          {flow.enabled ? <Unlock size={10} /> : <Lock size={10} />}
+        </button>
       </div>
 
       {/* Row 2: status dot + throughput + error */}
-      <div className="flex items-center gap-2 pl-0.5">
+      <div className={`flex items-center gap-2 pl-0.5 transition-opacity ${!flow.enabled ? 'opacity-40' : ''}`}>
         <span className="relative flex h-1.5 w-1.5">
           <span className={`${dotCfg} rounded-full w-1.5 h-1.5 ${flow.connectionStatus === 'connected' ? 'animate-pulse' : ''}`} />
         </span>
@@ -205,7 +221,7 @@ function FlowItem({ flow, selected, groupId, onSelect, formatTemplate }: {
           ))}
         </div>
       )}
-    </button>
+    </div>
   );
 }
 
@@ -218,6 +234,8 @@ function GroupItem({
   onToggleGroup,
   onDeleteGroup,
   onCreateFlow,
+  onUpdateGroupConfig,
+  onUpdateFlowConfig,
   latestConnectors,
 }: {
   group: Group;
@@ -237,7 +255,10 @@ function GroupItem({
     interval?: number,
     burst?: number,
     template?: string,
+    connectorConfig?: Record<string, unknown>,
   ) => Promise<Flow>;
+  onUpdateGroupConfig: (groupId: string, config: any, name?: string) => Promise<void>;
+  onUpdateFlowConfig: (groupId: string, flowId: string, config: any, name?: string) => Promise<void>;
   latestConnectors: ConnectorPluginDescriptor[];
 }) {
   const gCfg = groupStatusCfg[group.status];
@@ -338,7 +359,7 @@ function GroupItem({
               selectedGroup
                 ? 'bg-cyan-500/10 border-l-2 border-l-cyan-500'
                 : 'hover:bg-cyan-500/5 border-l-2 border-l-transparent'
-            }`}
+            } ${!group.enabled ? 'opacity-40' : ''}`}
           >
             <button
               onClick={() => onToggleGroup(group.id)}
@@ -348,9 +369,9 @@ function GroupItem({
               {group.expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
             </button>
 
-            <button
+            <div
               onClick={() => onSelectGroup(group.id)}
-              className="flex-1 flex flex-col gap-0.5 text-left"
+              className="flex-1 flex flex-col gap-0.5 text-left cursor-pointer"
             >
               <div className="flex items-center gap-1.5">
                 <span
@@ -369,6 +390,17 @@ function GroupItem({
                 >
                   {group.name}
                 </span>
+
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onUpdateGroupConfig(group.id, { enabled: !group.enabled }, group.name);
+                  }}
+                  className={`ml-auto p-1 rounded hover:bg-black/10 transition-colors ${!group.enabled ? 'text-red-400' : 'text-[var(--c-tx4)] hover:text-[var(--c-tx2)]'}`}
+                  title={group.enabled ? 'Lock group' : 'Unlock group'}
+                >
+                  {group.enabled ? <Unlock size={10} /> : <Lock size={10} />}
+                </button>
               </div>
               <div className="flex items-center gap-2 pl-3">
                 <span className={`text-[10px] ${gCfg.color}`} style={{ fontFamily: 'JetBrains Mono, monospace' }}>
@@ -381,7 +413,7 @@ function GroupItem({
                   <AlertCircle size={9} className="text-red-500" />
                 )}
               </div>
-            </button>
+            </div>
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent className="w-48">
@@ -421,6 +453,7 @@ function GroupItem({
               groupId={group.id}
               selected={selection.type === 'flow' && selection.flowId === flow.id}
               onSelect={onSelectFlow}
+              onToggleEnabled={(gId, fId, en, name) => onUpdateFlowConfig(gId, fId, { enabled: en }, name)}
               formatTemplate={formatTemplate}
             />
           ))}
@@ -626,6 +659,8 @@ export function LeftPanel({
   onCreateGroup,
   onDeleteGroup,
   onCreateFlow,
+  onUpdateGroupConfig,
+  onUpdateFlowConfig,
 }: LeftPanelProps) {
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [isCreateGroupOpen, setIsCreateGroupOpen] = useState(false);
@@ -1059,6 +1094,8 @@ export function LeftPanel({
             onToggleGroup={onToggleGroup}
             onDeleteGroup={onDeleteGroup}
             onCreateFlow={onCreateFlow}
+            onUpdateGroupConfig={onUpdateGroupConfig}
+            onUpdateFlowConfig={onUpdateFlowConfig}
             latestConnectors={latestConnectors}
           />
         ))}
