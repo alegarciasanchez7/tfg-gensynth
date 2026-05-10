@@ -1,5 +1,6 @@
 package com.gensynth.core.ws;
 
+import com.fasterxml.jackson.core.StreamReadConstraints;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -75,7 +76,16 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         "UNINSTALL_PLUGIN"
     );
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper = createConfiguredMapper();
+
+    private static ObjectMapper createConfiguredMapper() {
+        ObjectMapper mapper = new ObjectMapper();
+        // Increase the string length limit to allow uploading large plugin JARs (100MB)
+        mapper.getFactory().setStreamReadConstraints(
+            StreamReadConstraints.builder().maxStringLength(100_000_000).build()
+        );
+        return mapper;
+    }
     private final Object stateLock = new Object();
 
     private final ConnectorCatalogService connectorCatalogService;

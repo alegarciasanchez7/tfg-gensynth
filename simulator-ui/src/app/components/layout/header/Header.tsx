@@ -137,29 +137,32 @@ function ConnectorCatalogPanel({ latestConnectors, connectorHealthSummary, onClo
                   </div>
                 )}
 
-                {/* Uninstall button for external plugins — shown for all plugins that come from plugins/ */}
-                {connector.coreApiVersion && (
-                  <div className="mt-1">
+                {/* Uninstall button for external plugins only */}
+                {connector.external && (
+                  <div className="mt-2 pt-2 border-t border-[var(--c-br2)]/50">
                     {confirmUninstall === key ? (
-                      <div className="flex gap-1">
-                        <button
-                          onClick={() => setConfirmUninstall(null)}
-                          className="flex-1 text-[8px] px-1.5 py-0.5 rounded border border-[var(--c-br1)] text-[var(--c-tx4)] hover:bg-[var(--c-bg5)] transition-colors"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          onClick={() => handleUninstall(connector.pluginId, connector.pluginVersion)}
-                          disabled={uninstalling === key}
-                          className="flex-1 flex items-center justify-center gap-0.5 text-[8px] px-1.5 py-0.5 rounded border border-red-500/40 text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50"
-                        >
-                          {uninstalling === key ? (
-                            <Loader2 size={8} className="animate-spin" />
-                          ) : (
-                            <Trash2 size={8} />
-                          )}
-                          Remove
-                        </button>
+                      <div className="flex flex-col gap-2">
+                        <span className="text-[8px] text-red-400/80 uppercase tracking-tight text-center">Are you sure?</span>
+                        <div className="flex gap-1.5">
+                          <button
+                            onClick={() => setConfirmUninstall(null)}
+                            className="flex-1 text-[8px] px-2 py-1 rounded bg-[var(--c-bg4)] border border-[var(--c-br1)] text-[var(--c-tx3)] hover:text-[var(--c-tx1)] hover:bg-[var(--c-bg5)] transition-all"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={() => handleUninstall(connector.pluginId, connector.pluginVersion)}
+                            disabled={uninstalling === key}
+                            className="flex-1 flex items-center justify-center gap-1 text-[8px] px-2 py-1 rounded bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500/20 transition-all disabled:opacity-50"
+                          >
+                            {uninstalling === key ? (
+                              <Loader2 size={9} className="animate-spin" />
+                            ) : (
+                              <Trash2 size={9} />
+                            )}
+                            Remove
+                          </button>
+                        </div>
                       </div>
                     ) : (
                       <button
@@ -167,9 +170,10 @@ function ConnectorCatalogPanel({ latestConnectors, connectorHealthSummary, onClo
                           e.stopPropagation();
                           setConfirmUninstall(key);
                         }}
-                        className="text-[8px] text-[var(--c-tx5)] hover:text-red-400 transition-colors"
+                        className="group flex items-center gap-1.5 text-[8px] text-[var(--c-tx4)] hover:text-red-400 transition-all px-2 py-1 rounded border border-transparent hover:border-red-500/20 hover:bg-red-500/5 w-full justify-center"
                       >
-                        Uninstall
+                        <Trash2 size={9} className="opacity-50 group-hover:opacity-100" />
+                        <span>Uninstall Plugin</span>
                       </button>
                     )}
                   </div>

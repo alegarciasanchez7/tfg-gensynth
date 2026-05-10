@@ -119,6 +119,7 @@ export interface ConnectorPluginDescriptor {
   pluginVersion: string;
   coreApiVersion: string;
   configSchema: Record<string, unknown>;
+  external: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────

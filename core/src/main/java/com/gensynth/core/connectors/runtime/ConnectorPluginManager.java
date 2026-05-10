@@ -88,6 +88,7 @@ public class ConnectorPluginManager {
                 continue;
             }
             providersByKey.put(key, provider);
+            descriptor.setExternal(external); // Mark descriptor for UI
             if (external) {
                 externalPluginKeys.add(key);
                 if (loader != null) {
@@ -115,13 +116,26 @@ public class ConnectorPluginManager {
     }
 
     /**
-     * Loads ConnectorPluginProviders from a single JAR file using an isolated URLClassLoader.
+     * Loads ConnectorPluginProviders from a single JAR file using an isolated URLClassLoader
+     * that also includes shared libraries (Kafka, RabbitMQ, etc.).
      */
     private void loadProvidersFromJar(Path jarPath) {
         try {
-            URL jarUrl = jarPath.toUri().toURL();
+            List<URL> urls = new ArrayList<>();
+            urls.add(jarPath.toUri().toURL());
+            
+            // Include shared libraries in the plugin's classpath
+            Path sharedLibDir = jarPath.getParent().resolve("../lib/shared").normalize();
+            if (Files.isDirectory(sharedLibDir)) {
+                try (DirectoryStream<Path> sharedStream = Files.newDirectoryStream(sharedLibDir, "*.jar")) {
+                    for (Path sharedJar : sharedStream) {
+                        urls.add(sharedJar.toUri().toURL());
+                    }
+                }
+            }
+
             URLClassLoader pluginClassLoader = new URLClassLoader(
-                    new URL[]{jarUrl},
+                    urls.toArray(new URL[0]),
                     ConnectorPluginProvider.class.getClassLoader()
             );
 
@@ -129,7 +143,7 @@ public class ConnectorPluginManager {
                     ServiceLoader.load(ConnectorPluginProvider.class, pluginClassLoader);
             registerProviders(loader, true, pluginClassLoader);
 
-            logger.info("Loaded external plugin from: {}", jarPath.getFileName());
+            logger.info("Loaded external plugin from: {} (with shared libs)", jarPath.getFileName());
         } catch (Exception e) {
             logger.warn("Failed to load plugin from {}: {}", jarPath.getFileName(), e.getMessage());
         }
