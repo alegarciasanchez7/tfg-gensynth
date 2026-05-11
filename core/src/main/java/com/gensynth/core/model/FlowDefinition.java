@@ -259,26 +259,35 @@ public class FlowDefinition {
      * @return FlowDefinition instance
      */
     public static FlowDefinition fromPayload(Map<String, Object> payload) {
-        String flowId = (String) payload.get("id");
+        String flowId = (String) payload.getOrDefault("id", java.util.UUID.randomUUID().toString());
         String groupId = (String) payload.get("groupId");
-        String name = (String) payload.get("name");
-        String technology = (String) payload.get("technology");
-        String host = (String) payload.get("host");
-        int port = ((Number) payload.get("port")).intValue();
-        String topic = (String) payload.get("topic");
-        int interval = ((Number) payload.get("interval")).intValue();
-        int burst = ((Number) payload.get("burst")).intValue();
-        String template = (String) payload.get("template");
-        String format = (String) payload.get("format");
-        String connectorId = (String) payload.get("connectorId");
+        String name = (String) payload.getOrDefault("name", "Unnamed Flow");
+        String technology = (String) payload.getOrDefault("technology", "rabbitmq");
+        String host = (String) payload.getOrDefault("host", "localhost");
+        
+        Object portObj = payload.get("port");
+        int port = (portObj instanceof Number) ? ((Number) portObj).intValue() : 5672;
+        
+        String topic = (String) payload.getOrDefault("topic", "");
+        
+        Object intervalObj = payload.get("interval");
+        int interval = (intervalObj instanceof Number) ? ((Number) intervalObj).intValue() : 1000;
+        
+        Object burstObj = payload.get("burst");
+        int burst = (burstObj instanceof Number) ? ((Number) burstObj).intValue() : 1;
+        
+        String template = (String) payload.getOrDefault("template", "{\"eventId\":\"{{uuid}}\"}");
+        String format = (String) payload.getOrDefault("format", "json");
+        String connectorId = (String) payload.getOrDefault("connectorId", technology);
+        
         @SuppressWarnings("unchecked")
         Map<String, Object> connectorConfig = (Map<String, Object>) payload.get("connectorConfig");
 
         FlowDefinition flow = new FlowDefinition(flowId, groupId, name, technology, host, port, topic, interval, burst, template, format, connectorId, connectorConfig);
         
-        Boolean enabled = (Boolean) payload.get("enabled");
-        if (enabled != null) {
-            flow.setEnabled(enabled);
+        Object enabledObj = payload.get("enabled");
+        if (enabledObj instanceof Boolean) {
+            flow.setEnabled((Boolean) enabledObj);
         }
         
         return flow;

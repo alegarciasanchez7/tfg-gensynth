@@ -72,6 +72,23 @@ npm run dev
 
 The UI will be available at `http://localhost:5173`
 
+### 🖥️ Desktop Mode (JCEF)
+
+To build and run the application as a standalone desktop app with embedded Chromium:
+
+1.  **Unified Build** (Compiles React + Java + Bundles Resources):
+    ```bash
+    cd core
+    mvn clean package -DskipTests
+    ```
+
+2.  **Run in Desktop Mode**:
+    ```bash
+    java -cp "target/classes;target/dependency/*" com.gensynth.core.App --desktop
+    ```
+
+*Note: The first run will download the native Chromium binaries (~150MB) for your platform into the `core/jcef-bundle` directory.*
+
 ## 🔧 Tech Stack
 
 ### Backend

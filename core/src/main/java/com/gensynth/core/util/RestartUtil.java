@@ -36,6 +36,12 @@ public class RestartUtil {
                 command.add(isWindows ? "mvn.cmd" : "mvn");
                 command.add("exec:java");
                 command.add("-Dexec.mainClass=com.gensynth.core.App");
+                
+                // Add original application arguments for Maven
+                String[] args = com.gensynth.core.App.getOriginalArgs();
+                if (args != null && args.length > 0) {
+                    command.add("-Dexec.args=" + String.join(" ", args));
+                }
             } else {
                 logger.info("Detected standard Java environment. Restarting via Java...");
                 String javaHome = System.getProperty("java.home");
@@ -46,6 +52,14 @@ public class RestartUtil {
                 command.add("-cp");
                 command.add(classpath);
                 command.add("com.gensynth.core.App");
+
+                // Add original application arguments (e.g., --desktop)
+                String[] args = com.gensynth.core.App.getOriginalArgs();
+                if (args != null) {
+                    for (String arg : args) {
+                        command.add(arg);
+                    }
+                }
             }
 
             logger.info("Spawning new process: {}", String.join(" ", command));

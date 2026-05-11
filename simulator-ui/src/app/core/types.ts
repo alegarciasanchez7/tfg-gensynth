@@ -157,7 +157,8 @@ export type UICommandType =
   | 'UNSUBSCRIBE_METRICS'
   | 'VALIDATE_PLUGIN'
   | 'INSTALL_PLUGIN'
-  | 'UNINSTALL_PLUGIN';
+  | 'UNINSTALL_PLUGIN'
+  | 'IMPORT_STATE';
 
 export interface StartGroupCommandPayload {
   groupId: string;
@@ -252,6 +253,11 @@ export interface GetLatestConnectorCommandPayload {
   pluginId: string;
 }
 
+export interface ImportStateCommandPayload {
+  groups: any[];
+  variables: any[];
+}
+
 export interface UICommandPayloadMap {
   START_SYSTEM: undefined;
   STOP_SYSTEM: undefined;
@@ -277,6 +283,7 @@ export interface UICommandPayloadMap {
   VALIDATE_PLUGIN: ValidatePluginCommandPayload;
   INSTALL_PLUGIN: InstallPluginCommandPayload;
   UNINSTALL_PLUGIN: UninstallPluginCommandPayload;
+  IMPORT_STATE: ImportStateCommandPayload;
 }
 
 export interface UICommand<T extends UICommandType = UICommandType> {

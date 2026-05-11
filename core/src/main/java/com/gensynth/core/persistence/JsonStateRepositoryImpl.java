@@ -171,6 +171,32 @@ public class JsonStateRepositoryImpl implements StateRepository {
     }
 
     @Override
+    public void exportState(Path targetFile, List<GroupDefinition> groups, List<Variable> variables) throws StateRepositoryException {
+        try {
+            Map<String, Object> exportData = new java.util.LinkedHashMap<>();
+            
+            List<Map<String, Object>> groupsData = new ArrayList<>();
+            for (GroupDefinition group : groups) {
+                groupsData.add(group.toPayload());
+            }
+            
+            List<Map<String, Object>> variablesData = new ArrayList<>();
+            for (Variable variable : variables) {
+                variablesData.add(variable.toPayload());
+            }
+            
+            exportData.put("groups", groupsData);
+            exportData.put("variables", variablesData);
+            exportData.put("exportedAt", java.time.Instant.now().toString());
+            exportData.put("version", "1.0");
+
+            objectMapper.writeValue(targetFile.toFile(), exportData);
+        } catch (IOException e) {
+            throw new StateRepositoryException("Failed to export state to " + targetFile.toAbsolutePath(), e);
+        }
+    }
+
+    @Override
     public String getStateDirectory() {
         return stateDirectory;
     }

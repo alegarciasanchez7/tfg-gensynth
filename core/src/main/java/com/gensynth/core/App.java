@@ -2,6 +2,8 @@ package com.gensynth.core;
 
 import com.gensynth.core.config.AppConfig;
 import com.gensynth.core.ws.UiBridgeWebSocketServer;
+import com.gensynth.core.desktop.MainFrame;
+import com.gensynth.core.desktop.NativeLoader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -17,6 +19,16 @@ import java.util.regex.*;
 public class App {
 
     private static final Logger logger = LoggerFactory.getLogger(App.class);
+    private static UiBridgeWebSocketServer wsServer;
+    private static String[] originalArgs;
+
+    public static UiBridgeWebSocketServer getWsServer() {
+        return wsServer;
+    }
+
+    public static String[] getOriginalArgs() {
+        return originalArgs;
+    }
 
     private AppConfig config;
     private UiBridgeWebSocketServer webSocketServer;
@@ -37,7 +49,8 @@ public class App {
         checkAndPerformRollback();
 
         logger.info("WebSocket Server: {}:{}", config.getWebsocketHost(), config.getWebsocketPort());
-        this.webSocketServer = new UiBridgeWebSocketServer(config.getWebsocketHost(), config.getWebsocketPort());
+        webSocketServer = new UiBridgeWebSocketServer(config.getWebsocketHost(), config.getWebsocketPort());
+        wsServer = webSocketServer; // Store reference for desktop mode
     }
 
     private void checkAndPerformRollback() {
@@ -45,14 +58,14 @@ public class App {
         if (Files.exists(markerPath)) {
             try {
                 String content = Files.readString(markerPath);
-                
+
                 // If it was already attempted, it means the last startup CRASHED.
                 if (content.contains("\"attempted\": true")) {
                     logger.warn("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
                     logger.warn("!! PREVIOUS BOOT FAILURE DETECTED                         !!");
                     logger.warn("!! PERFORMING AUTOMATIC ROLLBACK OF PROBLEMATIC PLUGIN    !!");
                     logger.warn("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-                    
+
                     performRollback(markerPath, content);
                 } else {
                     // First boot attempt after install. Mark it as attempted.
@@ -67,7 +80,8 @@ public class App {
     }
 
     private void performRollback(Path markerPath, String content) throws Exception {
-        // Save the report immediately so UI knows what happened even if restart is required
+        // Save the report immediately so UI knows what happened even if restart is
+        // required
         saveRollbackReport(content);
 
         // Simple regex to extract "path":"..." from JSON
@@ -88,9 +102,10 @@ public class App {
                         Thread.sleep(1000);
                     }
                 }
-                
+
                 if (!deleted) {
-                    logger.error(">> [WARNING] Could not delete JAR after several attempts. It will be retried on next boot.");
+                    logger.error(
+                            ">> [WARNING] Could not delete JAR after several attempts. It will be retried on next boot.");
                     return; // Keep marker for next attempt
                 }
             }
@@ -102,13 +117,14 @@ public class App {
     private void saveRollbackReport(String markerContent) {
         try {
             Path reportPath = Paths.get("plugins", ".rollback_report.json");
-            
+
             // Build a JSON report from the marker content
             String json = markerContent;
             if (!json.contains("\"message\"")) {
-                json = json.replace("}", ", \"message\": \"Plugin caused a critical startup failure and was automatically removed.\"}");
+                json = json.replace("}",
+                        ", \"message\": \"Plugin caused a critical startup failure and was automatically removed.\"}");
             }
-            
+
             Files.writeString(reportPath, json);
             logger.info("[PLUGINS] Rollback report saved to {}", reportPath);
         } catch (IOException e) {
@@ -148,22 +164,44 @@ public class App {
     }
 
     public static void main(String[] args) {
+        originalArgs = args;
         // Mark that we are in the main boot of the application
         System.setProperty("gensynth.main_boot", "true");
-        
+
+        boolean isDesktop = false;
+        for (String arg : args) {
+            if ("--desktop".equalsIgnoreCase(arg)) {
+                isDesktop = true;
+                break;
+            }
+        }
+
         App app = new App();
-        Runtime.getRuntime().addShutdownHook(new Thread(app::stop));
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            app.stop();
+            NativeLoader.dispose();
+        }));
 
         try {
             app.initialize();
             app.start();
+
+            if (isDesktop) {
+                logger.info("[DESKTOP] Starting Gen-Synth in Desktop Mode...");
+                org.cef.CefApp cefApp = NativeLoader.initialize();
+
+                // URL to load: for now we use the Vite dev server URL
+                // Phase 3 will replace this with a custom scheme like gensynth://app/
+                String initialUrl = "gensynth://app/index.html";
+
+                MainFrame frame = new MainFrame("Gen-Synth Modular IoT Simulator", initialUrl, cefApp);
+                frame.showWindow();
+            }
+
             app.awaitShutdown();
         } catch (Throwable t) {
             logger.error("\n[EMERGENCY] Critical startup failure detected!");
             logger.error("[EMERGENCY] Error: {}", t.getMessage());
-            
-            // If failure occurs during initialize/start and there's a marker,
-            // force rollback and automatic restart.
             app.handleEmergencyRecovery();
         }
     }
@@ -175,18 +213,19 @@ public class App {
             try {
                 String content = Files.readString(markerPath);
                 performRollback(markerPath, content);
-                
+
                 logger.info("[EMERGENCY] Rollback successful. Triggering automatic restart...");
                 // Wait a bit so the user can see the console messages
                 Thread.sleep(2000);
-                
+
                 // Release the port before spawning the new process to avoid collisions
                 if (webSocketServer != null) {
                     try {
                         webSocketServer.stop(1000);
-                    } catch (Exception ignored) {}
+                    } catch (Exception ignored) {
+                    }
                 }
-                
+
                 com.gensynth.core.util.RestartUtil.restart();
             } catch (Exception e) {
                 logger.error("[EMERGENCY] Failed to perform emergency recovery: {}", e.getMessage());
