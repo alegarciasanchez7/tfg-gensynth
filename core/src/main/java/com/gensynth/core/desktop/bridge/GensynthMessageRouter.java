@@ -4,7 +4,10 @@ import com.gensynth.core.ws.*;
 import org.cef.browser.CefBrowser;
 import org.cef.browser.CefFrame;
 import org.cef.callback.CefQueryCallback;
+import org.cef.callback.CefRunFileDialogCallback;
+import org.cef.handler.CefDialogHandler.FileDialogMode;
 import org.cef.handler.CefMessageRouterHandlerAdapter;
+import java.util.Vector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -72,6 +75,30 @@ public class GensynthMessageRouter extends CefMessageRouterHandlerAdapter {
                 return true;
             }
 
+            // Intercept PICK_DIRECTORY to show native folder picker
+            if (request.contains("PICK_DIRECTORY")) {
+                String commandId = extractCommandId(request);
+                browser.runFileDialog(FileDialogMode.FILE_DIALOG_OPEN_FOLDER, 
+                    "Select Output Directory", null, null, 0, new CefRunFileDialogCallback() {
+                    @Override
+                    public void onFileDialogDismissed(Vector<String> filePaths) {
+                        java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
+                        if (filePaths != null && !filePaths.isEmpty()) {
+                            String path = filePaths.get(0);
+                            payload.put("status", "success");
+                            payload.put("path", path);
+                            server.broadcastMessage("PICK_DIRECTORY_RESULT", commandId, payload);
+                            callback.success("{\"status\":\"success\"}");
+                        } else {
+                            payload.put("status", "cancelled");
+                            server.broadcastMessage("PICK_DIRECTORY_RESULT", commandId, payload);
+                            callback.success("{\"status\":\"cancelled\"}");
+                        }
+                    }
+                });
+                return true;
+            }
+
             // Route the command to the main server logic using the virtual socket
             server.handleDesktopCommand(request, callback, browser);
             return true;
@@ -80,5 +107,16 @@ public class GensynthMessageRouter extends CefMessageRouterHandlerAdapter {
             callback.failure(500, e.getMessage());
             return true;
         }
+    }
+
+    private String extractCommandId(String request) {
+        if (request.contains("\"commandId\":\"")) {
+            int start = request.indexOf("\"commandId\":\"") + 13;
+            int end = request.indexOf("\"", start);
+            if (start > 12 && end > start) {
+                return request.substring(start, end);
+            }
+        }
+        return "unknown_" + System.currentTimeMillis();
     }
 }
