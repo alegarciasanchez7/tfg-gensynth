@@ -75,8 +75,8 @@ public class FileConnectorPlugin implements ConnectorPlugin {
     @Override
     public void start() {
         try {
-            // Resolve filename at start time if not provided
-            if (fileName == null) {
+            // Resolve filename at start time if not provided or blank
+            if (fileName == null || fileName.trim().equals("")) {
                 fileName = "output_" + System.currentTimeMillis();
             }
 

@@ -158,7 +158,8 @@ export type UICommandType =
   | 'VALIDATE_PLUGIN'
   | 'INSTALL_PLUGIN'
   | 'UNINSTALL_PLUGIN'
-  | 'IMPORT_STATE';
+  | 'IMPORT_STATE'
+  | 'PICK_DIRECTORY';
 
 export interface StartGroupCommandPayload {
   groupId: string;
@@ -258,6 +259,8 @@ export interface ImportStateCommandPayload {
   variables: any[];
 }
 
+
+
 export interface UICommandPayloadMap {
   START_SYSTEM: undefined;
   STOP_SYSTEM: undefined;
@@ -284,6 +287,7 @@ export interface UICommandPayloadMap {
   INSTALL_PLUGIN: InstallPluginCommandPayload;
   UNINSTALL_PLUGIN: UninstallPluginCommandPayload;
   IMPORT_STATE: ImportStateCommandPayload;
+  PICK_DIRECTORY: undefined;
 }
 
 export interface UICommand<T extends UICommandType = UICommandType> {

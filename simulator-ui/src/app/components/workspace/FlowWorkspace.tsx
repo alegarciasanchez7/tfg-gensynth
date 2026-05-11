@@ -2,13 +2,16 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Radio, Globe, Wifi, Zap, Cpu, Layers, AlertTriangle,
   CheckCircle, Code2, Settings2, Hash,
-  AlignLeft, Copy, RotateCcw, Save, Trash2, Braces, TableProperties, FileCode, FileText
+  AlignLeft, Copy, RotateCcw, Save, Trash2, Braces, TableProperties, FileCode, FileText, FolderOpen
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Flow, Group, ConnectionStatus } from '../../types';
 import { defaultTemplates } from '../../data/mockData';
 import { useApp } from '../../context';
 import type { ConnectorPluginDescriptor } from '../../core/types';
+import { Button } from '../ui/button';
+import { isRunningInJCEF } from '../../core/jcef';
+import { CoreCommands } from '../../core/bridge';
 
 const connCfg: Record<ConnectionStatus, { color: string; bg: string; dot: string; label: string }> = {
   connected:    { color: 'text-emerald-500', bg: 'bg-emerald-500/10 border-emerald-500/40', dot: 'bg-emerald-400', label: 'CONNECTED' },
@@ -250,14 +253,39 @@ function ConnectorSchemaField({
     );
   }
 
+  const isDirectoryField = 
+    name.toLowerCase().includes('dir') || 
+    name.toLowerCase().includes('path') || 
+    label.toLowerCase().includes('directory') || 
+    label.toLowerCase().includes('path');
+
   return (
     <FieldRow label={label}>
-      <input
-        value={value === undefined || value === null ? '' : String(value)}
-        onChange={(event) => onChange(name, event.target.value)}
-        className="bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded px-2.5 py-1.5 text-[11px] text-[var(--c-tx1)] outline-none focus:border-cyan-500/50 transition-all w-full"
-        style={{ fontFamily: 'JetBrains Mono, monospace' }}
-      />
+      <div className="flex gap-2">
+        <input
+          value={value === undefined || value === null ? '' : String(value)}
+          onChange={(event) => onChange(name, event.target.value)}
+          className="bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded px-2.5 py-1.5 text-[11px] text-[var(--c-tx1)] outline-none focus:border-cyan-500/50 transition-all w-full"
+          style={{ fontFamily: 'JetBrains Mono, monospace' }}
+        />
+        {isDirectoryField && isRunningInJCEF() && (
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            onClick={async () => {
+              const response = await CoreCommands.pickDirectory();
+              if (response && response.status === 'success' && (response as any).path) {
+                onChange(name, (response as any).path);
+              }
+            }}
+            className="h-8 w-8 shrink-0 border-[var(--c-br1)] bg-[var(--c-bg1)] hover:bg-[var(--c-bg5)]"
+            title="Browse directory"
+          >
+            <FolderOpen size={14} />
+          </Button>
+        )}
+      </div>
       {description && <span className="text-[9px] text-[var(--c-tx4)]">{description}</span>}
     </FieldRow>
   );

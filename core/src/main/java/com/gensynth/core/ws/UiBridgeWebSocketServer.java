@@ -1639,11 +1639,11 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
     }
 
 
-    private void broadcastMessage(String type, Object payload) {
+    public void broadcastMessage(String type, Object payload) {
         broadcastMessage(type, null, payload);
     }
 
-    private void broadcastMessage(String type, String commandId, Object payload) {
+    public void broadcastMessage(String type, String commandId, Object payload) {
         for (WebSocket connection : getConnections()) {
             if (connection != null && connection.isOpen()) {
                 sendMessage(connection, type, commandId, payload);
@@ -1654,11 +1654,11 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         }
     }
 
-    private void sendMessage(WebSocket conn, String type, Object payload) {
+    public void sendMessage(WebSocket conn, String type, Object payload) {
         sendMessage(conn, type, null, payload);
     }
 
-    private void sendMessage(WebSocket conn, String type, String commandId, Object payload) {
+    public void sendMessage(WebSocket conn, String type, String commandId, Object payload) {
         if (conn == null || !conn.isOpen()) {
             return;
         }

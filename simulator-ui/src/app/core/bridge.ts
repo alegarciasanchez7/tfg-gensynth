@@ -95,6 +95,7 @@ const SUPPORTED_COMMANDS = new Set<UICommandType>([
   'INSTALL_PLUGIN',
   'UNINSTALL_PLUGIN',
   'IMPORT_STATE',
+  'PICK_DIRECTORY',
 ]);
 
 interface EventMap {
@@ -465,6 +466,8 @@ class CoreBridge {
           && Array.isArray(readField('variables'))
           ? null
           : new Error('El comando IMPORT_STATE requiere un payload con groups y variables (arrays)');
+      case 'PICK_DIRECTORY':
+        return null;
       default:
         return new Error(`Validation not implemented for ${type}`);
     }
@@ -794,6 +797,9 @@ export const CoreCommands = {
   
   // State management
   importState: (groups: any[], variables: any[]) => bridge.send('IMPORT_STATE', { groups, variables }),
+  
+  // Desktop specific
+  pickDirectory: () => bridge.send('PICK_DIRECTORY'),
 };
 
 export default bridge;

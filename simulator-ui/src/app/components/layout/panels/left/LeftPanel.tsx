@@ -17,6 +17,7 @@ import {
   Trash2,
   Lock,
   Unlock,
+  FolderOpen,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '../../../ui/button';
@@ -51,6 +52,8 @@ import {
 } from '../../../ui/context-menu';
 import type { Group, Flow, Selection, ConnectionStatus, GroupStatus } from '../../../../types';
 import type { ConnectorPluginDescriptor } from '../../../../core/types';
+import { isRunningInJCEF } from '../../../../core/jcef';
+import { CoreCommands } from '../../../../core/bridge';
 
 interface LeftPanelProps {
   groups: Group[];
@@ -523,12 +526,32 @@ function GroupItem({
                         <label className="text-xs text-[var(--c-tx3)]" htmlFor={`flow-output-dir-${group.id}`}>
                           Output Directory
                         </label>
-                        <Input
-                          id={`flow-output-dir-${group.id}`}
-                          value={flowOutputDir}
-                          onChange={(event) => setFlowOutputDir(event.target.value)}
-                          placeholder="./outputs"
-                        />
+                        <div className="flex gap-2">
+                          <Input
+                            id={`flow-output-dir-${group.id}`}
+                            value={flowOutputDir}
+                            onChange={(event) => setFlowOutputDir(event.target.value)}
+                            placeholder="./outputs"
+                            className="flex-1"
+                          />
+                          {isRunningInJCEF() && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon"
+                              onClick={async () => {
+                                const response = await CoreCommands.pickDirectory();
+                                if (response && response.status === 'success' && (response as any).path) {
+                                  setFlowOutputDir((response as any).path);
+                                }
+                              }}
+                              className="shrink-0"
+                              title="Browse directory"
+                            >
+                              <FolderOpen size={14} />
+                            </Button>
+                          )}
+                        </div>
                       </div>
 
                       <div className="space-y-2">
@@ -947,12 +970,32 @@ export function LeftPanel({
                     <label className="text-xs text-[var(--c-tx3)]" htmlFor="flow-output-dir">
                       Output Directory
                     </label>
-                    <Input
-                      id="flow-output-dir"
-                      value={flowOutputDir}
-                      onChange={(event) => setFlowOutputDir(event.target.value)}
-                      placeholder="./outputs"
-                    />
+                    <div className="flex gap-2">
+                      <Input
+                        id="flow-output-dir"
+                        value={flowOutputDir}
+                        onChange={(event) => setFlowOutputDir(event.target.value)}
+                        placeholder="./outputs"
+                        className="flex-1"
+                      />
+                      {isRunningInJCEF() && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          onClick={async () => {
+                            const response = await CoreCommands.pickDirectory();
+                            if (response && response.status === 'success' && (response as any).path) {
+                              setFlowOutputDir((response as any).path);
+                            }
+                          }}
+                          className="shrink-0"
+                          title="Browse directory"
+                        >
+                          <FolderOpen size={14} />
+                        </Button>
+                      )}
+                    </div>
                   </div>
 
                   <div className="space-y-2">
