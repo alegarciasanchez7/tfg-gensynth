@@ -1,5 +1,5 @@
 /**
- * Configuración de la aplicación SYN·GEN
+ * Configuración de la aplicación GenSynth
  * 
  * Esta configuración se usa tanto en desarrollo como en producción (JCEF)
  */

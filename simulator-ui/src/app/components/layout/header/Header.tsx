@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Power, Square, FolderOpen, Save, Settings, Zap, Activity, Moon, Sun, X, Package, Plus, Trash2, Loader2 } from 'lucide-react';
+import { Power, Square, FolderOpen, Save, Settings, Moon, Sun, X, Package, Plus, Trash2, Loader2 } from 'lucide-react';
 import type { SystemStatus, ConnectorHealthSummary } from '../../../types';
 import type { ConnectorPluginDescriptor } from '../../../core/types';
 import { CoreCommands } from '../../../core/bridge';
@@ -246,7 +246,7 @@ function SettingsPanel({ isDark, onThemeToggle, onClose }: {
 
       {/* Version info */}
       <div className="px-3 py-1.5">
-        <span className="text-[10px] text-[var(--c-tx5)]">SYN·GEN v0.9.1-alpha</span>
+        <span className="text-[10px] text-[var(--c-tx5)]">GenSynth v1.0.0-beta</span>
       </div>
     </div>
   );
@@ -266,8 +266,8 @@ export function Header({ systemStatus, onStatusToggle, onLoadProject, onSaveProj
     >
       {/* Logo + Name */}
       <div className="flex items-center gap-2.5 mr-2">
-        <div className="flex items-center justify-center w-7 h-7 bg-cyan-500/10 border border-cyan-500/40 rounded">
-          <Zap size={14} className="text-cyan-400" />
+        <div className="flex items-center justify-center w-7 h-7 overflow-hidden">
+          <img src="/logo_azul.png" alt="GenSynth Logo" className="w-full h-full object-contain" />
         </div>
         <span
           className="text-sm font-bold text-[var(--c-tx1)] tracking-tight"
@@ -384,9 +384,6 @@ export function Header({ systemStatus, onStatusToggle, onLoadProject, onSaveProj
 
       {/* Spacer */}
       <div className="flex-1" />
-
-      {/* Activity icon */}
-      <Activity size={13} className={isRunning ? 'text-emerald-400 animate-pulse' : 'text-slate-400'} />
 
       {/* Settings */}
       <div className="relative">

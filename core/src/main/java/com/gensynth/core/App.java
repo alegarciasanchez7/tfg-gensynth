@@ -194,7 +194,7 @@ public class App {
                 // Phase 3 will replace this with a custom scheme like gensynth://app/
                 String initialUrl = "gensynth://app/index.html";
 
-                MainFrame frame = new MainFrame("Gen-Synth Modular IoT Simulator", initialUrl, cefApp);
+                MainFrame frame = new MainFrame("GenSynth", initialUrl, cefApp);
                 frame.showWindow();
             }
 
