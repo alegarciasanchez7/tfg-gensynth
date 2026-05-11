@@ -113,6 +113,16 @@ public class MainFrame extends JFrame {
         // Add the browser component to the center of the frame
         add(browserUI, BorderLayout.CENTER);
 
+        // Window Icon
+        try {
+            java.net.URL iconURL = getClass().getResource("/img/logo_azul.png");
+            if (iconURL != null) {
+                setIconImage(new ImageIcon(iconURL).getImage());
+            }
+        } catch (Exception e) {
+            logger.warn("Could not load window icon: {}", e.getMessage());
+        }
+
         // Window properties
         setSize(1280, 800);
         setMinimumSize(new Dimension(800, 600));
