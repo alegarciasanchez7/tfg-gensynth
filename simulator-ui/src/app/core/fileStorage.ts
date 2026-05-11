@@ -29,6 +29,7 @@ export function normalizeFlowFromSnapshot(flow: Partial<Flow>): Flow {
     topic: flow.topic ?? '',
     host: flow.host ?? 'localhost',
     port: typeof flow.port === 'number' ? flow.port : 5672,
+    enabled: flow.enabled ?? true,
   };
 }
 
@@ -45,6 +46,7 @@ export function normalizeGroupFromSnapshot(group: Partial<Group>): Group {
     threads: typeof group.threads === 'number' ? group.threads : 1,
     outputMode: group.outputMode ?? 'TEXT',
     expanded: group.expanded ?? false,
+    enabled: group.enabled ?? true,
     // Ensure flows is an array and normalize each flow
      flows: (Array.isArray(group.flows) ? group.flows : []).map(normalizeFlowFromSnapshot),
   };

@@ -186,7 +186,7 @@ public class PluginSandboxValidator {
         } catch (IOException e) {
             logger.debug("Error scanning JAR for SPI file", e);
         }
-        builder.log(PluginValidationResult.ValidationLevel.ERROR, "Plugin is missing '" + SPI_SERVICE_FILE + "' registration.");
+        builder.log(PluginValidationResult.ValidationLevel.ERROR, "Plugin is missing service registration file: '" + SPI_SERVICE_FILE + "'");
         return false;
     }
 

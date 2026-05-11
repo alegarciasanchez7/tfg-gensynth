@@ -37,7 +37,7 @@ import type {
 } from '../core/types';
 import type { Selection, Group, Variable, LogEntry, SystemStatus, Flow, ConnectorHealthStatus } from '../types';
 import type { ConnectorHealthSummary } from '../types';
-import { mockGroups, mockVariables, mockLogs, mockConnectorCatalog } from '../data/mockData';
+
 import * as CRUDActions from './crudActions';
 import type { CRUDActionContext } from './crudActions';
 import { normalizeVariableFromCore, normalizeVariableListFromCore } from './variableNormalization';
@@ -99,7 +99,7 @@ interface AppState {
 
 const initialState: AppState = {
   isConnected: false,
-  connectionMode: 'mock',
+  connectionMode: 'websocket',
   systemStatus: 'stopped',
   projectName: 'GenSynth',
   isDark: typeof localStorage !== 'undefined' ? localStorage.getItem('gensynth-theme') === 'dark' : false,
@@ -701,7 +701,7 @@ interface AppProviderProps {
   useMockData?: boolean;
 }
 
-export function AppProvider({ children, useMockData = true }: AppProviderProps) {
+export function AppProvider({ children, useMockData = false }: AppProviderProps) {
   const [state, dispatch] = useReducer(appReducer, initialState);
   const connectionAttempted = useRef(false);
   const lastConnectorHealthSignature = useRef('');
@@ -725,17 +725,6 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
 
     const initConnection = async () => {
       if (useMockData) {
-        // Dev mode: load mock data without connecting to Core
-        dispatch({
-          type: 'LOAD_INITIAL_STATE',
-          payload: {
-            groups: mockGroups,
-            variables: mockVariables,
-            logs: mockLogs,
-            connectorCatalog: mockConnectorCatalog,
-          },
-        });
-        dispatch({ type: 'SET_CONNECTED', payload: { connected: true, mode: 'mock' } });
         return;
       }
 
@@ -751,17 +740,8 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
         await CoreCommands.subscribeMetrics();
       } catch (error) {
         console.error('[AppContext] Error connecting to the Core:', error);
-        // Data fallback if connection fails
-        dispatch({
-          type: 'LOAD_INITIAL_STATE',
-          payload: {
-            groups: mockGroups,
-            variables: mockVariables,
-            logs: mockLogs,
-            connectorCatalog: mockConnectorCatalog,
-          },
-        });
-        dispatch({ type: 'SET_CONNECTED', payload: { connected: false, mode: 'mock' } });
+        // Connection failed, show empty state
+        dispatch({ type: 'SET_CONNECTED', payload: { connected: false, mode: 'websocket' } });
       }
     };
 
@@ -1116,13 +1096,10 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
 
       // Load and parse the snapshot
       const snapshot = await loadProjectSnapshotFromFile(file);
-        console.log('[loadProjectState] Snapshot cargado:', { groups: snapshot.groups.length, variables: snapshot.variables.length });
-        console.log('[loadProjectState] Grupos cargados:', snapshot.groups);
 
       // Normalize all data to ensure valid structure
       const normalizedGroups = snapshot.groups.map(normalizeGroupFromSnapshot);
       const normalizedVariables = snapshot.variables.map(normalizeVariableFromSnapshot);
-        console.log('[loadProjectState] Grupos normalizados:', normalizedGroups);
 
       // Dispatch state update
       dispatch({
@@ -1134,6 +1111,12 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
         },
       });
       preserveLocalSnapshotRef.current = true;
+
+      // Sincronizar con el backend
+      import('../core/bridge').then(({ CoreCommands }) => {
+        CoreCommands.importState(normalizedGroups, normalizedVariables)
+          .catch((err: any) => console.error('[loadProjectState] Error sincronizando backend:', err));
+      });
 
       const selectionStillExists =
         state.selection.type === 'group'
@@ -1182,17 +1165,23 @@ export function AppProvider({ children, useMockData = true }: AppProviderProps) 
 
   const saveProjectState = useCallback(async () => {
     try {
-      // Create snapshot from current state
-      const snapshot = createProjectSnapshot(state.groups, state.variables);
+      if (state.connectionMode === 'jcef') {
+        // In Desktop mode, let the backend handle the Save As dialog
+        const response = await CoreCommands.saveState();
+        if (response.status === 'cancelled') {
+          return; // User cancelled the dialog
+        }
+        // Success notification is handled by the server via logs or separate response
+        return;
+      }
 
-      // Generate filename with timestamp
+      // Standard web browser behavior (Download snapshot)
+      const snapshot = createProjectSnapshot(state.groups, state.variables);
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
       const filename = `gen-synth-${timestamp}.json`;
 
-      // Download to local file
       downloadProjectSnapshot(snapshot, filename);
 
-      // Log success
       dispatch({
         type: 'ADD_LOG',
         payload: {

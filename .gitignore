@@ -65,3 +65,8 @@ docs/
 /core/SMOKE_EVIDENCE.txt
 /core/outputs/
 /plugins/
+
+# Desktop Specific (JCEF)
+**/jcef-bundle/
+**/src/main/resources/ui/
+hs_err_pid*.log

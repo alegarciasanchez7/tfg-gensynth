@@ -126,11 +126,11 @@ public class Variable {
      * @return Variable instance
      */
     public static Variable fromPayload(Map<String, Object> payload) {
-        String id = (String) payload.get("id");
-        String name = (String) payload.get("name");
-        String scope = (String) payload.get("scope");
-        String type = (String) payload.get("type");
-        Object defaultValue = payload.get("defaultValue");
+        String id = (String) payload.getOrDefault("id", java.util.UUID.randomUUID().toString());
+        String name = (String) payload.getOrDefault("name", "Unnamed Variable");
+        String scope = (String) payload.getOrDefault("scope", "GLOBAL");
+        String type = (String) payload.getOrDefault("type", "string");
+        Object defaultValue = payload.getOrDefault("defaultValue", "");
         @SuppressWarnings("unchecked")
         Map<String, Object> config = (Map<String, Object>) payload.getOrDefault("config", Map.of());
 

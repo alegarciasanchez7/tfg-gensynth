@@ -62,6 +62,16 @@ public interface StateRepository {
     void clear() throws StateRepositoryException;
 
     /**
+     * Exports the current state to a single file.
+     *
+     * @param targetFile Path where the state should be exported
+     * @param groups List of groups to export
+     * @param variables List of variables to export
+     * @throws StateRepositoryException if export fails
+     */
+    void exportState(java.nio.file.Path targetFile, List<com.gensynth.core.model.GroupDefinition> groups, List<com.gensynth.core.model.Variable> variables) throws StateRepositoryException;
+
+    /**
      * Gets the root directory where state is persisted.
      *
      * @return String path to state directory

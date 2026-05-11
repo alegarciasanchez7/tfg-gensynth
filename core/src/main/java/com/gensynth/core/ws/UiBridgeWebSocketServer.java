@@ -67,13 +67,15 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         "GET_INITIAL_STATE",
         "LOAD_STATE",
         "SAVE_STATE",
+        "IMPORT_STATE",
         "GET_CONNECTOR_CATALOG",
         "GET_LATEST_CONNECTOR",
         "SUBSCRIBE_METRICS",
         "UNSUBSCRIBE_METRICS",
         "VALIDATE_PLUGIN",
         "INSTALL_PLUGIN",
-        "UNINSTALL_PLUGIN"
+        "UNINSTALL_PLUGIN",
+        "EXPORT_STATE"
     );
 
     private final ObjectMapper objectMapper = createConfiguredMapper();
@@ -113,6 +115,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
 
     private final TemplateEngine templateEngine = new TemplateEngine();
     private String currentOutputDir = null;
+    private WebSocket desktopSocket = null;
 
     public UiBridgeWebSocketServer(String host, int port) {
         this(host, port, Paths.get("plugins"));
@@ -207,40 +210,6 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         loadRuntimeState(true);
     }
 
-    private void createDefaultRuntime() {
-        GroupRuntime demoGroup = new GroupRuntime(
-            "g-demo",
-            "Demo Group (File Output)",
-            "stopped",
-            "Base group for demonstration using local file output",
-            1,
-            "parallel",
-            true
-        );
-
-        demoGroup.flows.add(new FlowRuntime(
-            "f-demo",
-            "Local File Publisher",
-            "file",
-            "disconnected",
-            0,
-            0,
-            false,
-            null,
-            2000,
-            1,
-            "demo-events",
-            "local",
-            0,
-            "{\"eventId\":\"{{uuid}}\",\"timestamp\":\"{{ts}}\",\"source\":\"gen-synth\",\"value\":{{n}}}",
-            "json",
-            true,
-            Map.of("outputDir", "./outputs")
-        ));
-
-        groupsById.put(demoGroup.id, demoGroup);
-    }
-
     private void persistState() {
         try {
             List<GroupDefinition> groupDefinitions = new ArrayList<>();
@@ -271,7 +240,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                 List<Variable> persistedVariables = stateRepository.loadVariables();
 
                 if (persistedGroups.isEmpty() && createDefaultIfEmpty) {
-                    createDefaultRuntime();
+                    // No default runtime creation, keep it empty
                     persistState();
                 } else {
                     for (GroupDefinition definition : persistedGroups) {
@@ -285,10 +254,24 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
 
                 systemRunning = false;
             } catch (StateRepository.StateRepositoryException e) {
-                createDefaultRuntime();
                 systemRunning = false;
             }
         }
+    }
+
+    /**
+     * Entry point for desktop-mode commands (JCEF bridge).
+     * This bypasses the WebSocket network layer but reuses the same business logic.
+     */
+    public void handleDesktopCommand(String rawMessage, org.cef.callback.CefQueryCallback callback, org.cef.browser.CefBrowser browser) {
+        // Reuse or create the persistent desktop socket
+        if (this.desktopSocket == null) {
+            this.desktopSocket = new DesktopBridgeSocket(this, callback, objectMapper, browser);
+        } else {
+            // Update the callback for the current query, but keep the socket reference
+            ((DesktopBridgeSocket)this.desktopSocket).setCallback(callback);
+        }
+        handleCommand(this.desktopSocket, rawMessage);
     }
 
     private void handleCommand(WebSocket conn, String rawMessage) {
@@ -470,6 +453,8 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                 case "VALIDATE_PLUGIN" -> handleValidatePlugin(conn, commandId, payload);
                 case "INSTALL_PLUGIN" -> handleInstallPlugin(conn, commandId, payload);
                 case "UNINSTALL_PLUGIN" -> handleUninstallPlugin(conn, commandId, payload);
+                case "EXPORT_STATE" -> handleExportState(conn, commandId, payload);
+                case "IMPORT_STATE" -> handleImportState(conn, commandId, payload);
                 default -> sendError(conn, commandId, "UNSUPPORTED_COMMAND", "Unsupported command: " + type, Map.of(
                     "command", type
                 ));
@@ -1001,6 +986,75 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         }
     }
 
+    /**
+     * Replaces the current runtime state with a complete state provided by the UI.
+     * This is typically used after loading a project file from the UI in desktop mode.
+     *
+     * @param conn The WebSocket connection
+     * @param commandId The ID of the command
+     * @param payload The payload containing groups and variables
+     */
+    private void handleImportState(WebSocket conn, String commandId, JsonNode payload) {
+        if (payload == null || !payload.has("groups")) {
+            sendError(conn, commandId, "INVALID_PAYLOAD", "IMPORT_STATE requires a payload with 'groups' array", Map.of());
+            return;
+        }
+
+        try {
+            List<GroupDefinition> newGroups = new ArrayList<>();
+            JsonNode groupsNode = payload.path("groups");
+            if (groupsNode.isArray()) {
+                for (JsonNode groupNode : groupsNode) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> groupMap = objectMapper.convertValue(groupNode, Map.class);
+                    newGroups.add(GroupDefinition.fromPayload(groupMap));
+                }
+            }
+
+            List<Variable> newVariables = new ArrayList<>();
+            JsonNode variablesNode = payload.path("variables");
+            if (variablesNode.isArray()) {
+                for (JsonNode varNode : variablesNode) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> varMap = objectMapper.convertValue(varNode, Map.class);
+                    newVariables.add(Variable.fromPayload(varMap));
+                }
+            }
+
+            synchronized (stateLock) {
+                // Stop everything before clearing
+                for (GroupRuntime group : groupsById.values()) {
+                    stopGroupInternal(group);
+                }
+
+                groupsById.clear();
+                variablesById.clear();
+                connectorByFlowId.clear();
+                publisherTasksByFlowId.clear();
+
+                for (GroupDefinition def : newGroups) {
+                    groupsById.put(def.getGroupId(), GroupRuntime.fromDefinition(def));
+                }
+                for (Variable var : newVariables) {
+                    variablesById.put(var.getId(), var);
+                }
+
+                systemRunning = false;
+                persistState();
+            }
+
+            sendAck(conn, commandId, "state_imported");
+            logToBackend("info", "SYSTEM", "State imported from UI (" + newGroups.size() + " groups)", commandId);
+            broadcastGroupsUpdate();
+            broadcastSystemStatus();
+            sendVariablesUpdate();
+
+        } catch (Exception e) {
+            logger.error("Failed to import state", e);
+            sendError(conn, commandId, "INTERNAL_ERROR", "Failed to parse imported state: " + e.getMessage(), Map.of());
+        }
+    }
+
     private void handleUninstallPlugin(WebSocket conn, String commandId, JsonNode payload) {
         String pluginId = requireTextField(conn, commandId, payload, "pluginId", "INVALID_PAYLOAD", "UNINSTALL_PLUGIN");
         String pluginVersion = requireTextField(conn, commandId, payload, "pluginVersion", "INVALID_PAYLOAD", "UNINSTALL_PLUGIN");
@@ -1265,8 +1319,31 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         sendMessage(conn, "METRICS_UPDATE", commandId, payload);
     }
 
-    private static long bytesToMb(long bytes) {
-        return Math.max(1, bytes / (1024 * 1024));
+    private void handleExportState(WebSocket conn, String commandId, JsonNode payload) {
+        String filePath = requireTextField(conn, commandId, payload, "filePath", "INVALID_PAYLOAD", "EXPORT_STATE");
+        if (filePath == null) return;
+
+        try {
+            List<GroupDefinition> groupDefinitions = new ArrayList<>();
+            for (GroupRuntime group : groupsById.values()) {
+                groupDefinitions.add(group.toDefinition());
+            }
+            
+            stateRepository.exportState(
+                java.nio.file.Paths.get(filePath),
+                groupDefinitions,
+                new ArrayList<>(variablesById.values())
+            );
+            
+            sendAck(conn, commandId, "state_exported");
+            sendLog(conn, "info", "SYSTEM", "State exported to: " + filePath);
+        } catch (Exception e) {
+            sendError(conn, commandId, "EXPORT_FAILED", "Failed to export state: " + e.getMessage(), Map.of("path", filePath));
+        }
+    }
+
+    private int bytesToMb(long bytes) {
+        return (int) Math.max(1L, bytes / (1024 * 1024));
     }
 
     private void sendSystemStatus(WebSocket conn, String commandId) {
@@ -1571,6 +1648,9 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             if (connection != null && connection.isOpen()) {
                 sendMessage(connection, type, commandId, payload);
             }
+        }
+        if (desktopSocket != null) {
+            sendMessage(desktopSocket, type, commandId, payload);
         }
     }
 

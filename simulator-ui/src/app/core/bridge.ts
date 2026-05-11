@@ -94,6 +94,7 @@ const SUPPORTED_COMMANDS = new Set<UICommandType>([
   'VALIDATE_PLUGIN',
   'INSTALL_PLUGIN',
   'UNINSTALL_PLUGIN',
+  'IMPORT_STATE',
 ]);
 
 interface EventMap {
@@ -458,6 +459,12 @@ class CoreBridge {
           && typeof readField('pluginVersion') === 'string'
           ? null
           : new Error('El comando UNINSTALL_PLUGIN requiere pluginId y pluginVersion');
+      case 'IMPORT_STATE':
+        return isObjectPayload
+          && Array.isArray(readField('groups'))
+          && Array.isArray(readField('variables'))
+          ? null
+          : new Error('El comando IMPORT_STATE requiere un payload con groups y variables (arrays)');
       default:
         return new Error(`Validation not implemented for ${type}`);
     }
@@ -784,6 +791,9 @@ export const CoreCommands = {
     bridge.send<'INSTALL_PLUGIN', PluginInstallResultPayload>('INSTALL_PLUGIN', { jarBase64, pluginName, pluginVersion }),
   uninstallPlugin: (pluginId: string, pluginVersion: string): Promise<PluginInstallResultPayload> =>
     bridge.send<'UNINSTALL_PLUGIN', PluginInstallResultPayload>('UNINSTALL_PLUGIN', { pluginId, pluginVersion }),
+  
+  // State management
+  importState: (groups: any[], variables: any[]) => bridge.send('IMPORT_STATE', { groups, variables }),
 };
 
 export default bridge;

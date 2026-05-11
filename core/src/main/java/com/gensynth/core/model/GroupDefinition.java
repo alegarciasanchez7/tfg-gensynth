@@ -108,12 +108,27 @@ public class GroupDefinition {
         this.updatedAt = Instant.now();
     }
 
+    /**
+     * Sets the enabled state of the group and propagates it to all flows.
+     * @param enabled the new state
+     */
     public void setEnabled(boolean enabled) {
+        setEnabled(enabled, true);
+    }
+
+    /**
+     * Sets the enabled state of the group with optional propagation to child flows.
+     * @param enabled the new state
+     * @param propagate if true, all children flows will be updated to match this state
+     */
+    public void setEnabled(boolean enabled, boolean propagate) {
         this.enabled = enabled;
         this.updatedAt = Instant.now();
-        // Propagate to all flows
-        for (FlowDefinition flow : flows.values()) {
-            flow.setEnabled(enabled);
+        if (propagate) {
+            // Propagate to all flows
+            for (FlowDefinition flow : flows.values()) {
+                flow.setEnabled(enabled);
+            }
         }
     }
 
@@ -207,9 +222,9 @@ public class GroupDefinition {
         payload.put("threads", threads);
         payload.put("outputMode", outputMode);
         
-        Map<String, Object> flowsPayload = new LinkedHashMap<>();
-        for (Map.Entry<String, FlowDefinition> entry : flows.entrySet()) {
-            flowsPayload.put(entry.getKey(), entry.getValue().toPayload());
+        java.util.List<Map<String, Object>> flowsPayload = new java.util.ArrayList<>();
+        for (FlowDefinition flow : flows.values()) {
+            flowsPayload.add(flow.toPayload());
         }
         payload.put("flows", flowsPayload);
         
@@ -234,11 +249,13 @@ public class GroupDefinition {
         GroupDefinition group = new GroupDefinition(groupId, name, description, threads, outputMode);
         
         @SuppressWarnings("unchecked")
-        Map<String, Object> flowsPayload = (Map<String, Object>) payload.get("flows");
+        java.util.List<Map<String, Object>> flowsPayload = (java.util.List<Map<String, Object>>) payload.get("flows");
         if (flowsPayload != null) {
-            for (Map.Entry<String, Object> entry : flowsPayload.entrySet()) {
-                @SuppressWarnings("unchecked")
-                Map<String, Object> flowData = (Map<String, Object>) entry.getValue();
+            for (Map<String, Object> flowData : flowsPayload) {
+                // Ensure groupId is present in flowData (UI might omit it as flows are nested)
+                if (!flowData.containsKey("groupId")) {
+                    flowData.put("groupId", groupId);
+                }
                 FlowDefinition flow = FlowDefinition.fromPayload(flowData);
                 group.flows.put(flow.getFlowId(), flow);
             }
@@ -246,7 +263,7 @@ public class GroupDefinition {
 
         Boolean enabled = (Boolean) payload.get("enabled");
         if (enabled != null) {
-            group.setEnabled(enabled);
+            group.setEnabled(enabled, false); // Do not propagate to flows during load
         }
 
         return group;
