@@ -20,6 +20,8 @@ public class Variable {
     private final String name;
     private final String scope; // "LOCAL", "GROUP", "GLOBAL"
     private final String type;  // "numeric", "string", "boolean", "date", "point", "list"
+    private final String flowId;
+    private final String groupId;
     private final Object defaultValue;
     private final Map<String, Object> config;
     private final Instant createdAt;
@@ -34,14 +36,18 @@ public class Variable {
      * @param type Variable type
      * @param defaultValue Default value for this variable
      * @param config Optional configuration map
+     * @param flowId Target flow ID (required if scope is LOCAL)
+     * @param groupId Target group ID (required if scope is GROUP)
      */
-    public Variable(String id, String name, String scope, String type, Object defaultValue, Map<String, Object> config) {
+    public Variable(String id, String name, String scope, String type, Object defaultValue, Map<String, Object> config, String flowId, String groupId) {
         this.id = Objects.requireNonNull(id, "id cannot be null");
         this.name = Objects.requireNonNull(name, "name cannot be null");
-        this.scope = Objects.requireNonNull(scope, "scope cannot be null");
+        this.scope = Objects.requireNonNull(scope, "scope cannot be null").toUpperCase();
         this.type = Objects.requireNonNull(type, "type cannot be null");
         this.defaultValue = Objects.requireNonNull(defaultValue, "defaultValue cannot be null");
         this.config = config != null ? config : Map.of();
+        this.flowId = flowId;
+        this.groupId = groupId;
         this.createdAt = Instant.now();
         this.updatedAt = Instant.now();
 
@@ -52,6 +58,12 @@ public class Variable {
     private void validateScope() {
         if (!scope.matches("LOCAL|GROUP|GLOBAL")) {
             throw new IllegalArgumentException("Invalid scope: " + scope + ". Must be LOCAL, GROUP, or GLOBAL");
+        }
+        if ("LOCAL".equals(scope) && (flowId == null || flowId.isBlank())) {
+            throw new IllegalArgumentException("LOCAL scope variable requires a flowId");
+        }
+        if ("GROUP".equals(scope) && (groupId == null || groupId.isBlank())) {
+            throw new IllegalArgumentException("GROUP scope variable requires a groupId");
         }
     }
 
@@ -81,6 +93,14 @@ public class Variable {
         return type;
     }
 
+    public String getFlowId() {
+        return flowId;
+    }
+
+    public String getGroupId() {
+        return groupId;
+    }
+
     public Object getDefaultValue() {
         return defaultValue;
     }
@@ -107,16 +127,18 @@ public class Variable {
      * @return Map representation of this Variable
      */
     public Map<String, Object> toPayload() {
-        return Map.of(
-            "id", id,
-            "name", name,
-            "type", type,
-            "scope", scope,
-            "defaultValue", defaultValue,
-            "config", config,
-            "createdAt", createdAt.toString(),
-            "updatedAt", updatedAt.toString()
-        );
+        Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("id", id);
+        payload.put("name", name);
+        payload.put("type", type);
+        payload.put("scope", scope.toLowerCase());
+        payload.put("flowId", flowId);
+        payload.put("groupId", groupId);
+        payload.put("defaultValue", defaultValue);
+        payload.put("config", config);
+        payload.put("createdAt", createdAt.toString());
+        payload.put("updatedAt", updatedAt.toString());
+        return payload;
     }
 
     /**
@@ -130,11 +152,13 @@ public class Variable {
         String name = (String) payload.getOrDefault("name", "Unnamed Variable");
         String scope = (String) payload.getOrDefault("scope", "GLOBAL");
         String type = (String) payload.getOrDefault("type", "string");
+        String flowId = (String) payload.get("flowId");
+        String groupId = (String) payload.get("groupId");
         Object defaultValue = payload.getOrDefault("defaultValue", "");
         @SuppressWarnings("unchecked")
         Map<String, Object> config = (Map<String, Object>) payload.getOrDefault("config", Map.of());
 
-        return new Variable(id, name, scope, type, defaultValue, config);
+        return new Variable(id, name, scope.toUpperCase(), type, defaultValue, config, flowId, groupId);
     }
 
     @Override
@@ -143,6 +167,8 @@ public class Variable {
             "id='" + id + '\'' +
             ", name='" + name + '\'' +
             ", scope='" + scope + '\'' +
+            ", flowId='" + flowId + '\'' +
+            ", groupId='" + groupId + '\'' +
             ", type='" + type + '\'' +
             ", defaultValue=" + defaultValue +
             ", createdAt=" + createdAt +

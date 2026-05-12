@@ -369,6 +369,8 @@ export async function createVariable(
   type: 'numeric' | 'string' | 'boolean' | 'temporal' | 'point' | 'list',
   scope: 'global' | 'group' | 'local',
   config?: Record<string, unknown>,
+  flowId?: string,
+  groupId?: string,
   variableId?: string,
 ): Promise<Variable> {
   // Validations
@@ -389,6 +391,8 @@ export async function createVariable(
         type,
         scope,
         config: config || {},
+        flowId,
+        groupId,
       });
 
       if (response && typeof response === 'object' && 'id' in response) {
@@ -402,6 +406,8 @@ export async function createVariable(
       name: name.trim(),
       type,
       scope,
+      flowId,
+      groupId,
       config: config || {},
     };
 

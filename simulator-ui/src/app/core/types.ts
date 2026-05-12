@@ -232,6 +232,7 @@ export interface CreateVariableCommandPayload {
   name: string;
   type: string;
   scope: 'local' | 'group' | 'global';
+  flowId?: string;
   groupId?: string;
   config?: Record<string, unknown>;
   clientRequestId?: string; // For optimistic UI correlation
@@ -379,6 +380,7 @@ export interface VariableState {
   name: string;
   type: 'numeric' | 'list' | 'string' | 'temporal' | 'point' | 'boolean';
   scope: 'local' | 'group' | 'global';
+  flowId?: string;
   groupId?: string;
   config: Record<string, unknown>;
   description?: string;

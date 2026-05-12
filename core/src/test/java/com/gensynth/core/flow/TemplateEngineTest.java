@@ -40,7 +40,9 @@ public class TemplateEngineTest {
                 "LOCAL",
                 "numeric",
                 25.0,
-                Map.of("min", 20.0, "max", 20.0) // Force deterministic value
+                Map.of("min", 20.0, "max", 20.0), // Force deterministic value
+                "flow-1",
+                null
         );
         variables.put("v1", tempVar); // Note: Map is keyed by UUID, but TemplateEngine searches by name
 

@@ -2,10 +2,6 @@
  * Optimistic Update Helper
  *
  * Provides utilities for managing optimistic updates with automatic rollback on errors.
- * Handles state management for:
- * - Groups updates
- * - Flows updates  
- * - Variables updates
  */
 
 import type { Group, Flow, Variable } from '../types';
@@ -86,7 +82,7 @@ export function createGroupUpdatePayload(
   
   // Only track fields that changed
   for (const key of Object.keys(updates) as Array<keyof Omit<Group, 'id' | 'flows'>>) {
-    rollbackState[key] = previousState[key];
+    (rollbackState as any)[key] = previousState[key];
   }
 
   return {
@@ -106,7 +102,7 @@ export function createFlowUpdatePayload(
   
   // Only track fields that changed
   for (const key of Object.keys(updates) as Array<keyof Omit<Flow, 'id' | 'connectionStatus' | 'throughput' | 'hasError' | 'errorMessage'>>) {
-    rollbackState[key] = previousState[key];
+    (rollbackState as any)[key] = previousState[key];
   }
 
   return {
@@ -126,7 +122,7 @@ export function createVariableUpdatePayload(
   
   // Only track fields that changed
   for (const key of Object.keys(updates) as Array<keyof Omit<Variable, 'id'>>) {
-    rollbackState[key] = previousState[key];
+    (rollbackState as any)[key] = previousState[key];
   }
 
   return {

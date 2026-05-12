@@ -670,6 +670,8 @@ interface AppContextValue {
       type: 'numeric' | 'string' | 'boolean' | 'temporal' | 'point' | 'list',
       scope: 'global' | 'group' | 'local',
       config?: Record<string, unknown>,
+      flowId?: string,
+      groupId?: string,
       variableId?: string,
     ) => Promise<Variable>;
     deleteVariable: (variableId: string) => Promise<void>;
@@ -1576,10 +1578,12 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
     type: 'numeric' | 'string' | 'boolean' | 'temporal' | 'point' | 'list',
     scope: 'global' | 'group' | 'local',
     config?: Record<string, unknown>,
+    flowId?: string,
+    groupId?: string,
     variableId?: string,
   ) => {
     const optimisticId = variableId || generateOptimisticId('var');
-    const optimisticVariable = createOptimisticVariable(optimisticId, name, type, scope);
+    const optimisticVariable = createOptimisticVariable(optimisticId, name, type, scope, flowId, groupId);
 
     try {
       const applyOptimisticVariable = () => {
@@ -1611,7 +1615,7 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
           applyOptimistic: applyOptimisticVariable,
           rollback: rollbackOptimisticVariable,
           send: () =>
-            CRUDActions.createVariable(crudContext, name, type, scope, config, variableId),
+            CRUDActions.createVariable(crudContext, name, type, scope, config, flowId, groupId, variableId),
           reconcileId: (serverVariable) => {
             // If server returned different ID, replace optimistic with real
             const normalizedServer = normalizeVariableFromCore(serverVariable);

@@ -3,19 +3,10 @@
  *
  * Handles state reconciliation after reconnection or errors.
  * Compares local state with server state and resolves conflicts.
- *
- * Strategy:
- * 1. On reconnect, load server state
- * 2. Compare local state with server state
- * 3. For each pending operation:
- *    - If entity exists on server → operation succeeded
- *    - If entity missing on server → operation failed (rollback)
- *    - If entity different → reconcile fields
- * 4. Mark operations as resolved in OptimisticManager
  */
 
 import type { Group, Variable } from '../types';
-import type { OptimisticManager } from '../core/optimisticManager';
+import type { OptimisticManager } from './optimisticManager';
 
 export interface ReconciliationContext {
   optimisticManager: OptimisticManager | null;
@@ -33,7 +24,7 @@ export interface ReconciliationResult {
   groupsToUpdate: Group[];
   variablesToUpdate: Variable[];
   operationsResolved: Array<{
-    operationId: string;
+    commandId: string;
     success: boolean;
     reason?: string;
   }>;
@@ -47,9 +38,6 @@ export interface ReconciliationResult {
 
 /**
  * Reconcile state between local and server
- *
- * Returns groups and variables that should be updated in local state.
- * Also marks pending operations in OptimisticManager as resolved.
  */
 export function reconcileState(context: ReconciliationContext): ReconciliationResult {
   const result: ReconciliationResult = {
@@ -67,55 +55,49 @@ export function reconcileState(context: ReconciliationContext): ReconciliationRe
   const pendingOps = context.optimisticManager.getPendingOperations();
 
   for (const op of pendingOps) {
-    // Determine operation type from commandType
-    const isGroupOp = op.commandType.includes('GROUP');
-    const isVariableOp = op.commandType.includes('VARIABLE');
-    const isCreate = op.commandType.includes('CREATE');
-    const isUpdate = op.commandType.includes('UPDATE');
-    const isDelete = op.commandType.includes('DELETE');
+    const isGroupOp = op.entityType === 'group';
+    const isVariableOp = op.entityType === 'variable';
+    const isCreate = op.kind === 'create';
+    const isUpdate = op.kind === 'update';
+    const isDelete = op.kind === 'delete';
 
     if (isGroupOp) {
-      const serverEntity = context.serverState.groups.find(g => g.id === op.resourceId);
-      const localEntity = context.localState.groups.find(g => g.id === op.resourceId);
+      const serverEntity = context.serverState.groups.find(g => g.id === op.entityId);
+      const localEntity = context.localState.groups.find(g => g.id === op.entityId);
 
       if (isCreate || isUpdate) {
         if (serverEntity) {
-          // Entity exists on server → operation succeeded
           result.operationsResolved.push({
-            operationId: op.operationId,
+            commandId: op.commandId,
             success: true,
             reason: isCreate ? 'Entity created on server' : 'Entity updated on server',
           });
 
-          // Check for conflicts in fields
-          if (localEntity && localEntity !== serverEntity) {
+          if (localEntity && JSON.stringify(localEntity) !== JSON.stringify(serverEntity)) {
             result.conflicts.push({
-              resourceId: op.resourceId,
+              resourceId: op.entityId,
               type: 'group',
               localValue: localEntity,
               serverValue: serverEntity,
             });
           }
         } else {
-          // Entity missing on server → operation failed
           result.operationsResolved.push({
-            operationId: op.operationId,
+            commandId: op.commandId,
             success: false,
             reason: isCreate ? 'Create failed' : 'Update failed - entity not found',
           });
         }
       } else if (isDelete) {
         if (!serverEntity) {
-          // Entity successfully deleted
           result.operationsResolved.push({
-            operationId: op.operationId,
+            commandId: op.commandId,
             success: true,
             reason: 'Entity deleted on server',
           });
         } else {
-          // Entity still exists → delete failed
           result.operationsResolved.push({
-            operationId: op.operationId,
+            commandId: op.commandId,
             success: false,
             reason: 'Delete failed - entity still exists on server',
           });
@@ -124,20 +106,20 @@ export function reconcileState(context: ReconciliationContext): ReconciliationRe
     }
 
     if (isVariableOp) {
-      const serverEntity = context.serverState.variables.find(v => v.id === op.resourceId);
-      const localEntity = context.localState.variables.find(v => v.id === op.resourceId);
+      const serverEntity = context.serverState.variables.find(v => v.id === op.entityId);
+      const localEntity = context.localState.variables.find(v => v.id === op.entityId);
 
       if (isCreate || isUpdate) {
         if (serverEntity) {
           result.operationsResolved.push({
-            operationId: op.operationId,
+            commandId: op.commandId,
             success: true,
             reason: isCreate ? 'Variable created on server' : 'Variable updated on server',
           });
 
-          if (localEntity && localEntity !== serverEntity) {
+          if (localEntity && JSON.stringify(localEntity) !== JSON.stringify(serverEntity)) {
             result.conflicts.push({
-              resourceId: op.resourceId,
+              resourceId: op.entityId,
               type: 'variable',
               localValue: localEntity,
               serverValue: serverEntity,
@@ -145,7 +127,7 @@ export function reconcileState(context: ReconciliationContext): ReconciliationRe
           }
         } else {
           result.operationsResolved.push({
-            operationId: op.operationId,
+            commandId: op.commandId,
             success: false,
             reason: isCreate ? 'Create failed' : 'Update failed - variable not found',
           });
@@ -153,13 +135,13 @@ export function reconcileState(context: ReconciliationContext): ReconciliationRe
       } else if (isDelete) {
         if (!serverEntity) {
           result.operationsResolved.push({
-            operationId: op.operationId,
+            commandId: op.commandId,
             success: true,
             reason: 'Variable deleted on server',
           });
         } else {
           result.operationsResolved.push({
-            operationId: op.operationId,
+            commandId: op.commandId,
             success: false,
             reason: 'Delete failed - variable still exists on server',
           });
@@ -173,8 +155,6 @@ export function reconcileState(context: ReconciliationContext): ReconciliationRe
 
 /**
  * Apply reconciliation result to local state
- *
- * Updates OptimisticManager with reconciliation results.
  */
 export function applyReconciliation(
   reconciliation: ReconciliationResult,
@@ -186,9 +166,9 @@ export function applyReconciliation(
 
   for (const resolved of reconciliation.operationsResolved) {
     if (resolved.success) {
-      optimisticManager.remove(resolved.operationId);
+      optimisticManager.remove(resolved.commandId);
     } else {
-      optimisticManager.markFailed(resolved.operationId, resolved.reason);
+      optimisticManager.markFailed(resolved.commandId, resolved.reason || 'Reconciliation failed');
     }
   }
 }

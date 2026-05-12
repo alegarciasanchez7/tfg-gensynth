@@ -37,7 +37,7 @@ export function notifyCreateSuccess(
  */
 export function notifyCreateOptimistic(
   resourceType: string,
-  resourceName: string,
+  _resourceName: string,
   options?: NotificationOptions,
 ): void {
   if (!options?.showOptimistic) return;
@@ -82,7 +82,7 @@ export function notifyUpdateSuccess(
  */
 export function notifyUpdateOptimistic(
   resourceType: string,
-  resourceName: string,
+  _resourceName: string,
   options?: NotificationOptions,
 ): void {
   if (!options?.showOptimistic) return;
@@ -127,7 +127,7 @@ export function notifyDeleteSuccess(
  */
 export function notifyDeleteOptimistic(
   resourceType: string,
-  resourceName: string,
+  _resourceName: string,
   options?: NotificationOptions,
 ): void {
   if (!options?.showOptimistic) return;

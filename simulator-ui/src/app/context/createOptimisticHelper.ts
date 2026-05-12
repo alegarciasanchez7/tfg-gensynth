@@ -148,6 +148,7 @@ export function createOptimisticGroup(
     threads: 1,
     outputMode: 'serial',
     expanded: true,
+    enabled: true,
     flows: [],
   };
 }
@@ -178,6 +179,7 @@ export function createOptimisticFlow(
     topic,
     host,
     port,
+    enabled: true,
   };
 }
 
@@ -189,13 +191,16 @@ export function createOptimisticVariable(
   name: string,
   type: 'numeric' | 'string' | 'boolean' | 'temporal' | 'point' | 'list',
   scope: 'global' | 'group' | 'local',
+  flowId?: string,
+  groupId?: string,
 ): Variable {
   return {
     id,
     name,
     type,
     scope,
+    flowId,
+    groupId,
     config: {},
-    value: undefined,
   };
 }

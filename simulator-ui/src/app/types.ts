@@ -48,6 +48,7 @@ export interface Variable {
   name: string;
   type: VariableType;
   scope: VariableScope;
+  flowId?: string;
   groupId?: string;
   config: Record<string, unknown>;
   description?: string;
