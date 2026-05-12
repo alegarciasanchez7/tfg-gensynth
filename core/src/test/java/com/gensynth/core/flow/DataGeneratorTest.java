@@ -20,7 +20,7 @@ public class DataGeneratorTest {
 
     @Test
     public void testNumericGeneration() {
-        Variable var = new Variable("id", "num", "LOCAL", "numeric", 0.0, Map.of("min", 10.0, "max", 10.0));
+        Variable var = new Variable("id", "num", "LOCAL", "numeric", 0.0, Map.of("min", 10.0, "max", 10.0), "flow-1", null);
         Object value = generator.generateValue(var);
         
         assertTrue(value instanceof Double);
@@ -29,7 +29,7 @@ public class DataGeneratorTest {
 
     @Test
     public void testStringGeneration() {
-        Variable var = new Variable("id", "str", "LOCAL", "string", "default", null);
+        Variable var = new Variable("id", "str", "LOCAL", "string", "default", null, "flow-1", null);
         Object value = generator.generateValue(var);
         
         assertTrue(value instanceof String);
@@ -38,7 +38,7 @@ public class DataGeneratorTest {
 
     @Test
     public void testBooleanGeneration() {
-        Variable var = new Variable("id", "bool", "LOCAL", "boolean", false, null);
+        Variable var = new Variable("id", "bool", "LOCAL", "boolean", false, null, "flow-1", null);
         Object value = generator.generateValue(var);
         
         assertTrue(value instanceof Boolean);
@@ -46,7 +46,7 @@ public class DataGeneratorTest {
 
     @Test
     public void testDateGeneration() {
-        Variable var = new Variable("id", "dt", "LOCAL", "date", 0L, null);
+        Variable var = new Variable("id", "dt", "LOCAL", "date", 0L, null, "flow-1", null);
         Object value = generator.generateValue(var);
         
         assertTrue(value instanceof Long);
@@ -55,7 +55,7 @@ public class DataGeneratorTest {
 
     @Test
     public void testPointGeneration() {
-        Variable var = new Variable("id", "pt", "LOCAL", "point", Map.of(), null);
+        Variable var = new Variable("id", "pt", "LOCAL", "point", Map.of(), null, "flow-1", null);
         Object value = generator.generateValue(var);
         
         assertTrue(value instanceof Map);
@@ -67,7 +67,7 @@ public class DataGeneratorTest {
 
     @Test
     public void testListGeneration() {
-        Variable var = new Variable("id", "lst", "LOCAL", "list", List.of(), null);
+        Variable var = new Variable("id", "lst", "LOCAL", "list", List.of(), null, "flow-1", null);
         Object value = generator.generateValue(var);
         
         assertTrue(value instanceof List);

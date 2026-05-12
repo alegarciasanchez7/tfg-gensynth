@@ -11,6 +11,7 @@ export const mockGroups: Group[] = [
     threads: 4,
     outputMode: 'parallel',
     expanded: true,
+    enabled: true,
     flows: [
       {
         id: 'f1',
@@ -24,6 +25,7 @@ export const mockGroups: Group[] = [
         topic: 'sensor.temperature',
         host: 'broker.local',
         port: 9092,
+        enabled: true,
       },
       {
         id: 'f2',
@@ -37,6 +39,7 @@ export const mockGroups: Group[] = [
         topic: '/api/v2/telemetry',
         host: 'ingest.srv',
         port: 443,
+        enabled: true,
       },
       {
         id: 'f3',
@@ -51,6 +54,7 @@ export const mockGroups: Group[] = [
         topic: 'sensors/pressure',
         host: 'mqtt.local',
         port: 1883,
+        enabled: true,
       },
     ],
   },
@@ -63,6 +67,7 @@ export const mockGroups: Group[] = [
     threads: 2,
     outputMode: 'sequential',
     expanded: false,
+    enabled: true,
     flows: [
       {
         id: 'f4',
@@ -76,6 +81,7 @@ export const mockGroups: Group[] = [
         topic: 'ws://exchange.local/orderbook',
         host: 'exchange.local',
         port: 8080,
+        enabled: true,
       },
       {
         id: 'f5',
@@ -89,6 +95,7 @@ export const mockGroups: Group[] = [
         topic: 'TradeService/Push',
         host: 'grpc.trade.local',
         port: 50051,
+        enabled: true,
       },
     ],
   },
@@ -101,6 +108,7 @@ export const mockGroups: Group[] = [
     threads: 8,
     outputMode: 'parallel',
     expanded: false,
+    enabled: true,
     flows: [
       {
         id: 'f6',
@@ -114,6 +122,7 @@ export const mockGroups: Group[] = [
         topic: 'logs.access.raw',
         host: 'broker.local',
         port: 9092,
+        enabled: true,
       },
       {
         id: 'f7',
@@ -127,6 +136,7 @@ export const mockGroups: Group[] = [
         topic: 'logs.auth.events',
         host: 'broker.local',
         port: 9092,
+        enabled: true,
       },
       {
         id: 'f8',
@@ -140,6 +150,7 @@ export const mockGroups: Group[] = [
         topic: '/siem/ingest',
         host: 'siem.corp',
         port: 8514,
+        enabled: true,
       },
       {
         id: 'f9',
@@ -154,6 +165,7 @@ export const mockGroups: Group[] = [
         topic: 'syslog',
         host: '10.0.0.45',
         port: 514,
+        enabled: true,
       },
     ],
   },
@@ -166,6 +178,7 @@ export const mockVariables: Variable[] = [
     name: 'sensor_id',
     type: 'string',
     scope: 'local',
+    flowId: 'f1',
     description: 'Identificador único del sensor',
     config: { pattern: 'SEN-####', minLen: 8, maxLen: 8 },
   },
@@ -174,6 +187,7 @@ export const mockVariables: Variable[] = [
     name: 'temperature',
     type: 'numeric',
     scope: 'local',
+    flowId: 'f1',
     description: 'Temperatura en grados Celsius',
     config: { min: -20, max: 150, decimals: 2, distribution: 'gaussian', mean: 65, stddev: 15 },
   },
@@ -182,6 +196,7 @@ export const mockVariables: Variable[] = [
     name: 'active',
     type: 'boolean',
     scope: 'local',
+    flowId: 'f1',
     description: 'Estado activo del sensor',
     config: { probabilityTrue: 0.85 },
   },
@@ -209,6 +224,7 @@ export const mockVariables: Variable[] = [
     name: 'status_code',
     type: 'list',
     scope: 'group',
+    groupId: 'g1',
     description: 'Código de estado HTTP',
     config: { values: ['200', '201', '400', '401', '403', '404', '500'], mode: 'weighted', weights: [50, 10, 15, 8, 5, 8, 4] },
   },
@@ -308,6 +324,7 @@ export const mockConnectorCatalog: ConnectorPluginDescriptor[] = [
     displayName: 'RabbitMQ Connector',
     pluginVersion: '1.0.0',
     coreApiVersion: '1.0.0',
+    external: true,
     configSchema: {
       type: 'object',
       properties: {
@@ -323,6 +340,7 @@ export const mockConnectorCatalog: ConnectorPluginDescriptor[] = [
     displayName: 'RabbitMQ Connector',
     pluginVersion: '1.1.0',
     coreApiVersion: '1.0.0',
+    external: true,
     configSchema: {
       type: 'object',
       properties: {
@@ -339,6 +357,7 @@ export const mockConnectorCatalog: ConnectorPluginDescriptor[] = [
     displayName: 'Kafka Connector',
     pluginVersion: '2.0.0',
     coreApiVersion: '1.0.0',
+    external: true,
     configSchema: {
       type: 'object',
       properties: {
@@ -353,6 +372,7 @@ export const mockConnectorCatalog: ConnectorPluginDescriptor[] = [
     displayName: 'MQTT Connector',
     pluginVersion: '1.0.0',
     coreApiVersion: '1.0.0',
+    external: true,
     configSchema: {
       type: 'object',
       properties: {
@@ -368,6 +388,7 @@ export const mockConnectorCatalog: ConnectorPluginDescriptor[] = [
     displayName: 'HTTP Connector',
     pluginVersion: '1.0.0',
     coreApiVersion: '1.0.0',
+    external: false,
     configSchema: {
       type: 'object',
       properties: {
@@ -382,6 +403,7 @@ export const mockConnectorCatalog: ConnectorPluginDescriptor[] = [
     displayName: 'File Output (TXT/JSON)',
     pluginVersion: '1.0.0',
     coreApiVersion: '1.0.0',
+    external: false,
     configSchema: {
       type: 'object',
       properties: {

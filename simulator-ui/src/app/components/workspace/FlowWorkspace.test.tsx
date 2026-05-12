@@ -45,6 +45,7 @@ describe('FlowWorkspace', () => {
     outputMode: 'parallel',
     flows: [],
     expanded: false,
+    enabled: true,
   };
 
   const flow: Flow = {
@@ -60,6 +61,7 @@ describe('FlowWorkspace', () => {
     host: 'localhost',
     port: 8080,
     template: 'CUSTOM_FLOW_TEMPLATE_FROM_OBJECT',
+    enabled: true,
   };
 
   beforeEach(() => {

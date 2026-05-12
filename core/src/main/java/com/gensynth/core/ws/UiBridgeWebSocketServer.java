@@ -195,7 +195,6 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                 stopGroupInternal(group);
             }
             systemRunning = false;
-            persistState();
         }
 
         scheduler.shutdownNow();
@@ -207,7 +206,14 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
     }
 
     private void initializeRuntime() {
-        loadRuntimeState(true);
+        // Start empty as requested by user
+        synchronized (stateLock) {
+            groupsById.clear();
+            variablesById.clear();
+            connectorByFlowId.clear();
+            publisherTasksByFlowId.clear();
+            systemRunning = false;
+        }
     }
 
     private void persistState() {
@@ -824,8 +830,12 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             if (variableId.isBlank()) {
                 variableId = UUID.randomUUID().toString();
             }
+
+            String flowId = payload.path("flowId").asText(null);
+            String groupId = payload.path("groupId").asText(null);
+
             try {
-                createdVariable = new Variable(variableId, name, scope.toUpperCase(), coreType, defaultValue, config);
+                createdVariable = new Variable(variableId, name, scope.toUpperCase(), coreType, defaultValue, config, flowId, groupId);
                 variablesById.put(variableId, createdVariable);
                 persistState();
             } catch (IllegalArgumentException ex) {
@@ -888,10 +898,12 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             updatedVariableName = name;
             String type = normalizeVariableTypeForCore(payload.path("type").asText(existing.getType()));
             String scope = payload.path("scope").asText(existing.getScope()).toUpperCase();
+            String flowId = payload.path("flowId").asText(existing.getFlowId());
+            String groupId = payload.path("groupId").asText(existing.getGroupId());
             Object defaultValue = payload.has("config") ? payload.get("config").toString() : existing.getDefaultValue();
 
             try {
-                Variable updated = new Variable(variableId, name, scope, type, defaultValue, existing.getConfig());
+                Variable updated = new Variable(variableId, name, scope, type, defaultValue, existing.getConfig(), flowId, groupId);
                 variablesById.put(variableId, updated);
                 persistState();
             } catch (IllegalArgumentException ex) {

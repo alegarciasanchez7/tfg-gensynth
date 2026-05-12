@@ -24,6 +24,7 @@ describe('LeftPanel', () => {
     threads: 2,
     outputMode: 'parallel',
     expanded: true,
+    enabled: true,
     flows: [],
   };
 
@@ -33,6 +34,7 @@ describe('LeftPanel', () => {
       displayName: 'File Output (TXT/JSON)',
       pluginVersion: '1.0.0',
       coreApiVersion: '1.0.0',
+      external: false,
       configSchema: {
         type: 'object',
         properties: {
@@ -47,6 +49,7 @@ describe('LeftPanel', () => {
       displayName: 'HTTP Connector',
       pluginVersion: '1.0.0',
       coreApiVersion: '1.0.0',
+      external: false,
       configSchema: {
         type: 'object',
         properties: {
@@ -71,6 +74,9 @@ describe('LeftPanel', () => {
     onToggleGroup: vi.fn(),
     onCreateGroup: vi.fn(async () => group),
     onDeleteGroup: vi.fn(async () => undefined),
+    onDeleteFlow: vi.fn(async () => undefined),
+    onUpdateGroupConfig: vi.fn(),
+    onUpdateFlowConfig: vi.fn(),
     onCreateFlow: vi.fn(async (_groupId: string, name: string): Promise<Flow> => ({
       id: 'flow-1',
       name,
@@ -83,6 +89,7 @@ describe('LeftPanel', () => {
       topic: '',
       host: 'localhost',
       port: 8080,
+      enabled: true,
     })),
   };
 
