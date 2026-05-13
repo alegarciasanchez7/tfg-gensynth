@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { useApp } from '../../../context';
 import type { Variable } from '../../../types';
 
 interface TemplateEditorProps {
@@ -23,6 +24,7 @@ export function TemplateEditor({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const autocompleteRef = useRef<HTMLDivElement>(null);
+  const { actions } = useApp();
 
   // Parse variables for highlighting and validation
   const tokens = useMemo(() => {
@@ -48,12 +50,20 @@ export function TemplateEditor({
         const scope = dotIndex !== -1 ? fullSpec.substring(0, dotIndex).toLowerCase() : null;
         const name = dotIndex !== -1 ? fullSpec.substring(dotIndex + 1) : fullSpec;
 
-        const variable = variables.find(v => v.name === name && (!scope || v.scope === scope));
+        const variable = variables.find(v => {
+          if (v.name !== name) return false;
+          if (scope && v.scope !== scope) return false;
+          
+          // Ensure we pick the variable that actually belongs to this context if there are duplicates
+          if (v.scope === 'global') return true;
+          if (v.scope === 'group') return v.groupId === groupId;
+          if (v.scope === 'local') return v.flowId === flowId;
+          
+          return false;
+        });
         
         if (variable) {
-          if (variable.scope === 'global') isValid = true;
-          else if (variable.scope === 'group') isValid = variable.groupId === groupId;
-          else if (variable.scope === 'local') isValid = variable.flowId === flowId;
+          isValid = true;
         }
       }
 
@@ -101,8 +111,7 @@ export function TemplateEditor({
       .filter(o => {
         const full = `${o.scope}.${o.name}`.toLowerCase();
         return full.includes(query) || o.name.toLowerCase().includes(query);
-      })
-      .slice(0, 8);
+      });
   }, [showAutocomplete, value, cursorPos, variables, flowId, groupId]);
 
   useEffect(() => {
@@ -121,7 +130,7 @@ export function TemplateEditor({
         setSelectedIndex(prev => (prev - 1 + autocompleteOptions.length) % autocompleteOptions.length);
         return;
       }
-      if (e.key === 'Enter' || e.key === 'Tab') {
+      if (e.key === 'Enter') {
         e.preventDefault();
         insertOption(autocompleteOptions[selectedIndex]);
         return;
@@ -131,48 +140,113 @@ export function TemplateEditor({
         return;
       }
     }
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      if (showAutocomplete && autocompleteOptions.length > 0) {
+        insertOption(autocompleteOptions[selectedIndex]);
+      } else {
+        const start = textareaRef.current?.selectionStart || 0;
+        const end = textareaRef.current?.selectionEnd || 0;
+        const newValue = value.substring(0, start) + '  ' + value.substring(end);
+        onChange(newValue);
+        setTimeout(() => {
+          if (textareaRef.current) {
+            textareaRef.current.setSelectionRange(start + 2, start + 2);
+          }
+        }, 0);
+      }
+      return;
+    }
 
     if (e.key === '{') {
-      const textBefore = value.substring(0, textareaRef.current?.selectionStart || 0);
+      const start = textareaRef.current?.selectionStart || 0;
+      const textBefore = value.substring(0, start);
       if (textBefore.endsWith('{')) {
         setShowAutocomplete(true);
-        setCursorPos((textareaRef.current?.selectionStart || 0) + 1);
+        setCursorPos(start + 1);
       }
     }
   };
 
   const insertOption = (opt: { name: string; scope: string }) => {
-    const start = textareaRef.current?.selectionStart || 0;
+    const varRef = opt.scope === 'system' ? opt.name : `${opt.scope}.${opt.name}`;
+    insertAtCursor(varRef);
+    setShowAutocomplete(false);
+  };
+
+  const insertAtCursor = (varRef: string) => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+
+    const start = ta.selectionStart;
+    const end = ta.selectionEnd;
     const textBefore = value.substring(0, start);
-    const lastBraces = textBefore.lastIndexOf('{{');
     
-    const replacement = opt.scope === 'system' ? opt.name : `${opt.scope}.${opt.name}`;
-    const newValue = value.substring(0, lastBraces + 2) + replacement + '}}' + value.substring(start);
+    // Check if we should replace a partially typed {{...
+    // If textBefore ends with {{ or {{ + something, we replace from the {{
+    const lastOpen = textBefore.lastIndexOf('{{');
+    let finalStart = start;
+    if (lastOpen !== -1 && lastOpen >= textBefore.lastIndexOf('}}')) {
+      // We are likely inside an unclosed brace or just after one
+      finalStart = lastOpen;
+    }
+    
+    const replacement = `{{${varRef}}}`;
+    const newValue = value.substring(0, finalStart) + replacement + value.substring(end);
     
     onChange(newValue);
-    setShowAutocomplete(false);
     
     // Set focus and cursor after insertion
     setTimeout(() => {
-      if (textareaRef.current) {
-        textareaRef.current.focus();
-        const newPos = lastBraces + 2 + replacement.length + 2;
-        textareaRef.current.setSelectionRange(newPos, newPos);
+      if (ta) {
+        ta.focus();
+        const newPos = finalStart + replacement.length;
+        ta.setSelectionRange(newPos, newPos);
       }
     }, 0);
   };
 
+  // Register with AppContext when focused
+  const handleFocus = () => {
+    actions.registerTemplateEditor((name: string, scope?: string) => {
+      const ref = scope ? `${scope}.${name}` : name;
+      insertAtCursor(ref);
+    });
+  };
+
+  const handleBlur = () => {
+    // Small delay to allow clicking on autocomplete items
+    // But we use onMouseDown on items to trigger before this
+    setTimeout(() => {
+      setShowAutocomplete(false);
+    }, 150);
+  };
+
+  const editorStyles: React.CSSProperties = {
+    fontFamily: 'JetBrains Mono, monospace',
+    lineHeight: '1.6',
+    fontSize: '13px',
+    padding: '12px',
+    margin: 0,
+    border: 'none',
+    outline: 'none',
+    boxSizing: 'border-box',
+    letterSpacing: 'normal',
+    wordSpacing: 'normal',
+    tabSize: 2,
+  };
+
   return (
-    <div className={`relative font-mono text-sm group ${className}`}>
+    <div className={`relative group ${className}`} style={{ ...editorStyles, padding: 0 }}>
       {/* Highlighting Overlay */}
       <div 
-        className="absolute inset-0 p-3 pointer-events-none whitespace-pre-wrap break-all overflow-auto text-transparent"
-        style={{ scrollbarWidth: 'none' }}
+        className="absolute inset-0 pointer-events-none whitespace-pre-wrap break-all overflow-auto text-transparent"
+        style={{ ...editorStyles, scrollbarWidth: 'none' }}
       >
         {tokens.map((t, i) => (
           <span 
             key={i} 
-            className={t.isVariable ? (t.isValid ? 'bg-emerald-500/20 text-emerald-400 rounded px-0.5 border border-emerald-500/30' : 'bg-red-500/20 text-red-400 rounded px-0.5 border border-red-500/30') : 'text-[var(--c-tx2)]'}
+            className={t.isVariable ? (t.isValid ? 'bg-emerald-500/20 text-emerald-400 rounded ring-1 ring-inset ring-emerald-500/40' : 'bg-red-500/20 text-red-400 rounded ring-1 ring-inset ring-red-500/40') : 'text-[var(--c-tx2)]'}
           >
             {t.text}
           </span>
@@ -191,25 +265,30 @@ export function TemplateEditor({
           }
         }}
         onKeyDown={handleKeyDown}
-        onBlur={() => setTimeout(() => setShowAutocomplete(false), 200)}
-        className="w-full h-full p-3 bg-transparent text-transparent caret-[var(--c-tx1)] resize-none border-none outline-none focus:ring-0 relative z-10 whitespace-pre-wrap break-all overflow-auto"
+        onFocus={handleFocus}
+        onBlur={handleBlur}
+        className="w-full h-full bg-transparent text-transparent caret-[var(--c-tx1)] resize-none relative z-10 whitespace-pre-wrap break-all overflow-auto"
         spellCheck={false}
+        style={editorStyles}
       />
 
       {/* Autocomplete Dropdown */}
       {showAutocomplete && autocompleteOptions.length > 0 && (
         <div 
           ref={autocompleteRef}
-          className="absolute z-50 bg-[var(--c-bg2)] border border-[var(--c-br1)] rounded shadow-xl min-w-[200px] overflow-hidden"
+          className="absolute z-50 bg-[var(--c-bg2)] border border-[var(--c-br1)] rounded shadow-xl min-w-[220px] max-h-60 overflow-y-auto scrollbar-thin scrollbar-thumb-[var(--c-br3)]"
           style={{ 
-            top: '20px', // Simplified positioning, for real we'd need cursor coords
-            left: '20px'
+            top: '45px', 
+            left: '45px'
           }}
         >
           {autocompleteOptions.map((opt, i) => (
             <div
               key={i}
-              onClick={() => insertOption(opt)}
+              onMouseDown={(e) => {
+                e.preventDefault(); // Prevent blur
+                insertOption(opt);
+              }}
               className={`px-3 py-2 cursor-pointer flex items-center justify-between gap-4 transition-colors ${i === selectedIndex ? 'bg-violet-500/20 text-violet-400' : 'hover:bg-white/5 text-[var(--c-tx3)]'}`}
             >
               <div className="flex flex-col">

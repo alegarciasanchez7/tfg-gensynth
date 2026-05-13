@@ -14,6 +14,22 @@ vi.mock('sonner', () => ({
   },
 }));
 
+const { mockUseApp } = vi.hoisted(() => ({
+  mockUseApp: vi.fn(() => ({
+    actions: {
+      registerTemplateEditor: vi.fn(),
+      insertVariable: vi.fn(),
+    },
+    state: {
+      groups: [],
+    },
+  })),
+}));
+
+vi.mock('../../../../context', () => ({
+  useApp: () => mockUseApp(),
+}));
+
 describe('LeftPanel', () => {
   const group: Group = {
     id: 'g1',
