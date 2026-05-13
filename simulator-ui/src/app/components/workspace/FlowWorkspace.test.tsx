@@ -61,6 +61,7 @@ describe('FlowWorkspace', () => {
     host: 'localhost',
     port: 8080,
     template: 'CUSTOM_FLOW_TEMPLATE_FROM_OBJECT',
+    latency: 0,
     enabled: true,
   };
 
@@ -81,7 +82,7 @@ describe('FlowWorkspace', () => {
 
     // The textarea should contain the template from the flow object
     const textareas = screen.getAllByRole('textbox');
-    const templateTextarea = textareas.find(t => (t as HTMLTextAreaElement).classList.contains('absolute')) as HTMLTextAreaElement;
+    const templateTextarea = textareas.find(t => t.tagName === 'TEXTAREA') as HTMLTextAreaElement;
     expect(templateTextarea.value).toBe('CUSTOM_FLOW_TEMPLATE_FROM_OBJECT');
   });
 
@@ -96,7 +97,7 @@ describe('FlowWorkspace', () => {
     );
 
     const textareas = screen.getAllByRole('textbox');
-    const templateTextarea = textareas.find(t => (t as HTMLTextAreaElement).classList.contains('absolute')) as HTMLTextAreaElement;
+    const templateTextarea = textareas.find(t => t.tagName === 'TEXTAREA') as HTMLTextAreaElement;
     expect(templateTextarea.value).toBe('TEMPLATE_FROM_PROP');
   });
 
@@ -113,7 +114,9 @@ describe('FlowWorkspace', () => {
     );
 
     const textareas = screen.getAllByRole('textbox');
-    const templateTextarea = textareas.find(t => (t as HTMLTextAreaElement).classList.contains('absolute')) as HTMLTextAreaElement;
+    // Find the textarea (template editor) by excluding other inputs if possible, 
+    // or just find the one that is actually a textarea element
+    const templateTextarea = textareas.find(t => t.tagName === 'TEXTAREA') as HTMLTextAreaElement;
     // Should contain empty string
     expect(templateTextarea.value).toBe('');
   });

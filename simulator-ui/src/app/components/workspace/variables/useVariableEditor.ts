@@ -10,6 +10,8 @@ export type VariableDraft = {
   scope: Variable['scope'];
   description: string;
   configText: string;
+  flowId?: string;
+  groupId?: string;
 };
 
 type VariableTypeTheme = {
@@ -75,6 +77,8 @@ function createDraft(variable: Variable): VariableDraft {
     scope: variable.scope,
     description: variable.description ?? '',
     configText: toPrettyConfig(variable.config),
+    flowId: variable.flowId,
+    groupId: variable.groupId,
   };
 }
 
@@ -128,6 +132,8 @@ export function useVariableEditor(variable: Variable) {
         scope: draft.scope,
         description: draft.description.trim(),
         config: parsedConfig,
+        flowId: draft.flowId,
+        groupId: draft.groupId,
       });
       toast.success('Variable updated');
     } catch (error) {

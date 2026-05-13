@@ -50,13 +50,15 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from '../../../ui/context-menu';
-import type { Group, Flow, Selection, ConnectionStatus, GroupStatus } from '../../../../types';
+import type { Group, Flow, Selection, ConnectionStatus, GroupStatus, Variable } from '../../../../types';
+import { TemplateEditor } from '../../../workspace/flows/TemplateEditor';
 import type { ConnectorPluginDescriptor } from '../../../../core/types';
 import { isRunningInJCEF } from '../../../../core/jcef';
 import { CoreCommands } from '../../../../core/bridge';
 
 interface LeftPanelProps {
   groups: Group[];
+  variables: Variable[];
   selection: Selection;
   formatTemplate: Record<string, string>;
   latestConnectors: ConnectorPluginDescriptor[];
@@ -240,6 +242,7 @@ function GroupItem({
   onUpdateGroupConfig,
   onUpdateFlowConfig,
   latestConnectors,
+  variables,
 }: {
   group: Group;
   selection: Selection;
@@ -263,6 +266,7 @@ function GroupItem({
   onUpdateGroupConfig: (groupId: string, config: any, name?: string) => Promise<void>;
   onUpdateFlowConfig: (groupId: string, flowId: string, config: any, name?: string) => Promise<void>;
   latestConnectors: ConnectorPluginDescriptor[];
+  variables: Variable[];
 }) {
   const gCfg = groupStatusCfg[group.status];
   const selectedGroup = selection.type === 'group' && selection.groupId === group.id;
@@ -644,13 +648,16 @@ function GroupItem({
                     <label className="text-xs text-[var(--c-tx3)]" htmlFor={`flow-template-${group.id}`}>
                       Template
                     </label>
-                    <Textarea
-                      id={`flow-template-${group.id}`}
-                      value={flowTemplate}
-                      onChange={(event) => setFlowTemplate(event.target.value)}
-                      rows={5}
-                      placeholder="{}"
-                    />
+                    <div className="h-40 border border-[var(--c-br1)] rounded-md overflow-hidden bg-[var(--c-bg1)]">
+                      <TemplateEditor
+                        value={flowTemplate}
+                        onChange={setFlowTemplate}
+                        variables={variables}
+                        flowId="" // New flow has no ID yet
+                        groupId={group.id}
+                        className="w-full h-full"
+                      />
+                    </div>
                   </div>
                 </div>
 
@@ -673,6 +680,7 @@ function GroupItem({
 
 export function LeftPanel({
   groups,
+  variables,
   selection,
   formatTemplate,
   latestConnectors,
@@ -1085,16 +1093,19 @@ export function LeftPanel({
               </div>
 
               <div className="space-y-2 sm:col-span-2">
-                <label className="text-xs text-[var(--c-tx3)]" htmlFor="flow-template">
+                <label className="text-xs text-[var(--c-tx3)]" htmlFor="main-flow-template">
                   Template
                 </label>
-                <Textarea
-                  id="flow-template"
-                  value={flowTemplate}
-                  onChange={(event) => setFlowTemplate(event.target.value)}
-                  rows={5}
-                  placeholder="{}"
-                />
+                <div className="h-40 border border-[var(--c-br1)] rounded-md overflow-hidden bg-[var(--c-bg1)]">
+                  <TemplateEditor
+                    value={flowTemplate}
+                    onChange={setFlowTemplate}
+                    variables={variables}
+                    flowId=""
+                    groupId={selectedGroupForFlow || ''}
+                    className="w-full h-full"
+                  />
+                </div>
               </div>
             </div>
 
@@ -1140,6 +1151,7 @@ export function LeftPanel({
             onUpdateGroupConfig={onUpdateGroupConfig}
             onUpdateFlowConfig={onUpdateFlowConfig}
             latestConnectors={latestConnectors}
+            variables={variables}
           />
         ))}
       </div>

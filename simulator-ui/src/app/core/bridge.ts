@@ -68,6 +68,7 @@ type PendingCommand = {
   timerId: number;
   command: UICommand;
   attempts: number;
+  onResponse?: (payload: any) => void;
 };
 
 const SUPPORTED_COMMANDS = new Set<UICommandType>([
@@ -301,7 +302,11 @@ class CoreBridge {
   /**
    * Sends a command to the Java core
    */
-  send<T extends UICommandType, R = any>(type: T, payload?: UICommandPayloadMap[T]): Promise<R> {
+  send<T extends UICommandType, R = any>(
+    type: T, 
+    payload?: UICommandPayloadMap[T],
+    onResponse?: (data: R) => void
+  ): Promise<R> {
     const validationError = this.validateCommand(type, payload);
     if (validationError) {
       return Promise.reject(validationError);
@@ -324,6 +329,7 @@ class CoreBridge {
         timerId: 0,
         command,
         attempts: 0,
+        onResponse,
       };
 
       const scheduleAttempt = () => {
@@ -555,6 +561,14 @@ class CoreBridge {
         }
         const pending = this.pendingCommands.get(responseId)!;
         window.clearTimeout(pending.timerId);
+
+        if (pending.onResponse && message.type !== 'ERROR' && responsePayload?.status !== 'error') {
+          try {
+            pending.onResponse(message.payload);
+          } catch (err) {
+            console.error('[Bridge] Error in onResponse callback:', err);
+          }
+        }
 
         if (message.type === 'ERROR' || responsePayload?.status === 'error') {
           const commandError = this.createError(message.payload as CoreCommandErrorPayload, responseId);

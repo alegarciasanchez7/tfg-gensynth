@@ -7,6 +7,8 @@ import { BottomPanel } from './components/layout/panels/bottom/BottomPanel';
 import { useApp } from './context';
 import { Toaster } from 'sonner';
 import { RestartOverlay } from './components/layout/header/RestartOverlay';
+import { useEffect } from 'react';
+import bridge from './core/bridge';
 
 export default function App() {
   const { state, actions } = useApp();
@@ -24,6 +26,33 @@ export default function App() {
     connectorHealthSummary,
     isRestarting,
   } = state;
+
+  useEffect(() => {
+    const handleError = (event: ErrorEvent) => {
+      const errorMsg = `[UI CRASH] ${event.message} at ${event.filename}:${event.lineno}`;
+      bridge.send('UI_LOG', {
+        level: 'error',
+        source: 'UI_RUNTIME',
+        message: errorMsg
+      });
+    };
+
+    const handleRejection = (event: PromiseRejectionEvent) => {
+      const errorMsg = `[UI UNHANDLED REJECTION] ${event.reason}`;
+      bridge.send('UI_LOG', {
+        level: 'error',
+        source: 'UI_RUNTIME',
+        message: errorMsg
+      });
+    };
+
+    window.addEventListener('error', handleError);
+    window.addEventListener('unhandledrejection', handleRejection);
+    return () => {
+      window.removeEventListener('error', handleError);
+      window.removeEventListener('unhandledrejection', handleRejection);
+    };
+  }, []);
 
   // Usar templates del estado directamente
   const mergedTemplates = formatTemplates;
@@ -59,6 +88,7 @@ export default function App() {
         {/* Left: Groups & Flows */}
         <LeftPanel
           groups={groups}
+          variables={variables}
           selection={selection}
           formatTemplate={mergedTemplates}
           latestConnectors={latestConnectors}

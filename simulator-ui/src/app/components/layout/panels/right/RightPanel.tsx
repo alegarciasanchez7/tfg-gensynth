@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Plus, ChevronDown, Hash, List, ToggleLeft, Clock3, LocateFixed, Type } from 'lucide-react';
 import { toast } from 'sonner';
 import { useApp } from '../../../../context';
@@ -82,14 +82,38 @@ export function RightPanel({ variables, selection, onSelectVariable, onInsertVar
   const [deleteVariable, setDeleteVariable] = useState<Variable | null>(null);
 
   const isFlowSelected = selection.type === 'flow';
+  const isGroupSelected = selection.type === 'group';
+
+  // Auto-switch scope based on selection
+  useEffect(() => {
+    if (isFlowSelected) {
+      setActiveScope('local');
+    } else if (isGroupSelected) {
+      setActiveScope('group');
+    }
+  }, [selection.type, isFlowSelected, isGroupSelected]);
 
   // Context-aware filtering
   const filteredVars = variables.filter(v => {
     if (v.scope !== activeScope) return false;
     
     if (activeScope === 'local') {
-      // If we have a selected flow, only show variables for THAT flow
-      return isFlowSelected ? v.flowId === selection.flowId : true;
+      // If a specific flow is selected, show only its variables
+      if (isFlowSelected) {
+        return v.flowId === selection.flowId;
+      }
+      
+      // If a group is selected, show local variables of all flows in that group
+      if (selection.groupId) {
+        const currentGroup = state.groups.find(g => g.id === selection.groupId);
+        if (currentGroup) {
+          const flowIdsInGroup = currentGroup.flows.map(f => f.id);
+          return v.flowId ? flowIdsInGroup.includes(v.flowId) : false;
+        }
+      }
+      
+      // If nothing selected, show all local variables
+      return true;
     }
     
     if (activeScope === 'group') {

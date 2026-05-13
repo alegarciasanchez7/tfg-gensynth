@@ -1,5 +1,8 @@
 package com.gensynth.core.model;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.time.Instant;
 import java.util.Map;
 import java.util.Objects;
@@ -16,6 +19,7 @@ import java.util.Objects;
  * Variables are persistent and synchronized between UI and Core.
  */
 public class Variable {
+    private static final Logger logger = LoggerFactory.getLogger(Variable.class);
     private final String id;
     private final String name;
     private final String scope; // "LOCAL", "GROUP", "GLOBAL"
@@ -157,6 +161,17 @@ public class Variable {
         Object defaultValue = payload.getOrDefault("defaultValue", "");
         @SuppressWarnings("unchecked")
         Map<String, Object> config = (Map<String, Object>) payload.getOrDefault("config", Map.of());
+
+        // Robustness: If scope is LOCAL but flowId is missing, downgrade to GLOBAL to avoid crashing on import
+        if ("local".equalsIgnoreCase(scope) && (flowId == null || flowId.isBlank())) {
+            logger.warn("Variable '{}' (id: {}) has LOCAL scope but missing flowId. Downgrading to GLOBAL.", name, id);
+            scope = "GLOBAL";
+        }
+        // Robustness: If scope is GROUP but groupId is missing, downgrade to GLOBAL
+        if ("group".equalsIgnoreCase(scope) && (groupId == null || groupId.isBlank())) {
+            logger.warn("Variable '{}' (id: {}) has GROUP scope but missing groupId. Downgrading to GLOBAL.", name, id);
+            scope = "GLOBAL";
+        }
 
         return new Variable(id, name, scope.toUpperCase(), type, defaultValue, config, flowId, groupId);
     }
