@@ -138,9 +138,20 @@ export function CreateVariableDialog({
                   <SelectValue placeholder="Select scope" />
                 </SelectTrigger>
                 <SelectContent>
-                  {scopes.map((scope) => (
-                    <SelectItem key={scope} value={scope}>{scopeLabels[scope]}</SelectItem>
-                  ))}
+                  {scopes.map((scope) => {
+                    const isDisabled = (scope === 'local' && allFlows.length === 0) || 
+                                     (scope === 'group' && groups.length === 0);
+                    return (
+                      <SelectItem 
+                        key={scope} 
+                        value={scope} 
+                        disabled={isDisabled}
+                        title={isDisabled ? `No ${scope === 'local' ? 'flows' : 'groups'} available` : undefined}
+                      >
+                        {scopeLabels[scope]}
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
             </label>

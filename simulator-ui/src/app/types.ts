@@ -16,6 +16,7 @@ export interface Flow {
   technology: string;
   connectionStatus: ConnectionStatus;
   throughput: string;
+  latency: number;
   hasError: boolean;
   errorMessage?: string;
   interval: number;

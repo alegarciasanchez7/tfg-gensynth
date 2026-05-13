@@ -29,6 +29,7 @@ export function normalizeFlowFromSnapshot(flow: Partial<Flow>): Flow {
     topic: flow.topic ?? '',
     host: flow.host ?? 'localhost',
     port: typeof flow.port === 'number' ? flow.port : 5672,
+    latency: typeof flow.latency === 'number' ? flow.latency : 0,
     enabled: flow.enabled ?? true,
   };
 }

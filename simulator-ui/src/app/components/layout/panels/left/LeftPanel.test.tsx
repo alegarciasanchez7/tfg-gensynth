@@ -67,6 +67,7 @@ describe('LeftPanel', () => {
   const baseProps = {
     groups: [group],
     selection,
+    variables: [],
     formatTemplate: {},
     latestConnectors,
     onSelectGroup: vi.fn(),
@@ -89,6 +90,7 @@ describe('LeftPanel', () => {
       topic: '',
       host: 'localhost',
       port: 8080,
+      latency: 0,
       enabled: true,
     })),
   };

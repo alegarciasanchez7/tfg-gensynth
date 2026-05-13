@@ -65,9 +65,20 @@ interface VariableEditorIdentityCardProps {
   draft: VariableDraft;
   setDraft: Dispatch<SetStateAction<VariableDraft>>;
   scopeOptions: VariableEditorScopeOption[];
+  groups: Variable['scope'] extends any ? any[] : any[]; // Simplified for props, but we'll use Group[]
 }
 
-export function VariableEditorIdentityCard({ draft, setDraft, scopeOptions }: VariableEditorIdentityCardProps) {
+export function VariableEditorIdentityCard({ draft, setDraft, scopeOptions, groups }: VariableEditorIdentityCardProps) {
+  // Flatten flows with group name for the selector
+  const allFlows = groups.flatMap(g => 
+    g.flows.map((f: any) => ({
+      id: f.id,
+      name: f.name,
+      groupName: g.name,
+      groupId: g.id
+    }))
+  );
+
   return (
     <div className="rounded border border-[var(--c-br1)] bg-[var(--c-bg4)] p-3">
       <div className="mb-3">
@@ -94,32 +105,95 @@ export function VariableEditorIdentityCard({ draft, setDraft, scopeOptions }: Va
           </label>
           <Select
             value={draft.scope}
-            onValueChange={value => setDraft(current => ({ ...current, scope: value as Variable['scope'] }))}
+            onValueChange={value => setDraft(current => ({ 
+              ...current, 
+              scope: value as Variable['scope'],
+              // Clear or reset IDs when scope changes
+              flowId: value === 'local' ? (current.flowId || allFlows[0]?.id) : undefined,
+              groupId: value === 'group' ? (current.groupId || groups[0]?.id) : undefined,
+            }))}
           >
             <SelectTrigger id="variable-scope">
               <SelectValue placeholder="Select scope" />
             </SelectTrigger>
             <SelectContent>
-              {scopeOptions.map(option => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
+              {scopeOptions.map(option => {
+                const isDisabled = (option.value === 'local' && allFlows.length === 0) || 
+                                 (option.value === 'group' && groups.length === 0);
+                return (
+                  <SelectItem 
+                    key={option.value} 
+                    value={option.value}
+                    disabled={isDisabled}
+                  >
+                    {option.label}
+                  </SelectItem>
+                );
+              })}
             </SelectContent>
           </Select>
         </div>
       </div>
 
-      <div className="mt-2 flex flex-col gap-1">
-        <label htmlFor="variable-description" className="text-[10px] uppercase tracking-wider text-[var(--c-tx4)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-          Description
-        </label>
-        <Textarea
-          id="variable-description"
-          value={draft.description}
-          onChange={event => setDraft(current => ({ ...current, description: event.target.value }))}
-          rows={3}
-        />
+      {/* Context selectors based on scope */}
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        {draft.scope === 'local' && (
+          <div className="flex flex-col gap-1">
+            <label htmlFor="variable-flow" className="text-[10px] uppercase tracking-wider text-[var(--c-tx4)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+              Target Flow
+            </label>
+            <Select
+              value={draft.flowId}
+              onValueChange={value => setDraft(current => ({ ...current, flowId: value }))}
+            >
+              <SelectTrigger id="variable-flow">
+                <SelectValue placeholder="Select flow" />
+              </SelectTrigger>
+              <SelectContent>
+                {allFlows.map(flow => (
+                  <SelectItem key={flow.id} value={flow.id}>
+                    {flow.groupName} - {flow.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
+        {draft.scope === 'group' && (
+          <div className="flex flex-col gap-1">
+            <label htmlFor="variable-group" className="text-[10px] uppercase tracking-wider text-[var(--c-tx4)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+              Target Group
+            </label>
+            <Select
+              value={draft.groupId}
+              onValueChange={value => setDraft(current => ({ ...current, groupId: value }))}
+            >
+              <SelectTrigger id="variable-group">
+                <SelectValue placeholder="Select group" />
+              </SelectTrigger>
+              <SelectContent>
+                {groups.map(group => (
+                  <SelectItem key={group.id} value={group.id}>
+                    {group.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
+        <div className={`flex flex-col gap-1 ${draft.scope === 'global' ? 'col-span-2' : ''}`}>
+          <label htmlFor="variable-description" className="text-[10px] uppercase tracking-wider text-[var(--c-tx4)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+            Description
+          </label>
+          <Input
+            id="variable-description"
+            value={draft.description}
+            onChange={event => setDraft(current => ({ ...current, description: event.target.value }))}
+            placeholder="Optional note"
+          />
+        </div>
       </div>
     </div>
   );

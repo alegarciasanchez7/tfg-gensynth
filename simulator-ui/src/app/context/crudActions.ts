@@ -16,6 +16,7 @@
 import type React from 'react';
 import bridge from '../core/bridge';
 import type { Group, Flow, Variable } from '../types';
+import type { GroupState, FlowState, VariableState } from '../core/types';
 import type { OptimisticManager } from './optimisticManager';
 
 // ─────────────────────────────────────────────────────────────
@@ -81,7 +82,8 @@ export async function createGroup(
   ctx: CRUDActionContext,
   name: string,
   description?: string,
-): Promise<Group> {
+  onResponse?: (data: GroupState) => void,
+): Promise<GroupState> {
   // Validations
   if (!name?.trim()) {
     throwValidationError('name', 'is required and cannot be empty');
@@ -92,26 +94,25 @@ export async function createGroup(
       const response = await bridge.send('CREATE_GROUP', {
         name: name.trim(),
         description: description?.trim() || '',
-      });
+      }, onResponse);
       
       // Backend returns the created group or just confirms
       // We expect the groups-update event to fire
       if (response && typeof response === 'object' && 'id' in response) {
-        return response as Group;
+        return response as GroupState;
       }
     }
 
     // For mock mode, create locally
     const groupId = generateId();
-    const newGroup: Group = {
+    const newGroup: GroupState = {
       id: groupId,
       name: name.trim(),
       description: description?.trim() || '',
       status: 'stopped',
-      throughput: '0 msg/s',
+      throughput: 0,
       threads: 1,
       outputMode: 'serial',
-      expanded: true,
       enabled: true,
       flows: [],
     };
@@ -213,7 +214,8 @@ export async function createFlow(
   burst?: number,
   template?: string,
   connectorConfig?: Record<string, unknown>,
-): Promise<Flow> {
+  onResponse?: (data: FlowState) => void,
+): Promise<FlowState> {
   // Validations
   if (!groupId?.trim()) throwValidationError('groupId', 'is required');
   if (!name?.trim()) throwValidationError('name', 'is required');
@@ -236,21 +238,22 @@ export async function createFlow(
         burst: burst ?? 1,
         template: template || '{}',
         ...(connectorConfig && { connectorConfig }),
-      });
+      }, onResponse);
 
       if (response && typeof response === 'object' && 'id' in response) {
-        return response as Flow;
+        return response as FlowState;
       }
     }
 
     // For mock mode
     const flowId = generateId();
-    const newFlow: Flow = {
+    const newFlow: FlowState = {
       id: flowId,
       name: name.trim(),
       technology: technology.trim(),
       connectionStatus: 'disconnected',
-      throughput: '0 msg/s',
+      throughput: 0,
+      latency: 0,
       hasError: false,
       errorMessage: undefined,
       interval: interval ?? 1000,
@@ -366,13 +369,14 @@ export async function deleteFlow(
 export async function createVariable(
   ctx: CRUDActionContext,
   name: string,
-  type: 'numeric' | 'string' | 'boolean' | 'temporal' | 'point' | 'list',
+  type: string,
   scope: 'global' | 'group' | 'local',
   config?: Record<string, unknown>,
   flowId?: string,
   groupId?: string,
   variableId?: string,
-): Promise<Variable> {
+  onResponse?: (data: VariableState) => void,
+): Promise<VariableState> {
   // Validations
   if (!name?.trim()) throwValidationError('name', 'is required');
   const validTypes = ['numeric', 'string', 'boolean', 'temporal', 'point', 'list'];
@@ -393,19 +397,19 @@ export async function createVariable(
         config: config || {},
         flowId,
         groupId,
-      });
-
+        variableId,
+      }, onResponse);
       if (response && typeof response === 'object' && 'id' in response) {
-        return response as Variable;
+        return response as VariableState;
       }
     }
 
     const generatedId = variableId ?? generateId();
-    const newVariable: Variable = {
+    const newVariable: VariableState = {
       id: generatedId,
       name: name.trim(),
-      type,
-      scope,
+      type: type as 'numeric' | 'string' | 'boolean' | 'temporal' | 'point' | 'list',
+      scope: scope as 'global' | 'group' | 'local',
       flowId,
       groupId,
       config: config || {},

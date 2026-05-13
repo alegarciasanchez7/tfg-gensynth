@@ -75,7 +75,9 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         "VALIDATE_PLUGIN",
         "INSTALL_PLUGIN",
         "UNINSTALL_PLUGIN",
-        "EXPORT_STATE"
+        "EXPORT_STATE",
+        "PICK_DIRECTORY",
+        "UI_LOG"
     );
 
     private final ObjectMapper objectMapper = createConfiguredMapper();
@@ -447,6 +449,13 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                     broadcastSystemStatus();
                     sendLog(conn, "info", group.id, "Group stopped");
                 }
+                case "UI_LOG" -> {
+                    String level = payload.path("level").asText("info");
+                    String source = payload.path("source").asText("UI");
+                    String message = payload.path("message").asText("");
+                    logToBackend(level, source, message, commandId);
+                    sendAck(conn, commandId, "log_received");
+                }
                 case "CREATE_GROUP" -> handleCreateGroup(conn, commandId, payload);
                 case "DELETE_GROUP" -> handleDeleteGroup(conn, commandId, payload);
                 case "UPDATE_GROUP_CONFIG" -> handleUpdateGroupConfig(conn, commandId, payload);
@@ -525,9 +534,11 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
 
             groupsById.put(id, new GroupRuntime(id, name, "stopped", description, threads, outputMode, true));
             persistState();
+            
+            GroupRuntime group = groupsById.get(id);
+            sendCreatedResponse(conn, commandId, clientRequestId, group.toPayload(), "group_created");
         }
 
-        sendAck(conn, commandId, clientRequestId, "group_created");
         logToBackend("info", "GROUPS", "Created group '" + name + "'", commandId);
         broadcastGroupsUpdate();
     }
@@ -682,9 +693,11 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             ));
 
             persistState();
+            
+            FlowRuntime flow = findFlowById(group, flowId);
+            sendCreatedResponse(conn, commandId, clientRequestId, flow.toPayload(), "flow_created");
         }
 
-        sendAck(conn, commandId, clientRequestId, "flow_created");
         logToBackend("info", "FLOWS", "Created flow '" + name + "'", commandId);
         broadcastGroupsUpdate();
     }
@@ -1241,7 +1254,15 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
 
     private String buildPayload(FlowRuntime flow, int indexInBurst) {
         long sequence = totalMessages.get() + indexInBurst + 1;
-        return templateEngine.evaluate(flow.template, sequence, variablesById);
+        // Find group of this flow to pass groupId
+        String groupId = null;
+        for (GroupRuntime g : groupsById.values()) {
+            if (g.flows.contains(flow)) {
+                groupId = g.id;
+                break;
+            }
+        }
+        return templateEngine.evaluate(flow.template, sequence, variablesById, flow.id, groupId);
     }
 
     private Map<String, Object> buildFlowConnectorConfig(GroupRuntime group, FlowRuntime flow) {
@@ -1464,6 +1485,25 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             }
         }
         broadcastMessage("VARIABLE_UPDATE", payload);
+    }
+
+    /**
+     * Sends a standardized creation response to the client.
+     *
+     * @param conn The WebSocket connection
+     * @param commandId The ID of the command being responded to
+     * @param clientRequestId The client-side request ID for optimistic UI reconciliation
+     * @param payload The entity payload (Group or Flow data)
+     * @param resultType A string identifying the result type (e.g., "group_created")
+     */
+    private void sendCreatedResponse(WebSocket conn, String commandId, String clientRequestId, Map<String, Object> payload, String resultType) {
+        Map<String, Object> responsePayload = new LinkedHashMap<>(payload);
+        responsePayload.put("status", "ok");
+        responsePayload.put("result", resultType);
+        if (clientRequestId != null) {
+            responsePayload.put("clientRequestId", clientRequestId);
+        }
+        sendMessage(conn, "CONNECTION_STATUS", commandId, responsePayload);
     }
 
     private void broadcastGroupsUpdate() {
