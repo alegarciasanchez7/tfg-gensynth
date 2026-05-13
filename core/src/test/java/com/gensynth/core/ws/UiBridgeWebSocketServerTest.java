@@ -60,7 +60,10 @@ public class UiBridgeWebSocketServerTest {
                 }
                 """;
 
-        // conn can be null for command handling in tests
+        // 1. Send LOAD_STATE to populate memory from repository
+        server.onMessage(null, "{\"type\":\"LOAD_STATE\",\"commandId\":\"cmd-load\",\"protocolVersion\":\"1.0.0\",\"payload\":{}}");
+
+        // 2. Send CREATE_FLOW command
         server.onMessage(null, command);
 
         Field groupsField = UiBridgeWebSocketServer.class.getDeclaredField("groupsById");
@@ -100,8 +103,14 @@ public class UiBridgeWebSocketServerTest {
 
     @Test
     public void handleCommandCorrelatesCommandIdInResponse() throws Exception {
-        UiBridgeWebSocketServer server = new UiBridgeWebSocketServer(new InetSocketAddress("localhost", 0),
-                new ConnectorCatalogService());
+        Path tempDir = Files.createTempDirectory("gensynth-ws-test-initial-");
+        StateRepository repository = new JsonStateRepositoryImpl(tempDir.toString());
+        
+        UiBridgeWebSocketServer server = new UiBridgeWebSocketServer(
+                new InetSocketAddress("localhost", 0),
+                new ConnectorCatalogService(),
+                repository,
+                new PluginInstallerImpl(tempDir));
         WebSocket mockConn = mock(WebSocket.class);
         when(mockConn.isOpen()).thenReturn(true);
 

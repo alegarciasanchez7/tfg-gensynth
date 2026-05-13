@@ -28,6 +28,7 @@ import type {
   MetricsPayload,
   LogPayload,
   GroupState,
+  FlowState,
   FlowMetricsPayload,
   VariableState,
   ConnectorPluginDescriptor,
@@ -187,37 +188,60 @@ function latestConnectorsFromCatalog(catalog: ConnectorPluginDescriptor[]): Conn
   );
 }
 
+/**
+ * Maps a raw Flow object from the Java Core to a UI-compatible Flow object.
+ * Handles formatting numerical metrics (throughput) into user-friendly strings.
+ */
+function mapFlowFromCore(flow: FlowState): Flow {
+  return {
+    id: flow.id || 'unknown',
+    name: flow.name || 'Unnamed Flow',
+    technology: flow.technology || 'Generic',
+    connectionStatus: flow.connectionStatus || 'disconnected',
+    throughput: `${flow.throughput || 0} msg/s`,
+    latency: flow.latency || 0,
+    hasError: flow.hasError ?? false,
+    errorMessage: flow.errorMessage,
+    interval: flow.interval ?? 1000,
+    burst: flow.burst ?? 1,
+    topic: flow.topic || '',
+    host: flow.host || 'localhost',
+    port: flow.port || 80,
+    template: flow.template || '{}',
+    format: flow.format || 'json',
+    connectorConfig: flow.connectorConfig || {},
+    enabled: flow.enabled ?? true,
+  };
+}
+
+/**
+ * Maps a raw Group object from the Java Core to a UI-compatible Group object.
+ * Preserves local UI state like 'expanded' if a previous version of the group exists.
+ */
+function mapGroupFromCore(group: GroupState, previousGroup?: Group): Group {
+  return {
+    id: group.id || 'unknown',
+    name: group.name || 'Unnamed Group',
+    status: group.status || 'stopped',
+    throughput: `${group.throughput || 0} msg/s`,
+    description: group.description || '',
+    threads: group.threads || 1,
+    outputMode: group.outputMode || 'serial',
+    enabled: group.enabled ?? true,
+    expanded: previousGroup?.expanded ?? true,
+    flows: (group.flows || []).map(mapFlowFromCore),
+  };
+}
+
+/**
+ * Maps a list of raw Group objects from the Java Core to UI-compatible Group objects.
+ * Maintains persistent UI state across the transformation.
+ */
 function mapGroupsFromCore(groups: GroupState[], previousGroups: Group[] = []): Group[] {
-  return groups.map((group) => ({
-    id: group.id,
-    name: group.name,
-    status: group.status,
-    throughput: `${group.throughput} msg/s`,
-    description: group.description,
-    threads: group.threads,
-    outputMode: group.outputMode,
-    enabled: group.enabled,
-    expanded: previousGroups.find((existing) => existing.id === group.id)?.expanded ?? false,
-    flows: group.flows.map((flow) => ({
-      id: flow.id,
-      name: flow.name,
-      technology: flow.technology,
-      connectionStatus: flow.connectionStatus,
-      throughput: `${flow.throughput} msg/s`,
-      latency: flow.latency,
-      hasError: flow.hasError,
-      errorMessage: flow.errorMessage,
-      interval: flow.interval,
-      burst: flow.burst,
-      topic: flow.topic,
-      host: flow.host,
-      port: flow.port,
-      template: flow.template,
-      format: flow.format,
-      connectorConfig: flow.connectorConfig,
-      enabled: flow.enabled,
-    })),
-  }));
+  return groups.map((group) => {
+    const previous = previousGroups.find((existing) => existing.id === group.id);
+    return mapGroupFromCore(group, previous);
+  });
 }
 
 function getConnectorProperties(schema: Record<string, unknown>): Record<string, Record<string, unknown>> {
@@ -290,8 +314,10 @@ function normalizeConnectorState(
   const selections: Record<string, { pluginId: string; pluginVersion: string }> = {};
   const configs: Record<string, Record<string, unknown>> = {};
 
-  for (const group of groups) {
+  for (const group of (groups || [])) {
+    if (!group?.flows) continue;
     for (const flow of group.flows) {
+      if (!flow) continue;
       const existingSelection = previousSelections[flow.id];
       const existingDescriptor = existingSelection
         ? findDescriptor(catalog, existingSelection.pluginId, existingSelection.pluginVersion)
@@ -414,8 +440,9 @@ function appReducer(state: AppState, action: AppAction): AppState {
 
     case 'SET_GROUPS':
       return (() => {
+        const payload = action.payload || [];
         const { selections, configs, healthSummary } = normalizeConnectorState(
-          action.payload,
+          payload,
           state.connectorCatalog,
           state.flowConnectorSelections,
           state.flowConnectorConfigs,
@@ -423,7 +450,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
 
         return {
           ...state,
-          groups: action.payload,
+          groups: payload,
           flowConnectorSelections: selections,
           flowConnectorConfigs: configs,
           connectorHealthSummary: healthSummary,
@@ -670,6 +697,8 @@ interface AppContextValue {
       type: 'numeric' | 'string' | 'boolean' | 'temporal' | 'point' | 'list',
       scope: 'global' | 'group' | 'local',
       config?: Record<string, unknown>,
+      flowId?: string,
+      groupId?: string,
       variableId?: string,
     ) => Promise<Variable>;
     deleteVariable: (variableId: string) => Promise<void>;
@@ -681,7 +710,8 @@ interface AppContextValue {
     setFlowConnectorConfig: (flowId: string, config: Record<string, unknown>) => void;
     
     // Variables: insertion into templates
-    insertVariable: (name: string, scope: string) => void;
+    insertVariable: (name: string, scope?: string) => void;
+    registerTemplateEditor: (insertFn: ((name: string, scope?: string) => void) | null) => void;
     
     // UI
     setBottomTab: (tab: 'logs' | 'stats' | 'preview') => void;
@@ -708,6 +738,7 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
   const preserveLocalSnapshotRef = useRef(false);
   const optimisticManager = useRef<OptimisticManager | null>(null);
   const stateRef = useRef(state);
+  const activeEditorRef = useRef<((name: string, scope?: string) => void) | null>(null);
 
   useEffect(() => {
     stateRef.current = state;
@@ -859,29 +890,44 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
       }),
       
       bridge.on('groups-update', (groups: GroupState[]) => {
-        // Convert GroupState from Core to Group for UI, preserving expanded state and normalizing connector info.
-        // If a local snapshot was imported, keep current UI groups that the backend does not know about yet.
-        const uiGroups = mapGroupsFromCore(groups, stateRef.current.groups);
-        const nextGroups = preserveLocalSnapshotRef.current
-          ? [
-              ...stateRef.current.groups.map((currentGroup) => {
-                const matchingCoreGroup = uiGroups.find((group) => group.id === currentGroup.id);
-                return matchingCoreGroup ? { ...matchingCoreGroup, expanded: currentGroup.expanded } : currentGroup;
-              }),
-              ...uiGroups.filter(
-                (incomingGroup) => !stateRef.current.groups.some((currentGroup) => currentGroup.id === incomingGroup.id),
-              ),
-            ]
-          : uiGroups;
+        // Use the centralized reconciliation logic to handle optimistic updates and deduplication.
+        const serverGroups = mapGroupsFromCore(groups, stateRef.current.groups);
+        const reconciliation = reconcileState({
+          optimisticManager: optimisticManager.current,
+          localState: { groups: stateRef.current.groups, variables: stateRef.current.variables },
+          serverState: { groups: serverGroups, variables: stateRef.current.variables },
+        });
 
-        dispatch({ type: 'SET_GROUPS', payload: nextGroups });
+        // Resolve any operations that the server just confirmed via broadcast
+        if (optimisticManager.current) {
+          reconciliation.operationsResolved.forEach(op => {
+            if (op.success) {
+              optimisticManager.current?.remove(op.commandId);
+            }
+          });
+        }
+
+        dispatch({ type: 'SET_GROUPS', payload: reconciliation.groupsToUpdate });
       }),
 
       bridge.on('variables-update', (variables: VariableState[]) => {
-        dispatch({
-          type: 'SET_VARIABLES',
-          payload: normalizeVariableListFromCore(variables as unknown as Variable[]),
+        const serverVariables = normalizeVariableListFromCore(variables as unknown as Variable[]);
+        const reconciliation = reconcileState({
+          optimisticManager: optimisticManager.current,
+          localState: { groups: stateRef.current.groups, variables: stateRef.current.variables },
+          serverState: { groups: stateRef.current.groups, variables: serverVariables },
         });
+
+        // Resolve any operations that the server just confirmed via broadcast
+        if (optimisticManager.current) {
+          reconciliation.operationsResolved.forEach(op => {
+            if (op.success) {
+              optimisticManager.current?.remove(op.commandId);
+            }
+          });
+        }
+
+        dispatch({ type: 'SET_VARIABLES', payload: reconciliation.variablesToUpdate });
       }),
       
       bridge.on('flow-update', (flowMetrics: FlowMetricsPayload) => {
@@ -1064,11 +1110,20 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
     });
   }, []);
 
-  const insertVariable = useCallback((name: string, scope: string) => {
-    const varRef = `{{${scope}.${name}}}`;
-    const insertFn = (window as unknown as Record<string, unknown>).__insertIntoFlow;
-    if (typeof insertFn === 'function') {
-      (insertFn as (ref: string) => void)(varRef);
+  const registerTemplateEditor = useCallback((insertFn: ((name: string, scope?: string) => void) | null) => {
+    activeEditorRef.current = insertFn;
+  }, []);
+
+  const insertVariable = useCallback((name: string, scope?: string) => {
+    if (activeEditorRef.current) {
+      activeEditorRef.current(name, scope);
+    } else {
+      // Fallback for when no editor is registered or for older implementation compatibility
+      const varRef = `{{${scope ? scope + '.' : ''}${name}}}`;
+      const insertFn = (window as unknown as Record<string, unknown>).__insertIntoFlow;
+      if (typeof insertFn === 'function') {
+        (insertFn as (ref: string) => void)(varRef);
+      }
     }
   }, []);
 
@@ -1254,20 +1309,31 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
         {
           applyOptimistic: applyOptimisticGroup,
           rollback: rollbackOptimisticGroup,
-          send: () => CRUDActions.createGroup(crudContext, name, description),
+          send: (onResponse) => CRUDActions.createGroup(crudContext, name, description, onResponse),
           reconcileId: (serverGroup) => {
             // If server returned different ID, replace optimistic with real
+            const previousGroup = stateRef.current.groups.find(g => g.id === optimisticId);
+            const mappedGroup = mapGroupFromCore(serverGroup as GroupState, previousGroup);
+            
             dispatch({
               type: 'SET_GROUPS',
               payload: stateRef.current.groups.map((g) =>
-                g.id === optimisticId ? serverGroup : g
+                g.id === optimisticId ? mappedGroup : g
               ),
             });
+
+            // Update selection if it was pointing to the optimistic ID
+            if (stateRef.current.selection.groupId === optimisticId) {
+              dispatch({
+                type: 'SET_SELECTION',
+                payload: { ...stateRef.current.selection, groupId: mappedGroup.id }
+              });
+            }
           },
         }
       );
 
-      return createdGroup;
+      return mapGroupFromCore(createdGroup as GroupState);
     } catch (error) {
       reportCommandError('GROUPS', `createGroup(${name})`, error);
       throw error;
@@ -1414,7 +1480,7 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
         {
           applyOptimistic: applyOptimisticFlow,
           rollback: rollbackOptimisticFlow,
-          send: () =>
+          send: (onResponse) =>
             CRUDActions.createFlow(
               crudContext,
               groupId,
@@ -1426,28 +1492,38 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
               interval,
               burst,
               template,
-              connectorConfig
+              connectorConfig,
+              onResponse
             ),
           reconcileId: (serverFlow) => {
             // If server returned different ID, replace optimistic with real
-            dispatch({
-              type: 'SET_GROUPS',
-              payload: stateRef.current.groups.map((g) =>
-                g.id === groupId
-                  ? {
-                      ...g,
-                      flows: g.flows.map((f) =>
-                        f.id === optimisticId ? serverFlow : f
-                      ),
-                    }
-                  : g
-              ),
-            });
-          },
+            const mappedFlow = mapFlowFromCore(serverFlow as FlowState);
+             dispatch({
+               type: 'SET_GROUPS',
+               payload: stateRef.current.groups.map((g) =>
+                 g.id === groupId
+                   ? {
+                       ...g,
+                       flows: g.flows.map((f) =>
+                         f.id === optimisticId ? mappedFlow : f
+                       ),
+                     }
+                   : g
+               ),
+             });
+
+             // Update selection if it was pointing to the optimistic ID
+             if (stateRef.current.selection.flowId === optimisticId) {
+               dispatch({
+                 type: 'SET_SELECTION',
+                 payload: { ...stateRef.current.selection, flowId: mappedFlow.id }
+               });
+             }
+           },
         }
       );
 
-      return createdFlow;
+      return mapFlowFromCore(createdFlow as FlowState);
     } catch (error) {
       reportCommandError('FLOWS', `createFlow(${name})`, error);
       throw error;
@@ -1576,10 +1652,12 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
     type: 'numeric' | 'string' | 'boolean' | 'temporal' | 'point' | 'list',
     scope: 'global' | 'group' | 'local',
     config?: Record<string, unknown>,
+    flowId?: string,
+    groupId?: string,
     variableId?: string,
   ) => {
     const optimisticId = variableId || generateOptimisticId('var');
-    const optimisticVariable = createOptimisticVariable(optimisticId, name, type, scope);
+    const optimisticVariable = createOptimisticVariable(optimisticId, name, type, scope, flowId, groupId);
 
     try {
       const applyOptimisticVariable = () => {
@@ -1610,22 +1688,30 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
         {
           applyOptimistic: applyOptimisticVariable,
           rollback: rollbackOptimisticVariable,
-          send: () =>
-            CRUDActions.createVariable(crudContext, name, type, scope, config, variableId),
+          send: (onResponse) =>
+            CRUDActions.createVariable(crudContext, name, type, scope, config, flowId, groupId, variableId, onResponse),
           reconcileId: (serverVariable) => {
             // If server returned different ID, replace optimistic with real
-            const normalizedServer = normalizeVariableFromCore(serverVariable);
+            const normalizedServer = normalizeVariableFromCore(serverVariable as VariableState);
             dispatch({
               type: 'SET_VARIABLES',
               payload: stateRef.current.variables.map((v) =>
                 v.id === optimisticId ? normalizedServer : v
               ),
             });
+
+            // Update selection if it was pointing to the optimistic ID
+            if (stateRef.current.selection.variableId === optimisticId) {
+              dispatch({
+                type: 'SET_SELECTION',
+                payload: { ...stateRef.current.selection, variableId: normalizedServer.id }
+              });
+            }
           },
         }
       );
 
-      return normalizeVariableFromCore(createdVariable);
+      return normalizeVariableFromCore(createdVariable as VariableState);
     } catch (error) {
       reportCommandError('VARIABLES', `createVariable(${name})`, error);
       throw error;
@@ -1742,6 +1828,7 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
     setFlowConnectorSelection,
     setFlowConnectorConfig,
     insertVariable,
+    registerTemplateEditor,
     setBottomTab,
     toggleTheme,
     clearLogs,

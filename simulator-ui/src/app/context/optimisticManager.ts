@@ -146,6 +146,18 @@ export class OptimisticManager {
   getAll(): OptimisticOperation[] {
     return Array.from(this.operations.values());
   }
+
+  /**
+   * Find a command ID by its associated temporary ID.
+   */
+  findCommandIdByTempId(tempId: string): string | undefined {
+    for (const [cmdId, op] of this.operations.entries()) {
+      if (op.entityId === tempId || op.tempIdMapping?.tempId === tempId) {
+        return cmdId;
+      }
+    }
+    return undefined;
+  }
 }
 
 /**

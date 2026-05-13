@@ -1,4 +1,5 @@
 import { ChevronLeft } from 'lucide-react';
+import { useApp } from '../../../context';
 import type { Variable } from '../../../types';
 import { useVariableEditor } from './useVariableEditor';
 import {
@@ -14,6 +15,7 @@ interface VariableEditorWorkspaceProps {
 }
 
 export function VariableEditorWorkspace({ variable, onBack }: VariableEditorWorkspaceProps) {
+  const { state } = useApp();
   const {
     draft,
     setDraft,
@@ -39,7 +41,12 @@ export function VariableEditorWorkspace({ variable, onBack }: VariableEditorWork
         </button>
 
         <VariableEditorHeader variable={variable} theme={typeTheme} scopeBadgeClass={scopeBadgeClass} />
-        <VariableEditorIdentityCard draft={draft} setDraft={setDraft} scopeOptions={scopeOptions} />
+        <VariableEditorIdentityCard 
+          draft={draft} 
+          setDraft={setDraft} 
+          scopeOptions={scopeOptions} 
+          groups={state.groups}
+        />
         <VariableEditorConfigCard
           typeLabel={variable.type}
           theme={typeTheme}

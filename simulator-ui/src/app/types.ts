@@ -16,6 +16,7 @@ export interface Flow {
   technology: string;
   connectionStatus: ConnectionStatus;
   throughput: string;
+  latency: number;
   hasError: boolean;
   errorMessage?: string;
   interval: number;
@@ -48,6 +49,7 @@ export interface Variable {
   name: string;
   type: VariableType;
   scope: VariableScope;
+  flowId?: string;
   groupId?: string;
   config: Record<string, unknown>;
   description?: string;

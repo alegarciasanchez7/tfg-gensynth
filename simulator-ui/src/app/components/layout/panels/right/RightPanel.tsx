@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Plus, ChevronDown, Hash, List, ToggleLeft, Clock3, LocateFixed, Type } from 'lucide-react';
 import { toast } from 'sonner';
 import { useApp } from '../../../../context';
@@ -65,22 +65,67 @@ function defaultConfigTextForType(type: VariableType): string {
 }
 
 export function RightPanel({ variables, selection, onSelectVariable, onInsertVariable }: RightPanelProps) {
-  const { actions } = useApp();
+  const { state, actions } = useApp();
   const [activeScope, setActiveScope] = useState<VariableScope>('local');
   const [showAdd, setShowAdd] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [createState, setCreateState] = useState<CreateState>({
+  const [createState, setCreateState] = useState<CreateState & { flowId?: string; groupId?: string }>({
     name: '',
     type: 'numeric',
     scope: activeScope,
     description: '',
     configText: '{\n  "min": 0,\n  "max": 100,\n  "step": 1\n}',
+    flowId: selection.flowId,
+    groupId: selection.groupId,
   });
   const [deleteVariable, setDeleteVariable] = useState<Variable | null>(null);
 
   const isFlowSelected = selection.type === 'flow';
-  const filteredVars = variables.filter(v => v.scope === activeScope);
+  const isGroupSelected = selection.type === 'group';
+
+  // Auto-switch scope based on selection
+  useEffect(() => {
+    if (isFlowSelected) {
+      setActiveScope('local');
+    } else if (isGroupSelected) {
+      setActiveScope('group');
+    }
+  }, [selection.type, isFlowSelected, isGroupSelected]);
+
+  // Context-aware filtering
+  const filteredVars = variables.filter(v => {
+    if (v.scope !== activeScope) return false;
+    
+    if (activeScope === 'local') {
+      // If a specific flow is selected, show only its variables
+      if (isFlowSelected) {
+        return v.flowId === selection.flowId;
+      }
+      
+      // If a group is selected, show local variables of all flows in that group
+      if (selection.groupId) {
+        const currentGroup = state.groups.find(g => g.id === selection.groupId);
+        if (currentGroup) {
+          const flowIdsInGroup = currentGroup.flows.map(f => f.id);
+          return v.flowId ? flowIdsInGroup.includes(v.flowId) : false;
+        }
+      }
+      
+      // If nothing selected, show all local variables
+      return true;
+    }
+    
+    if (activeScope === 'group') {
+      // If we have a selected group (or flow within a group), only show variables for THAT group
+      const targetGroupId = selection.groupId;
+      return targetGroupId ? v.groupId === targetGroupId : true;
+    }
+    
+    // Global scope always shows everything
+    return true;
+  });
+
   const scopes: VariableScope[] = ['local', 'group', 'global'];
   const createScopeLabel = scopeLabels[createState.scope];
 
@@ -99,16 +144,20 @@ export function RightPanel({ variables, selection, onSelectVariable, onInsertVar
           ...config,
           ...(createState.description.trim() ? { description: createState.description.trim() } : {}),
         },
+        createState.flowId,
+        createState.groupId,
       );
       
       toast.success('Variable created');
       setCreateDialogOpen(false);
       setCreateState({
         name: '',
-        type: 'numeric',
+        type: createState.type,
         scope: activeScope,
         description: '',
-        configText: '{\n  "min": 0,\n  "max": 100,\n  "step": 1\n}',
+        configText: createState.configText,
+        flowId: selection.flowId,
+        groupId: selection.groupId,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to create variable';
@@ -176,6 +225,8 @@ export function RightPanel({ variables, selection, onSelectVariable, onInsertVar
                         scope: activeScope,
                         description: '',
                         configText: defaultConfigTextForType(type),
+                        flowId: selection.flowId,
+                        groupId: selection.groupId,
                       });
                       setCreateDialogOpen(true);
                     }}
@@ -244,6 +295,7 @@ export function RightPanel({ variables, selection, onSelectVariable, onInsertVar
         onOpenChange={setCreateDialogOpen}
         activeScope={activeScope}
         scopeLabel={createScopeLabel}
+        groups={state.groups}
         state={createState}
         onStateChange={(updates) => setCreateState((current) => ({ ...current, ...updates }))}
         onSubmit={handleCreateSubmit}

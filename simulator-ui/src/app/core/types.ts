@@ -159,7 +159,8 @@ export type UICommandType =
   | 'INSTALL_PLUGIN'
   | 'UNINSTALL_PLUGIN'
   | 'IMPORT_STATE'
-  | 'PICK_DIRECTORY';
+  | 'PICK_DIRECTORY'
+  | 'UI_LOG';
 
 export interface StartGroupCommandPayload {
   groupId: string;
@@ -232,7 +233,9 @@ export interface CreateVariableCommandPayload {
   name: string;
   type: string;
   scope: 'local' | 'group' | 'global';
+  flowId?: string;
   groupId?: string;
+  variableId?: string;
   config?: Record<string, unknown>;
   clientRequestId?: string; // For optimistic UI correlation
 }
@@ -261,6 +264,12 @@ export interface ImportStateCommandPayload {
 
 
 
+export interface UILogCommandPayload {
+  level: 'info' | 'warn' | 'error' | 'debug' | 'data';
+  source: string;
+  message: string;
+}
+
 export interface UICommandPayloadMap {
   START_SYSTEM: undefined;
   STOP_SYSTEM: undefined;
@@ -288,6 +297,7 @@ export interface UICommandPayloadMap {
   UNINSTALL_PLUGIN: UninstallPluginCommandPayload;
   IMPORT_STATE: ImportStateCommandPayload;
   PICK_DIRECTORY: undefined;
+  UI_LOG: UILogCommandPayload;
 }
 
 export interface UICommand<T extends UICommandType = UICommandType> {
@@ -379,6 +389,7 @@ export interface VariableState {
   name: string;
   type: 'numeric' | 'list' | 'string' | 'temporal' | 'point' | 'boolean';
   scope: 'local' | 'group' | 'global';
+  flowId?: string;
   groupId?: string;
   config: Record<string, unknown>;
   description?: string;

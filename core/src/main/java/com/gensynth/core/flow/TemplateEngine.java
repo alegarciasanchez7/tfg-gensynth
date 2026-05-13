@@ -17,7 +17,7 @@ public class TemplateEngine {
         this.dataGenerator = new DataGenerator();
     }
 
-    public String evaluate(String template, long sequenceNumber, Map<String, Variable> variables) {
+    public String evaluate(String template, long sequenceNumber, Map<String, Variable> variables, String flowId, String groupId) {
         if (template == null || template.isEmpty()) {
             return "";
         }
@@ -32,22 +32,47 @@ public class TemplateEngine {
         StringBuilder result = new StringBuilder();
 
         while (matcher.find()) {
-            String varName = matcher.group(1).trim();
+            String fullVarSpec = matcher.group(1).trim(); // e.g. "local.temp" or just "temp"
             String replacement = "";
 
             // Built-in checks
-            if (varName.equals("uuid")) {
+            if (fullVarSpec.equals("uuid")) {
                 replacement = currentUuid;
-            } else if (varName.equals("ts")) {
+            } else if (fullVarSpec.equals("ts")) {
                 replacement = currentTs;
-            } else if (varName.equals("n")) {
+            } else if (fullVarSpec.equals("n")) {
                 replacement = currentSeq;
             } else {
-                // User variable (find by name since map is keyed by ID)
+                // User variable resolution with scope enforcement
+                String scopePart = null;
+                String namePart = fullVarSpec;
+
+                if (fullVarSpec.contains(".")) {
+                    int lastDot = fullVarSpec.lastIndexOf('.');
+                    scopePart = fullVarSpec.substring(0, lastDot).toLowerCase();
+                    namePart = fullVarSpec.substring(lastDot + 1);
+                }
+
                 Variable variable = null;
                 for (Variable v : variables.values()) {
-                    if (v.getName().equals(varName) || 
-                        (varName.contains(".") && varName.substring(varName.lastIndexOf('.') + 1).equals(v.getName()))) {
+                    if (!v.getName().equals(namePart)) continue;
+
+                    // If scope is specified in template, it MUST match
+                    if (scopePart != null && !v.getScope().equalsIgnoreCase(scopePart)) continue;
+
+                    // Check actual scoping rules
+                    boolean isAccessible = false;
+                    String vScope = v.getScope().toUpperCase();
+
+                    if ("GLOBAL".equals(vScope)) {
+                        isAccessible = true;
+                    } else if ("GROUP".equals(vScope)) {
+                        isAccessible = groupId != null && groupId.equals(v.getGroupId());
+                    } else if ("LOCAL".equals(vScope)) {
+                        isAccessible = flowId != null && flowId.equals(v.getFlowId());
+                    }
+
+                    if (isAccessible) {
                         variable = v;
                         break;
                     }
@@ -58,7 +83,7 @@ public class TemplateEngine {
                     // Convert value to string representation
                     replacement = String.valueOf(generatedValue);
                 } else {
-                    // Unknown variable, leave it as is or replace with empty
+                    // Unknown or inaccessible variable, leave it as is or replace with empty
                     replacement = matcher.group(0);
                 }
             }

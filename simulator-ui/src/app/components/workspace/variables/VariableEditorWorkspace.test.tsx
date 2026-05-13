@@ -45,7 +45,10 @@ describe('VariableEditorWorkspace', () => {
 
   beforeEach(() => {
     cleanup();
-    mockUseApp.mockReturnValue({ actions });
+    mockUseApp.mockReturnValue({ 
+      state: { groups: [] },
+      actions 
+    });
     onBack.mockClear();
     actions.updateVariable.mockClear();
     actions.deleteVariable.mockClear();
