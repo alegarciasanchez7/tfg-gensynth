@@ -1042,7 +1042,11 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                 for (JsonNode varNode : variablesNode) {
                     @SuppressWarnings("unchecked")
                     Map<String, Object> varMap = objectMapper.convertValue(varNode, Map.class);
-                    newVariables.add(Variable.fromPayload(varMap));
+                    Variable variable = Variable.fromPayload(varMap);
+                    if (variable.getScope().equals("LOCAL")) {
+                        logger.info("Importing LOCAL variable '{}' for flow '{}'", variable.getName(), variable.getFlowId());
+                    }
+                    newVariables.add(variable);
                 }
             }
 

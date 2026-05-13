@@ -70,8 +70,8 @@ interface VariableEditorIdentityCardProps {
 
 export function VariableEditorIdentityCard({ draft, setDraft, scopeOptions, groups }: VariableEditorIdentityCardProps) {
   // Flatten flows with group name for the selector
-  const allFlows = groups.flatMap(g => 
-    g.flows.map((f: any) => ({
+  const allFlows = (groups || []).flatMap(g => 
+    (g.flows || []).map((f: any) => ({
       id: f.id,
       name: f.name,
       groupName: g.name,
@@ -105,13 +105,16 @@ export function VariableEditorIdentityCard({ draft, setDraft, scopeOptions, grou
           </label>
           <Select
             value={draft.scope}
-            onValueChange={value => setDraft(current => ({ 
-              ...current, 
-              scope: value as Variable['scope'],
-              // Clear or reset IDs when scope changes
-              flowId: value === 'local' ? (current.flowId || allFlows[0]?.id) : undefined,
-              groupId: value === 'group' ? (current.groupId || groups[0]?.id) : undefined,
-            }))}
+            onValueChange={value => {
+              const newScope = value as Variable['scope'];
+              setDraft(current => ({ 
+                ...current, 
+                scope: newScope,
+                // Automatically pick first valid target if moving TO a scoped level
+                flowId: newScope === 'local' ? (allFlows[0]?.id) : undefined,
+                groupId: newScope === 'group' ? (groups[0]?.id) : undefined,
+              }));
+            }}
           >
             <SelectTrigger id="variable-scope">
               <SelectValue placeholder="Select scope" />

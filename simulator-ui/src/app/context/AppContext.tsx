@@ -314,8 +314,10 @@ function normalizeConnectorState(
   const selections: Record<string, { pluginId: string; pluginVersion: string }> = {};
   const configs: Record<string, Record<string, unknown>> = {};
 
-  for (const group of groups) {
+  for (const group of (groups || [])) {
+    if (!group?.flows) continue;
     for (const flow of group.flows) {
+      if (!flow) continue;
       const existingSelection = previousSelections[flow.id];
       const existingDescriptor = existingSelection
         ? findDescriptor(catalog, existingSelection.pluginId, existingSelection.pluginVersion)
@@ -438,8 +440,9 @@ function appReducer(state: AppState, action: AppAction): AppState {
 
     case 'SET_GROUPS':
       return (() => {
+        const payload = action.payload || [];
         const { selections, configs, healthSummary } = normalizeConnectorState(
-          action.payload,
+          payload,
           state.connectorCatalog,
           state.flowConnectorSelections,
           state.flowConnectorConfigs,
@@ -447,7 +450,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
 
         return {
           ...state,
-          groups: action.payload,
+          groups: payload,
           flowConnectorSelections: selections,
           flowConnectorConfigs: configs,
           connectorHealthSummary: healthSummary,
@@ -707,7 +710,8 @@ interface AppContextValue {
     setFlowConnectorConfig: (flowId: string, config: Record<string, unknown>) => void;
     
     // Variables: insertion into templates
-    insertVariable: (name: string, scope: string) => void;
+    insertVariable: (name: string, scope?: string) => void;
+    registerTemplateEditor: (insertFn: ((name: string, scope?: string) => void) | null) => void;
     
     // UI
     setBottomTab: (tab: 'logs' | 'stats' | 'preview') => void;
@@ -734,6 +738,7 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
   const preserveLocalSnapshotRef = useRef(false);
   const optimisticManager = useRef<OptimisticManager | null>(null);
   const stateRef = useRef(state);
+  const activeEditorRef = useRef<((name: string, scope?: string) => void) | null>(null);
 
   useEffect(() => {
     stateRef.current = state;
@@ -1105,11 +1110,20 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
     });
   }, []);
 
-  const insertVariable = useCallback((name: string, scope: string) => {
-    const varRef = `{{${scope}.${name}}}`;
-    const insertFn = (window as unknown as Record<string, unknown>).__insertIntoFlow;
-    if (typeof insertFn === 'function') {
-      (insertFn as (ref: string) => void)(varRef);
+  const registerTemplateEditor = useCallback((insertFn: ((name: string, scope?: string) => void) | null) => {
+    activeEditorRef.current = insertFn;
+  }, []);
+
+  const insertVariable = useCallback((name: string, scope?: string) => {
+    if (activeEditorRef.current) {
+      activeEditorRef.current(name, scope);
+    } else {
+      // Fallback for when no editor is registered or for older implementation compatibility
+      const varRef = `{{${scope ? scope + '.' : ''}${name}}}`;
+      const insertFn = (window as unknown as Record<string, unknown>).__insertIntoFlow;
+      if (typeof insertFn === 'function') {
+        (insertFn as (ref: string) => void)(varRef);
+      }
     }
   }, []);
 
@@ -1814,6 +1828,7 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
     setFlowConnectorSelection,
     setFlowConnectorConfig,
     insertVariable,
+    registerTemplateEditor,
     setBottomTab,
     toggleTheme,
     clearLogs,

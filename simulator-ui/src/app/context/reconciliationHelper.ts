@@ -15,8 +15,8 @@ export interface ReconciliationContext {
     variables: Variable[];
   };
   serverState: {
-    groups: Group[];
-    variables: Variable[];
+    groups?: Group[];
+    variables?: Variable[];
   };
 }
 
@@ -40,9 +40,14 @@ export interface ReconciliationResult {
  * Reconcile state between local and server
  */
 export function reconcileState(context: ReconciliationContext): ReconciliationResult {
+  const serverGroups = context.serverState?.groups || [];
+  const serverVariables = context.serverState?.variables || [];
+  const localGroups = context.localState?.groups || [];
+  const localVariables = context.localState?.variables || [];
+
   const result: ReconciliationResult = {
-    groupsToUpdate: [...context.serverState.groups],
-    variablesToUpdate: [...context.serverState.variables],
+    groupsToUpdate: [...serverGroups],
+    variablesToUpdate: [...serverVariables],
     operationsResolved: [],
     conflicts: [],
   };
@@ -64,8 +69,8 @@ export function reconcileState(context: ReconciliationContext): ReconciliationRe
     const isDelete = op.kind === 'delete';
 
     if (isGroupOp) {
-      const serverEntity = context.serverState.groups.find(g => g.id === op.entityId || (op.tempIdMapping?.realId === g.id));
-      const localEntity = context.localState.groups.find(g => g.id === op.entityId);
+      const serverEntity = serverGroups.find(g => g && (g.id === op.entityId || (op.tempIdMapping?.realId === g.id)));
+      const localEntity = localGroups.find(g => g && g.id === op.entityId);
 
       if (isCreate || isUpdate) {
         if (serverEntity) {
@@ -119,8 +124,8 @@ export function reconcileState(context: ReconciliationContext): ReconciliationRe
     }
 
     if (isVariableOp) {
-      const serverEntity = context.serverState.variables.find(v => v.id === op.entityId || (op.tempIdMapping?.realId === v.id));
-      const localEntity = context.localState.variables.find(v => v.id === op.entityId);
+      const serverEntity = serverVariables.find(v => v && (v.id === op.entityId || (op.tempIdMapping?.realId === v.id)));
+      const localEntity = localVariables.find(v => v && v.id === op.entityId);
 
       if (isCreate || isUpdate) {
         if (serverEntity) {
@@ -131,6 +136,15 @@ export function reconcileState(context: ReconciliationContext): ReconciliationRe
           });
 
           if (localEntity && JSON.stringify(localEntity) !== JSON.stringify(serverEntity)) {
+            // Robustness: If the server returns a variable without flowId/groupId but we have them locally, 
+            // and it's a local/group variable, re-attach them before flagging as conflict
+            if (localEntity.scope === 'local' && !serverEntity.flowId && localEntity.flowId) {
+              (serverEntity as any).flowId = localEntity.flowId;
+            }
+            if (localEntity.scope === 'group' && !serverEntity.groupId && localEntity.groupId) {
+              (serverEntity as any).groupId = localEntity.groupId;
+            }
+
             result.conflicts.push({
               resourceId: op.entityId,
               type: 'variable',

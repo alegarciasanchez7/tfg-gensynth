@@ -156,20 +156,30 @@ public class Variable {
         String name = (String) payload.getOrDefault("name", "Unnamed Variable");
         String scope = (String) payload.getOrDefault("scope", "GLOBAL");
         String type = (String) payload.getOrDefault("type", "string");
+        
+        // Robustness: Try different naming conventions for flowId and groupId
         String flowId = (String) payload.get("flowId");
+        if (flowId == null) flowId = (String) payload.get("flowid");
+        if (flowId == null) flowId = (String) payload.get("flow_id");
+        
         String groupId = (String) payload.get("groupId");
+        if (groupId == null) groupId = (String) payload.get("groupid");
+        if (groupId == null) groupId = (String) payload.get("group_id");
+
         Object defaultValue = payload.getOrDefault("defaultValue", "");
         @SuppressWarnings("unchecked")
         Map<String, Object> config = (Map<String, Object>) payload.getOrDefault("config", Map.of());
 
         // Robustness: If scope is LOCAL but flowId is missing, downgrade to GLOBAL to avoid crashing on import
         if ("local".equalsIgnoreCase(scope) && (flowId == null || flowId.isBlank())) {
-            logger.warn("Variable '{}' (id: {}) has LOCAL scope but missing flowId. Downgrading to GLOBAL.", name, id);
+            logger.warn("Variable '{}' (id: {}) has LOCAL scope but missing flowId (Payload keys: {}). Downgrading to GLOBAL.", 
+                name, id, payload.keySet());
             scope = "GLOBAL";
         }
         // Robustness: If scope is GROUP but groupId is missing, downgrade to GLOBAL
         if ("group".equalsIgnoreCase(scope) && (groupId == null || groupId.isBlank())) {
-            logger.warn("Variable '{}' (id: {}) has GROUP scope but missing groupId. Downgrading to GLOBAL.", name, id);
+            logger.warn("Variable '{}' (id: {}) has GROUP scope but missing groupId (Payload keys: {}). Downgrading to GLOBAL.", 
+                name, id, payload.keySet());
             scope = "GLOBAL";
         }
 
