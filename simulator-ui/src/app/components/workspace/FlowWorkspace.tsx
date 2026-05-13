@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import type { Flow, Group, ConnectionStatus } from '../../types';
 import { defaultTemplates } from '../../data/mockData';
 import { useApp } from '../../context';
+import { TemplateEditor } from './flows/TemplateEditor';
 import type { ConnectorPluginDescriptor } from '../../core/types';
 import { Button } from '../ui/button';
 import { isRunningInJCEF } from '../../core/jcef';
@@ -858,29 +859,15 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
             <AlignLeft size={9} className="text-[var(--c-tx4)] ml-auto" />
           </div>
 
-          {/* Textarea */}
+          {/* Smart Template Editor */}
           <div className="flex-1 overflow-hidden relative">
-            <textarea
-              ref={textareaRef}
+            <TemplateEditor
               value={currentTemplate}
-              onChange={e => onTemplateChange(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Tab') {
-                  e.preventDefault();
-                  const target = e.target as HTMLTextAreaElement;
-                  const start = target.selectionStart;
-                  const end = target.selectionEnd;
-                  const newVal = currentTemplate.slice(0, start) + '  ' + currentTemplate.slice(end);
-                  onTemplateChange(newVal);
-                  requestAnimationFrame(() => {
-                    target.focus();
-                    target.setSelectionRange(start + 2, start + 2);
-                  });
-                }
-              }}
-              spellCheck={false}
-              className="absolute inset-0 w-full h-full bg-[var(--c-bg1)] text-[var(--c-tx2)] text-[11px] p-3 outline-none resize-none border-0 leading-relaxed"
-              style={{ fontFamily: 'JetBrains Mono, monospace', tabSize: 2 }}
+              onChange={onTemplateChange}
+              variables={state.variables}
+              flowId={flow.id}
+              groupId={group.id}
+              className="absolute inset-0 w-full h-full bg-[var(--c-bg1)]"
             />
           </div>
 

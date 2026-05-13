@@ -75,7 +75,9 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         "VALIDATE_PLUGIN",
         "INSTALL_PLUGIN",
         "UNINSTALL_PLUGIN",
-        "EXPORT_STATE"
+        "EXPORT_STATE",
+        "PICK_DIRECTORY",
+        "UI_LOG"
     );
 
     private final ObjectMapper objectMapper = createConfiguredMapper();
@@ -195,7 +197,6 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                 stopGroupInternal(group);
             }
             systemRunning = false;
-            persistState();
         }
 
         scheduler.shutdownNow();
@@ -207,7 +208,14 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
     }
 
     private void initializeRuntime() {
-        loadRuntimeState(true);
+        // Start empty as requested by user
+        synchronized (stateLock) {
+            groupsById.clear();
+            variablesById.clear();
+            connectorByFlowId.clear();
+            publisherTasksByFlowId.clear();
+            systemRunning = false;
+        }
     }
 
     private void persistState() {
@@ -441,6 +449,13 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                     broadcastSystemStatus();
                     sendLog(conn, "info", group.id, "Group stopped");
                 }
+                case "UI_LOG" -> {
+                    String level = payload.path("level").asText("info");
+                    String source = payload.path("source").asText("UI");
+                    String message = payload.path("message").asText("");
+                    logToBackend(level, source, message, commandId);
+                    sendAck(conn, commandId, "log_received");
+                }
                 case "CREATE_GROUP" -> handleCreateGroup(conn, commandId, payload);
                 case "DELETE_GROUP" -> handleDeleteGroup(conn, commandId, payload);
                 case "UPDATE_GROUP_CONFIG" -> handleUpdateGroupConfig(conn, commandId, payload);
@@ -519,9 +534,11 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
 
             groupsById.put(id, new GroupRuntime(id, name, "stopped", description, threads, outputMode, true));
             persistState();
+            
+            GroupRuntime group = groupsById.get(id);
+            sendCreatedResponse(conn, commandId, clientRequestId, group.toPayload(), "group_created");
         }
 
-        sendAck(conn, commandId, clientRequestId, "group_created");
         logToBackend("info", "GROUPS", "Created group '" + name + "'", commandId);
         broadcastGroupsUpdate();
     }
@@ -676,9 +693,11 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             ));
 
             persistState();
+            
+            FlowRuntime flow = findFlowById(group, flowId);
+            sendCreatedResponse(conn, commandId, clientRequestId, flow.toPayload(), "flow_created");
         }
 
-        sendAck(conn, commandId, clientRequestId, "flow_created");
         logToBackend("info", "FLOWS", "Created flow '" + name + "'", commandId);
         broadcastGroupsUpdate();
     }
@@ -824,8 +843,12 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             if (variableId.isBlank()) {
                 variableId = UUID.randomUUID().toString();
             }
+
+            String flowId = payload.path("flowId").asText(null);
+            String groupId = payload.path("groupId").asText(null);
+
             try {
-                createdVariable = new Variable(variableId, name, scope.toUpperCase(), coreType, defaultValue, config);
+                createdVariable = new Variable(variableId, name, scope.toUpperCase(), coreType, defaultValue, config, flowId, groupId);
                 variablesById.put(variableId, createdVariable);
                 persistState();
             } catch (IllegalArgumentException ex) {
@@ -888,10 +911,12 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             updatedVariableName = name;
             String type = normalizeVariableTypeForCore(payload.path("type").asText(existing.getType()));
             String scope = payload.path("scope").asText(existing.getScope()).toUpperCase();
+            String flowId = payload.path("flowId").asText(existing.getFlowId());
+            String groupId = payload.path("groupId").asText(existing.getGroupId());
             Object defaultValue = payload.has("config") ? payload.get("config").toString() : existing.getDefaultValue();
 
             try {
-                Variable updated = new Variable(variableId, name, scope, type, defaultValue, existing.getConfig());
+                Variable updated = new Variable(variableId, name, scope, type, defaultValue, existing.getConfig(), flowId, groupId);
                 variablesById.put(variableId, updated);
                 persistState();
             } catch (IllegalArgumentException ex) {
@@ -1017,7 +1042,11 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                 for (JsonNode varNode : variablesNode) {
                     @SuppressWarnings("unchecked")
                     Map<String, Object> varMap = objectMapper.convertValue(varNode, Map.class);
-                    newVariables.add(Variable.fromPayload(varMap));
+                    Variable variable = Variable.fromPayload(varMap);
+                    if (variable.getScope().equals("LOCAL")) {
+                        logger.info("Importing LOCAL variable '{}' for flow '{}'", variable.getName(), variable.getFlowId());
+                    }
+                    newVariables.add(variable);
                 }
             }
 
@@ -1229,7 +1258,15 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
 
     private String buildPayload(FlowRuntime flow, int indexInBurst) {
         long sequence = totalMessages.get() + indexInBurst + 1;
-        return templateEngine.evaluate(flow.template, sequence, variablesById);
+        // Find group of this flow to pass groupId
+        String groupId = null;
+        for (GroupRuntime g : groupsById.values()) {
+            if (g.flows.contains(flow)) {
+                groupId = g.id;
+                break;
+            }
+        }
+        return templateEngine.evaluate(flow.template, sequence, variablesById, flow.id, groupId);
     }
 
     private Map<String, Object> buildFlowConnectorConfig(GroupRuntime group, FlowRuntime flow) {
@@ -1452,6 +1489,25 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             }
         }
         broadcastMessage("VARIABLE_UPDATE", payload);
+    }
+
+    /**
+     * Sends a standardized creation response to the client.
+     *
+     * @param conn The WebSocket connection
+     * @param commandId The ID of the command being responded to
+     * @param clientRequestId The client-side request ID for optimistic UI reconciliation
+     * @param payload The entity payload (Group or Flow data)
+     * @param resultType A string identifying the result type (e.g., "group_created")
+     */
+    private void sendCreatedResponse(WebSocket conn, String commandId, String clientRequestId, Map<String, Object> payload, String resultType) {
+        Map<String, Object> responsePayload = new LinkedHashMap<>(payload);
+        responsePayload.put("status", "ok");
+        responsePayload.put("result", resultType);
+        if (clientRequestId != null) {
+            responsePayload.put("clientRequestId", clientRequestId);
+        }
+        sendMessage(conn, "CONNECTION_STATUS", commandId, responsePayload);
     }
 
     private void broadcastGroupsUpdate() {

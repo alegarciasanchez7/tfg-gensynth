@@ -36,6 +36,7 @@ describe('RightPanel', () => {
       name: 'temperature',
       type: 'numeric',
       scope: 'local',
+      flowId: 'f1',
       description: 'Temperatura del sensor',
       config: {
         min: 0,
@@ -60,7 +61,10 @@ describe('RightPanel', () => {
 
   beforeEach(() => {
     cleanup();
-    mockUseApp.mockReturnValue({ actions });
+    mockUseApp.mockReturnValue({ 
+      state: { groups: [] },
+      actions 
+    });
     onSelectVariable.mockClear();
     onInsertVariable.mockClear();
     mockToast.success.mockClear();
@@ -115,6 +119,8 @@ describe('RightPanel', () => {
         step: 1,
         description: 'Pressure variable',
       }),
+      'f1',
+      'g1'
     ));
     await waitFor(() => expect(mockToast.success).toHaveBeenCalledWith('Variable created'));
 

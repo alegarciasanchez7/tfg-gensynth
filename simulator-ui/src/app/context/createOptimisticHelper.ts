@@ -61,7 +61,7 @@ export async function executeCreateOptimistic<T>(
   handlers: {
     applyOptimistic: () => void;
     rollback: () => void;
-    send: () => Promise<T>;
+    send: (onResponse?: (data: T) => void) => Promise<T>;
     reconcileId: (serverEntity: T) => void;
   },
 ): Promise<T> {
@@ -96,17 +96,21 @@ export async function executeCreateOptimistic<T>(
     }
 
     // 4. Send to server and get real ID
-    const serverEntity = await handlers.send();
+    const serverEntity = await handlers.send((response: T) => {
+      // Synchronously update mapping in manager when response arrives
+      if (response && typeof response === 'object' && 'id' in response) {
+        const realId = (response as any).id;
+        if (realId && realId !== context.optimisticId && context.optimisticManager) {
+          context.optimisticManager.updateTempIdMapping(commandId, realId);
+        }
+      }
+    });
 
-    // 5. Reconcile: replace temp ID with real ID if different
+    // 5. Reconcile UI: replace temp ID with real ID if different
     if (serverEntity && typeof serverEntity === 'object' && 'id' in serverEntity) {
       const realId = (serverEntity as any).id;
       if (realId && realId !== context.optimisticId) {
-        // Update OptimisticManager with real ID
-        if (context.optimisticManager) {
-          context.optimisticManager.updateTempIdMapping(commandId, realId);
-        }
-        // Update UI with real ID
+        // UI Reconcile (dispatch)
         handlers.reconcileId(serverEntity);
       }
     }
@@ -148,6 +152,7 @@ export function createOptimisticGroup(
     threads: 1,
     outputMode: 'serial',
     expanded: true,
+    enabled: true,
     flows: [],
   };
 }
@@ -171,6 +176,7 @@ export function createOptimisticFlow(
     technology,
     connectionStatus: 'disconnected',
     throughput: '0 msg/s',
+    latency: 0,
     hasError: false,
     errorMessage: undefined,
     interval,
@@ -178,6 +184,7 @@ export function createOptimisticFlow(
     topic,
     host,
     port,
+    enabled: true,
   };
 }
 
@@ -189,13 +196,16 @@ export function createOptimisticVariable(
   name: string,
   type: 'numeric' | 'string' | 'boolean' | 'temporal' | 'point' | 'list',
   scope: 'global' | 'group' | 'local',
+  flowId?: string,
+  groupId?: string,
 ): Variable {
   return {
     id,
     name,
     type,
     scope,
+    flowId,
+    groupId,
     config: {},
-    value: undefined,
   };
 }

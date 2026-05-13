@@ -29,7 +29,12 @@ export function normalizeFlowFromSnapshot(flow: Partial<Flow>): Flow {
     topic: flow.topic ?? '',
     host: flow.host ?? 'localhost',
     port: typeof flow.port === 'number' ? flow.port : 5672,
+    latency: typeof flow.latency === 'number' ? flow.latency : 0,
     enabled: flow.enabled ?? true,
+    template: flow.template,
+    format: flow.format,
+    connectorConfig: flow.connectorConfig,
+    connectorVersion: flow.connectorVersion,
   };
 }
 
@@ -61,6 +66,7 @@ export function normalizeVariableFromSnapshot(variable: Partial<Variable>): Vari
     name: variable.name ?? 'Unnamed Variable',
     type: (variable.type ?? 'string') as any,
     scope: (variable.scope ?? 'local') as any,
+    flowId: variable.flowId,
     groupId: variable.groupId,
     config: variable.config ?? {},
     description: variable.description,
