@@ -139,6 +139,8 @@ export type UICommandType =
   | 'START_GROUP'
   | 'STOP_GROUP'
   | 'PAUSE_GROUP'
+  | 'CLONE_GROUP'
+  | 'CLONE_FLOW'
   | 'UPDATE_GROUP_CONFIG'
   | 'UPDATE_FLOW_CONFIG'
   | 'UPDATE_VARIABLE'
@@ -160,6 +162,7 @@ export type UICommandType =
   | 'UNINSTALL_PLUGIN'
   | 'IMPORT_STATE'
   | 'PICK_DIRECTORY'
+  | 'EXPORT_STATE'
   | 'UI_LOG';
 
 export interface StartGroupCommandPayload {
@@ -184,6 +187,17 @@ export interface CreateGroupCommandPayload {
 
 export interface DeleteGroupCommandPayload {
   groupId: string;
+}
+
+export interface CloneGroupCommandPayload {
+  groupId: string;
+  count: number;
+}
+
+export interface CloneFlowCommandPayload {
+  groupId: string;
+  flowId: string;
+  count: number;
 }
 
 export interface CreateFlowCommandPayload {
@@ -263,6 +277,9 @@ export interface ImportStateCommandPayload {
 }
 
 
+export interface ExportStateCommandPayload {
+  filePath: string;
+}
 
 export interface UILogCommandPayload {
   level: 'info' | 'warn' | 'error' | 'debug' | 'data';
@@ -276,6 +293,8 @@ export interface UICommandPayloadMap {
   START_GROUP: StartGroupCommandPayload;
   STOP_GROUP: StopGroupCommandPayload;
   PAUSE_GROUP: PauseGroupCommandPayload;
+  CLONE_GROUP: CloneGroupCommandPayload;
+  CLONE_FLOW: CloneFlowCommandPayload;
   UPDATE_GROUP_CONFIG: UpdateGroupCommandPayload;
   UPDATE_FLOW_CONFIG: UpdateFlowCommandPayload;
   UPDATE_VARIABLE: UpdateVariableCommandPayload;
@@ -297,6 +316,7 @@ export interface UICommandPayloadMap {
   UNINSTALL_PLUGIN: UninstallPluginCommandPayload;
   IMPORT_STATE: ImportStateCommandPayload;
   PICK_DIRECTORY: undefined;
+  EXPORT_STATE: ExportStateCommandPayload;
   UI_LOG: UILogCommandPayload;
 }
 
