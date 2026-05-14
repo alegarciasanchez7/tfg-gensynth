@@ -1142,6 +1142,14 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
 
   const loadProjectState = useCallback(async () => {
     try {
+      if (state.connectionMode === 'jcef') {
+        const response = await CoreCommands.loadState();
+        if (response && (response as any).status === 'cancelled') {
+          return;
+        }
+        return;
+      }
+
       // Open file selector
       const file = await triggerFileSelection();
       if (!file) {

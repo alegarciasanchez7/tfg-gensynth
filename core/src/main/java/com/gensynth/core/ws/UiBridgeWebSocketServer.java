@@ -81,6 +81,10 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
     );
 
     private final ObjectMapper objectMapper = createConfiguredMapper();
+    
+    public ObjectMapper getObjectMapper() {
+        return objectMapper;
+    }
 
     private static ObjectMapper createConfiguredMapper() {
         ObjectMapper mapper = new ObjectMapper();
@@ -118,6 +122,10 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
     private final TemplateEngine templateEngine = new TemplateEngine();
     private String currentOutputDir = null;
     private WebSocket desktopSocket = null;
+    
+    public WebSocket getDesktopSocket() {
+        return desktopSocket;
+    }
 
     public UiBridgeWebSocketServer(String host, int port) {
         this(host, port, Paths.get("plugins"));
