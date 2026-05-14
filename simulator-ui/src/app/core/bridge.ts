@@ -834,8 +834,8 @@ export const CoreCommands = {
   pickDirectory: () => bridge.send('PICK_DIRECTORY'),
 
   // Cloning
-  cloneGroup: (groupId: string, count: number) => bridge.send('CLONE_GROUP', { groupId, count }),
-  cloneFlow: (groupId: string, flowId: string, count: number) => bridge.send('CLONE_FLOW', { groupId, flowId, count }),
+  cloneGroup: (groupId: string, count: number, namingPattern?: string) => bridge.send('CLONE_GROUP', { groupId, count, namingPattern }),
+  cloneFlow: (groupId: string, flowId: string, count: number, namingPattern?: string) => bridge.send('CLONE_FLOW', { groupId, flowId, count, namingPattern }),
 };
 
 export default bridge;

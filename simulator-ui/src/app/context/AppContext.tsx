@@ -671,7 +671,7 @@ interface AppContextValue {
     createGroup: (name: string, description?: string) => Promise<Group>;
     deleteGroup: (groupId: string) => Promise<void>;
     updateGroupConfig: (groupId: string, config: Partial<Omit<Group, 'id' | 'flows'>>, name?: string) => Promise<void>;
-    cloneGroup: (groupId: string, count: number) => void;
+    cloneGroup: (groupId: string, count: number, namingPattern?: string) => void;
     
     // Flows: CRUD
     createFlow: (
@@ -692,7 +692,7 @@ interface AppContextValue {
       flowId: string,
       config: Partial<Omit<Flow, 'id' | 'connectionStatus' | 'throughput' | 'hasError' | 'errorMessage'>> & { template?: string },
     ) => Promise<void>;
-    cloneFlow: (groupId: string, flowId: string, count: number) => void;
+    cloneFlow: (groupId: string, flowId: string, count: number, namingPattern?: string) => void;
     
     // Variables: CRUD
     createVariable: (
@@ -1662,18 +1662,18 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
     }
   }, [crudContext, state.groups, reportCommandError]);
 
-  const cloneGroup = useCallback(async (groupId: string, count: number) => {
+  const cloneGroup = useCallback(async (groupId: string, count: number, namingPattern?: string) => {
     try {
-      await CoreCommands.cloneGroup(groupId, count);
+      await CoreCommands.cloneGroup(groupId, count, namingPattern);
       toast.success(`Iniciando clonación de grupo (${count} copias)`);
     } catch (error) {
       reportCommandError('GROUPS', `cloneGroup(${groupId})`, error);
     }
   }, [reportCommandError]);
 
-  const cloneFlow = useCallback(async (groupId: string, flowId: string, count: number) => {
+  const cloneFlow = useCallback(async (groupId: string, flowId: string, count: number, namingPattern?: string) => {
     try {
-      await CoreCommands.cloneFlow(groupId, flowId, count);
+      await CoreCommands.cloneFlow(groupId, flowId, count, namingPattern);
       toast.success(`Iniciando clonación de flow (${count} copias)`);
     } catch (error) {
       reportCommandError('FLOWS', `cloneFlow(${flowId})`, error);

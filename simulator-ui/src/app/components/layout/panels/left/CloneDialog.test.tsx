@@ -20,15 +20,16 @@ describe('CloneDialog', () => {
     expect(screen.getByDisplayValue('1')).toBeInTheDocument();
   });
 
-  it('calls onConfirm with the entered count', () => {
+  it('calls onConfirm with the entered count and default pattern', () => {
     render(<CloneDialog {...defaultProps} />);
     const input = screen.getByDisplayValue('1');
     fireEvent.change(input, { target: { value: '5' } });
     
-    const cloneButton = screen.getByText('Clone');
+    // The button text changes dynamically: "Create 5 Clones"
+    const cloneButton = screen.getByText(/Create 5 Clones/);
     fireEvent.click(cloneButton);
     
-    expect(defaultProps.onConfirm).toHaveBeenCalledWith(5);
+    expect(defaultProps.onConfirm).toHaveBeenCalledWith(5, '${name} (Clone ${index})');
   });
 
   it('disables the clone button for invalid counts', () => {
@@ -36,7 +37,8 @@ describe('CloneDialog', () => {
     const input = screen.getByDisplayValue('1');
     fireEvent.change(input, { target: { value: '0' } });
     
-    const cloneButton = screen.getByText('Clone');
+    // Use a function or regex to find the button even when disabled and with dynamic text
+    const cloneButton = screen.getByRole('button', { name: /Create.*Clones/i });
     expect(cloneButton).toBeDisabled();
   });
 });
