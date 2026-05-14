@@ -100,6 +100,8 @@ export default function App() {
           onCreateFlow={actions.createFlow}
           onUpdateGroupConfig={actions.updateGroupConfig}
           onUpdateFlowConfig={actions.updateFlowConfig}
+          onCloneGroup={actions.cloneGroup}
+          onCloneFlow={actions.cloneFlow}
         />
 
         {/* Center: Dynamic Workspace */}
@@ -107,10 +109,13 @@ export default function App() {
           selection={selection}
           groups={groups}
           variables={variables}
+          onSelectGroup={actions.selectGroup}
+          onSelectFlow={actions.selectFlow}
           onSelectVariable={actions.selectVariable}
           formatTemplate={mergedTemplates}
           onFormatChange={actions.setFormatTemplate}
           onClearVariableSelection={actions.clearVariableSelection}
+          onClearSelection={actions.clearSelection}
         />
 
         {/* Right: Variables */}

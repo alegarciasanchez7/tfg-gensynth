@@ -660,6 +660,7 @@ interface AppContextValue {
     selectFlow: (groupId: string, flowId: string) => void;
     selectVariable: (variableId: string) => void;
     clearVariableSelection: () => void;
+    clearSelection: () => void;
     
     // Groups: basic actions
     toggleGroupExpanded: (groupId: string) => void;
@@ -670,6 +671,7 @@ interface AppContextValue {
     createGroup: (name: string, description?: string) => Promise<Group>;
     deleteGroup: (groupId: string) => Promise<void>;
     updateGroupConfig: (groupId: string, config: Partial<Omit<Group, 'id' | 'flows'>>, name?: string) => Promise<void>;
+    cloneGroup: (groupId: string, count: number) => void;
     
     // Flows: CRUD
     createFlow: (
@@ -690,6 +692,7 @@ interface AppContextValue {
       flowId: string,
       config: Partial<Omit<Flow, 'id' | 'connectionStatus' | 'throughput' | 'hasError' | 'errorMessage'>> & { template?: string },
     ) => Promise<void>;
+    cloneFlow: (groupId: string, flowId: string, count: number) => void;
     
     // Variables: CRUD
     createVariable: (
@@ -1065,6 +1068,10 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
       dispatch({ type: 'SET_SELECTION', payload: { type: 'none' } });
     }
   }, [state]);
+
+  const clearSelection = useCallback(() => {
+    dispatch({ type: 'SET_SELECTION', payload: { type: 'none' } });
+  }, []);
 
   const toggleGroupExpanded = useCallback((groupId: string) => {
     dispatch({ type: 'TOGGLE_GROUP_EXPANDED', payload: groupId });
@@ -1655,6 +1662,24 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
     }
   }, [crudContext, state.groups, reportCommandError]);
 
+  const cloneGroup = useCallback(async (groupId: string, count: number) => {
+    try {
+      await CoreCommands.cloneGroup(groupId, count);
+      toast.success(`Iniciando clonación de grupo (${count} copias)`);
+    } catch (error) {
+      reportCommandError('GROUPS', `cloneGroup(${groupId})`, error);
+    }
+  }, [reportCommandError]);
+
+  const cloneFlow = useCallback(async (groupId: string, flowId: string, count: number) => {
+    try {
+      await CoreCommands.cloneFlow(groupId, flowId, count);
+      toast.success(`Iniciando clonación de flow (${count} copias)`);
+    } catch (error) {
+      reportCommandError('FLOWS', `cloneFlow(${flowId})`, error);
+    }
+  }, [reportCommandError]);
+
   const createVariableAction = useCallback(async (
     name: string,
     type: 'numeric' | 'string' | 'boolean' | 'temporal' | 'point' | 'list',
@@ -1820,6 +1845,7 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
     selectFlow,
     selectVariable,
     clearVariableSelection,
+    clearSelection,
     toggleGroupExpanded,
     startGroup,
     stopGroup,
@@ -1829,6 +1855,8 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
     createFlow: createFlowAction,
     deleteFlow: deleteFlowAction,
     updateFlowConfig: updateFlowConfigAction,
+    cloneGroup,
+    cloneFlow,
     createVariable: createVariableAction,
     deleteVariable: deleteVariableAction,
     updateVariable: updateVariableAction,

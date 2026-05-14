@@ -77,6 +77,9 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         "UNINSTALL_PLUGIN",
         "EXPORT_STATE",
         "PICK_DIRECTORY",
+        "CLONE_GROUP",
+        "CLONE_FLOW",
+        "PAUSE_GROUP",
         "UI_LOG"
     );
 
@@ -402,6 +405,25 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                     broadcastSystemStatus();
                     sendLog(conn, "info", "SYSTEM", "System stopped");
                 }
+                case "PAUSE_GROUP" -> {
+                    String groupId = requireTextField(conn, commandId, payload, "groupId", "INVALID_PAYLOAD", "PAUSE_GROUP");
+                    if (groupId == null) {
+                        return;
+                    }
+                    GroupRuntime group = groupsById.get(groupId);
+                    if (group == null) {
+                        sendError(conn, commandId, "NOT_FOUND", "Group not found: " + groupId, Map.of("groupId", groupId));
+                        return;
+                    }
+                    synchronized (stateLock) {
+                        group.status = "paused";
+                    }
+                    sendAck(conn, commandId, "group_paused");
+                    broadcastGroupsUpdate();
+                    sendLog(conn, "info", group.id, "Group paused");
+                }
+                case "CLONE_GROUP" -> handleCloneGroup(conn, commandId, payload);
+                case "CLONE_FLOW" -> handleCloneFlow(conn, commandId, payload);
                 case "START_GROUP" -> {
                     String groupId = requireTextField(conn, commandId, payload, "groupId", "INVALID_PAYLOAD", "START_GROUP");
                     if (groupId == null) {
@@ -637,6 +659,188 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         GroupRuntime group = groupsById.get(groupId); // It exists, otherwise would have returned early
         logToBackend("info", "GROUPS", "Updated config for group '" + (group != null ? group.name : groupId) + "'", commandId);
         broadcastGroupsUpdate();
+    }
+
+    private void handleCloneGroup(WebSocket conn, String commandId, JsonNode payload) {
+        String groupId = requireTextField(conn, commandId, payload, "groupId", "INVALID_PAYLOAD", "CLONE_GROUP");
+        int count = payload.path("count").asInt(1);
+        if (groupId == null) return;
+
+        synchronized (stateLock) {
+            GroupRuntime original = groupsById.get(groupId);
+            if (original == null) {
+                sendError(conn, commandId, "NOT_FOUND", "Group not found: " + groupId, Map.of("groupId", groupId));
+                return;
+            }
+
+            for (int i = 1; i <= count; i++) {
+                String newGroupId = UUID.randomUUID().toString();
+                String newName = original.name + " (Clone " + i + ")";
+                
+                GroupRuntime clone = new GroupRuntime(
+                    newGroupId,
+                    newName,
+                    "stopped",
+                    original.description,
+                    original.threads,
+                    original.outputMode,
+                    original.enabled
+                );
+
+                // Clone flows
+                for (FlowRuntime originalFlow : original.flows) {
+                    String newFlowId = UUID.randomUUID().toString();
+                    
+                    FlowRuntime flowClone = new FlowRuntime(
+                        newFlowId,
+                        originalFlow.name,
+                        originalFlow.technology,
+                        "disconnected",
+                        0,
+                        0,
+                        false,
+                        null,
+                        originalFlow.interval,
+                        originalFlow.burst,
+                        originalFlow.topic,
+                        originalFlow.host,
+                        originalFlow.port,
+                        originalFlow.template,
+                        originalFlow.format,
+                        originalFlow.enabled,
+                        originalFlow.connectorConfig
+                    );
+                    clone.flows.add(flowClone);
+
+                    // Clone variables for this flow
+                    List<Variable> flowVars = new ArrayList<>();
+                    for (Variable var : variablesById.values()) {
+                        if (originalFlow.id.equals(var.getFlowId())) {
+                            flowVars.add(var);
+                        }
+                    }
+                    for (Variable var : flowVars) {
+                        String newVarId = UUID.randomUUID().toString();
+                        Variable varClone = new Variable(
+                            newVarId,
+                            var.getName(),
+                            var.getScope(),
+                            var.getType(),
+                            var.getDefaultValue(),
+                            var.getConfig(),
+                            newFlowId,
+                            newGroupId
+                        );
+                        variablesById.put(newVarId, varClone);
+                    }
+                }
+
+                // Clone group-scoped variables
+                List<Variable> groupVars = new ArrayList<>();
+                for (Variable var : variablesById.values()) {
+                    if (groupId.equals(var.getGroupId()) && "GROUP".equals(var.getScope())) {
+                        groupVars.add(var);
+                    }
+                }
+                for (Variable var : groupVars) {
+                    String newVarId = UUID.randomUUID().toString();
+                    Variable varClone = new Variable(
+                        newVarId,
+                        var.getName(),
+                        var.getScope(),
+                        var.getType(),
+                        var.getDefaultValue(),
+                        var.getConfig(),
+                        null,
+                        newGroupId
+                    );
+                    variablesById.put(newVarId, varClone);
+                }
+
+                groupsById.put(newGroupId, clone);
+            }
+            persistState();
+        }
+
+        sendAck(conn, commandId, "group_cloned");
+        logToBackend("info", "GROUPS", "Cloned group '" + groupId + "' " + count + " times", commandId);
+        broadcastGroupsUpdate();
+        sendVariablesUpdate();
+    }
+
+    private void handleCloneFlow(WebSocket conn, String commandId, JsonNode payload) {
+        String groupId = requireTextField(conn, commandId, payload, "groupId", "INVALID_PAYLOAD", "CLONE_FLOW");
+        String flowId = requireTextField(conn, commandId, payload, "flowId", "INVALID_PAYLOAD", "CLONE_FLOW");
+        int count = payload.path("count").asInt(1);
+        if (groupId == null || flowId == null) return;
+
+        synchronized (stateLock) {
+            GroupRuntime group = groupsById.get(groupId);
+            if (group == null) {
+                sendError(conn, commandId, "NOT_FOUND", "Group not found: " + groupId, Map.of("groupId", groupId));
+                return;
+            }
+
+            FlowRuntime original = findFlowById(group, flowId);
+            if (original == null) {
+                sendError(conn, commandId, "NOT_FOUND", "Flow not found: " + flowId, Map.of("flowId", flowId));
+                return;
+            }
+
+            for (int i = 1; i <= count; i++) {
+                String newFlowId = UUID.randomUUID().toString();
+                String newName = original.name + " (Clone " + i + ")";
+                
+                FlowRuntime clone = new FlowRuntime(
+                    newFlowId,
+                    newName,
+                    original.technology,
+                    "disconnected",
+                    0,
+                    0,
+                    false,
+                    null,
+                    original.interval,
+                    original.burst,
+                    original.topic,
+                    original.host,
+                    original.port,
+                    original.template,
+                    original.format,
+                    original.enabled,
+                    original.connectorConfig
+                );
+                group.flows.add(clone);
+
+                // Clone variables for this flow
+                List<Variable> flowVars = new ArrayList<>();
+                for (Variable var : variablesById.values()) {
+                    if (original.id.equals(var.getFlowId())) {
+                        flowVars.add(var);
+                    }
+                }
+                for (Variable var : flowVars) {
+                    String newVarId = UUID.randomUUID().toString();
+                    Variable varClone = new Variable(
+                        newVarId,
+                        var.getName(),
+                        var.getScope(),
+                        var.getType(),
+                        var.getDefaultValue(),
+                        var.getConfig(),
+                        newFlowId,
+                        groupId
+                    );
+                    variablesById.put(newVarId, varClone);
+                }
+            }
+            persistState();
+        }
+
+        sendAck(conn, commandId, "flow_cloned");
+        logToBackend("info", "FLOWS", "Cloned flow '" + flowId + "' " + count + " times", commandId);
+        broadcastGroupsUpdate();
+        sendVariablesUpdate();
     }
 
     private void handleCreateFlow(WebSocket conn, String commandId, JsonNode payload) {

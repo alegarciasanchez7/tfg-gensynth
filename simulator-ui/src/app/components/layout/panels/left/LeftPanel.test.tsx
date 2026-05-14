@@ -94,6 +94,8 @@ describe('LeftPanel', () => {
     onDeleteFlow: vi.fn(async () => undefined),
     onUpdateGroupConfig: vi.fn(),
     onUpdateFlowConfig: vi.fn(),
+    onCloneGroup: vi.fn(),
+    onCloneFlow: vi.fn(),
     onCreateFlow: vi.fn(async (_groupId: string, name: string): Promise<Flow> => ({
       id: 'flow-1',
       name,
