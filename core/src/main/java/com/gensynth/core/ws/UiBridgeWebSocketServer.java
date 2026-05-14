@@ -664,6 +664,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
     private void handleCloneGroup(WebSocket conn, String commandId, JsonNode payload) {
         String groupId = requireTextField(conn, commandId, payload, "groupId", "INVALID_PAYLOAD", "CLONE_GROUP");
         int count = payload.path("count").asInt(1);
+        String namingPattern = payload.path("namingPattern").asText("${name} (Clone ${index})");
         if (groupId == null) return;
 
         synchronized (stateLock) {
@@ -675,7 +676,9 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
 
             for (int i = 1; i <= count; i++) {
                 String newGroupId = UUID.randomUUID().toString();
-                String newName = original.name + " (Clone " + i + ")";
+                String newName = namingPattern
+                    .replace("${name}", original.name)
+                    .replace("${index}", String.valueOf(i));
                 
                 GroupRuntime clone = new GroupRuntime(
                     newGroupId,
@@ -772,6 +775,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         String groupId = requireTextField(conn, commandId, payload, "groupId", "INVALID_PAYLOAD", "CLONE_FLOW");
         String flowId = requireTextField(conn, commandId, payload, "flowId", "INVALID_PAYLOAD", "CLONE_FLOW");
         int count = payload.path("count").asInt(1);
+        String namingPattern = payload.path("namingPattern").asText("${name} (Clone ${index})");
         if (groupId == null || flowId == null) return;
 
         synchronized (stateLock) {
@@ -789,7 +793,9 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
 
             for (int i = 1; i <= count; i++) {
                 String newFlowId = UUID.randomUUID().toString();
-                String newName = original.name + " (Clone " + i + ")";
+                String newName = namingPattern
+                    .replace("${name}", original.name)
+                    .replace("${index}", String.valueOf(i));
                 
                 FlowRuntime clone = new FlowRuntime(
                     newFlowId,
