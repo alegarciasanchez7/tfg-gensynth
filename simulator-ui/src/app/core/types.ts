@@ -192,12 +192,14 @@ export interface DeleteGroupCommandPayload {
 export interface CloneGroupCommandPayload {
   groupId: string;
   count: number;
+  namingPattern?: string;
 }
 
 export interface CloneFlowCommandPayload {
   groupId: string;
   flowId: string;
   count: number;
+  namingPattern?: string;
 }
 
 export interface CreateFlowCommandPayload {

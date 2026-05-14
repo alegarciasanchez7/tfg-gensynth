@@ -102,6 +102,7 @@ export default function App() {
           onUpdateFlowConfig={actions.updateFlowConfig}
           onCloneGroup={actions.cloneGroup}
           onCloneFlow={actions.cloneFlow}
+          onDeleteFlow={actions.deleteFlow}
         />
 
         {/* Center: Dynamic Workspace */}

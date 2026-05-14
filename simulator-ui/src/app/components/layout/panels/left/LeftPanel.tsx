@@ -19,6 +19,7 @@ import {
   Unlock,
   FolderOpen,
   Copy,
+  MoreVertical,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '../../../ui/button';
@@ -51,6 +52,13 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from '../../../ui/context-menu';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+} from '../../../ui/dropdown-menu';
 import type { Group, Flow, Selection, ConnectionStatus, GroupStatus, Variable } from '../../../../types';
 import { TemplateEditor } from '../../../workspace/flows/TemplateEditor';
 import type { ConnectorPluginDescriptor } from '../../../../core/types';
@@ -69,6 +77,7 @@ interface LeftPanelProps {
   onToggleGroup: (groupId: string) => void;
   onCreateGroup: (name: string, description?: string) => Promise<Group>;
   onDeleteGroup: (groupId: string) => Promise<void>;
+  onDeleteFlow: (groupId: string, flowId: string) => Promise<void>;
   onCreateFlow: (
     groupId: string,
     name: string,
@@ -83,8 +92,8 @@ interface LeftPanelProps {
   ) => Promise<Flow>;
   onUpdateGroupConfig: (groupId: string, config: any, name?: string) => Promise<void>;
   onUpdateFlowConfig: (groupId: string, flowId: string, config: any, name?: string) => Promise<void>;
-  onCloneGroup: (groupId: string, count: number) => void;
-  onCloneFlow: (groupId: string, flowId: string, count: number) => void;
+  onCloneGroup: (groupId: string, count: number, namingPattern?: string) => void;
+  onCloneFlow: (groupId: string, flowId: string, count: number, namingPattern?: string) => void;
 }
 
 const connColor: Record<ConnectionStatus, string> = {
@@ -138,16 +147,18 @@ function parseTemplateVars(template: string): Array<{ scope: string; name: strin
   return result;
 }
 
-function FlowItem({ flow, selected, groupId, onSelect, onToggleEnabled, onClone, formatTemplate }: {
+function FlowItem({ flow, selected, groupId, onSelect, onToggleEnabled, onClone, onDelete, formatTemplate }: {
   flow: Flow;
   selected: boolean;
   groupId: string;
   onSelect: (gId: string, fId: string) => void;
   onToggleEnabled: (gId: string, fId: string, enabled: boolean, name: string) => void;
-  onClone: (gId: string, fId: string, count: number) => void;
+  onClone: (gId: string, fId: string, count: number, namingPattern?: string) => void;
+  onDelete: (gId: string, fId: string) => Promise<void>;
   formatTemplate: Record<string, string>;
 }) {
   const [isCloneOpen, setIsCloneOpen] = useState(false);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const connCfg = connColor[flow.connectionStatus];
   const dotCfg = connBg[flow.connectionStatus];
   const template = formatTemplate[flow.id] ?? '';
@@ -192,35 +203,88 @@ function FlowItem({ flow, selected, groupId, onSelect, onToggleEnabled, onClone,
           {flow.name.split('·')[1]?.trim() || flow.name}
         </span>
 
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleEnabled(groupId, flow.id, !flow.enabled, flow.name);
-          }}
-          className={`ml-auto p-1 rounded hover:bg-black/10 transition-colors ${!flow.enabled ? 'text-red-400' : 'text-[var(--c-tx4)] hover:text-[var(--c-tx2)]'}`}
-          title={flow.enabled ? 'Lock flow' : 'Unlock flow'}
-        >
-          {flow.enabled ? <Unlock size={10} /> : <Lock size={10} />}
-        </button>
-
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            setIsCloneOpen(true);
-          }}
-          className="p-1 rounded text-[var(--c-tx4)] hover:text-violet-400 hover:bg-violet-500/10 transition-colors"
-          title="Clone flow"
-        >
-          <Copy size={10} />
-        </button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              onClick={(e) => e.stopPropagation()}
+              className="ml-auto p-1 rounded text-[var(--c-tx4)] hover:text-[var(--c-tx2)] hover:bg-black/10 transition-colors"
+            >
+              <MoreVertical size={14} />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-40 bg-[var(--c-bg2)] border-[var(--c-br1)]">
+            <DropdownMenuItem
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleEnabled(groupId, flow.id, !flow.enabled, flow.name);
+              }}
+              className="text-xs text-[var(--c-tx2)] focus:bg-violet-500/10 focus:text-violet-400"
+            >
+              {flow.enabled ? <Lock size={12} className="mr-2" /> : <Unlock size={12} className="mr-2" />}
+              {flow.enabled ? 'Lock flow' : 'Unlock flow'}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsCloneOpen(true);
+              }}
+              className="text-xs text-[var(--c-tx2)] focus:bg-violet-500/10 focus:text-violet-400"
+            >
+              <Copy size={12} className="mr-2" />
+              Clone flow
+            </DropdownMenuItem>
+            <DropdownMenuSeparator className="bg-[var(--c-br1)]" />
+            <DropdownMenuItem
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsDeleteConfirmOpen(true);
+              }}
+              className="text-xs text-red-500 focus:bg-red-500/10 focus:text-red-400"
+            >
+              <Trash2 size={12} className="mr-2" />
+              Delete flow
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
 
         <CloneDialog
           isOpen={isCloneOpen}
           onOpenChange={setIsCloneOpen}
-          onConfirm={(count) => onClone(groupId, flow.id, count)}
+          onConfirm={(count, pattern) => onClone(groupId, flow.id, count, pattern)}
           title="Clone Flow"
           itemName={flow.name}
         />
+
+        <AlertDialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete flow</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will permanently delete flow "{flow.name}". This action cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={(e) => e.stopPropagation()}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  try {
+                    await onDelete(groupId, flow.id);
+                    toast.success(`Flow "${flow.name}" deleted`);
+                  } catch (error) {
+                    const message = error instanceof Error ? error.message : 'Unable to delete flow';
+                    toast.error(message);
+                  } finally {
+                    setIsDeleteConfirmOpen(false);
+                  }
+                }}
+                className="bg-red-600 text-white hover:bg-red-700"
+              >
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
 
       {/* Row 2: status dot + throughput + error */}
@@ -268,6 +332,7 @@ function GroupItem({
   onUpdateFlowConfig,
   onCloneGroup,
   onCloneFlow,
+  onDeleteFlow,
   latestConnectors,
   variables,
 }: {
@@ -292,8 +357,9 @@ function GroupItem({
   ) => Promise<Flow>;
   onUpdateGroupConfig: (groupId: string, config: any, name?: string) => Promise<void>;
   onUpdateFlowConfig: (groupId: string, flowId: string, config: any, name?: string) => Promise<void>;
-  onCloneGroup: (groupId: string, count: number) => void;
-  onCloneFlow: (groupId: string, flowId: string, count: number) => void;
+  onCloneGroup: (groupId: string, count: number, namingPattern?: string) => void;
+  onCloneFlow: (groupId: string, flowId: string, count: number, namingPattern?: string) => void;
+  onDeleteFlow: (groupId: string, flowId: string) => Promise<void>;
   latestConnectors: ConnectorPluginDescriptor[];
   variables: Variable[];
 }) {
@@ -428,32 +494,54 @@ function GroupItem({
                   {group.name}
                 </span>
 
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onUpdateGroupConfig(group.id, { enabled: !group.enabled }, group.name);
-                  }}
-                  className={`ml-auto p-1 rounded hover:bg-black/10 transition-colors ${!group.enabled ? 'text-red-400' : 'text-[var(--c-tx4)] hover:text-[var(--c-tx2)]'}`}
-                  title={group.enabled ? 'Lock group' : 'Unlock group'}
-                >
-                  {group.enabled ? <Unlock size={10} /> : <Lock size={10} />}
-                </button>
-
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setIsCloneOpen(true);
-                  }}
-                  className="p-1 rounded text-[var(--c-tx4)] hover:text-violet-400 hover:bg-violet-500/10 transition-colors"
-                  title="Clone group"
-                >
-                  <Copy size={10} />
-                </button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      onClick={(e) => e.stopPropagation()}
+                      className="ml-auto p-1 rounded text-[var(--c-tx4)] hover:text-[var(--c-tx2)] hover:bg-black/10 transition-colors"
+                    >
+                      <MoreVertical size={14} />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-40 bg-[var(--c-bg2)] border-[var(--c-br1)]">
+                    <DropdownMenuItem
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onUpdateGroupConfig(group.id, { enabled: !group.enabled }, group.name);
+                      }}
+                      className="text-xs text-[var(--c-tx2)] focus:bg-cyan-500/10 focus:text-cyan-400"
+                    >
+                      {group.enabled ? <Lock size={12} className="mr-2" /> : <Unlock size={12} className="mr-2" />}
+                      {group.enabled ? 'Lock group' : 'Unlock group'}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsCloneOpen(true);
+                      }}
+                      className="text-xs text-[var(--c-tx2)] focus:bg-violet-500/10 focus:text-violet-400"
+                    >
+                      <Copy size={12} className="mr-2" />
+                      Clone group
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator className="bg-[var(--c-br1)]" />
+                    <DropdownMenuItem
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsDeleteConfirmOpen(true);
+                      }}
+                      className="text-xs text-red-500 focus:bg-red-500/10 focus:text-red-400"
+                    >
+                      <Trash2 size={12} className="mr-2" />
+                      Delete group
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
 
                 <CloneDialog
                   isOpen={isCloneOpen}
                   onOpenChange={setIsCloneOpen}
-                  onConfirm={(count) => onCloneGroup(group.id, count)}
+                  onConfirm={(count, pattern) => onCloneGroup(group.id, count, pattern)}
                   title="Clone Group"
                   itemName={group.name}
                 />
@@ -511,6 +599,7 @@ function GroupItem({
               onSelect={onSelectFlow}
               onToggleEnabled={(gId, fId, en, name) => onUpdateFlowConfig(gId, fId, { enabled: en }, name)}
               onClone={onCloneFlow}
+              onDelete={onDeleteFlow}
               formatTemplate={formatTemplate}
             />
           ))}
@@ -744,6 +833,7 @@ export function LeftPanel({
   onUpdateFlowConfig,
   onCloneGroup,
   onCloneFlow,
+  onDeleteFlow,
 }: LeftPanelProps) {
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [isCreateGroupOpen, setIsCreateGroupOpen] = useState(false);
@@ -1204,6 +1294,7 @@ export function LeftPanel({
             onUpdateFlowConfig={onUpdateFlowConfig}
             onCloneGroup={onCloneGroup}
             onCloneFlow={onCloneFlow}
+            onDeleteFlow={onDeleteFlow}
             latestConnectors={latestConnectors}
             variables={variables}
           />
