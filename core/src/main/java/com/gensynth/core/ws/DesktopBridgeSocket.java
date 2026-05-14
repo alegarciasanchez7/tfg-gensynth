@@ -35,19 +35,36 @@ public class DesktopBridgeSocket implements WebSocket {
 
     @Override
     public void send(String text) {
-        logger.debug("[DESKTOP-SOCKET] Sending message: {}", text);
+        logger.debug("[DESKTOP-SOCKET] Sending message (length: {})", text.length());
         
         // Push message to UI via JavaScript function
         if (browser != null) {
-            String escaped = text.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n").replace("\r", "\\r");
-            browser.executeJavaScript("window.onGensynthMessage('" + escaped + "')", "", 0);
+            String escaped = text.replace("\\", "\\\\")
+                                .replace("'", "\\'")
+                                .replace("\n", "\\n")
+                                .replace("\r", "\\r");
+            
+            // Execute on UI thread for better stability in JCEF/Swing
+            javax.swing.SwingUtilities.invokeLater(() -> {
+                try {
+                    browser.executeJavaScript("window.onGensynthMessage('" + escaped + "')", "", 0);
+                } catch (Exception e) {
+                    logger.error("[DESKTOP-SOCKET] Failed to execute JavaScript", e);
+                }
+            });
         }
 
         // Fulfill the JCEF query callback (can only be done once per query)
-        try {
-            jcefCallback.success(text);
-        } catch (Exception ignored) {
-            // Callback already used, ignore for asynchronous push messages
+        CefQueryCallback callback = this.jcefCallback;
+        if (callback != null) {
+            try {
+                callback.success(text);
+                // We clear it so subsequent broadcasts to this "socket" don't try to use the same query callback
+                // but still send via executeJavaScript (push)
+                this.jcefCallback = null;
+            } catch (Exception ignored) {
+                this.jcefCallback = null;
+            }
         }
     }
 

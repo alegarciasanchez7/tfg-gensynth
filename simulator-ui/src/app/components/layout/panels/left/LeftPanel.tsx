@@ -18,6 +18,7 @@ import {
   Lock,
   Unlock,
   FolderOpen,
+  Copy,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '../../../ui/button';
@@ -55,6 +56,7 @@ import { TemplateEditor } from '../../../workspace/flows/TemplateEditor';
 import type { ConnectorPluginDescriptor } from '../../../../core/types';
 import { isRunningInJCEF } from '../../../../core/jcef';
 import { CoreCommands } from '../../../../core/bridge';
+import { CloneDialog } from './CloneDialog';
 
 interface LeftPanelProps {
   groups: Group[];
@@ -81,6 +83,8 @@ interface LeftPanelProps {
   ) => Promise<Flow>;
   onUpdateGroupConfig: (groupId: string, config: any, name?: string) => Promise<void>;
   onUpdateFlowConfig: (groupId: string, flowId: string, config: any, name?: string) => Promise<void>;
+  onCloneGroup: (groupId: string, count: number) => void;
+  onCloneFlow: (groupId: string, flowId: string, count: number) => void;
 }
 
 const connColor: Record<ConnectionStatus, string> = {
@@ -134,14 +138,16 @@ function parseTemplateVars(template: string): Array<{ scope: string; name: strin
   return result;
 }
 
-function FlowItem({ flow, selected, groupId, onSelect, onToggleEnabled, formatTemplate }: {
+function FlowItem({ flow, selected, groupId, onSelect, onToggleEnabled, onClone, formatTemplate }: {
   flow: Flow;
   selected: boolean;
   groupId: string;
   onSelect: (gId: string, fId: string) => void;
   onToggleEnabled: (gId: string, fId: string, enabled: boolean, name: string) => void;
+  onClone: (gId: string, fId: string, count: number) => void;
   formatTemplate: Record<string, string>;
 }) {
+  const [isCloneOpen, setIsCloneOpen] = useState(false);
   const connCfg = connColor[flow.connectionStatus];
   const dotCfg = connBg[flow.connectionStatus];
   const template = formatTemplate[flow.id] ?? '';
@@ -196,6 +202,25 @@ function FlowItem({ flow, selected, groupId, onSelect, onToggleEnabled, formatTe
         >
           {flow.enabled ? <Unlock size={10} /> : <Lock size={10} />}
         </button>
+
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setIsCloneOpen(true);
+          }}
+          className="p-1 rounded text-[var(--c-tx4)] hover:text-violet-400 hover:bg-violet-500/10 transition-colors"
+          title="Clone flow"
+        >
+          <Copy size={10} />
+        </button>
+
+        <CloneDialog
+          isOpen={isCloneOpen}
+          onOpenChange={setIsCloneOpen}
+          onConfirm={(count) => onClone(groupId, flow.id, count)}
+          title="Clone Flow"
+          itemName={flow.name}
+        />
       </div>
 
       {/* Row 2: status dot + throughput + error */}
@@ -241,6 +266,8 @@ function GroupItem({
   onCreateFlow,
   onUpdateGroupConfig,
   onUpdateFlowConfig,
+  onCloneGroup,
+  onCloneFlow,
   latestConnectors,
   variables,
 }: {
@@ -265,12 +292,15 @@ function GroupItem({
   ) => Promise<Flow>;
   onUpdateGroupConfig: (groupId: string, config: any, name?: string) => Promise<void>;
   onUpdateFlowConfig: (groupId: string, flowId: string, config: any, name?: string) => Promise<void>;
+  onCloneGroup: (groupId: string, count: number) => void;
+  onCloneFlow: (groupId: string, flowId: string, count: number) => void;
   latestConnectors: ConnectorPluginDescriptor[];
   variables: Variable[];
 }) {
   const gCfg = groupStatusCfg[group.status];
   const selectedGroup = selection.type === 'group' && selection.groupId === group.id;
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [isCloneOpen, setIsCloneOpen] = useState(false);
   const [isCreateFlowOpen, setIsCreateFlowOpen] = useState(false);
   const [flowName, setFlowName] = useState('');
   const [flowTechnology, setFlowTechnology] = useState('');
@@ -408,6 +438,25 @@ function GroupItem({
                 >
                   {group.enabled ? <Unlock size={10} /> : <Lock size={10} />}
                 </button>
+
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsCloneOpen(true);
+                  }}
+                  className="p-1 rounded text-[var(--c-tx4)] hover:text-violet-400 hover:bg-violet-500/10 transition-colors"
+                  title="Clone group"
+                >
+                  <Copy size={10} />
+                </button>
+
+                <CloneDialog
+                  isOpen={isCloneOpen}
+                  onOpenChange={setIsCloneOpen}
+                  onConfirm={(count) => onCloneGroup(group.id, count)}
+                  title="Clone Group"
+                  itemName={group.name}
+                />
               </div>
               <div className="flex items-center gap-2 pl-3">
                 <span className={`text-[10px] ${gCfg.color}`} style={{ fontFamily: 'JetBrains Mono, monospace' }}>
@@ -461,6 +510,7 @@ function GroupItem({
               selected={selection.type === 'flow' && selection.flowId === flow.id}
               onSelect={onSelectFlow}
               onToggleEnabled={(gId, fId, en, name) => onUpdateFlowConfig(gId, fId, { enabled: en }, name)}
+              onClone={onCloneFlow}
               formatTemplate={formatTemplate}
             />
           ))}
@@ -692,6 +742,8 @@ export function LeftPanel({
   onCreateFlow,
   onUpdateGroupConfig,
   onUpdateFlowConfig,
+  onCloneGroup,
+  onCloneFlow,
 }: LeftPanelProps) {
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [isCreateGroupOpen, setIsCreateGroupOpen] = useState(false);
@@ -1150,6 +1202,8 @@ export function LeftPanel({
             onCreateFlow={onCreateFlow}
             onUpdateGroupConfig={onUpdateGroupConfig}
             onUpdateFlowConfig={onUpdateFlowConfig}
+            onCloneGroup={onCloneGroup}
+            onCloneFlow={onCloneFlow}
             latestConnectors={latestConnectors}
             variables={variables}
           />

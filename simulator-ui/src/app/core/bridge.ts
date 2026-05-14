@@ -97,6 +97,11 @@ const SUPPORTED_COMMANDS = new Set<UICommandType>([
   'UNINSTALL_PLUGIN',
   'IMPORT_STATE',
   'PICK_DIRECTORY',
+  'CLONE_GROUP',
+  'CLONE_FLOW',
+  'EXPORT_STATE',
+  'PAUSE_GROUP',
+  'UI_LOG',
 ]);
 
 interface EventMap {
@@ -472,7 +477,20 @@ class CoreBridge {
           && Array.isArray(readField('variables'))
           ? null
           : new Error('El comando IMPORT_STATE requiere un payload con groups y variables (arrays)');
+      case 'CLONE_GROUP':
+        return requireStringField('groupId', 'El comando CLONE_GROUP requiere groupId');
+      case 'CLONE_FLOW':
+        return isObjectPayload
+          && typeof readField('groupId') === 'string'
+          && typeof readField('flowId') === 'string'
+          ? null
+          : new Error('El comando CLONE_FLOW requiere groupId y flowId');
+      case 'UI_LOG':
+        return isObjectPayload && typeof readField('message') === 'string'
+          ? null
+          : new Error('El comando UI_LOG requiere message');
       case 'PICK_DIRECTORY':
+      case 'EXPORT_STATE':
         return null;
       default:
         return new Error(`Validation not implemented for ${type}`);
@@ -814,6 +832,10 @@ export const CoreCommands = {
   
   // Desktop specific
   pickDirectory: () => bridge.send('PICK_DIRECTORY'),
+
+  // Cloning
+  cloneGroup: (groupId: string, count: number) => bridge.send('CLONE_GROUP', { groupId, count }),
+  cloneFlow: (groupId: string, flowId: string, count: number) => bridge.send('CLONE_FLOW', { groupId, flowId, count }),
 };
 
 export default bridge;
