@@ -28,7 +28,16 @@ export interface NumericVariableConfig extends BaseVariableConfig {
   max?: number;
   precision?: 'INTEGER' | 'FLOAT' | 'DOUBLE';
   formula?: string;
-  distribution?: 'UNIFORM' | 'NORMAL' | 'EXPONENTIAL';
+  decimalPlaces?: number;
+  integerFormat?: string;
+  initialValue?: number;
+  step?: number;
+  constantValue?: number;
+  constantMargin?: number;
+  sequentialGraph?: Array<{ x: number; y: number }>;
+  distributionType?: 'UNIFORM' | 'NORMAL' | 'EXPONENTIAL' | 'CUSTOM';
+  customDistributionGraph?: Array<{ value?: number; from?: number; to?: number; weight: number }>;
+  boundaryMode?: 'LEFT' | 'RIGHT' | 'SPLIT';
 }
 
 export interface StringVariableConfig extends BaseVariableConfig {

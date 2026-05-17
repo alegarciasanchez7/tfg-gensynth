@@ -221,6 +221,130 @@ public class NumericVariableConfigTest {
     }
 
     @Test
+    public void testStepRandomPattern() {
+        config.pattern(GenerationPattern.RANDOM)
+            .from(0.0)
+            .to(10.0)
+            .step(2.0);
+        
+        for (int i = 0; i < 50; i++) {
+            double value = (double) config.generateNextValue();
+            assertTrue(value >= 0.0 && value <= 10.0);
+            assertEquals(0.0, value % 2.0, 0.0001);
+        }
+    }
+
+    @Test
+    public void testConstantWithMargin() {
+        config.pattern(GenerationPattern.CONSTANT)
+            .constant(50.0)
+            .constantMargin(5.0);
+        
+        for (int i = 0; i < 50; i++) {
+            double value = (double) config.generateNextValue();
+            assertTrue(value >= 45.0 && value <= 55.0);
+        }
+    }
+
+    @Test
+    public void testSequentialGraphInterpolation() {
+        java.util.List<java.util.Map<java.lang.String, java.lang.Object>> graph = new java.util.ArrayList<>();
+        
+        java.util.Map<java.lang.String, java.lang.Object> p0 = new java.util.HashMap<>();
+        p0.put("x", 0.0);
+        p0.put("y", 10.0);
+        graph.add(p0);
+        
+        java.util.Map<java.lang.String, java.lang.Object> p1 = new java.util.HashMap<>();
+        p1.put("x", 4.0);
+        p1.put("y", 20.0);
+        graph.add(p1);
+        
+        config.pattern(GenerationPattern.SEQUENTIAL)
+            .sequentialGraph(graph);
+        
+        // Loop is modulo maxX = 4.0
+        // tick 1 (counter=1, index=0) -> 10.0
+        assertEquals(10.0, (double) config.generateNextValue(), 0.01);
+        // tick 2 (counter=2, index=1) -> 10 + (20 - 10) * 1 / 4 = 12.5
+        assertEquals(12.5, (double) config.generateNextValue(), 0.01);
+    }
+
+    @Test
+    public void testCustomDistributionWeights() {
+        java.util.List<java.util.Map<java.lang.String, java.lang.Object>> graph = new java.util.ArrayList<>();
+        
+        java.util.Map<java.lang.String, java.lang.Object> p0 = new java.util.HashMap<>();
+        p0.put("value", 5.0);
+        p0.put("weight", 100.0); // 100% weight
+        graph.add(p0);
+        
+        config.pattern(GenerationPattern.DISTRIBUTION)
+            .distributionType("CUSTOM")
+            .customDistributionGraph(graph);
+        
+        for (int i = 0; i < 20; i++) {
+            assertEquals(5.0, (double) config.generateNextValue(), 0.01);
+        }
+    }
+
+    @Test
+    public void testDecimalsAndIntegerFormatting() {
+        // Integer format
+        config.precision("INTEGER")
+            .integerFormat("00001");
+        Object val1 = config.constant(42.0).generateNextValue();
+        assertEquals("00042", val1);
+        
+        // Decimals format
+        config.precision("DOUBLE")
+            .decimalPlaces(3)
+            .integerFormat(null);
+        Object val2 = config.constant(3.14159).generateNextValue();
+        assertEquals(3.142, (double) val2, 0.0001);
+
+        // Prefix + Padding format for Integer
+        config.precision("INTEGER")
+            .integerFormat("(000)001");
+        Object val3 = config.constant(42.0).generateNextValue();
+        assertEquals("000042", val3);
+
+        // Prefix + No padding format for Float
+        config.precision("FLOAT")
+            .decimalPlaces(2)
+            .integerFormat("(USD)number");
+        Object val4 = config.constant(3.1415).generateNextValue();
+        assertEquals("USD3.14", val4);
+
+        // Prefix + Padding format for Float with negative value
+        config.precision("FLOAT")
+            .decimalPlaces(2)
+            .integerFormat("(USD)001");
+        Object val5 = config.constant(-3.1415).generateNextValue();
+        assertEquals("USD-003.14", val5);
+    }
+
+    @Test
+    public void testFormulaEvaluationWithBracesAndBrackets() {
+        config.pattern(GenerationPattern.RANDOM);
+        config.formula("{{temperature}} * 2 + [humidity]");
+        
+        java.util.Map<String, Object> context = new java.util.HashMap<>();
+        context.put("temperature", 25.0);
+        context.put("humidity", 10.0);
+        config.setContext(context);
+        
+        // Evaluates to: 25.0 * 2 + 10.0 = 60.0
+        Object result = config.generateNextValue();
+        assertEquals(60.0, (double) result, 0.01);
+        
+        // Check dependencies
+        java.util.Set<String> deps = config.getDependencies();
+        assertTrue(deps.contains("temperature"));
+        assertTrue(deps.contains("humidity"));
+    }
+
+    @Test
     public void testToMap() {
         config.pattern(GenerationPattern.CONSTANT)
             .constant(25.0);

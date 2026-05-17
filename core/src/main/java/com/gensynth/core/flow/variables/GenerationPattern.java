@@ -11,6 +11,7 @@ public enum GenerationPattern {
     CONSTANT("Constant - Fixed value"),
     SEQUENTIAL("Sequential - Incremental/decremental sequence"),
     TREND("Trend - Statistical trend (normal/gradual/jumping)"),
+    DISTRIBUTION("Distribution - Values based on probability distribution"),
     
     // String patterns
     RANDOM_STRING("Random String - Randomized characters"),
