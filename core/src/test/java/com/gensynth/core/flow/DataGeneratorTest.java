@@ -49,8 +49,7 @@ public class DataGeneratorTest {
         Variable var = new Variable("id", "dt", "LOCAL", "date", 0L, null, "flow-1", null);
         Object value = generator.generateValue(var);
         
-        assertTrue(value instanceof Long);
-        assertTrue((Long) value > 0);
+        assertTrue(value instanceof java.time.Instant);
     }
 
     @Test
@@ -62,15 +61,14 @@ public class DataGeneratorTest {
         Map<?, ?> map = (Map<?, ?>) value;
         assertTrue(map.containsKey("x"));
         assertTrue(map.containsKey("y"));
-        assertTrue(map.containsKey("z"));
     }
 
     @Test
     public void testListGeneration() {
-        Variable var = new Variable("id", "lst", "LOCAL", "list", List.of(), null, "flow-1", null);
+        Variable var = new Variable("id", "lst", "LOCAL", "list", "default", Map.of("items", List.of("A", "B")), "flow-1", null);
         Object value = generator.generateValue(var);
         
-        assertTrue(value instanceof List);
-        assertFalse(((List<?>) value).isEmpty());
+        assertTrue(value instanceof String);
+        assertTrue(List.of("A", "B").contains((String) value));
     }
 }

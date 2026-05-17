@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Variable } from '../../../types';
 
@@ -59,13 +60,23 @@ describe('VariableEditorWorkspace', () => {
   });
 
   it('saves changes to the selected variable', async () => {
+    const user = userEvent.setup();
     render(<VariableEditorWorkspace variable={variable} onBack={onBack} />);
 
-    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'temperature_2' } });
-    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'Updated description' } });
-    fireEvent.change(screen.getByLabelText('Config JSON'), {
-      target: { value: JSON.stringify({ min: 10, max: 120, step: 5 }, null, 2) },
-    });
+    const nameInput = screen.getByTestId('variable-name-input');
+    await user.clear(nameInput);
+    await user.type(nameInput, 'temperature_2');
+
+    const descInput = screen.getByTestId('variable-description-input');
+    await user.clear(descInput);
+    await user.type(descInput, 'Updated description');
+
+    const minInput = screen.getByTestId('numeric-min-input');
+    fireEvent.change(minInput, { target: { value: '10' } });
+
+    const maxInput = screen.getByTestId('numeric-max-input');
+    fireEvent.change(maxInput, { target: { value: '120' } });
+
     fireEvent.click(screen.getByRole('button', { name: /save changes/i }));
 
     await waitFor(() => expect(actions.updateVariable).toHaveBeenCalledWith(
@@ -75,7 +86,7 @@ describe('VariableEditorWorkspace', () => {
         scope: 'local',
         type: 'numeric',
         description: 'Updated description',
-        config: expect.objectContaining({ min: 10, max: 120, step: 5 }),
+        config: expect.objectContaining({ min: 10, max: 120 }),
       }),
     ));
     await waitFor(() => expect(mockToast.success).toHaveBeenCalledWith('Variable updated'));

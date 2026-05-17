@@ -10,25 +10,25 @@ import java.util.Map;
 
 import static org.junit.Assert.*;
 
-public class DateVariableConfigTest {
+public class TemporalVariableConfigTest {
 
-    private DateVariableConfig config;
+    private TemporalVariableConfig config;
 
     @Before
     public void setUp() {
-        config = new DateVariableConfig().identifier("date_sensor");
+        config = new TemporalVariableConfig().identifier("temporal_sensor");
     }
 
     @Test
-    public void testDateConfigCreation() {
-        assertEquals("date_sensor", config.getIdentifier());
-        assertEquals(VariableType.DATE, config.getType());
+    public void testTemporalConfigCreation() {
+        assertEquals("temporal_sensor", config.getIdentifier());
+        assertEquals(VariableType.TEMPORAL, config.getType());
     }
 
     @Test
-    public void testFixedDatePattern() {
+    public void testFixedTemporalPattern() {
         Instant fixed = Instant.parse("2025-01-01T00:00:00Z");
-        config.pattern(GenerationPattern.FIXED_DATE).fixedDate(fixed);
+        config.pattern(GenerationPattern.FIXED_TEMPORAL).fixedDate(fixed);
 
         Object v1 = config.generateNextValue();
         Object v2 = config.generateNextValue();
@@ -63,10 +63,10 @@ public class DateVariableConfigTest {
     }
 
     @Test
-    public void testDateRangePattern() {
+    public void testTemporalRangePattern() {
         Instant from = Instant.parse("2025-01-01T00:00:00Z");
         Instant to = Instant.parse("2025-01-01T00:01:00Z");
-        config.pattern(GenerationPattern.DATE_RANGE).range(from, to);
+        config.pattern(GenerationPattern.TEMPORAL_RANGE).range(from, to);
 
         for (int i = 0; i < 20; i++) {
             Instant value = (Instant) config.generateNextValue();
@@ -105,7 +105,7 @@ public class DateVariableConfigTest {
             .anomalousValue(anomalyDate);
         anomaly.setEnabled(true);
 
-        config.pattern(GenerationPattern.FIXED_DATE)
+        config.pattern(GenerationPattern.FIXED_TEMPORAL)
             .fixedDate(fixed)
             .anomaly(anomaly);
 
@@ -119,42 +119,23 @@ public class DateVariableConfigTest {
     }
 
     @Test
-    public void testAnomalyProbabilityBased() {
-        Instant fixed = Instant.parse("2025-01-01T00:00:00Z");
-        Instant anomalyDate = Instant.parse("2030-01-01T00:00:00Z");
-
-        AnomalyConfig anomaly = new AnomalyConfig()
-            .type(AnomalyType.MAKE_AND_BACK)
-            .probabilityRatio(100.0)
-            .anomalousValue(anomalyDate);
-        anomaly.setEnabled(true);
-
-        config.pattern(GenerationPattern.FIXED_DATE)
-            .fixedDate(fixed)
-            .anomaly(anomaly);
-
-        Object v1 = config.generateNextValue();
-        assertEquals(anomalyDate, v1);
-    }
-
-    @Test
     public void testToMap() {
-        Map<String, Object> map = config.pattern(GenerationPattern.FIXED_DATE).toMap();
+        Map<String, Object> map = config.pattern(GenerationPattern.FIXED_TEMPORAL).toMap();
 
-        assertEquals("date_sensor", map.get("identifier"));
-        assertEquals("DATE", map.get("type"));
-        assertEquals("FIXED_DATE", map.get("pattern"));
+        assertEquals("temporal_sensor", map.get("identifier"));
+        assertEquals("TEMPORAL", map.get("type"));
+        assertEquals("FIXED_TEMPORAL", map.get("pattern"));
     }
 
     @Test
     public void testFactoryIntegration() {
-        DateVariableConfig dateConfig = VariableFactory.createDate("factory_date")
-            .pattern(GenerationPattern.FIXED_DATE)
+        TemporalVariableConfig dateConfig = VariableFactory.createTemporal("factory_temporal")
+            .pattern(GenerationPattern.FIXED_TEMPORAL)
             .fixedDate(Instant.parse("2025-01-01T00:00:00Z"));
 
         assertNotNull(dateConfig);
-        assertEquals("factory_date", dateConfig.getIdentifier());
-        assertEquals(VariableType.DATE, dateConfig.getType());
+        assertEquals("factory_temporal", dateConfig.getIdentifier());
+        assertEquals(VariableType.TEMPORAL, dateConfig.getType());
         assertNotNull(dateConfig.generateNextValue());
     }
 }

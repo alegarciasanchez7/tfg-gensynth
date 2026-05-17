@@ -28,4 +28,20 @@ public interface IVariable {
      * @return El tipo de dato
      */
     String getType();
+
+    /**
+     * Obtiene las dependencias de otras variables (por ID o nombre).
+     * @return Un conjunto de IDs o Nombres de las variables de las que depende.
+     */
+    default java.util.Set<String> getDependencies() {
+        return java.util.Collections.emptySet();
+    }
+
+    /**
+     * Proporciona el contexto de evaluación (valores de otras variables).
+     * @param context Mapa de variables evaluadas previamente.
+     */
+    default void setContext(java.util.Map<String, Object> context) {
+        // Implementación por defecto no hace nada
+    }
 }
