@@ -91,6 +91,41 @@ public class VariableFactory {
                     numConfig.formula((String) configMap.get("formula"));
                 if (configMap.containsKey("distribution"))
                     numConfig.distribution((String) configMap.get("distribution"));
+                if (configMap.containsKey("pattern")) {
+                    try {
+                        numConfig.pattern(GenerationPattern.valueOf(((String) configMap.get("pattern")).toUpperCase()));
+                    } catch (Exception e) {
+                        // ignore or default
+                    }
+                }
+                if (configMap.containsKey("decimalPlaces"))
+                    numConfig.decimalPlaces(((Number) configMap.get("decimalPlaces")).intValue());
+                if (configMap.containsKey("integerFormat"))
+                    numConfig.integerFormat((String) configMap.get("integerFormat"));
+                if (configMap.containsKey("initialValue"))
+                    numConfig.initial(((Number) configMap.get("initialValue")).doubleValue());
+                else if (configMap.containsKey("initial"))
+                    numConfig.initial(((Number) configMap.get("initial")).doubleValue());
+                if (configMap.containsKey("step"))
+                    numConfig.step(((Number) configMap.get("step")).doubleValue());
+                if (configMap.containsKey("constantValue"))
+                    numConfig.constant(((Number) configMap.get("constantValue")).doubleValue());
+                if (configMap.containsKey("constantMargin"))
+                    numConfig.constantMargin(((Number) configMap.get("constantMargin")).doubleValue());
+                if (configMap.containsKey("distributionType"))
+                    numConfig.distributionType((String) configMap.get("distributionType"));
+                if (configMap.containsKey("boundaryMode"))
+                    numConfig.boundaryMode((String) configMap.get("boundaryMode"));
+                if (configMap.containsKey("sequentialGraph")) {
+                    @SuppressWarnings("unchecked")
+                    List<Map<String, Object>> seqGraph = (List<Map<String, Object>>) configMap.get("sequentialGraph");
+                    numConfig.sequentialGraph(seqGraph);
+                }
+                if (configMap.containsKey("customDistributionGraph")) {
+                    @SuppressWarnings("unchecked")
+                    List<Map<String, Object>> distGraph = (List<Map<String, Object>>) configMap.get("customDistributionGraph");
+                    numConfig.customDistributionGraph(distGraph);
+                }
                 return numConfig;
 
             case "STRING":
