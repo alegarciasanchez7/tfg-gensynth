@@ -17,6 +17,9 @@ public class ListVariableConfig extends VariableConfiguration {
     // Source data
     private List<?> sourceList;            // The items to select from
     private Object[] sourceArray;          // Fast access for random/sequential selection
+    private double[] weightsArray;         // Weights for random selection
+    private boolean hasWeights = false;    // True if at least one weight is not 1.0
+    private double totalWeight = 0.0;
     private int sourceSize;                // Cached size for hot path
     private int currentIndex;              // Current position for sequential mode
     private boolean shuffle;               // Whether to shuffle sequential list
@@ -43,15 +46,47 @@ public class ListVariableConfig extends VariableConfiguration {
 
     /**
      * Set the source list for this variable.
-     * Can contain any type of objects (Integer, String, Double, custom objects).
+     * Can contain any type of objects or WeightedItems.
      */
     public ListVariableConfig list(List<?> items) {
         if (items == null || items.isEmpty()) {
             throw new IllegalArgumentException("Source list cannot be null or empty");
         }
         this.sourceList = new ArrayList<>(items);  // Defensive copy
-        this.sourceArray = this.sourceList.toArray();
-        this.sourceSize = this.sourceArray.length;
+        this.sourceSize = this.sourceList.size();
+        this.sourceArray = new Object[sourceSize];
+        this.weightsArray = new double[sourceSize];
+        this.hasWeights = false;
+        this.totalWeight = 0.0;
+
+        for (int i = 0; i < sourceSize; i++) {
+            Object item = this.sourceList.get(i);
+            if (item instanceof WeightedItem) {
+                WeightedItem wi = (WeightedItem) item;
+                this.sourceArray[i] = wi.value;
+                this.weightsArray[i] = wi.weight;
+                if (wi.weight != 1.0) this.hasWeights = true;
+                this.totalWeight += wi.weight;
+            } else if (item instanceof Map) {
+                Map<?, ?> map = (Map<?, ?>) item;
+                if (map.containsKey("value") && map.containsKey("weight")) {
+                    this.sourceArray[i] = map.get("value");
+                    double w = ((Number) map.get("weight")).doubleValue();
+                    this.weightsArray[i] = w;
+                    if (w != 1.0) this.hasWeights = true;
+                    this.totalWeight += w;
+                } else {
+                    this.sourceArray[i] = item;
+                    this.weightsArray[i] = 1.0;
+                    this.totalWeight += 1.0;
+                }
+            } else {
+                this.sourceArray[i] = item;
+                this.weightsArray[i] = 1.0;
+                this.totalWeight += 1.0;
+            }
+        }
+
         this.currentIndex = 0;
         this.needsReshuffle = true;
         return this;
@@ -66,10 +101,8 @@ public class ListVariableConfig extends VariableConfiguration {
             sourceList = new ArrayList<>();
         }
         ((List<Object>)sourceList).add(item);
-        this.sourceArray = this.sourceList.toArray();
-        this.sourceSize = this.sourceArray.length;
-        needsReshuffle = true;
-        return this;
+        // Re-initialize array
+        return list(this.sourceList);
     }
 
     /**
@@ -154,11 +187,23 @@ public class ListVariableConfig extends VariableConfiguration {
     }
 
     /**
-     * Random selection: pick random item each time.
+     * Random selection: pick random item each time, respecting weights if provided.
      */
     private Object generateRandom() {
-        int randomIndex = ThreadLocalRandom.current().nextInt(sourceSize);
-        return sourceArray[randomIndex];
+        if (!hasWeights) {
+            int randomIndex = ThreadLocalRandom.current().nextInt(sourceSize);
+            return sourceArray[randomIndex];
+        }
+
+        double randomWeight = ThreadLocalRandom.current().nextDouble() * totalWeight;
+        double currentWeight = 0.0;
+        for (int i = 0; i < sourceSize; i++) {
+            currentWeight += weightsArray[i];
+            if (randomWeight <= currentWeight) {
+                return sourceArray[i];
+            }
+        }
+        return sourceArray[sourceSize - 1]; // Fallback to last item
     }
 
     /**
@@ -303,4 +348,13 @@ public class ListVariableConfig extends VariableConfiguration {
         }
     }
 
+    public static class WeightedItem {
+        public Object value;
+        public double weight;
+
+        public WeightedItem(Object value, double weight) {
+            this.value = value;
+            this.weight = weight;
+        }
+    }
 }

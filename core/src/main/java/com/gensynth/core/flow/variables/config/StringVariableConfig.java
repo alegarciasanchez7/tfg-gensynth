@@ -1,6 +1,7 @@
 package com.gensynth.core.flow.variables.config;
 
 import com.gensynth.core.flow.variables.*;
+import com.github.curiousoddman.rgxgen.RgxGen;
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -17,6 +18,10 @@ public class StringVariableConfig extends VariableConfiguration {
     private int fixedLength;
     private int minLength;
     private int maxLength;
+
+    // Advanced Config
+    private String regexPattern;
+    private RgxGen rgxGen;
     
     // Components
     private CharacterSetConfig lowerCase;
@@ -51,6 +56,13 @@ public class StringVariableConfig extends VariableConfiguration {
     public Object generateNextValue() {
         tickCounter++;
         
+        if (regexPattern != null && !regexPattern.trim().isEmpty()) {
+            if (rgxGen == null) {
+                rgxGen = new RgxGen(regexPattern);
+            }
+            return rgxGen.generate();
+        }
+
         // Rebuild cache if configuration changed
         if (needsRebuild) {
             buildCharacterSetCache();
@@ -74,16 +86,16 @@ public class StringVariableConfig extends VariableConfiguration {
     private void buildCharacterSetCache() {
         List<WeightedCharSet> enabledSets = new ArrayList<>(4);
 
-        if (lowerCase.enabled) {
+        if (lowerCase.enabled && lowerCase.probability > 0.0) {
             enabledSets.add(new WeightedCharSet(LOWERCASE_CHARS.toCharArray(), lowerCase.probability));
         }
-        if (upperCase.enabled) {
+        if (upperCase.enabled && upperCase.probability > 0.0) {
             enabledSets.add(new WeightedCharSet(UPPERCASE_CHARS.toCharArray(), upperCase.probability));
         }
-        if (numbers.enabled) {
+        if (numbers.enabled && numbers.probability > 0.0) {
             enabledSets.add(new WeightedCharSet(NUMBER_CHARS.toCharArray(), numbers.probability));
         }
-        if (symbols.enabled) {
+        if (symbols.enabled && symbols.probability > 0.0) {
             enabledSets.add(new WeightedCharSet(SYMBOL_CHARS.toCharArray(), symbols.probability));
         }
 
@@ -133,7 +145,7 @@ public class StringVariableConfig extends VariableConfiguration {
 
     @Override
     public Map<String, Object> toMap() {
-        Map<String, Object> map = new HashMap<>(7);
+        Map<String, Object> map = new HashMap<>(8);
         map.put("identifier", identifier);
         map.put("type", type.name());
         map.put("pattern", pattern.name());
@@ -141,6 +153,7 @@ public class StringVariableConfig extends VariableConfiguration {
         map.put("fixedLength", fixedLength);
         map.put("minLength", minLength);
         map.put("maxLength", maxLength);
+        map.put("regexPattern", regexPattern);
         return map;
     }
 
@@ -207,11 +220,18 @@ public class StringVariableConfig extends VariableConfiguration {
         return this;
     }
 
+    public StringVariableConfig regex(String pattern) {
+        this.regexPattern = pattern;
+        this.rgxGen = new RgxGen(pattern);
+        return this;
+    }
+
     // Getters
     public boolean isFixedSize() { return fixedSize; }
     public int getFixedLength() { return fixedLength; }
     public int getMinLength() { return minLength; }
     public int getMaxLength() { return maxLength; }
+    public String getRegexPattern() { return regexPattern; }
 
     /**
      * Character set configuration

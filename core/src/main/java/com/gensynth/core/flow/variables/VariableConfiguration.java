@@ -69,4 +69,38 @@ public abstract class VariableConfiguration {
     public AnomalyConfig getAnomalyConfig() { return anomalyConfig; }
     public Object getDefaultValue() { return defaultValue; }
     public long getTickCounter() { return tickCounter; }
+    protected Map<String, Object> currentContext = new java.util.HashMap<>();
+    protected java.util.List<ConditionalRule> conditionalRules = new java.util.ArrayList<>();
+
+    public java.util.Set<String> getDependencies() {
+        java.util.Set<String> deps = new java.util.HashSet<>();
+        for (ConditionalRule rule : conditionalRules) {
+            if (rule.targetVariable != null && !rule.targetVariable.isEmpty()) {
+                deps.add(rule.targetVariable);
+            }
+        }
+        return deps;
+    }
+
+    public void setContext(Map<String, Object> context) {
+        this.currentContext = context;
+        applyConditionalRules();
+    }
+
+    protected void applyConditionalRules() {
+        // Evaluate rules and override configuration values
+        // Will be implemented by specific config classes if they need complex logic,
+        // or we can use reflection. For ultra-efficiency, subclasses should override this.
+    }
+
+    public static class ConditionalRule {
+        public String targetVariable;
+        public String condition; // "EQUALS", "GREATER_THAN", "LESS_THAN"
+        public Object value;
+        public Map<String, Object> overrides;
+
+        public ConditionalRule() {
+            this.overrides = new java.util.HashMap<>();
+        }
+    }
 }

@@ -198,7 +198,7 @@ export const mockVariables: Variable[] = [
     scope: 'local',
     flowId: 'f1',
     description: 'Temperatura en grados Celsius',
-    config: { min: -20, max: 150, decimals: 2, distribution: 'gaussian', mean: 65, stddev: 15 },
+    config: { min: -20, max: 150, distribution: 'NORMAL', mean: 65, stddev: 15 },
   },
   {
     id: 'v3',
@@ -217,7 +217,7 @@ export const mockVariables: Variable[] = [
     scope: 'group',
     groupId: 'g1',
     description: 'Coordenadas GPS del dispositivo',
-    config: { latMin: 40.0, latMax: 41.5, lngMin: -4.0, lngMax: -3.5, precision: 4, format: '[lat, lng]' },
+    config: { latMin: 40.0, latMax: 41.5, lngMin: -4.0, lngMax: -3.5, format: '[lat, lng]' },
   },
   {
     id: 'v5',
@@ -268,7 +268,7 @@ export const mockVariables: Variable[] = [
     type: 'numeric',
     scope: 'global',
     description: 'Tamaño del payload en bytes',
-    config: { min: 64, max: 65535, decimals: 0, distribution: 'exponential' },
+    config: { min: 64, max: 65535, distribution: 'EXPONENTIAL' },
   },
 ];
 

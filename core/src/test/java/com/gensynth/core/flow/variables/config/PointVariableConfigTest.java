@@ -30,8 +30,8 @@ public class PointVariableConfigTest {
         Object v1 = config.generateNextValue();
         Object v2 = config.generateNextValue();
 
-        assertEquals(new PointVariableConfig.Point3D(1.0, 2.0, 3.0), v1);
-        assertEquals(new PointVariableConfig.Point3D(1.0, 2.0, 3.0), v2);
+        assertEquals(Map.of("x", 1.0, "y", 2.0, "z", 3.0), v1);
+        assertEquals(Map.of("x", 1.0, "y", 2.0, "z", 3.0), v2);
     }
 
     @Test
@@ -40,10 +40,11 @@ public class PointVariableConfigTest {
             .range(10.0, 20.0, 30.0, 40.0, 50.0, 60.0);
 
         for (int i = 0; i < 30; i++) {
-            PointVariableConfig.Point3D p = (PointVariableConfig.Point3D) config.generateNextValue();
-            assertTrue(p.x >= 10.0 && p.x <= 20.0);
-            assertTrue(p.y >= 30.0 && p.y <= 40.0);
-            assertTrue(p.z >= 50.0 && p.z <= 60.0);
+            @SuppressWarnings("unchecked")
+            Map<String, Double> p = (Map<String, Double>) config.generateNextValue();
+            assertTrue(p.get("x") >= 10.0 && p.get("x") <= 20.0);
+            assertTrue(p.get("y") >= 30.0 && p.get("y") <= 40.0);
+            assertTrue(p.get("z") >= 50.0 && p.get("z") <= 60.0);
         }
     }
 
@@ -54,13 +55,13 @@ public class PointVariableConfigTest {
             .addPathPoint(10.0, 0.0, 0.0)
             .interpolationSteps(2);
 
-        PointVariableConfig.Point3D v1 = (PointVariableConfig.Point3D) config.generateNextValue();
-        PointVariableConfig.Point3D v2 = (PointVariableConfig.Point3D) config.generateNextValue();
-        PointVariableConfig.Point3D v3 = (PointVariableConfig.Point3D) config.generateNextValue();
+        Object v1 = config.generateNextValue();
+        Object v2 = config.generateNextValue();
+        Object v3 = config.generateNextValue();
 
-        assertEquals(new PointVariableConfig.Point3D(0.0, 0.0, 0.0), v1);
-        assertEquals(new PointVariableConfig.Point3D(10.0, 0.0, 0.0), v2);
-        assertEquals(new PointVariableConfig.Point3D(10.0, 0.0, 0.0), v3);
+        assertEquals(Map.of("x", 0.0, "y", 0.0, "z", 0.0), v1);
+        assertEquals(Map.of("x", 10.0, "y", 0.0, "z", 0.0), v2);
+        assertEquals(Map.of("x", 10.0, "y", 0.0, "z", 0.0), v3);
     }
 
     @Test
@@ -70,13 +71,13 @@ public class PointVariableConfigTest {
             .addPathPoint(9.0, 0.0, 0.0)
             .interpolationSteps(3);
 
-        PointVariableConfig.Point3D v1 = (PointVariableConfig.Point3D) config.generateNextValue();
-        PointVariableConfig.Point3D v2 = (PointVariableConfig.Point3D) config.generateNextValue();
-        PointVariableConfig.Point3D v3 = (PointVariableConfig.Point3D) config.generateNextValue();
+        Object v1 = config.generateNextValue();
+        Object v2 = config.generateNextValue();
+        Object v3 = config.generateNextValue();
 
-        assertEquals(new PointVariableConfig.Point3D(0.0, 0.0, 0.0), v1);
-        assertEquals(new PointVariableConfig.Point3D(4.5, 0.0, 0.0), v2);
-        assertEquals(new PointVariableConfig.Point3D(9.0, 0.0, 0.0), v3);
+        assertEquals(Map.of("x", 0.0, "y", 0.0, "z", 0.0), v1);
+        assertEquals(Map.of("x", 4.5, "y", 0.0, "z", 0.0), v2);
+        assertEquals(Map.of("x", 9.0, "y", 0.0, "z", 0.0), v3);
     }
 
     @Test
@@ -84,7 +85,7 @@ public class PointVariableConfigTest {
         config.pattern(GenerationPattern.PATH_INTERPOLATOR).fixedPoint(3.0, 4.0, 5.0);
 
         Object value = config.generateNextValue();
-        assertEquals(new PointVariableConfig.Point3D(3.0, 4.0, 5.0), value);
+        assertEquals(Map.of("x", 3.0, "y", 4.0, "z", 5.0), value);
     }
 
     @Test
@@ -121,9 +122,9 @@ public class PointVariableConfigTest {
         Object v2 = config.generateNextValue();
         Object v3 = config.generateNextValue();
 
-        assertEquals(new PointVariableConfig.Point3D(1.0, 1.0, 1.0), v1);
-        assertEquals(anomalyPoint, v2);
-        assertEquals(new PointVariableConfig.Point3D(1.0, 1.0, 1.0), v3);
+        assertEquals(Map.of("x", 1.0, "y", 1.0, "z", 1.0), v1);
+        assertEquals(Map.of("x", 999.0, "y", 999.0, "z", 999.0), v2);
+        assertEquals(Map.of("x", 1.0, "y", 1.0, "z", 1.0), v3);
     }
 
     @Test
@@ -141,7 +142,7 @@ public class PointVariableConfigTest {
             .anomaly(anomaly);
 
         Object v1 = config.generateNextValue();
-        assertEquals(anomalyPoint, v1);
+        assertEquals(Map.of("x", 777.0, "y", 777.0, "z", 777.0), v1);
     }
 
     @Test

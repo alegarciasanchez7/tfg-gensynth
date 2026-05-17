@@ -234,8 +234,8 @@ public class ConfigurableVariableFlowIntegrationTest {
      */
     @Test
     public void testDateVariableInFlow() {
-        // Create date variable configuration
-        DateVariableConfig dateConfig = new DateVariableConfig()
+        // Create temporal variable configuration
+        TemporalVariableConfig dateConfig = new TemporalVariableConfig()
             .identifier("timestamp")
             .pattern(GenerationPattern.SYSTEM_NOW);
 

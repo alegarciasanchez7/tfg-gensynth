@@ -22,6 +22,10 @@ public class PointVariableConfig extends VariableConfiguration {
     private int currentSegmentIndex;
     private int stepInSegment;
 
+    // Continuous movement
+    private double maxStepDistance;
+    private Point3D lastPoint;
+
     // Anomaly state
     private long cachedWhenTicks = -1;
     private boolean isAnomalous;
@@ -37,6 +41,8 @@ public class PointVariableConfig extends VariableConfiguration {
         this.interpolationSteps = 1;
         this.currentSegmentIndex = 0;
         this.stepInSegment = 0;
+        this.maxStepDistance = 0.1;
+        this.lastPoint = null;
         this.isAnomalous = false;
         this.anomalyStartTick = 0;
     }
@@ -70,23 +76,38 @@ public class PointVariableConfig extends VariableConfiguration {
 
     @Override
     public Object generateNextValue() {
-        tickCounter++;
+        incrementTick();
         checkAnomalyCondition();
 
         if (isAnomalous) {
-            return anomalyConfig.getAnomalousValue();
+            Object val = anomalyConfig.getAnomalousValue();
+            if (val instanceof Point3D) {
+                Point3D p = (Point3D) val;
+                return Map.of("x", p.x, "y", p.y, "z", p.z);
+            }
+            return val;
         }
 
+        Point3D point;
         switch (pattern) {
             case FIXED_POINT:
-                return fixedPoint;
+                point = fixedPoint;
+                break;
             case RANDOM_POINT:
-                return generateRandomPoint();
+                point = generateRandomPoint();
+                break;
             case PATH_INTERPOLATOR:
-                return generatePathPoint();
+                point = generatePathPoint();
+                break;
+            case CONTINUOUS_MOVEMENT:
+                point = generateContinuousPoint();
+                break;
             default:
-                return fixedPoint;
+                point = fixedPoint;
+                break;
         }
+        
+        return Map.of("x", point.x, "y", point.y, "z", point.z);
     }
 
     private Point3D generateRandomPoint() {
@@ -123,6 +144,25 @@ public class PointVariableConfig extends VariableConfiguration {
         return result;
     }
 
+    private Point3D generateContinuousPoint() {
+        if (lastPoint == null) {
+            lastPoint = generateRandomPoint();
+            return lastPoint;
+        }
+
+        // Random walk within maxStepDistance
+        double dx = (ThreadLocalRandom.current().nextDouble() * 2 - 1) * maxStepDistance;
+        double dy = (ThreadLocalRandom.current().nextDouble() * 2 - 1) * maxStepDistance;
+        double dz = (ThreadLocalRandom.current().nextDouble() * 2 - 1) * maxStepDistance;
+
+        double nextX = Math.max(minPoint.x, Math.min(maxPoint.x, lastPoint.x + dx));
+        double nextY = Math.max(minPoint.y, Math.min(maxPoint.y, lastPoint.y + dy));
+        double nextZ = Math.max(minPoint.z, Math.min(maxPoint.z, lastPoint.z + dz));
+
+        lastPoint = new Point3D(nextX, nextY, nextZ);
+        return lastPoint;
+    }
+
     private double randomInRange(double min, double max) {
         if (max <= min) {
             return min;
@@ -139,6 +179,7 @@ public class PointVariableConfig extends VariableConfiguration {
         tickCounter = 0;
         currentSegmentIndex = 0;
         stepInSegment = 0;
+        lastPoint = null;
         isAnomalous = false;
         anomalyStartTick = 0;
         cachedWhenTicks = -1;
@@ -146,13 +187,14 @@ public class PointVariableConfig extends VariableConfiguration {
 
     @Override
     public Map<String, Object> toMap() {
-        Map<String, Object> map = new HashMap<>(6);
+        Map<String, Object> map = new HashMap<>(8);
         map.put("identifier", identifier);
         map.put("type", type.toString());
         map.put("pattern", pattern.toString());
         map.put("fixedPoint", fixedPoint.toString());
         map.put("pathSize", path.size());
         map.put("interpolationSteps", interpolationSteps);
+        map.put("maxStepDistance", maxStepDistance);
         return map;
     }
 
@@ -236,6 +278,15 @@ public class PointVariableConfig extends VariableConfiguration {
 
     public int getInterpolationSteps() {
         return interpolationSteps;
+    }
+
+    public PointVariableConfig maxStepDistance(double maxStepDistance) {
+        this.maxStepDistance = maxStepDistance;
+        return this;
+    }
+
+    public double getMaxStepDistance() {
+        return maxStepDistance;
     }
 
     public static class Point3D {

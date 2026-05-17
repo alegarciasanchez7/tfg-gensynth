@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
-import { Database, Hash, List, PencilLine, ShieldAlert, Type } from 'lucide-react';
+import { Binary, ListChecks, ALargeSmall, CalendarClock, MapPin, ToggleLeft } from 'lucide-react';
 import { toast } from 'sonner';
 import { useApp } from '../../../context';
 import type { Variable } from '../../../types';
@@ -15,7 +15,7 @@ export type VariableDraft = {
 };
 
 type VariableTypeTheme = {
-  icon: typeof Type;
+  icon: typeof Binary;
   description: string;
   accent: string;
   border: string;
@@ -23,37 +23,37 @@ type VariableTypeTheme = {
 
 const VARIABLE_TYPES: Record<Variable['type'], VariableTypeTheme> = {
   string: {
-    icon: Type,
+    icon: ALargeSmall,
     description: 'Patterned or random string generation',
     accent: 'text-emerald-500',
     border: 'border-emerald-500/40',
   },
   numeric: {
-    icon: Hash,
+    icon: Binary,
     description: 'Random or distributed numeric value',
     accent: 'text-cyan-500',
     border: 'border-cyan-500/40',
   },
   boolean: {
-    icon: ShieldAlert,
+    icon: ToggleLeft,
     description: 'True/false with configurable probability',
     accent: 'text-pink-500',
     border: 'border-pink-500/40',
   },
   list: {
-    icon: List,
+    icon: ListChecks,
     description: 'Value sampled from a defined list',
     accent: 'text-violet-500',
     border: 'border-violet-500/40',
   },
   temporal: {
-    icon: PencilLine,
+    icon: CalendarClock,
     description: 'Timestamp or datetime within a configurable range',
-    accent: 'text-sky-500',
-    border: 'border-sky-500/40',
+    accent: 'text-purple-500',
+    border: 'border-purple-500/40',
   },
   point: {
-    icon: Database,
+    icon: MapPin,
     description: 'Geographic or cartesian coordinate point',
     accent: 'text-teal-500',
     border: 'border-teal-500/40',

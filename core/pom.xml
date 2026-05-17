@@ -130,6 +130,20 @@
             <version>2.0.2</version>
         </dependency>
 
+        <!-- Math Expressions -->
+        <dependency>
+            <groupId>net.objecthunter</groupId>
+            <artifactId>exp4j</artifactId>
+            <version>0.4.8</version>
+        </dependency>
+
+        <!-- Regex string generator -->
+        <dependency>
+            <groupId>com.github.curious-odd-man</groupId>
+            <artifactId>rgxgen</artifactId>
+            <version>1.4</version>
+        </dependency>
+
         <!-- ASM for bytecode analysis (plugin security validation) -->
         <dependency>
             <groupId>org.ow2.asm</groupId>

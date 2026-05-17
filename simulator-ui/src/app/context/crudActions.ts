@@ -408,8 +408,8 @@ export async function createVariable(
     const newVariable: VariableState = {
       id: generatedId,
       name: name.trim(),
-      type: type as 'numeric' | 'string' | 'boolean' | 'temporal' | 'point' | 'list',
-      scope: scope as 'global' | 'group' | 'local',
+      type: type as any,
+      scope: scope as any,
       flowId,
       groupId,
       config: config || {},

@@ -10,6 +10,58 @@ export type VariableType =
   | 'point'
   | 'boolean';
 
+export interface ConditionalRule {
+  targetVariable: string;
+  operator: 'EQUALS' | 'NOT_EQUALS' | 'GREATER_THAN' | 'LESS_THAN' | 'CONTAINS';
+  value: any;
+  overrides: Record<string, any>;
+}
+
+export interface BaseVariableConfig {
+  pattern?: string;
+  conditionalRules?: ConditionalRule[];
+  [key: string]: any;
+}
+
+export interface NumericVariableConfig extends BaseVariableConfig {
+  min?: number;
+  max?: number;
+  precision?: 'INTEGER' | 'FLOAT' | 'DOUBLE';
+  formula?: string;
+  distribution?: 'UNIFORM' | 'NORMAL' | 'EXPONENTIAL';
+}
+
+export interface StringVariableConfig extends BaseVariableConfig {
+  fixedLength?: number;
+  regexPattern?: string;
+}
+
+export interface ListVariableConfig extends BaseVariableConfig {
+  items?: Array<any | { value: any; weight: number }>;
+}
+
+export interface BooleanVariableConfig extends BaseVariableConfig {
+  currentValue?: boolean;
+}
+
+export interface TemporalVariableConfig extends BaseVariableConfig {
+  temporalType?: 'DATE' | 'TIMESTAMP' | 'TIME';
+  dateFormat?: string;
+  timeZone?: string;
+}
+
+export interface PointVariableConfig extends BaseVariableConfig {
+  maxStepDistance?: number;
+}
+
+export type VariableConfig = 
+  | NumericVariableConfig 
+  | StringVariableConfig 
+  | ListVariableConfig 
+  | BooleanVariableConfig 
+  | TemporalVariableConfig 
+  | PointVariableConfig;
+
 export interface Flow {
   id: string;
   name: string;
@@ -51,7 +103,7 @@ export interface Variable {
   scope: VariableScope;
   flowId?: string;
   groupId?: string;
-  config: Record<string, unknown>;
+  config: VariableConfig;
   description?: string;
 }
 

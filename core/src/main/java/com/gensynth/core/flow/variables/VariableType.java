@@ -9,7 +9,7 @@ public enum VariableType {
     NUMERIC("Numeric - Numbers with patterns"),
     STRING("String - Random text generation"),
     LIST("List - Fixed set of values"),
-    DATE("Date - Temporal values"),
+    TEMPORAL("Temporal - Date and time values"),
     POINT("Point - Coordinates (X,Y,Z)"),
     BOOLEAN("Boolean - True/False values");
 
