@@ -238,7 +238,7 @@ export function VariableEditorConfigCard({ typeLabel, theme, draft, setDraft }: 
 
   const renderVisualEditor = () => {
     switch (draft.type) {
-      case 'numeric': return <NumericConfigPanel config={parsedConfig} onChange={handleConfigChange} />;
+      case 'numeric': return <NumericConfigPanel config={parsedConfig} onChange={handleConfigChange} flowId={draft.flowId} groupId={draft.groupId} />;
       case 'string': return <StringConfigPanel config={parsedConfig} onChange={handleConfigChange} />;
       case 'list': return <ListConfigPanel config={parsedConfig} onChange={handleConfigChange} />;
       case 'temporal': return <TemporalConfigPanel config={parsedConfig} onChange={handleConfigChange} />;
