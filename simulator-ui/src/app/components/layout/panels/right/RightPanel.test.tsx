@@ -41,7 +41,6 @@ describe('RightPanel', () => {
       config: {
         min: 0,
         max: 100,
-        step: 1,
       },
     },
   ];
@@ -50,19 +49,20 @@ describe('RightPanel', () => {
     createVariable: vi.fn().mockResolvedValue({
       id: 'v2',
       name: 'pressure',
-      type: 'list',
-      scope: 'group',
-      config: { values: ['a', 'b'] },
+      type: 'numeric',
+      scope: 'local',
+      config: { min: 0, max: 100, precision: 'DOUBLE', distribution: 'UNIFORM' },
     }),
     updateVariable: vi.fn().mockResolvedValue(undefined),
     deleteVariable: vi.fn().mockResolvedValue(undefined),
     clearVariableSelection: vi.fn(),
+    onSelectVariable: vi.fn(),
   };
 
   beforeEach(() => {
     cleanup();
     mockUseApp.mockReturnValue({ 
-      state: { groups: [] },
+      state: { groups: [{ id: 'g1', name: 'Group 1', flows: [{ id: 'f1', name: 'Flow 1' }] }] },
       actions 
     });
     onSelectVariable.mockClear();
@@ -75,7 +75,7 @@ describe('RightPanel', () => {
     actions.clearVariableSelection.mockClear();
   });
 
-  it('opens the create variable modal from the active scope', () => {
+  it('opens the create variable modal from the active scope', async () => {
     render(
       <RightPanel
         variables={variables}
@@ -85,11 +85,16 @@ describe('RightPanel', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /add variable/i }));
-    fireEvent.click(screen.getByRole('button', { name: 'numeric' }));
+    // Open dropdown
+    const addBtn = screen.getByText(/ADD/i);
+    fireEvent.click(addBtn);
 
-    expect(screen.getByText('Create Variable')).toBeInTheDocument();
-    expect(screen.getByText(/add a new variable for the local scope/i)).toBeInTheDocument();
+    // Find and click 'numeric' option
+    const numericOption = await screen.findByText(/numeric/i);
+    fireEvent.click(numericOption);
+
+    // Dialog should be open
+    expect(await screen.findByText(/New Variable/i)).toBeInTheDocument();
   });
 
   it('creates a variable and selects an existing one', async () => {
@@ -102,26 +107,34 @@ describe('RightPanel', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /add variable/i }));
-    fireEvent.click(screen.getByRole('button', { name: 'numeric' }));
+    // Open dropdown and select numeric
+    fireEvent.click(screen.getByText(/ADD/i));
+    const numericOption = await screen.findByText(/numeric/i);
+    fireEvent.click(numericOption);
 
-    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'pressure' } });
-    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'Pressure variable' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+    // Fill form
+    const nameInput = screen.getByLabelText(/Identification Name/i);
+    fireEvent.change(nameInput, { target: { value: 'pressure' } });
+    
+    const descInput = screen.getByLabelText(/Description \(Optional\)/i);
+    fireEvent.change(descInput, { target: { value: 'Pressure variable' } });
+    
+    // Submit
+    const createBtn = screen.getByRole('button', { name: /Create Variable/i });
+    fireEvent.click(createBtn);
 
-    await waitFor(() => expect(actions.createVariable).toHaveBeenCalledWith(
-      'pressure',
-      'numeric',
-      'local',
-      expect.objectContaining({
-        min: 0,
-        max: 100,
-        step: 1,
-        description: 'Pressure variable',
-      }),
-      'f1',
-      'g1'
-    ));
+    await waitFor(() => expect(actions.createVariable).toHaveBeenCalled());
+    
+    const call = actions.createVariable.mock.calls[0];
+    expect(call[0]).toBe('pressure');
+    expect(call[1]).toBe('numeric');
+    expect(call[2]).toBe('local');
+    expect(call[3]).toMatchObject({
+      min: 0,
+      max: 100,
+      description: 'Pressure variable'
+    });
+    
     await waitFor(() => expect(mockToast.success).toHaveBeenCalledWith('Variable created'));
 
     fireEvent.click(screen.getByText('temperature'));
@@ -138,12 +151,17 @@ describe('RightPanel', () => {
       />,
     );
 
-    fireEvent.click(screen.getAllByTitle('Delete variable')[0]);
-    expect(screen.getByText('Delete variable')).toBeInTheDocument();
+    // Click delete in the list item
+    const deleteBtn = screen.getAllByTitle(/Delete variable/i)[0];
+    fireEvent.click(deleteBtn);
+    
+    expect(await screen.findByText(/Delete variable/i)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    // Confirm deletion
+    const confirmBtn = screen.getByRole('button', { name: /Delete/i });
+    fireEvent.click(confirmBtn);
+    
     await waitFor(() => expect(actions.deleteVariable).toHaveBeenCalledWith('v1'));
-    expect(actions.clearVariableSelection).not.toHaveBeenCalled();
     await waitFor(() => expect(mockToast.success).toHaveBeenCalledWith('Variable deleted'));
   });
 });

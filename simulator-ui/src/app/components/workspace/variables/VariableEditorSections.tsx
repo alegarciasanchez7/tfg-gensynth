@@ -3,9 +3,17 @@ import type { LucideIcon } from 'lucide-react';
 import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../components/ui/select';
-import { Textarea } from '../../../components/ui/textarea';
-import type { Variable } from '../../../types';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../components/ui/tabs';
+import type { Variable, VariableConfig } from '../../../types';
 import type { VariableDraft } from './useVariableEditor';
+
+import { NumericConfigPanel } from './config/NumericConfigPanel';
+import { StringConfigPanel } from './config/StringConfigPanel';
+import { ListConfigPanel } from './config/ListConfigPanel';
+import { TemporalConfigPanel } from './config/TemporalConfigPanel';
+import { PointConfigPanel } from './config/PointConfigPanel';
+import { BooleanConfigPanel } from './config/BooleanConfigPanel';
+import { ConditionalRulesTab } from './config/ConditionalRulesTab';
 
 export type VariableEditorTheme = {
   icon: LucideIcon;
@@ -70,7 +78,7 @@ interface VariableEditorIdentityCardProps {
 
 export function VariableEditorIdentityCard({ draft, setDraft, scopeOptions, groups }: VariableEditorIdentityCardProps) {
   // Flatten flows with group name for the selector
-  const allFlows = (groups || []).flatMap(g => 
+  const allFlows = (groups || []).flatMap(g =>
     (g.flows || []).map((f: any) => ({
       id: f.id,
       name: f.name,
@@ -94,6 +102,7 @@ export function VariableEditorIdentityCard({ draft, setDraft, scopeOptions, grou
           </label>
           <Input
             id="variable-name"
+            data-testid="variable-name-input"
             value={draft.name}
             onChange={event => setDraft(current => ({ ...current, name: event.target.value }))}
           />
@@ -107,8 +116,8 @@ export function VariableEditorIdentityCard({ draft, setDraft, scopeOptions, grou
             value={draft.scope}
             onValueChange={value => {
               const newScope = value as Variable['scope'];
-              setDraft(current => ({ 
-                ...current, 
+              setDraft(current => ({
+                ...current,
                 scope: newScope,
                 // Automatically pick first valid target if moving TO a scoped level
                 flowId: newScope === 'local' ? (allFlows[0]?.id) : undefined,
@@ -121,11 +130,11 @@ export function VariableEditorIdentityCard({ draft, setDraft, scopeOptions, grou
             </SelectTrigger>
             <SelectContent>
               {scopeOptions.map(option => {
-                const isDisabled = (option.value === 'local' && allFlows.length === 0) || 
-                                 (option.value === 'group' && groups.length === 0);
+                const isDisabled = (option.value === 'local' && allFlows.length === 0) ||
+                  (option.value === 'group' && groups.length === 0);
                 return (
-                  <SelectItem 
-                    key={option.value} 
+                  <SelectItem
+                    key={option.value}
                     value={option.value}
                     disabled={isDisabled}
                   >
@@ -192,6 +201,7 @@ export function VariableEditorIdentityCard({ draft, setDraft, scopeOptions, grou
           </label>
           <Input
             id="variable-description"
+            data-testid="variable-description-input"
             value={draft.description}
             onChange={event => setDraft(current => ({ ...current, description: event.target.value }))}
             placeholder="Optional note"
@@ -212,6 +222,32 @@ interface VariableEditorConfigCardProps {
 export function VariableEditorConfigCard({ typeLabel, theme, draft, setDraft }: VariableEditorConfigCardProps) {
   const Icon = theme.icon;
 
+  let parsedConfig: VariableConfig = {};
+  try {
+    if (draft.configText.trim()) {
+      parsedConfig = JSON.parse(draft.configText);
+    }
+  } catch (e) {
+    // Keep it empty if invalid while typing in JSON mode
+  }
+
+  const handleConfigChange = (newConfig: Partial<VariableConfig>) => {
+    const updated = { ...parsedConfig, ...newConfig };
+    setDraft(current => ({ ...current, configText: JSON.stringify(updated, null, 2) }));
+  };
+
+  const renderVisualEditor = () => {
+    switch (draft.type) {
+      case 'numeric': return <NumericConfigPanel config={parsedConfig} onChange={handleConfigChange} />;
+      case 'string': return <StringConfigPanel config={parsedConfig} onChange={handleConfigChange} />;
+      case 'list': return <ListConfigPanel config={parsedConfig} onChange={handleConfigChange} />;
+      case 'temporal': return <TemporalConfigPanel config={parsedConfig} onChange={handleConfigChange} />;
+      case 'point': return <PointConfigPanel config={parsedConfig} onChange={handleConfigChange} />;
+      case 'boolean': return <BooleanConfigPanel config={parsedConfig} onChange={handleConfigChange} />;
+      default: return <p className="text-[11px] text-[var(--c-tx4)] p-6 text-center italic">No visual editor available for this variable type.</p>;
+    }
+  };
+
   return (
     <div className="rounded border border-[var(--c-br1)] bg-[var(--c-bg4)] p-3">
       <div className="mb-3 flex items-center gap-1.5">
@@ -220,21 +256,27 @@ export function VariableEditorConfigCard({ typeLabel, theme, draft, setDraft }: 
         </span>
       </div>
 
-      <div className="flex flex-col gap-1">
-        <label htmlFor="variable-config" className="text-[10px] uppercase tracking-wider text-[var(--c-tx4)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-          Config JSON
-        </label>
-        <Textarea
-          id="variable-config"
-          value={draft.configText}
-          onChange={event => setDraft(current => ({ ...current, configText: event.target.value }))}
-          rows={12}
-          className="font-mono text-[11px]"
-        />
-        <p className="text-[10px] text-[var(--c-tx4)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-          Keep the JSON valid. Empty content resets the configuration to an empty object.
-        </p>
-      </div>
+      <Tabs defaultValue="visual" className="w-full">
+        <TabsList className="mb-2 bg-[var(--c-bg2)] border-[var(--c-br1)]">
+          <TabsTrigger value="visual">Visual Editor</TabsTrigger>
+          <TabsTrigger value="rules">Rules</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="visual" className="mt-0">
+          <div className="p-3 border rounded border-[var(--c-br1)] bg-[var(--c-bg2)]">
+            {renderVisualEditor()}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="rules" className="mt-0">
+          <div className="p-3 border rounded border-[var(--c-br1)] bg-[var(--c-bg2)]">
+            <ConditionalRulesTab
+              rules={parsedConfig.conditionalRules || []}
+              onChange={(rules) => handleConfigChange({ conditionalRules: rules })}
+            />
+          </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

@@ -10,7 +10,7 @@
  * 5. Rollback on error
  */
 
-import type { Group, Flow, Variable } from '../types';
+import type { Group, Flow, Variable, VariableType, VariableScope } from '../types';
 import { OptimisticManager, type OptimisticOperation } from './optimisticManager';
 
 export interface CreateOptimisticContext {
@@ -194,8 +194,8 @@ export function createOptimisticFlow(
 export function createOptimisticVariable(
   id: string,
   name: string,
-  type: 'numeric' | 'string' | 'boolean' | 'temporal' | 'point' | 'list',
-  scope: 'global' | 'group' | 'local',
+  type: VariableType,
+  scope: VariableScope,
   flowId?: string,
   groupId?: string,
 ): Variable {

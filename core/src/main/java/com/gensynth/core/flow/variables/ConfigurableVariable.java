@@ -57,6 +57,16 @@ public class ConfigurableVariable implements IVariable {
     }
 
     @Override
+    public java.util.Set<String> getDependencies() {
+        return configuration.getDependencies();
+    }
+
+    @Override
+    public void setContext(java.util.Map<String, Object> context) {
+        configuration.setContext(context);
+    }
+
+    @Override
     public String toString() {
         return String.format("ConfigurableVariable{id=%s, type=%s, value=%s}", 
             getId(), getType(), currentValue);

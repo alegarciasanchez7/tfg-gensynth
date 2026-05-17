@@ -1,6 +1,8 @@
 package com.gensynth.core.flow.variables.config;
 
 import com.gensynth.core.flow.variables.*;
+import net.objecthunter.exp4j.Expression;
+import net.objecthunter.exp4j.ExpressionBuilder;
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -16,6 +18,11 @@ public class NumericVariableConfig extends VariableConfiguration {
     private double initialValue;
     private int steps;
     private String format;
+
+    // Advanced config
+    private String formula;
+    private String precision = "DOUBLE"; // "INTEGER", "FLOAT", "DOUBLE"
+    private String distribution = "UNIFORM"; // "UNIFORM", "NORMAL", "EXPONENTIAL"
     
     // Pattern: SEQUENTIAL
     private SequentialConfig sequentialConfig;
@@ -47,6 +54,23 @@ public class NumericVariableConfig extends VariableConfiguration {
     }
 
     @Override
+    public java.util.Set<String> getDependencies() {
+        java.util.Set<String> deps = super.getDependencies();
+        if (formula != null && !formula.trim().isEmpty()) {
+            // Very basic heuristic: extract variable names from formula via regex or simply 
+            // relying on context injecting all. For now, we will return empty set for formula 
+            // because building AST to find variables is expensive, and we will just 
+            // inject the entire context into exp4j. 
+            // BUT wait, we must return them for topological sort!
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile("\\[([a-zA-Z0-9_-]+)\\]").matcher(formula);
+            while (m.find()) {
+                deps.add(m.group(1));
+            }
+        }
+        return deps;
+    }
+
+    @Override
     public Object generateNextValue() {
         tickCounter++;
         checkAnomalyCondition();
@@ -55,9 +79,14 @@ public class NumericVariableConfig extends VariableConfiguration {
             return anomalyConfig.getAnomalousValue();
         }
         
+        if (formula != null && !formula.trim().isEmpty()) {
+            currentValue = evaluateFormula();
+            return formatValue(currentValue);
+        }
+
         switch (pattern) {
             case RANDOM:
-                currentValue = fromValue + (toValue - fromValue) * ThreadLocalRandom.current().nextDouble();
+                currentValue = generateDistribution();
                 break;
             case CONSTANT:
                 currentValue = constantValue;
@@ -73,6 +102,44 @@ public class NumericVariableConfig extends VariableConfiguration {
         }
         
         return formatValue(currentValue);
+    }
+
+    private double generateDistribution() {
+        if ("NORMAL".equalsIgnoreCase(distribution)) {
+            double mean = (fromValue + toValue) / 2.0;
+            double stdDev = (toValue - fromValue) / 6.0; // 99.7% of values within range
+            double val = mean + ThreadLocalRandom.current().nextGaussian() * stdDev;
+            return Math.min(Math.max(val, fromValue), toValue);
+        } else if ("EXPONENTIAL".equalsIgnoreCase(distribution)) {
+            double val = fromValue - Math.log(ThreadLocalRandom.current().nextDouble()) * ((toValue - fromValue) / 5.0);
+            return Math.min(Math.max(val, fromValue), toValue);
+        } else {
+            // UNIFORM
+            return fromValue + (toValue - fromValue) * ThreadLocalRandom.current().nextDouble();
+        }
+    }
+
+    private double evaluateFormula() {
+        try {
+            // Replace [var] with actual variable names for exp4j
+            String parsedFormula = formula.replaceAll("\\[([a-zA-Z0-9_-]+)\\]", "$1");
+            ExpressionBuilder builder = new ExpressionBuilder(parsedFormula);
+            
+            Map<String, Double> vars = new HashMap<>();
+            for (Map.Entry<String, Object> entry : currentContext.entrySet()) {
+                if (entry.getValue() instanceof Number) {
+                    builder.variable(entry.getKey());
+                    vars.put(entry.getKey(), ((Number) entry.getValue()).doubleValue());
+                }
+            }
+            
+            Expression expression = builder.build();
+            expression.setVariables(vars);
+            return expression.evaluate();
+        } catch (Exception e) {
+            System.err.println("Error evaluating formula: " + formula + " -> " + e.getMessage());
+            return 0.0;
+        }
     }
 
     private void checkAnomalyCondition() {
@@ -163,10 +230,12 @@ public class NumericVariableConfig extends VariableConfiguration {
     }
 
     private Object formatValue(double value) {
-        if (steps < 10) {
+        if ("INTEGER".equalsIgnoreCase(precision)) {
             return (long) value;
+        } else if ("FLOAT".equalsIgnoreCase(precision)) {
+            return (float) value;
         }
-        return value;
+        return value; // DOUBLE
     }
 
     private long getRandomLongInRange(long min, long max) {
@@ -201,6 +270,9 @@ public class NumericVariableConfig extends VariableConfiguration {
         map.put("initial", initialValue);
         map.put("steps", steps);
         map.put("format", format);
+        map.put("formula", formula);
+        map.put("precision", precision);
+        map.put("distribution", distribution);
         return map;
     }
 
@@ -262,6 +334,21 @@ public class NumericVariableConfig extends VariableConfiguration {
     public NumericVariableConfig constant(double value) {
         this.constantValue = value;
         this.pattern = GenerationPattern.CONSTANT;
+        return this;
+    }
+
+    public NumericVariableConfig formula(String formula) {
+        this.formula = formula;
+        return this;
+    }
+
+    public NumericVariableConfig precision(String precision) {
+        this.precision = precision;
+        return this;
+    }
+
+    public NumericVariableConfig distribution(String distribution) {
+        this.distribution = distribution;
         return this;
     }
 

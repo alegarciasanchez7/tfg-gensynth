@@ -12,7 +12,7 @@ public class VariableConfigBenchmark {
     private StringVariableConfig stringRandom;
     private ListVariableConfig listRandom;
     private BooleanVariableConfig booleanDuty;
-    private DateVariableConfig dateIncremental;
+    private TemporalVariableConfig dateIncremental;
     private PointVariableConfig pointRandom;
 
     private void setUp() {
@@ -44,7 +44,7 @@ public class VariableConfigBenchmark {
             .offDurationTicks(2)
             .startWithTrue(true);
 
-        dateIncremental = new DateVariableConfig()
+        dateIncremental = new TemporalVariableConfig()
             .identifier("bench_date")
             .pattern(GenerationPattern.START_PLUS_INCREMENT)
             .startDate(Instant.parse("2025-01-01T00:00:00Z"))

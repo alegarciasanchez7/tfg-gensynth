@@ -3,6 +3,8 @@ package com.gensynth.core.flow.variables.config;
 import com.gensynth.core.flow.variables.*;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
@@ -10,7 +12,7 @@ import java.util.concurrent.ThreadLocalRandom;
 /**
  * Generates date/time values using fixed, system, incremental or range modes.
  */
-public class DateVariableConfig extends VariableConfiguration {
+public class TemporalVariableConfig extends VariableConfiguration {
 
     private Instant fixedDate;
     private Instant startDate;
@@ -24,13 +26,19 @@ public class DateVariableConfig extends VariableConfiguration {
     private long rangeStartMillis;
     private long rangeEndMillis;
 
+    // Advanced Formatting
+    private String dateFormat; // "yyyy-MM-dd'T'HH:mm:ss.SSSXXX", "UNIX_TIMESTAMP", or null (returns Instant)
+    private String timeZone;   // e.g. "UTC", "Europe/Madrid"
+    private String temporalType; // "DATE", "TIMESTAMP", "TIME"
+    private transient DateTimeFormatter formatter;
+
     // Anomaly state
     private long cachedWhenTicks = -1;
     private boolean isAnomalous;
     private long anomalyStartTick;
 
-    public DateVariableConfig() {
-        this.type = VariableType.DATE;
+    public TemporalVariableConfig() {
+        this.type = VariableType.TEMPORAL;
         this.pattern = GenerationPattern.SYSTEM_NOW;
         this.fixedDate = Instant.now();
         this.startDate = Instant.now();
@@ -47,7 +55,7 @@ public class DateVariableConfig extends VariableConfiguration {
         this.anomalyStartTick = 0;
     }
 
-    public DateVariableConfig fixedDate(Instant value) {
+    public TemporalVariableConfig fixedDate(Instant value) {
         if (value == null) {
             throw new IllegalArgumentException("Fixed date cannot be null");
         }
@@ -56,7 +64,7 @@ public class DateVariableConfig extends VariableConfiguration {
         return this;
     }
 
-    public DateVariableConfig startDate(Instant value) {
+    public TemporalVariableConfig startDate(Instant value) {
         if (value == null) {
             throw new IllegalArgumentException("Start date cannot be null");
         }
@@ -66,7 +74,7 @@ public class DateVariableConfig extends VariableConfiguration {
         return this;
     }
 
-    public DateVariableConfig increment(Duration value) {
+    public TemporalVariableConfig increment(Duration value) {
         if (value == null || value.isNegative()) {
             throw new IllegalArgumentException("Increment must be non-negative");
         }
@@ -75,7 +83,7 @@ public class DateVariableConfig extends VariableConfiguration {
         return this;
     }
 
-    public DateVariableConfig range(Instant from, Instant to) {
+    public TemporalVariableConfig range(Instant from, Instant to) {
         if (from == null || to == null) {
             throw new IllegalArgumentException("Range dates cannot be null");
         }
@@ -98,18 +106,42 @@ public class DateVariableConfig extends VariableConfiguration {
             return anomalyConfig.getAnomalousValue();
         }
 
+        Instant generatedInstant;
         switch (pattern) {
-            case FIXED_DATE:
-                return Instant.ofEpochMilli(fixedDateMillis);
+            case FIXED_TEMPORAL:
+                generatedInstant = Instant.ofEpochMilli(fixedDateMillis);
+                break;
             case SYSTEM_NOW:
-                return Instant.ofEpochMilli(System.currentTimeMillis());
+                generatedInstant = Instant.ofEpochMilli(System.currentTimeMillis());
+                break;
             case START_PLUS_INCREMENT:
-                return generateIncremental();
-            case DATE_RANGE:
-                return generateRange();
+                generatedInstant = generateIncremental();
+                break;
+            case TEMPORAL_RANGE:
+                generatedInstant = generateRange();
+                break;
             default:
-                return Instant.ofEpochMilli(System.currentTimeMillis());
+                generatedInstant = Instant.ofEpochMilli(System.currentTimeMillis());
         }
+
+        return formatOutput(generatedInstant);
+    }
+
+    private Object formatOutput(Instant instant) {
+        if (dateFormat == null || dateFormat.trim().isEmpty()) {
+            return instant;
+        }
+        if ("UNIX_TIMESTAMP".equalsIgnoreCase(dateFormat)) {
+            return instant.toEpochMilli();
+        }
+
+        if (formatter == null) {
+            ZoneId zone = (timeZone != null && !timeZone.trim().isEmpty()) 
+                ? ZoneId.of(timeZone) 
+                : ZoneId.systemDefault();
+            formatter = DateTimeFormatter.ofPattern(dateFormat).withZone(zone);
+        }
+        return formatter.format(instant);
     }
 
     private Instant generateIncremental() {
@@ -137,7 +169,7 @@ public class DateVariableConfig extends VariableConfiguration {
 
     @Override
     public Map<String, Object> toMap() {
-        Map<String, Object> map = new HashMap<>(9);
+        Map<String, Object> map = new HashMap<>(11);
         map.put("identifier", identifier);
         map.put("type", type.toString());
         map.put("pattern", pattern.toString());
@@ -146,29 +178,32 @@ public class DateVariableConfig extends VariableConfiguration {
         map.put("incrementMs", increment.toMillis());
         map.put("rangeStart", rangeStart.toString());
         map.put("rangeEnd", rangeEnd.toString());
+        map.put("dateFormat", dateFormat);
+        map.put("timeZone", timeZone);
+        map.put("temporalType", temporalType);
         return map;
     }
 
     @Override
-    public DateVariableConfig identifier(String id) {
+    public TemporalVariableConfig identifier(String id) {
         this.identifier = id;
         return this;
     }
 
     @Override
-    public DateVariableConfig pattern(GenerationPattern p) {
+    public TemporalVariableConfig pattern(GenerationPattern p) {
         this.pattern = p;
         return this;
     }
 
     @Override
-    public DateVariableConfig defaultValue(Object value) {
+    public TemporalVariableConfig defaultValue(Object value) {
         this.defaultValue = value;
         return this;
     }
 
     @Override
-    public DateVariableConfig anomaly(AnomalyConfig config) {
+    public TemporalVariableConfig anomaly(AnomalyConfig config) {
         this.anomalyConfig = config;
         this.cachedWhenTicks = -1;
         return this;
@@ -225,5 +260,22 @@ public class DateVariableConfig extends VariableConfiguration {
 
     public long getSequenceIndex() {
         return sequenceIndex;
+    }
+
+    public TemporalVariableConfig dateFormat(String format) {
+        this.dateFormat = format;
+        this.formatter = null; // reset formatter
+        return this;
+    }
+
+    public TemporalVariableConfig timeZone(String timeZone) {
+        this.timeZone = timeZone;
+        this.formatter = null; // reset formatter
+        return this;
+    }
+
+    public TemporalVariableConfig temporalType(String type) {
+        this.temporalType = type;
+        return this;
     }
 }

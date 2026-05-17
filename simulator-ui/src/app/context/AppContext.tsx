@@ -36,7 +36,7 @@ import type {
   TracePayload,
   RollbackReportPayload,
 } from '../core/types';
-import type { Selection, Group, Variable, LogEntry, SystemStatus, Flow, ConnectorHealthStatus } from '../types';
+import type { Selection, Group, Variable, LogEntry, SystemStatus, Flow, ConnectorHealthStatus, VariableType, VariableScope } from '../types';
 import type { ConnectorHealthSummary } from '../types';
 
 import * as CRUDActions from './crudActions';
@@ -697,8 +697,8 @@ interface AppContextValue {
     // Variables: CRUD
     createVariable: (
       name: string,
-      type: 'numeric' | 'string' | 'boolean' | 'temporal' | 'point' | 'list',
-      scope: 'global' | 'group' | 'local',
+      type: VariableType,
+      scope: VariableScope,
       config?: Record<string, unknown>,
       flowId?: string,
       groupId?: string,
@@ -1682,8 +1682,8 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
 
   const createVariableAction = useCallback(async (
     name: string,
-    type: 'numeric' | 'string' | 'boolean' | 'temporal' | 'point' | 'list',
-    scope: 'global' | 'group' | 'local',
+    type: VariableType,
+    scope: VariableScope,
     config?: Record<string, unknown>,
     flowId?: string,
     groupId?: string,
