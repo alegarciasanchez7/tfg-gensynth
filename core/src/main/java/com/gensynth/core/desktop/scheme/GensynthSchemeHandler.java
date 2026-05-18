@@ -25,11 +25,11 @@ public class GensynthSchemeHandler extends CefResourceHandlerAdapter {
     @Override
     public boolean processRequest(CefRequest request, CefCallback callback) {
         String url = request.getURL();
-        logger.debug("[SCHEME] Processing request: {}", url);
+        logger.info("[SCHEME] Loading local asset: {}", url);
 
-        // Normalize path: gensynth://app/index.html -> /ui/index.html
-        String path = url.replace("gensynth://app/", "/ui/");
-        if (url.equals("gensynth://app/") || url.equals("gensynth://app") || path.endsWith("/")) {
+        // Normalize path: http://gensynth.local/index.html -> /ui/index.html
+        String path = url.replace("http://gensynth.local/", "/ui/");
+        if (url.equals("http://gensynth.local/") || url.equals("http://gensynth.local") || path.endsWith("/")) {
             path = "/ui/index.html";
         }
 
