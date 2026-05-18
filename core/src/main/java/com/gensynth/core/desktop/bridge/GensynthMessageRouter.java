@@ -7,10 +7,7 @@ import java.nio.charset.StandardCharsets;
 import org.cef.browser.CefBrowser;
 import org.cef.browser.CefFrame;
 import org.cef.callback.CefQueryCallback;
-import org.cef.callback.CefRunFileDialogCallback;
-import org.cef.handler.CefDialogHandler.FileDialogMode;
 import org.cef.handler.CefMessageRouterHandlerAdapter;
-import java.util.Vector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -85,35 +82,36 @@ public class GensynthMessageRouter extends CefMessageRouterHandlerAdapter {
             // Intercept PICK_DIRECTORY to show native folder picker
             if (request.contains("PICK_DIRECTORY")) {
                 String commandId = extractCommandId(request);
-                browser.runFileDialog(FileDialogMode.FILE_DIALOG_OPEN_FOLDER,
-                        "Select Output Directory", null, null, 0, new CefRunFileDialogCallback() {
-                            @Override
-                            public void onFileDialogDismissed(Vector<String> filePaths) {
-                                java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
-                                if (filePaths != null && !filePaths.isEmpty()) {
-                                    String path = filePaths.get(0);
-                                    payload.put("status", "success");
-                                    payload.put("path", path);
-                                    server.broadcastMessage("PICK_DIRECTORY_RESULT", commandId, payload);
-                                    callback.success("{\"status\":\"success\"}");
-                                } else {
-                                    payload.put("status", "cancelled");
-                                    server.broadcastMessage("PICK_DIRECTORY_RESULT", commandId, payload);
+                javax.swing.SwingUtilities.invokeLater(() -> {
+                    javax.swing.JFileChooser fileChooser = new javax.swing.JFileChooser();
+                    fileChooser.setFileSelectionMode(javax.swing.JFileChooser.DIRECTORIES_ONLY);
+                    fileChooser.setDialogTitle("Select Output Directory");
+                    int result = fileChooser.showOpenDialog(parentFrame);
 
-                                    // Also send as a direct response to satisfy the bridge promise
-                                    String cancelResponse = String.format(
-                                            "{\"type\":\"PICK_DIRECTORY\",\"commandId\":\"%s\",\"protocolVersion\":\"1.0.0\",\"payload\":{\"status\":\"cancelled\"}}",
-                                            commandId);
+                    java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
+                    if (result == javax.swing.JFileChooser.APPROVE_OPTION && fileChooser.getSelectedFile() != null) {
+                        String path = fileChooser.getSelectedFile().getAbsolutePath();
+                        payload.put("status", "success");
+                        payload.put("path", path);
+                        server.broadcastMessage("PICK_DIRECTORY_RESULT", commandId, payload);
+                        callback.success("{\"status\":\"success\"}");
+                    } else {
+                        payload.put("status", "cancelled");
+                        server.broadcastMessage("PICK_DIRECTORY_RESULT", commandId, payload);
 
-                                    WebSocket desktopSocket = server.getDesktopSocket();
-                                    if (desktopSocket != null) {
-                                        desktopSocket.send(cancelResponse);
-                                    }
+                        // Also send as a direct response to satisfy the bridge promise
+                        String cancelResponse = String.format(
+                                "{\"type\":\"PICK_DIRECTORY\",\"commandId\":\"%s\",\"protocolVersion\":\"1.0.0\",\"payload\":{\"status\":\"cancelled\"}}",
+                                commandId);
 
-                                    callback.success(cancelResponse);
-                                }
-                            }
-                        });
+                        WebSocket desktopSocket = server.getDesktopSocket();
+                        if (desktopSocket != null) {
+                            desktopSocket.send(cancelResponse);
+                        }
+
+                        callback.success(cancelResponse);
+                    }
+                });
                 return true;
             }
 
