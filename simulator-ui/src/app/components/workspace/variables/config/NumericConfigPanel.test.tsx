@@ -22,6 +22,7 @@ describe('NumericConfigPanel', () => {
     max: 50,
     precision: 'INTEGER',
     distribution: 'UNIFORM',
+    pattern: 'FORMULA',
     formula: '',
   };
 
@@ -73,7 +74,7 @@ describe('NumericConfigPanel', () => {
 
   it('renders padding format input when precision is INTEGER', () => {
     render(<NumericConfigPanel config={{ ...defaultConfig, precision: 'INTEGER', integerFormat: '001' }} onChange={vi.fn()} />);
-    expect(screen.getByPlaceholderText('e.g. (USD)number, (000)001, or (EUR)01')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('e.g. 001')).toBeInTheDocument();
   });
 
   it('renders decimal places input when precision is DOUBLE', () => {

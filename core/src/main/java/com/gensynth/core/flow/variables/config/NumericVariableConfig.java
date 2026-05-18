@@ -11,11 +11,11 @@ import java.util.concurrent.ThreadLocalRandom;
  * Supports multiple patterns: Random, Constant, Sequential, Trend.
  */
 public class NumericVariableConfig extends VariableConfiguration {
-    
+
     // Range and format
     private double fromValue;
     private double toValue;
-    private double initialValue;
+    private Double initialValue;
     private int steps;
     private String format;
 
@@ -23,34 +23,36 @@ public class NumericVariableConfig extends VariableConfiguration {
     private String formula;
     private String precision = "DOUBLE"; // "INTEGER", "FLOAT", "DOUBLE"
     private String distribution = "UNIFORM"; // "UNIFORM", "NORMAL", "EXPONENTIAL"
-    
+
     // Pattern: SEQUENTIAL
     private SequentialConfig sequentialConfig;
-    
+
     // Pattern: TREND
     private TrendConfig trendConfig;
-    
+
     // Pattern: RANDOM / CONSTANT
     private double constantValue;
-    
+
     // New Advanced Custom Fields
     private int decimalPlaces = 2;
     private String integerFormat = "";
-    private double step = 1.0;
+    private String prefix = "";
+    private String suffix = "";
+    private double step = 0.0;
     private double constantMargin = 0.0;
     private String distributionType = "UNIFORM";
     private String boundaryMode = "RIGHT"; // "LEFT", "RIGHT", "SPLIT"
     private List<Map<String, Object>> sequentialGraph = new ArrayList<>();
     private List<Map<String, Object>> customDistributionGraph = new ArrayList<>();
-    
+
     // Internal state
     private double currentValue;
     private boolean isAnomalous;
     private long anomalyStartTick;
-    
+
     // Performance optimization: cache for tick-based anomalies
-    private long cachedWhenTicks = -1;  // -1 means not calculated yet
-    private double stepSize;  // Pre-calculated for sequential pattern
+    private long cachedWhenTicks = -1; // -1 means not calculated yet
+    private double stepSize; // Pre-calculated for sequential pattern
 
     public NumericVariableConfig() {
         super();
@@ -66,9 +68,10 @@ public class NumericVariableConfig extends VariableConfiguration {
     @Override
     public java.util.Set<String> getDependencies() {
         java.util.Set<String> deps = super.getDependencies();
-        if (formula != null && !formula.trim().isEmpty()) {
+        if (pattern == GenerationPattern.FORMULA && formula != null && !formula.trim().isEmpty()) {
             // Very basic heuristic: extract variable names from formula via regex
-            java.util.regex.Matcher m = java.util.regex.Pattern.compile("(?:\\x5B|\\x7B\\x7B)([a-zA-Z0-9_-]+)(?:\\x5D|\\x7D\\x7D)").matcher(formula);
+            java.util.regex.Matcher m = java.util.regex.Pattern
+                    .compile("(?:\\x5B|\\x7B\\x7B)([a-zA-Z0-9_-]+)(?:\\x5D|\\x7D\\x7D)").matcher(formula);
             while (m.find()) {
                 deps.add(m.group(1));
             }
@@ -80,14 +83,26 @@ public class NumericVariableConfig extends VariableConfiguration {
     public Object generateNextValue() {
         tickCounter++;
         checkAnomalyCondition();
-        
+
         if (isAnomalous) {
             return anomalyConfig.getAnomalousValue();
         }
-        
-        if (formula != null && !formula.trim().isEmpty()) {
-            currentValue = evaluateFormula();
+
+        if (pattern == GenerationPattern.FORMULA) {
+            if (formula != null && !formula.trim().isEmpty()) {
+                currentValue = evaluateFormula();
+            } else {
+                currentValue = 0.0;
+            }
             return formatValue(currentValue);
+        }
+
+        if (tickCounter == 1 && initialValue != null) {
+            if (pattern == GenerationPattern.RANDOM || (pattern == GenerationPattern.SEQUENTIAL
+                    && (sequentialGraph == null || sequentialGraph.isEmpty()))) {
+                currentValue = initialValue;
+                return formatValue(currentValue);
+            }
         }
 
         switch (pattern) {
@@ -130,12 +145,13 @@ public class NumericVariableConfig extends VariableConfiguration {
             default:
                 currentValue = initialValue;
         }
-        
+
         return formatValue(currentValue);
     }
 
     private double generateDistribution() {
-        String dist = (distributionType != null && !distributionType.equalsIgnoreCase("UNIFORM")) ? distributionType : distribution;
+        String dist = (distributionType != null && !distributionType.equalsIgnoreCase("UNIFORM")) ? distributionType
+                : distribution;
         if ("NORMAL".equalsIgnoreCase(dist)) {
             double mean = (fromValue + toValue) / 2.0;
             double stdDev = (toValue - fromValue) / 6.0; // 99.7% of values within range
@@ -155,7 +171,7 @@ public class NumericVariableConfig extends VariableConfiguration {
             // Replace [var] or {{var}} with actual variable names for exp4j
             String parsedFormula = formula.replaceAll("(?:\\x5B|\\x7B\\x7B)([a-zA-Z0-9_-]+)(?:\\x5D|\\x7D\\x7D)", "$1");
             ExpressionBuilder builder = new ExpressionBuilder(parsedFormula);
-            
+
             Map<String, Double> vars = new HashMap<>();
             for (Map.Entry<String, Object> entry : currentContext.entrySet()) {
                 if (entry.getValue() instanceof Number) {
@@ -163,7 +179,7 @@ public class NumericVariableConfig extends VariableConfiguration {
                     vars.put(entry.getKey(), ((Number) entry.getValue()).doubleValue());
                 }
             }
-            
+
             Expression expression = builder.build();
             expression.setVariables(vars);
             return expression.evaluate();
@@ -174,8 +190,9 @@ public class NumericVariableConfig extends VariableConfiguration {
     }
 
     private void checkAnomalyCondition() {
-        if (!anomalyConfig.isEnabled()) return;
-        
+        if (!anomalyConfig.isEnabled())
+            return;
+
         if (anomalyConfig.isEnabledProbabilityMode()) {
             // Probability-based: each tick has a chance to trigger
             double probabilityThreshold = anomalyConfig.getProbabilityRatio() / 100.0;
@@ -187,17 +204,16 @@ public class NumericVariableConfig extends VariableConfiguration {
             // Tick-based: calculate once, then check
             if (cachedWhenTicks == -1) {
                 cachedWhenTicks = getRandomLongInRange(
-                    anomalyConfig.getWhenTicksRangeMin(),
-                    anomalyConfig.getWhenTicksRangeMax()
-                );
+                        anomalyConfig.getWhenTicksRangeMin(),
+                        anomalyConfig.getWhenTicksRangeMax());
             }
-            
+
             if (tickCounter == cachedWhenTicks && !isAnomalous) {
                 isAnomalous = true;
                 anomalyStartTick = tickCounter;
             }
         }
-        
+
         // Handle anomaly duration (same logic for both modes)
         if (isAnomalous) {
             handleAnomalyDuration();
@@ -229,7 +245,7 @@ public class NumericVariableConfig extends VariableConfiguration {
 
     private double generateOriginalSequential() {
         if (sequentialConfig.descending) {
-            currentValue -= stepSize;  // Pre-calculated, no division needed
+            currentValue -= stepSize; // Pre-calculated, no division needed
             if (currentValue < fromValue) {
                 if (sequentialConfig.goBack) {
                     currentValue = fromValue;
@@ -239,7 +255,7 @@ public class NumericVariableConfig extends VariableConfiguration {
                 }
             }
         } else {
-            currentValue += stepSize;  // Pre-calculated
+            currentValue += stepSize; // Pre-calculated
             if (currentValue > toValue) {
                 if (sequentialConfig.goBack) {
                     currentValue = toValue;
@@ -279,7 +295,8 @@ public class NumericVariableConfig extends VariableConfiguration {
 
         for (Map<String, Object> pt : sequentialGraph) {
             Number xNum = (Number) pt.get("x");
-            if (xNum == null) continue;
+            if (xNum == null)
+                continue;
             double px = xNum.doubleValue();
             if (px == index) {
                 Number yNum = (Number) pt.get("y");
@@ -355,7 +372,8 @@ public class NumericVariableConfig extends VariableConfiguration {
         double cumulativeWeight = 0;
         for (Map<String, Object> pt : customDistributionGraph) {
             Number wNum = (Number) pt.get("weight");
-            if (wNum == null) continue;
+            if (wNum == null)
+                continue;
             cumulativeWeight += wNum.doubleValue();
             if (r <= cumulativeWeight) {
                 Number fromNum = (Number) pt.get("from");
@@ -378,17 +396,17 @@ public class NumericVariableConfig extends VariableConfiguration {
         return valNum != null ? valNum.doubleValue() : fromValue;
     }
 
-
     private double generateTrend() {
         int intervalIndex = (int) ((tickCounter / trendConfig.intervalSize) % trendConfig.getIntervalCount());
         double intervalMin = fromValue + (intervalIndex * (toValue - fromValue) / trendConfig.getIntervalCount());
         double intervalMax = fromValue + ((intervalIndex + 1) * (toValue - fromValue) / trendConfig.getIntervalCount());
-        
+
         return intervalMin + (intervalMax - intervalMin) * ThreadLocalRandom.current().nextDouble();
     }
 
     private Object formatValue(double value) {
-        String prefix = "";
+        String activePrefix = this.prefix != null ? this.prefix : "";
+        String activeSuffix = this.suffix != null ? this.suffix : "";
         String numberFormat = "";
         boolean hasFormatSpec = false;
 
@@ -397,7 +415,9 @@ public class NumericVariableConfig extends VariableConfiguration {
                 int start = integerFormat.indexOf('(');
                 int end = integerFormat.indexOf(')');
                 if (start < end) {
-                    prefix = integerFormat.substring(start + 1, end);
+                    if (activePrefix.isEmpty()) {
+                        activePrefix = integerFormat.substring(start + 1, end);
+                    }
                     numberFormat = integerFormat.substring(end + 1);
                     hasFormatSpec = true;
                 }
@@ -421,20 +441,34 @@ public class NumericVariableConfig extends VariableConfiguration {
                 formattedNum = String.valueOf(intVal);
             }
 
-            if (!prefix.isEmpty()) {
-                return prefix + formattedNum;
+            if (!activePrefix.isEmpty() || !activeSuffix.isEmpty()) {
+                return activePrefix + formattedNum + activeSuffix;
             }
             return hasFormatSpec ? formattedNum : intVal;
         } else {
             double roundedValue = value;
-            if (decimalPlaces >= 0) {
-                double scale = Math.pow(10, decimalPlaces);
+            int activeDecimalPlaces = this.decimalPlaces;
+            if (pattern == GenerationPattern.CONSTANT) {
+                if (constantMargin == 0.0) {
+                    if (constantValue % 1.0 == 0.0) {
+                        activeDecimalPlaces = 0;
+                    }
+                } else {
+                    if (constantMargin % 1.0 == 0.0 && constantValue % 1.0 == 0.0) {
+                        activeDecimalPlaces = 0;
+                    }
+                }
+            }
+
+            if (activeDecimalPlaces >= 0) {
+                double scale = Math.pow(10, activeDecimalPlaces);
                 roundedValue = Math.round(value * scale) / scale;
             }
 
-            if (hasFormatSpec) {
+            if (hasFormatSpec || !activePrefix.isEmpty() || !activeSuffix.isEmpty()) {
                 String formattedNum;
-                String strValue = String.format(Locale.US, "%." + (decimalPlaces >= 0 ? decimalPlaces : 2) + "f", roundedValue);
+                String strValue = String.format(Locale.US,
+                        "%." + (activeDecimalPlaces >= 0 ? activeDecimalPlaces : 2) + "f", roundedValue);
                 int dotIdx = strValue.indexOf('.');
                 String intPartStr = dotIdx >= 0 ? strValue.substring(0, dotIdx) : strValue;
                 String decPartStr = dotIdx >= 0 ? strValue.substring(dotIdx) : "";
@@ -444,7 +478,7 @@ public class NumericVariableConfig extends VariableConfiguration {
                     intPartStr = intPartStr.substring(1);
                 }
 
-                if (numberFormat.matches("0*1?")) {
+                if (hasFormatSpec && numberFormat.matches("0*1?")) {
                     int padLen = numberFormat.length();
                     if (padLen > 0) {
                         try {
@@ -457,7 +491,7 @@ public class NumericVariableConfig extends VariableConfiguration {
                 }
 
                 formattedNum = (isNegative ? "-" : "") + intPartStr + decPartStr;
-                return prefix + formattedNum;
+                return activePrefix + formattedNum + activeSuffix;
             }
 
             if ("FLOAT".equalsIgnoreCase(precision)) {
@@ -468,7 +502,8 @@ public class NumericVariableConfig extends VariableConfiguration {
     }
 
     private long getRandomLongInRange(long min, long max) {
-        if (min == max) return min;
+        if (min == max)
+            return min;
         return ThreadLocalRandom.current().nextLong(min, max + 1);
     }
 
@@ -482,7 +517,7 @@ public class NumericVariableConfig extends VariableConfiguration {
 
     @Override
     public void reset() {
-        currentValue = initialValue;
+        currentValue = initialValue != null ? initialValue : fromValue;
         tickCounter = 0;
         isAnomalous = false;
         anomalyStartTick = 0;
@@ -507,6 +542,8 @@ public class NumericVariableConfig extends VariableConfiguration {
         map.put("distribution", distribution);
         map.put("decimalPlaces", decimalPlaces);
         map.put("integerFormat", integerFormat);
+        map.put("prefix", prefix);
+        map.put("suffix", suffix);
         map.put("step", step);
         map.put("constantValue", constantValue);
         map.put("constantMargin", constantMargin);
@@ -539,7 +576,7 @@ public class NumericVariableConfig extends VariableConfiguration {
     @Override
     public NumericVariableConfig anomaly(AnomalyConfig config) {
         super.anomaly(config);
-        this.cachedWhenTicks = -1;  // Reset cache when anomaly config changes
+        this.cachedWhenTicks = -1; // Reset cache when anomaly config changes
         return this;
     }
 
@@ -603,6 +640,16 @@ public class NumericVariableConfig extends VariableConfiguration {
         return this;
     }
 
+    public NumericVariableConfig prefix(String prefix) {
+        this.prefix = prefix;
+        return this;
+    }
+
+    public NumericVariableConfig suffix(String suffix) {
+        this.suffix = suffix;
+        return this;
+    }
+
     public NumericVariableConfig step(double step) {
         this.step = step;
         return this;
@@ -634,38 +681,117 @@ public class NumericVariableConfig extends VariableConfiguration {
     }
 
     // Getters
-    public double getFromValue() { return fromValue; }
-    public double getToValue() { return toValue; }
-    public double getInitialValue() { return initialValue; }
-    public double getCurrentValue() { return currentValue; }
-    public int getSteps() { return steps; }
-    public String getFormat() { return format; }
-    public SequentialConfig getSequentialConfig() { return sequentialConfig; }
-    public TrendConfig getTrendConfig() { return trendConfig; }
-    
-    public int getDecimalPlaces() { return decimalPlaces; }
-    public void setDecimalPlaces(int decimalPlaces) { this.decimalPlaces = decimalPlaces; }
+    public double getFromValue() {
+        return fromValue;
+    }
 
-    public String getIntegerFormat() { return integerFormat; }
-    public void setIntegerFormat(String integerFormat) { this.integerFormat = integerFormat; }
+    public double getToValue() {
+        return toValue;
+    }
 
-    public double getStep() { return step; }
-    public void setStep(double step) { this.step = step; }
+    public double getInitialValue() {
+        return initialValue != null ? initialValue : fromValue;
+    }
 
-    public double getConstantMargin() { return constantMargin; }
-    public void setConstantMargin(double constantMargin) { this.constantMargin = constantMargin; }
+    public double getCurrentValue() {
+        return currentValue;
+    }
 
-    public String getDistributionType() { return distributionType; }
-    public void setDistributionType(String distributionType) { this.distributionType = distributionType; }
+    public int getSteps() {
+        return steps;
+    }
 
-    public List<Map<String, Object>> getSequentialGraph() { return sequentialGraph; }
-    public void setSequentialGraph(List<Map<String, Object>> sequentialGraph) { this.sequentialGraph = sequentialGraph; }
+    public String getFormat() {
+        return format;
+    }
 
-    public List<Map<String, Object>> getCustomDistributionGraph() { return customDistributionGraph; }
-    public void setCustomDistributionGraph(List<Map<String, Object>> customDistributionGraph) { this.customDistributionGraph = customDistributionGraph; }
+    public SequentialConfig getSequentialConfig() {
+        return sequentialConfig;
+    }
 
-    public String getBoundaryMode() { return boundaryMode; }
-    public void setBoundaryMode(String boundaryMode) { this.boundaryMode = boundaryMode; }
+    public TrendConfig getTrendConfig() {
+        return trendConfig;
+    }
+
+    public int getDecimalPlaces() {
+        return decimalPlaces;
+    }
+
+    public void setDecimalPlaces(int decimalPlaces) {
+        this.decimalPlaces = decimalPlaces;
+    }
+
+    public String getIntegerFormat() {
+        return integerFormat;
+    }
+
+    public void setIntegerFormat(String integerFormat) {
+        this.integerFormat = integerFormat;
+    }
+
+    public String getPrefix() {
+        return prefix;
+    }
+
+    public void setPrefix(String prefix) {
+        this.prefix = prefix;
+    }
+
+    public String getSuffix() {
+        return suffix;
+    }
+
+    public void setSuffix(String suffix) {
+        this.suffix = suffix;
+    }
+
+    public double getStep() {
+        return step;
+    }
+
+    public void setStep(double step) {
+        this.step = step;
+    }
+
+    public double getConstantMargin() {
+        return constantMargin;
+    }
+
+    public void setConstantMargin(double constantMargin) {
+        this.constantMargin = constantMargin;
+    }
+
+    public String getDistributionType() {
+        return distributionType;
+    }
+
+    public void setDistributionType(String distributionType) {
+        this.distributionType = distributionType;
+    }
+
+    public List<Map<String, Object>> getSequentialGraph() {
+        return sequentialGraph;
+    }
+
+    public void setSequentialGraph(List<Map<String, Object>> sequentialGraph) {
+        this.sequentialGraph = sequentialGraph;
+    }
+
+    public List<Map<String, Object>> getCustomDistributionGraph() {
+        return customDistributionGraph;
+    }
+
+    public void setCustomDistributionGraph(List<Map<String, Object>> customDistributionGraph) {
+        this.customDistributionGraph = customDistributionGraph;
+    }
+
+    public String getBoundaryMode() {
+        return boundaryMode;
+    }
+
+    public void setBoundaryMode(String boundaryMode) {
+        this.boundaryMode = boundaryMode;
+    }
 
     /**
      * Configuration for Sequential pattern
@@ -674,7 +800,7 @@ public class NumericVariableConfig extends VariableConfiguration {
         public boolean descending = false;
         public boolean goBack = true;
         public boolean proportional = true;
-        
+
         public SequentialConfig descending(boolean desc) {
             this.descending = desc;
             return this;
@@ -695,12 +821,14 @@ public class NumericVariableConfig extends VariableConfiguration {
      * Configuration for trend pattern
      */
     public static class TrendConfig {
-        public enum TrendMode { NORMAL, GRADUAL, JUMPING }
-        
+        public enum TrendMode {
+            NORMAL, GRADUAL, JUMPING
+        }
+
         public TrendMode mode = TrendMode.NORMAL;
         public int intervalCount = 10;
         public int intervalSize = 1;
-        
+
         public TrendConfig mode(TrendMode mode) {
             this.mode = mode;
             return this;
@@ -711,6 +839,8 @@ public class NumericVariableConfig extends VariableConfiguration {
             return this;
         }
 
-        public int getIntervalCount() { return intervalCount; }
+        public int getIntervalCount() {
+            return intervalCount;
+        }
     }
 }

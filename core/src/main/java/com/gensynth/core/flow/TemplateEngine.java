@@ -81,7 +81,32 @@ public class TemplateEngine {
                 if (variable != null) {
                     Object generatedValue = dataGenerator.generateValue(variable);
                     // Convert value to string representation
-                    replacement = String.valueOf(generatedValue);
+                    boolean isConstantPattern = false;
+                    Map<String, Object> varConfig = variable.getConfig();
+                    if (varConfig != null) {
+                        Object pat = varConfig.get("pattern");
+                        if (pat != null && "CONSTANT".equalsIgnoreCase(pat.toString())) {
+                            isConstantPattern = true;
+                        }
+                    }
+
+                    if (isConstantPattern && generatedValue instanceof Double) {
+                        double d = (Double) generatedValue;
+                        if (d % 1.0 == 0.0) {
+                            replacement = String.format(java.util.Locale.US, "%.0f", d);
+                        } else {
+                            replacement = String.valueOf(generatedValue);
+                        }
+                    } else if (isConstantPattern && generatedValue instanceof Float) {
+                        float f = (Float) generatedValue;
+                        if (f % 1.0f == 0.0f) {
+                            replacement = String.format(java.util.Locale.US, "%.0f", (double) f);
+                        } else {
+                            replacement = String.valueOf(generatedValue);
+                        }
+                    } else {
+                        replacement = String.valueOf(generatedValue);
+                    }
                 } else {
                     // Unknown or inaccessible variable, leave it as is or replace with empty
                     replacement = matcher.group(0);
@@ -94,5 +119,15 @@ public class TemplateEngine {
         matcher.appendTail(result);
 
         return result.toString();
+    }
+
+    public void clearVariableCache() {
+        this.dataGenerator.clearCache();
+    }
+
+    public void removeCachedVariable(String variableId) {
+        if (variableId != null) {
+            this.dataGenerator.removeCachedVariable(variableId);
+        }
     }
 }
