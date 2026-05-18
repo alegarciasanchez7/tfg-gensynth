@@ -190,9 +190,8 @@ public class App {
                 logger.info("[DESKTOP] Starting Gen-Synth in Desktop Mode...");
                 org.cef.CefApp cefApp = NativeLoader.initialize();
 
-                // URL to load: for now we use the Vite dev server URL
-                // Phase 3 will replace this with a custom scheme like gensynth://app/
-                String initialUrl = "gensynth://app/index.html";
+                // Load standard http protocol on gensynth.local domain, fully compatible across all Linux and Windows platforms
+                String initialUrl = "http://gensynth.local/index.html";
 
                 MainFrame frame = new MainFrame("GenSynth", initialUrl, cefApp);
                 frame.showWindow();

@@ -43,11 +43,20 @@ public class MainFrame extends JFrame {
         this.messageRouter = CefMessageRouter.create(config);
         this.messageRouter.addHandler(new GensynthMessageRouter(this), true);
         this.client.addMessageRouter(this.messageRouter);
+        
+        // Log all browser console and JavaScript messages to Java SLF4J logger
+        this.client.addDisplayHandler(new org.cef.handler.CefDisplayHandlerAdapter() {
+            @Override
+            public boolean onConsoleMessage(CefBrowser browser, org.cef.CefSettings.LogSeverity level, String message, String source, int line) {
+                logger.info("[BROWSER CONSOLE] [{}] {} [source: {}, line: {}]", level, message, source, line);
+                return false;
+            }
+        });
 
         // 3. Inject the javaBridge object into the UI
         setupBridgeInjection();
 
-        // 4. Create the browser instance
+        // 4. Create the browser instance (Windowed Rendering)
         this.browser = client.createBrowser(initialUrl, false, false);
         this.browserUI = browser.getUIComponent();
 
