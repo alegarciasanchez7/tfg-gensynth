@@ -83,9 +83,27 @@ To build and run the application as a standalone desktop app with embedded Chrom
     ```
 
 2.  **Run in Desktop Mode**:
-    ```bash
-    java -cp "target/classes;target/dependency/*" com.gensynth.core.App --desktop
-    ```
+    - **Standard JDK (Linux/macOS)**:
+      ```bash
+      java -cp "target/classes:target/dependency/*" com.gensynth.core.App --desktop
+      ```
+    - **Standard JDK (Windows)**:
+      ```bash
+      java -cp "target/classes;target/dependency/*" com.gensynth.core.App --desktop
+      ```
+    
+    > [!IMPORTANT]
+    > **Running on JetBrains Runtime (JBR)?**
+    > If you are using a JetBrains Runtime JDK (which bundles JCEF as a system module), you will hit a `NullPointerException` with the error `The build_meta.json file from the jcef-api artifact could not be read`.
+    > To fix this, patch the built-in `jcef` module at runtime by adding the `--patch-module` JVM argument:
+    > - **Linux/macOS (JBR)**:
+    >   ```bash
+    >   java --patch-module jcef=target/dependency/jcef-api-jcef-d3de827+cef-146.0.10+g8219561+chromium-146.0.7680.179.jar -cp "target/classes:target/dependency/*" com.gensynth.core.App --desktop
+    >   ```
+    > - **Windows (JBR)**:
+    >   ```bash
+    >   java --patch-module jcef=target/dependency/jcef-api-jcef-d3de827+cef-146.0.10+g8219561+chromium-146.0.7680.179.jar -cp "target/classes;target/dependency/*" com.gensynth.core.App --desktop
+    >   ```
 
 *Note: The first run will download the native Chromium binaries (~150MB) for your platform into the `core/jcef-bundle` directory.*
 
