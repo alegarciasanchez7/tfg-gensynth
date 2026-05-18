@@ -73,9 +73,14 @@ describe('DistributionGraphEditor', () => {
       />
     );
 
-    const select = screen.getByRole('combobox');
-    expect(select).toHaveValue('RIGHT');
-    fireEvent.change(select, { target: { value: 'LEFT' } });
+    const dropdownTrigger = screen.getByRole('button', { name: 'Right [A, B)' });
+    expect(dropdownTrigger).toBeInTheDocument();
+    
+    fireEvent.click(dropdownTrigger);
+
+    const leftOption = screen.getByRole('button', { name: 'Left (A, B]' });
+    fireEvent.click(leftOption);
+
     expect(mockOnBoundaryChange).toHaveBeenCalledWith('LEFT');
   });
 });

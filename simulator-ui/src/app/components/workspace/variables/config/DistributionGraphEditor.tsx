@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '../../../ui/button';
 import { Label } from '../../../ui/label';
 import { BarChart3, Sliders, Sparkles, TrendingUp } from 'lucide-react';
@@ -9,6 +9,93 @@ interface WeightedValue {
   to?: number;
   weight: number;
 }
+
+interface CustomDropdownProps {
+  id?: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: Array<{ value: string; label: string }>;
+  label?: string;
+}
+
+const CustomDropdown: React.FC<CustomDropdownProps> = ({ value, onChange, options, id }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown on click outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  const selectedOption = options.find(opt => opt.value === value) || options[0];
+
+  return (
+    <div ref={containerRef} className="relative w-full">
+      <button
+        id={id}
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex h-7 w-28 items-center justify-between rounded border border-[var(--c-br1)] bg-[var(--c-bg3)] px-2 py-0.5 text-[10px] text-[var(--c-tx1)] font-mono outline-none hover:bg-white/5 active:bg-white/10 transition-colors cursor-pointer"
+      >
+        <span>{selectedOption.label}</span>
+        <svg
+          className={`size-3 opacity-60 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
+          xmlns="http://www.w3.org/2000/svg"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth="2"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {isOpen && (
+        <div className="absolute right-0 mt-1 z-50 bg-[var(--c-bg2)] border border-[var(--c-br1)] rounded shadow-2xl max-h-[200px] min-w-[120px] overflow-y-auto scrollbar-thin scrollbar-thumb-[var(--c-br3)]">
+          <div className="p-1 space-y-0.5">
+            {options.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => {
+                  onChange(opt.value);
+                  setIsOpen(false);
+                }}
+                className={`w-full text-left px-2.5 py-1.5 rounded text-xs transition-colors flex items-center justify-between cursor-pointer ${
+                  opt.value === value
+                    ? 'bg-violet-500/20 text-violet-400 font-semibold'
+                    : 'hover:bg-white/5 text-[var(--c-tx2)]'
+                }`}
+              >
+                <span>{opt.label}</span>
+                {opt.value === value && (
+                  <svg
+                    className="size-3.5 text-violet-400"
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 interface DistributionGraphEditorProps {
   min: number;
@@ -130,15 +217,15 @@ export const DistributionGraphEditor: React.FC<DistributionGraphEditorProps> = (
           </div>
           <div className="flex items-center gap-1">
             <span className="text-[10px] text-[var(--c-tx4)]">Boundary:</span>
-            <select
+            <CustomDropdown
               value={boundaryMode}
-              onChange={(e) => onBoundaryModeChange?.(e.target.value as 'LEFT' | 'RIGHT' | 'SPLIT')}
-              className="rounded border border-[var(--c-br1)] bg-[var(--c-bg3)] px-1 py-0.5 text-xs text-[var(--c-tx1)] font-mono outline-none"
-            >
-              <option value="RIGHT">Right [A, B)</option>
-              <option value="LEFT">Left (A, B]</option>
-              <option value="SPLIT">Split (50/50)</option>
-            </select>
+              onChange={(val) => onBoundaryModeChange?.(val as 'LEFT' | 'RIGHT' | 'SPLIT')}
+              options={[
+                { value: 'RIGHT', label: 'Right [A, B)' },
+                { value: 'LEFT', label: 'Left (A, B]' },
+                { value: 'SPLIT', label: 'Split (50/50)' }
+              ]}
+            />
           </div>
           <span className="text-[9px] text-[var(--c-tx4)] italic hidden lg:inline">
             Contiguous value ranges (complete & closed)
