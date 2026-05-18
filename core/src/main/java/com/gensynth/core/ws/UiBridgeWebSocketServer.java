@@ -1051,8 +1051,10 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         String clientRequestId = payload.path("clientRequestId").asText(null);
 
         String coreType = normalizeVariableTypeForCore(type);
+        Map<String, Object> config = payload.has("config") && payload.get("config").isObject()
+            ? objectMapper.convertValue(payload.get("config"), MAP_TYPE)
+            : Map.of();
         Object defaultValue = payload.has("config") ? payload.get("config").toString() : "";
-        Map<String, Object> config = Map.of();
         Variable createdVariable;
 
         
@@ -1131,11 +1133,15 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             String scope = payload.path("scope").asText(existing.getScope()).toUpperCase();
             String flowId = payload.path("flowId").asText(existing.getFlowId());
             String groupId = payload.path("groupId").asText(existing.getGroupId());
+            Map<String, Object> config = payload.has("config") && payload.get("config").isObject()
+                ? objectMapper.convertValue(payload.get("config"), MAP_TYPE)
+                : existing.getConfig();
             Object defaultValue = payload.has("config") ? payload.get("config").toString() : existing.getDefaultValue();
 
             try {
-                Variable updated = new Variable(variableId, name, scope, type, defaultValue, existing.getConfig(), flowId, groupId);
+                Variable updated = new Variable(variableId, name, scope, type, defaultValue, config, flowId, groupId);
                 variablesById.put(variableId, updated);
+                templateEngine.removeCachedVariable(variableId);
                 persistState();
             } catch (IllegalArgumentException ex) {
                 sendError(conn, commandId, "INVALID_PAYLOAD", ex.getMessage(), Map.of("variableId", variableId));
@@ -1359,6 +1365,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         if ("running".equals(group.status)) {
             return;
         }
+        templateEngine.clearVariableCache();
 
         for (FlowRuntime flow : group.flows) {
             stopPublisherTask(flow.id);
@@ -1401,6 +1408,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
     }
 
     private void stopGroupInternal(GroupRuntime group) {
+        templateEngine.clearVariableCache();
         for (FlowRuntime flow : group.flows) {
             stopPublisherTask(flow.id);
 

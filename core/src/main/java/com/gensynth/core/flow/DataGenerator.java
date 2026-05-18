@@ -30,4 +30,14 @@ public class DataGenerator {
             return variable.getDefaultValue();
         }
     }
+
+    public void clearCache() {
+        this.variableCache.clear();
+    }
+
+    public void removeCachedVariable(String variableId) {
+        if (variableId != null) {
+            this.variableCache.remove(variableId);
+        }
+    }
 }
