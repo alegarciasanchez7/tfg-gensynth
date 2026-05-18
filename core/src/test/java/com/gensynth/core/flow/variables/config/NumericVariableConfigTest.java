@@ -225,6 +225,7 @@ public class NumericVariableConfigTest {
         config.pattern(GenerationPattern.RANDOM)
             .from(0.0)
             .to(10.0)
+            .initial(4.0)
             .step(2.0);
         
         for (int i = 0; i < 50; i++) {
@@ -232,6 +233,25 @@ public class NumericVariableConfigTest {
             assertTrue(value >= 0.0 && value <= 10.0);
             assertEquals(0.0, value % 2.0, 0.0001);
         }
+    }
+
+    @Test
+    public void testContinuousRandomPatternWithoutStepping() {
+        config.pattern(GenerationPattern.RANDOM)
+            .from(0.0)
+            .to(10.0)
+            .initial(5.0)
+            .step(0.0); // disabled stepping
+        
+        boolean seenFractional = false;
+        for (int i = 0; i < 100; i++) {
+            double value = (double) config.generateNextValue();
+            assertTrue(value >= 0.0 && value <= 10.0);
+            if (value % 1.0 > 0.0) {
+                seenFractional = true;
+            }
+        }
+        assertTrue("Expected true continuous fractional values when step is disabled", seenFractional);
     }
 
     @Test
@@ -325,8 +345,62 @@ public class NumericVariableConfigTest {
     }
 
     @Test
+    public void testPrefixAndSuffixFormatting() {
+        // Integer with Prefix and Suffix
+        config.precision("INTEGER")
+            .prefix("USD ")
+            .suffix(" / hour")
+            .integerFormat("001");
+        Object val1 = config.constant(42.0).generateNextValue();
+        assertEquals("USD 042 / hour", val1);
+
+        // Double with Prefix and Suffix
+        config.precision("DOUBLE")
+            .prefix("TEMP: ")
+            .suffix(" °C")
+            .decimalPlaces(1)
+            .integerFormat(null);
+        Object val2 = config.constant(23.456).generateNextValue();
+        assertEquals("TEMP: 23.5 °C", val2);
+    }
+
+    @Test
+    public void testConstantDynamicDecimalFormatting() {
+        // 1. Constant integer without decimals or margin -> should output Double 3.0 (for precision DOUBLE compatibility)
+        NumericVariableConfig config1 = new NumericVariableConfig()
+            .pattern(GenerationPattern.CONSTANT)
+            .constant(3.0)
+            .constantMargin(0.0)
+            .precision("DOUBLE");
+        
+        Object val1 = config1.generateNextValue();
+        assertTrue(val1 instanceof Double);
+        assertEquals(3.0, (double) val1, 0.001);
+
+        // 2. Constant integer with prefix and suffix -> should format as integer "USD 3 / hour"
+        config1.prefix("USD ").suffix(" / hour");
+        Object val2 = config1.generateNextValue();
+        assertEquals("USD 3 / hour", val2);
+
+        // 3. Constant double with decimal value (e.g. 3.14) -> should preserve decimals
+        NumericVariableConfig config2 = new NumericVariableConfig()
+            .pattern(GenerationPattern.CONSTANT)
+            .constant(3.14)
+            .constantMargin(0.0)
+            .precision("DOUBLE");
+        
+        Object val3 = config2.generateNextValue();
+        assertEquals(3.14, (double) val3, 0.001);
+
+        // 4. Constant double with decimal value, prefix and suffix -> "USD 3.14 / hour"
+        config2.prefix("USD ").suffix(" / hour");
+        Object val4 = config2.generateNextValue();
+        assertEquals("USD 3.14 / hour", val4);
+    }
+
+    @Test
     public void testFormulaEvaluationWithBracesAndBrackets() {
-        config.pattern(GenerationPattern.RANDOM);
+        config.pattern(GenerationPattern.FORMULA);
         config.formula("{{temperature}} * 2 + [humidity]");
         
         java.util.Map<String, Object> context = new java.util.HashMap<>();
@@ -355,5 +429,23 @@ public class NumericVariableConfigTest {
         assertEquals("CONSTANT", map.get("pattern"));
         assertEquals(20.0, map.get("from"));
         assertEquals(30.0, map.get("to"));
+    }
+
+    @Test
+    public void testInitialValueBehavior() {
+        NumericVariableConfig initialTestConfig = new NumericVariableConfig()
+            .identifier("initial_test")
+            .from(0.0)
+            .to(100.0)
+            .initial(42.0)
+            .pattern(GenerationPattern.RANDOM);
+        
+        // Tick 1: should return initialValue (42.0)
+        Object val1 = initialTestConfig.generateNextValue();
+        assertEquals(42.0, (double) val1, 0.01);
+        
+        // Tick 2: should be random (likely not 42.0)
+        Object val2 = initialTestConfig.generateNextValue();
+        assertTrue((double) val2 >= 0.0 && (double) val2 <= 100.0);
     }
 }

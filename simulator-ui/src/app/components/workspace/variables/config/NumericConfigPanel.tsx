@@ -35,6 +35,9 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
   const [constValueStr, setConstValueStr] = useState(String(config.constantValue ?? ''));
   const [constMarginStr, setConstMarginStr] = useState(String(config.constantMargin ?? ''));
   const [stepStr, setStepStr] = useState(String(config.step ?? ''));
+  const [prefixStr, setPrefixStr] = useState(config.prefix ?? '');
+  const [suffixStr, setSuffixStr] = useState(config.suffix ?? '');
+  const [integerFormatStr, setIntegerFormatStr] = useState(config.integerFormat ?? '');
 
   // Formula Autocomplete Logic
   const { state } = useApp();
@@ -274,6 +277,18 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
     if (config.step !== undefined && parseFloat(stepStr) !== config.step) setStepStr(String(config.step));
   }, [config.step]);
 
+  useEffect(() => {
+    if (config.prefix !== undefined && config.prefix !== prefixStr) setPrefixStr(config.prefix ?? '');
+  }, [config.prefix]);
+
+  useEffect(() => {
+    if (config.suffix !== undefined && config.suffix !== suffixStr) setSuffixStr(config.suffix ?? '');
+  }, [config.suffix]);
+
+  useEffect(() => {
+    if (config.integerFormat !== undefined && config.integerFormat !== integerFormatStr) setIntegerFormatStr(config.integerFormat ?? '');
+  }, [config.integerFormat]);
+
   const handlePatternChange = (newPattern: any) => {
     const updates: Partial<NumericVariableConfig> = { pattern: newPattern };
 
@@ -319,95 +334,99 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
   return (
     <TooltipProvider delayDuration={200}>
       <div className="space-y-4">
-        {/* 1. Range Config */}
-        <div className="grid grid-cols-3 gap-2">
-          <div className="space-y-1">
-            <Label htmlFor="numeric-min" className="text-[10px] uppercase text-[var(--c-tx4)]">Minimum</Label>
-            <Input
-              id="numeric-min"
-              type="text"
-              data-testid="numeric-min-input"
-              value={minStr}
-              onChange={(e) => handleNumericChange(e.target.value, setMinStr, 'min')}
-              onBlur={(e) => handleNumericBlur(e.target.value, setMinStr, 'min', 0)}
-              className="h-8 text-xs font-mono"
-              placeholder="e.g. -50"
-            />
-          </div>
+        {pattern !== 'CONSTANT' && (
+          <>
+            {/* 1. Range Config */}
+            <div className="grid grid-cols-3 gap-2">
+              <div className="space-y-1">
+                <Label htmlFor="numeric-min" className="text-[10px] uppercase text-[var(--c-tx4)]">Minimum</Label>
+                <Input
+                  id="numeric-min"
+                  type="text"
+                  data-testid="numeric-min-input"
+                  value={minStr}
+                  onChange={(e) => handleNumericChange(e.target.value, setMinStr, 'min')}
+                  onBlur={(e) => handleNumericBlur(e.target.value, setMinStr, 'min', 0)}
+                  className="h-8 text-xs font-mono"
+                  placeholder="e.g. -50"
+                />
+              </div>
 
-          <div className="space-y-1">
-            <Label htmlFor="numeric-max" className="text-[10px] uppercase text-[var(--c-tx4)]">Maximum</Label>
-            <Input
-              id="numeric-max"
-              type="text"
-              data-testid="numeric-max-input"
-              value={maxStr}
-              onChange={(e) => handleNumericChange(e.target.value, setMaxStr, 'max')}
-              onBlur={(e) => handleNumericBlur(e.target.value, setMaxStr, 'max', 100)}
-              className="h-8 text-xs font-mono"
-              placeholder="e.g. 100"
-            />
-          </div>
+              <div className="space-y-1">
+                <Label htmlFor="numeric-max" className="text-[10px] uppercase text-[var(--c-tx4)]">Maximum</Label>
+                <Input
+                  id="numeric-max"
+                  type="text"
+                  data-testid="numeric-max-input"
+                  value={maxStr}
+                  onChange={(e) => handleNumericChange(e.target.value, setMaxStr, 'max')}
+                  onBlur={(e) => handleNumericBlur(e.target.value, setMaxStr, 'max', 100)}
+                  className="h-8 text-xs font-mono"
+                  placeholder="e.g. 100"
+                />
+              </div>
 
-          <div className="space-y-1">
-            <Label htmlFor="numeric-initial" className="text-[10px] uppercase text-[var(--c-tx4)]">Initial Value</Label>
-            <Input
-              id="numeric-initial"
-              type="text"
-              data-testid="numeric-initial-input"
-              value={initialStr}
-              onChange={(e) => handleNumericChange(e.target.value, setInitialStr, 'initialValue')}
-              onBlur={(e) => {
-                const val = parseFloat(e.target.value);
-                const clamped = isNaN(val) ? min : Math.max(min, Math.min(max, val));
-                setInitialStr(String(clamped));
-                onChange({ initialValue: clamped });
-              }}
-              className="h-8 text-xs font-mono"
-              placeholder="e.g. 0"
-            />
-          </div>
-        </div>
-
-        {/* 2. Precision & Decimal Selector */}
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1">
-            <Label htmlFor="numeric-precision" className="text-[10px] uppercase text-[var(--c-tx4)]">Precision</Label>
-            <Select
-              value={precision === 'DOUBLE' ? 'FLOAT' : precision}
-              onValueChange={(val: any) => onChange({ precision: val })}
-            >
-              <SelectTrigger id="numeric-precision" data-testid="numeric-precision-trigger" className="h-8 text-xs">
-                <SelectValue placeholder="Select precision" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="INTEGER">Integer</SelectItem>
-                <SelectItem value="FLOAT">Float</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {precision !== 'INTEGER' && (
-            <div className="space-y-1">
-              <Label htmlFor="numeric-decimals" className="text-[10px] uppercase text-[var(--c-tx4)]">Decimal Places</Label>
-              <Input
-                id="numeric-decimals"
-                type="number"
-                min={0}
-                max={10}
-                value={config.decimalPlaces ?? 2}
-                onChange={(e) => onChange({ decimalPlaces: Math.max(0, Math.min(10, parseInt(e.target.value) || 0)) })}
-                className="h-8 text-xs font-mono"
-              />
+              <div className="space-y-1">
+                <Label htmlFor="numeric-initial" className="text-[10px] uppercase text-[var(--c-tx4)]">Initial Value</Label>
+                <Input
+                  id="numeric-initial"
+                  type="text"
+                  data-testid="numeric-initial-input"
+                  value={initialStr}
+                  onChange={(e) => handleNumericChange(e.target.value, setInitialStr, 'initialValue')}
+                  onBlur={(e) => {
+                    const val = parseFloat(e.target.value);
+                    const clamped = isNaN(val) ? min : Math.max(min, Math.min(max, val));
+                    setInitialStr(String(clamped));
+                    onChange({ initialValue: clamped });
+                  }}
+                  className="h-8 text-xs font-mono"
+                  placeholder="e.g. 0"
+                />
+              </div>
             </div>
-          )}
-        </div>
 
-        {/* 3. Padding & Prefix specifier (Common to Float and Integer) */}
+            {/* 2. Precision & Decimal Selector */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label htmlFor="numeric-precision" className="text-[10px] uppercase text-[var(--c-tx4)]">Precision</Label>
+                <Select
+                  value={precision === 'DOUBLE' ? 'FLOAT' : precision}
+                  onValueChange={(val: any) => onChange({ precision: val })}
+                >
+                  <SelectTrigger id="numeric-precision" data-testid="numeric-precision-trigger" className="h-8 text-xs">
+                    <SelectValue placeholder="Select precision" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="INTEGER">Integer</SelectItem>
+                    <SelectItem value="FLOAT">Float</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {precision !== 'INTEGER' && (
+                <div className="space-y-1">
+                  <Label htmlFor="numeric-decimals" className="text-[10px] uppercase text-[var(--c-tx4)]">Decimal Places</Label>
+                  <Input
+                    id="numeric-decimals"
+                    type="number"
+                    min={0}
+                    max={10}
+                    value={config.decimalPlaces ?? 2}
+                    onChange={(e) => onChange({ decimalPlaces: Math.max(0, Math.min(10, parseInt(e.target.value) || 0)) })}
+                    className="h-8 text-xs font-mono"
+                  />
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
+        {/* 3. Prefix, Padding & Suffix Format (Common to Float and Integer) */}
         <div className="space-y-1">
-          <div className="flex items-center gap-1.5">
-            <Label htmlFor="numeric-int-format" className="text-[10px] uppercase text-[var(--c-tx4)]">
-              Padding & Format Prefix
+          <div className="flex items-center gap-1.5 mb-1">
+            <Label className="text-[10px] uppercase text-[var(--c-tx4)]">
+              Display Format (Prefix, Padding & Suffix)
             </Label>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -415,19 +434,63 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
                   <Info size={10} />
                 </button>
               </TooltipTrigger>
-              <TooltipContent className="max-w-[240px]">
-                Anything inside parentheses (...) is prepended. Optional trailing zeroes set minimum digits (e.g. (USD)001 formats 5 to USD005). Available for both Integer and Float precision.
+              <TooltipContent className="max-w-[280px] space-y-1 text-[11px] leading-relaxed">
+                <p>{"Format the generated numeric values visually:"}</p>
+                <p>{"• Prefix: Prepended text (e.g. '$ ' or 'USD ')."}</p>
+                <p>{"• Padding: Zero-padding length (e.g. '001' formats 5 to '005')."}</p>
+                <p>{"• Suffix: Appended text (e.g. ' kg' or ' / hour')."}</p>
               </TooltipContent>
             </Tooltip>
           </div>
-          <Input
-            id="numeric-int-format"
-            type="text"
-            placeholder="e.g. (USD)number, (000)001, or (EUR)01"
-            value={config.integerFormat ?? ''}
-            onChange={(e) => onChange({ integerFormat: e.target.value })}
-            className="h-8 text-xs font-mono"
-          />
+          <div className="grid grid-cols-3 gap-2">
+            <div className="space-y-1">
+              <Label htmlFor="numeric-prefix" className="text-[9px] text-[var(--c-tx4)]">Prefix</Label>
+              <Input
+                id="numeric-prefix"
+                type="text"
+                placeholder="e.g. $"
+                value={prefixStr}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setPrefixStr(val);
+                  onChange({ prefix: val });
+                }}
+                className="h-8 text-xs font-mono"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label htmlFor="numeric-int-format" className="text-[9px] text-[var(--c-tx4)]">Padding</Label>
+              <Input
+                id="numeric-int-format"
+                type="text"
+                placeholder="e.g. 001"
+                value={integerFormatStr}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setIntegerFormatStr(val);
+                  onChange({ integerFormat: val });
+                }}
+                className="h-8 text-xs font-mono"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label htmlFor="numeric-suffix" className="text-[9px] text-[var(--c-tx4)]">Suffix</Label>
+              <Input
+                id="numeric-suffix"
+                type="text"
+                placeholder="e.g. kg"
+                value={suffixStr}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setSuffixStr(val);
+                  onChange({ suffix: val });
+                }}
+                className="h-8 text-xs font-mono"
+              />
+            </div>
+          </div>
         </div>
 
         {/* 4. Main Pattern Selector */}
@@ -460,6 +523,7 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
               <SelectItem value="CONSTANT">Constant</SelectItem>
               <SelectItem value="SEQUENTIAL">Sequential</SelectItem>
               <SelectItem value="DISTRIBUTION">Distribution</SelectItem>
+              <SelectItem value="FORMULA">Formula</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -566,155 +630,156 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
               )}
             </div>
           )}
-        </div>
 
-        {/* 6. Optional Formula */}
-        <div className="space-y-1 relative">
-          <div className="flex items-center gap-1.5">
-            <Label htmlFor="numeric-formula" className="text-[10px] uppercase text-[var(--c-tx4)]">Formula override (Optional)</Label>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button type="button" className="text-[var(--c-tx4)] hover:text-cyan-400 cursor-help transition-colors">
-                  <Info size={10} />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent className="max-w-[320px] space-y-1.5 p-3 text-[11px] leading-relaxed">
-                <p>{"Apply dynamic mathematical formulas using variables and constants."}</p>
-                <div className="space-y-1 text-[10px] opacity-90 font-sans border-t border-white/10 pt-1.5 pb-1">
-                  <p>{"• Type '{{' to search and autocomplete valid variables or built-in math constants."}</p>
-                  <p>{"• Variables in green are valid and in scope; red indicates invalid or out-of-scope references."}</p>
-                  <p>{"• Built-in mathematical constants like pi and e are highlighted in amber."}</p>
-                </div>
-                <div className="text-[10px] bg-white/5 rounded p-1.5 border border-white/10 font-mono text-[var(--c-tx3)]">
-                  <span className="text-[8px] uppercase font-sans text-[var(--c-tx4)] block mb-0.5">Example:</span>
-                  {"sin("}
-                  <span className="text-emerald-400 font-semibold">{"{{angle}}"}</span>
-                  {" * "}
-                  <span className="text-amber-400 font-semibold">{"pi"}</span>
-                  {" / 180) + "}
-                  <span className="text-amber-400 font-semibold">{"e"}</span>
-                  {" ^ "}
-                  <span className="text-emerald-400 font-semibold">{"{{scale}}"}</span>
-                </div>
-              </TooltipContent>
-            </Tooltip>
-          </div>
-          <div className="relative">
-            {/* Highlighting Overlay */}
-            <div 
-              ref={overlayRef}
-              className="absolute left-0 right-0 top-0 bottom-0 pointer-events-none whitespace-pre overflow-hidden flex items-center px-3 bg-transparent text-transparent text-xs font-mono border border-transparent h-8"
-            >
-              {formulaTokens.map((t, i) => {
-                if (t.isConstant) {
-                  return (
-                    <span 
-                      key={i} 
-                      className="bg-amber-500/20 text-amber-400 rounded ring-1 ring-inset ring-amber-500/40 px-0.5 -mx-0.5 font-semibold"
-                    >
-                      {t.text}
-                    </span>
-                  );
-                }
-                return (
-                  <span 
-                    key={i} 
-                    className={t.isVariable ? (t.isValid ? 'bg-emerald-500/20 text-emerald-400 rounded ring-1 ring-inset ring-emerald-500/40 px-0.5 -mx-0.5' : 'bg-red-500/20 text-red-400 rounded ring-1 ring-inset ring-red-500/40 px-0.5 -mx-0.5') : 'text-[var(--c-tx2)]'}
-                  >
-                    {t.text}
-                  </span>
-                );
-              })}
-            </div>
-
-            <input
-              ref={inputRef}
-              id="numeric-formula"
-              type="text"
-              data-testid="numeric-formula-input"
-              placeholder="e.g. {{temperature}} * 1.5 + 10"
-              value={config.formula ?? ''}
-              onChange={(e) => {
-                onChange({ formula: e.target.value });
-                setCursorPos(e.target.selectionStart || 0);
-                if (showAutocomplete && !e.target.value.includes('{{')) {
-                  setShowAutocomplete(false);
-                }
-                requestAnimationFrame(() => {
-                  if (overlayRef.current && inputRef.current) {
-                    overlayRef.current.scrollLeft = inputRef.current.scrollLeft;
-                  }
-                });
-              }}
-              onKeyDown={handleKeyDown}
-              onKeyUp={() => {
-                if (overlayRef.current && inputRef.current) {
-                  overlayRef.current.scrollLeft = inputRef.current.scrollLeft;
-                }
-              }}
-              onScroll={(e) => {
-                if (overlayRef.current) {
-                  overlayRef.current.scrollLeft = (e.target as HTMLInputElement).scrollLeft;
-                }
-              }}
-              onBlur={() => {
-                setTimeout(() => {
-                  setShowAutocomplete(false);
-                }, 150);
-              }}
-              className="file:text-foreground placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground dark:bg-input/30 border-input flex w-full min-w-0 rounded-md border px-3 py-1 bg-input-background transition-[color,box-shadow] outline-none disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] h-8 text-xs font-mono text-transparent caret-[var(--c-tx1)] relative z-10"
-              autoComplete="off"
-            />
-
-            {/* Autocomplete Dropdown */}
-            {showAutocomplete && autocompleteOptions.length > 0 && (
-              <div 
-                ref={autocompleteRef}
-                onMouseDown={(e) => e.preventDefault()} // Prevent blur when clicking scrollbar or container area
-                className="absolute left-0 right-0 bottom-full mb-1 z-50 bg-[var(--c-bg2)] border border-[var(--c-br1)] rounded shadow-xl max-h-[140px] overflow-y-auto scrollbar-thin scrollbar-thumb-[var(--c-br3)]"
-              >
-                {autocompleteOptions.map((opt, i) => (
-                  <div
-                    key={i}
-                    onMouseDown={(e) => {
-                      e.preventDefault(); // Prevent blur
-                      insertOption(opt);
-                    }}
-                    className={`px-3 py-1.5 cursor-pointer flex items-center justify-between gap-4 transition-colors ${i === selectedIndex ? 'bg-violet-500/20 text-violet-400 font-bold' : 'hover:bg-white/5 text-[var(--c-tx3)]'}`}
-                  >
-                    <div className="flex flex-col">
-                      <span className="text-[11px] font-mono">{`{{${opt.name}}}`}</span>
-                      <span className="text-[8px] uppercase opacity-50 tracking-wider font-sans">{opt.scope}</span>
+          {pattern === 'FORMULA' && (
+            <div className="space-y-1 relative">
+              <div className="flex items-center gap-1.5">
+                <Label htmlFor="numeric-formula" className="text-[10px] uppercase text-[var(--c-tx4)]">Formula Configuration</Label>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button type="button" className="text-[var(--c-tx4)] hover:text-cyan-400 cursor-help transition-colors">
+                      <Info size={10} />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-[320px] space-y-1.5 p-3 text-[11px] leading-relaxed">
+                    <p>{"Apply dynamic mathematical formulas using variables and constants."}</p>
+                    <div className="space-y-1 text-[10px] opacity-90 font-sans border-t border-white/10 pt-1.5 pb-1">
+                      <p>{"• Type '{{' to search and autocomplete valid variables or built-in math constants."}</p>
+                      <p>{"• Variables in green are valid and in scope; red indicates invalid or out-of-scope references."}</p>
+                      <p>{"• Built-in mathematical constants like pi and e are highlighted in amber."}</p>
                     </div>
-                    {opt.scope === 'local' && <span className="text-[8px] px-1 rounded bg-sky-500/10 text-sky-500 border border-sky-500/20">Local</span>}
-                    {opt.scope === 'group' && <span className="text-[8px] px-1 rounded bg-violet-500/10 text-violet-500 border border-violet-500/20">Group</span>}
-                    {opt.scope === 'global' && <span className="text-[8px] px-1 rounded bg-amber-500/10 text-amber-500 border border-amber-500/20">Global</span>}
-                    {opt.isConstant && <span className="text-[8px] px-1 rounded bg-amber-500/10 text-amber-500 border border-amber-500/20 font-semibold">Constant</span>}
-                  </div>
-                ))}
+                    <div className="text-[10px] bg-white/5 rounded p-1.5 border border-white/10 font-mono text-[var(--c-tx3)]">
+                      <span className="text-[8px] uppercase font-sans text-[var(--c-tx4)] block mb-0.5">Example:</span>
+                      {"sin("}
+                      <span className="text-emerald-400 font-semibold">{"{{angle}}"}</span>
+                      {" * "}
+                      <span className="text-amber-400 font-semibold">{"pi"}</span>
+                      {" / 180) + "}
+                      <span className="text-amber-400 font-semibold">{"e"}</span>
+                      {" ^ "}
+                      <span className="text-emerald-400 font-semibold">{"{{scale}}"}</span>
+                    </div>
+                  </TooltipContent>
+                </Tooltip>
               </div>
-            )}
-          </div>
-
-          {/* Premium Variable Validation Feedback Badges */}
-          {formulaVariables.length > 0 && (
-            <div data-testid="formula-badges" className="flex flex-wrap gap-1.5 pt-1">
-              {formulaVariables.map((v, idx) => (
-                <span
-                  key={idx}
-                  className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono border transition-all ${
-                    v.isValid
-                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-                      : 'bg-red-500/10 border-red-500/30 text-red-400'
-                  }`}
+              <div className="relative">
+                {/* Highlighting Overlay */}
+                <div 
+                  ref={overlayRef}
+                  className="absolute left-0 right-0 top-0 bottom-0 pointer-events-none whitespace-pre overflow-hidden flex items-center px-3 bg-transparent text-transparent text-xs font-mono border border-transparent h-8"
                 >
-                  <span>{v.isValid ? '✓' : '✗'}</span>
-                  <span>{v.name}</span>
-                  <span className="opacity-60 text-[8px]">
-                    {v.isValid ? `(${v.scope})` : '(Out of Scope / Not Found)'}
-                  </span>
-                </span>
-              ))}
+                  {formulaTokens.map((t, i) => {
+                    if (t.isConstant) {
+                      return (
+                        <span 
+                          key={i} 
+                          className="bg-amber-500/20 text-amber-400 rounded ring-1 ring-inset ring-amber-500/40 px-0.5 -mx-0.5 font-semibold"
+                        >
+                          {t.text}
+                        </span>
+                      );
+                    }
+                    return (
+                      <span 
+                        key={i} 
+                        className={t.isVariable ? (t.isValid ? 'bg-emerald-500/20 text-emerald-400 rounded ring-1 ring-inset ring-emerald-500/40 px-0.5 -mx-0.5' : 'bg-red-500/20 text-red-400 rounded ring-1 ring-inset ring-red-500/40 px-0.5 -mx-0.5') : 'text-[var(--c-tx2)]'}
+                      >
+                        {t.text}
+                      </span>
+                    );
+                  })}
+                </div>
+
+                <input
+                  ref={inputRef}
+                  id="numeric-formula"
+                  type="text"
+                  data-testid="numeric-formula-input"
+                  placeholder="e.g. {{temperature}} * 1.5 + 10"
+                  value={config.formula ?? ''}
+                  onChange={(e) => {
+                    onChange({ formula: e.target.value });
+                    setCursorPos(e.target.selectionStart || 0);
+                    if (showAutocomplete && !e.target.value.includes('{{')) {
+                      setShowAutocomplete(false);
+                    }
+                    requestAnimationFrame(() => {
+                      if (overlayRef.current && inputRef.current) {
+                        overlayRef.current.scrollLeft = inputRef.current.scrollLeft;
+                      }
+                    });
+                  }}
+                  onKeyDown={handleKeyDown}
+                  onKeyUp={() => {
+                    if (overlayRef.current && inputRef.current) {
+                      overlayRef.current.scrollLeft = inputRef.current.scrollLeft;
+                    }
+                  }}
+                  onScroll={(e) => {
+                    if (overlayRef.current) {
+                      overlayRef.current.scrollLeft = (e.target as HTMLInputElement).scrollLeft;
+                    }
+                  }}
+                  onBlur={() => {
+                    setTimeout(() => {
+                      setShowAutocomplete(false);
+                    }, 150);
+                  }}
+                  className="file:text-foreground placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground dark:bg-input/30 border-input flex w-full min-w-0 rounded-md border px-3 py-1 bg-input-background transition-[color,box-shadow] outline-none disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] h-8 text-xs font-mono text-transparent caret-[var(--c-tx1)] relative z-10"
+                  autoComplete="off"
+                />
+
+                {/* Autocomplete Dropdown */}
+                {showAutocomplete && autocompleteOptions.length > 0 && (
+                  <div 
+                    ref={autocompleteRef}
+                    onMouseDown={(e) => e.preventDefault()} // Prevent blur when clicking scrollbar or container area
+                    className="absolute left-0 right-0 bottom-full mb-1 z-50 bg-[var(--c-bg2)] border border-[var(--c-br1)] rounded shadow-xl max-h-[140px] overflow-y-auto scrollbar-thin scrollbar-thumb-[var(--c-br3)]"
+                  >
+                    {autocompleteOptions.map((opt, i) => (
+                      <div
+                        key={i}
+                        onMouseDown={(e) => {
+                          e.preventDefault(); // Prevent blur
+                          insertOption(opt);
+                        }}
+                        className={`px-3 py-1.5 cursor-pointer flex items-center justify-between gap-4 transition-colors ${i === selectedIndex ? 'bg-violet-500/20 text-violet-400 font-bold' : 'hover:bg-white/5 text-[var(--c-tx3)]'}`}
+                      >
+                        <div className="flex flex-col">
+                          <span className="text-[11px] font-mono">{`{{${opt.name}}}`}</span>
+                          <span className="text-[8px] uppercase opacity-50 tracking-wider font-sans">{opt.scope}</span>
+                        </div>
+                        {opt.scope === 'local' && <span className="text-[8px] px-1 rounded bg-sky-500/10 text-sky-500 border border-sky-500/20">Local</span>}
+                        {opt.scope === 'group' && <span className="text-[8px] px-1 rounded bg-violet-500/10 text-violet-500 border border-violet-500/20">Group</span>}
+                        {opt.scope === 'global' && <span className="text-[8px] px-1 rounded bg-amber-500/10 text-amber-500 border border-amber-500/20">Global</span>}
+                        {opt.isConstant && <span className="text-[8px] px-1 rounded bg-amber-500/10 text-amber-500 border border-amber-500/20 font-semibold">Constant</span>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Premium Variable Validation Feedback Badges */}
+              {formulaVariables.length > 0 && (
+                <div data-testid="formula-badges" className="flex flex-wrap gap-1.5 pt-1">
+                  {formulaVariables.map((v, idx) => (
+                    <span
+                      key={idx}
+                      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono border transition-all ${
+                        v.isValid
+                          ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                          : 'bg-red-500/10 border-red-500/30 text-red-400'
+                      }`}
+                    >
+                      <span>{v.isValid ? '✓' : '✗'}</span>
+                      <span>{v.name}</span>
+                      <span className="opacity-60 text-[8px]">
+                        {v.isValid ? `(${v.scope})` : '(Out of Scope / Not Found)'}
+                      </span>
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>

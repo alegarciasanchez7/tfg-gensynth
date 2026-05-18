@@ -102,11 +102,15 @@ public class VariableFactory {
                     numConfig.decimalPlaces(((Number) configMap.get("decimalPlaces")).intValue());
                 if (configMap.containsKey("integerFormat"))
                     numConfig.integerFormat((String) configMap.get("integerFormat"));
-                if (configMap.containsKey("initialValue"))
+                if (configMap.containsKey("prefix"))
+                    numConfig.prefix((String) configMap.get("prefix"));
+                if (configMap.containsKey("suffix"))
+                    numConfig.suffix((String) configMap.get("suffix"));
+                if (configMap.containsKey("initialValue") && configMap.get("initialValue") != null)
                     numConfig.initial(((Number) configMap.get("initialValue")).doubleValue());
-                else if (configMap.containsKey("initial"))
+                else if (configMap.containsKey("initial") && configMap.get("initial") != null)
                     numConfig.initial(((Number) configMap.get("initial")).doubleValue());
-                if (configMap.containsKey("step"))
+                if (configMap.containsKey("step") && configMap.get("step") != null)
                     numConfig.step(((Number) configMap.get("step")).doubleValue());
                 if (configMap.containsKey("constantValue"))
                     numConfig.constant(((Number) configMap.get("constantValue")).doubleValue());

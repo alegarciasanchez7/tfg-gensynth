@@ -170,6 +170,18 @@ public class Variable {
         @SuppressWarnings("unchecked")
         Map<String, Object> config = (Map<String, Object>) payload.getOrDefault("config", Map.of());
 
+        if ((config == null || config.isEmpty()) && defaultValue instanceof String) {
+            String dfStr = ((String) defaultValue).trim();
+            if (dfStr.startsWith("{") && dfStr.endsWith("}")) {
+                try {
+                    com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                    config = mapper.readValue(dfStr, new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+                } catch (Exception e) {
+                    logger.error("Failed to auto-recover variable config from defaultValue: {}", e.getMessage());
+                }
+            }
+        }
+
         // Robustness: If scope is LOCAL but flowId is missing, downgrade to GLOBAL to avoid crashing on import
         if ("local".equalsIgnoreCase(scope) && (flowId == null || flowId.isBlank())) {
             logger.warn("Variable '{}' (id: {}) has LOCAL scope but missing flowId (Payload keys: {}). Downgrading to GLOBAL.", 

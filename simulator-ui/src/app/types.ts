@@ -30,6 +30,8 @@ export interface NumericVariableConfig extends BaseVariableConfig {
   formula?: string;
   decimalPlaces?: number;
   integerFormat?: string;
+  prefix?: string;
+  suffix?: string;
   initialValue?: number;
   step?: number;
   constantValue?: number;

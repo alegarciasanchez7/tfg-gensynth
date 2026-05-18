@@ -152,4 +152,94 @@ public class UiBridgeWebSocketServerTest {
         assertTrue("Should have sent START trace", foundStartTrace);
         assertTrue("Should have sent END trace", foundEndTrace);
     }
+
+    @Test
+    public void variableUpdateAndAutoRecoveryWorksCorrectly() throws Exception {
+        Path tempDir = Files.createTempDirectory("gensynth-ws-test-var-");
+        StateRepository repository = new JsonStateRepositoryImpl(tempDir.toString());
+
+        UiBridgeWebSocketServer server = new UiBridgeWebSocketServer(
+                new InetSocketAddress("localhost", 0),
+                new ConnectorCatalogService(),
+                repository,
+                new PluginInstallerImpl(tempDir));
+
+        WebSocket mockConn = mock(WebSocket.class);
+        when(mockConn.isOpen()).thenReturn(true);
+
+        // 1. CREATE_VARIABLE with config
+        String createCmd = """
+                {
+                  "id": "cmd-create-var-1",
+                  "type": "CREATE_VARIABLE",
+                  "protocolVersion": "1.0.0",
+                  "payload": {
+                    "variableId": "var-numeric-1",
+                    "name": "numeric_test",
+                    "type": "numeric",
+                    "scope": "global",
+                    "config": {
+                      "min": 5,
+                      "max": 25,
+                      "precision": "INTEGER"
+                    }
+                  }
+                }
+                """;
+        server.onMessage(mockConn, createCmd);
+
+        Field varsField = UiBridgeWebSocketServer.class.getDeclaredField("variablesById");
+        varsField.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        Map<String, com.gensynth.core.model.Variable> variables = (Map<String, com.gensynth.core.model.Variable>) varsField.get(server);
+
+        com.gensynth.core.model.Variable createdVar = variables.get("var-numeric-1");
+        assertNotNull(createdVar);
+        assertEquals("numeric_test", createdVar.getName());
+        assertEquals("numeric", createdVar.getType());
+        assertEquals(5, ((Number) createdVar.getConfig().get("min")).intValue());
+        assertEquals(25, ((Number) createdVar.getConfig().get("max")).intValue());
+
+        // 2. UPDATE_VARIABLE with new config
+        String updateCmd = """
+                {
+                  "id": "cmd-update-var-1",
+                  "type": "UPDATE_VARIABLE",
+                  "protocolVersion": "1.0.0",
+                  "payload": {
+                    "variableId": "var-numeric-1",
+                    "name": "numeric_test_updated",
+                    "type": "numeric",
+                    "scope": "global",
+                    "config": {
+                      "min": 10,
+                      "max": 50,
+                      "precision": "INTEGER"
+                    }
+                  }
+                }
+                """;
+        server.onMessage(mockConn, updateCmd);
+
+        com.gensynth.core.model.Variable updatedVar = variables.get("var-numeric-1");
+        assertNotNull(updatedVar);
+        assertEquals("numeric_test_updated", updatedVar.getName());
+        assertEquals(10, ((Number) updatedVar.getConfig().get("min")).intValue());
+        assertEquals(50, ((Number) updatedVar.getConfig().get("max")).intValue());
+
+        // 3. Test Auto-recovery of legacy payload (config is empty, but defaultValue is json string)
+        java.util.Map<String, Object> legacyPayload = new java.util.HashMap<>();
+        legacyPayload.put("id", "var-legacy-1");
+        legacyPayload.put("name", "legacy_var");
+        legacyPayload.put("type", "numeric");
+        legacyPayload.put("scope", "GLOBAL");
+        legacyPayload.put("defaultValue", "{\"min\":12,\"max\":99}");
+        legacyPayload.put("config", java.util.Map.of());
+
+        com.gensynth.core.model.Variable legacyVar = com.gensynth.core.model.Variable.fromPayload(legacyPayload);
+        assertNotNull(legacyVar);
+        assertNotNull(legacyVar.getConfig());
+        assertEquals(12, ((Number) legacyVar.getConfig().get("min")).intValue());
+        assertEquals(99, ((Number) legacyVar.getConfig().get("max")).intValue());
+    }
 }
