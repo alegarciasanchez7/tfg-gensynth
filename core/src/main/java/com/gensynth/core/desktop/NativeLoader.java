@@ -40,26 +40,36 @@ public class NativeLoader {
         try {
             CefAppBuilder builder = new CefAppBuilder();
             
-            // Optimize for stability on Windows: Disable GPU acceleration to avoid dxil.dll errors
+            // Disable native Chromium log spam (Mojo deserialization errors, console noise, etc.)
+            builder.getCefSettings().log_severity = org.cef.CefSettings.LogSeverity.LOGSEVERITY_DISABLE;
+            
+            // Use standard windowed rendering (windowless = false) on all platforms for peak native GPU performance.
+            // Under Linux Wayland/GNOME, we resolve window reparenting/blank screen glitches by forcing Chromium to
+            // run on the X11/XWayland server (matching Java Swing's AWT windowing backend).
+            boolean isLinux = System.getProperty("os.name").toLowerCase().contains("linux");
             builder.getCefSettings().windowless_rendering_enabled = false;
+            
+            // Optimize for stability:
             builder.addJcefArgs("--disable-gpu", "--disable-gpu-compositing", "--disable-software-rasterizer");
+            if (isLinux) {
+                builder.addJcefArgs("--ozone-platform=x11", "--disable-features=UseOzonePlatform");
+            }
 
             // Configure the installation directory (cross-platform)
             builder.setInstallDir(installDir);
 
-            // Use a custom handler to register schemes and log events
             builder.setAppHandler(new MavenCefAppHandlerAdapter() {
                 @Override
                 public void onRegisterCustomSchemes(org.cef.callback.CefSchemeRegistrar registrar) {
-                    // 1. We MUST register the scheme name as 'standard' and 'local' before
-                    // initialization
-                    registrar.addCustomScheme("gensynth", true, false, false, false, false, false, false);
+                    // Standard http scheme does not require manual custom registration.
                 }
 
                 @Override
                 public void onContextInitialized() {
-                    // 2. Register the factory once the engine is ready
-                    CefApp.getInstance().registerSchemeHandlerFactory("gensynth", "app",
+                    // Register the scheme handler factory under the standard HTTP scheme on the gensynth.local domain.
+                    // This is 100% standard and natively recognized by every Chromium child process (including jcef_helper),
+                    // avoiding all Mojo deserialization conflicts and custom protocol security sandboxing blocks.
+                    CefApp.getInstance().registerSchemeHandlerFactory("http", "gensynth.local",
                             new org.cef.callback.CefSchemeHandlerFactory() {
                                 @Override
                                 public org.cef.handler.CefResourceHandler create(org.cef.browser.CefBrowser browser,
