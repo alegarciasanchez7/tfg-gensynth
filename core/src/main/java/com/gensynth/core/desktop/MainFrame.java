@@ -27,7 +27,6 @@ public class MainFrame extends JFrame {
     private final Component browserUI;
     private final CefMessageRouter messageRouter;
 
-    @SuppressWarnings("deprecation")
     public MainFrame(String title, String initialUrl, CefApp cefApp) {
         super(title);
 
