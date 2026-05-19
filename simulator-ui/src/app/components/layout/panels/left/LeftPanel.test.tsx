@@ -54,8 +54,8 @@ describe('LeftPanel', () => {
       configSchema: {
         type: 'object',
         properties: {
-          outputDir: { type: 'string' },
-          format: { type: 'string' },
+          outputDir: { type: 'string', default: './outputs' },
+          format: { type: 'string', default: 'json' },
           fileName: { type: 'string' },
         },
       },
@@ -117,15 +117,18 @@ describe('LeftPanel', () => {
     vi.clearAllMocks();
   });
 
-  it('defaults to file when creating a flow from a group and sends file config', async () => {
+  it('allows selecting a connector when creating a flow and sends the config', async () => {
     const user = userEvent.setup();
 
     render(<LeftPanel {...baseProps} />);
 
     await user.click(screen.getByRole('button', { name: /add flow/i }));
 
-    const technologySelect = await screen.findByRole('combobox', { name: /technology/i });
-    expect(technologySelect).toHaveValue('file');
+    const connectorSelect = await screen.findByRole('combobox', { name: /connector/i });
+    expect(connectorSelect).toHaveValue('');
+
+    await user.selectOptions(connectorSelect, 'file');
+    expect(connectorSelect).toHaveValue('file');
 
     await user.type(screen.getByLabelText(/^name$/i), 'Output flow');
     await user.click(screen.getByRole('button', { name: /create flow/i }));
@@ -143,6 +146,7 @@ describe('LeftPanel', () => {
       {
         outputDir: './outputs',
         format: 'json',
+        fileName: '',
       },
     );
   });
