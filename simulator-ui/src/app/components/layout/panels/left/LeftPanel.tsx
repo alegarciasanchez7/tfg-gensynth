@@ -60,11 +60,182 @@ import {
   DropdownMenuSeparator,
 } from '../../../ui/dropdown-menu';
 import type { Group, Flow, Selection, ConnectionStatus, GroupStatus, Variable } from '../../../../types';
-import { TemplateEditor } from '../../../workspace/flows/TemplateEditor';
 import type { ConnectorPluginDescriptor } from '../../../../core/types';
 import { isRunningInJCEF } from '../../../../core/jcef';
 import { CoreCommands } from '../../../../core/bridge';
 import { CloneDialog } from './CloneDialog';
+
+interface PickDirectoryResponse {
+  status: string;
+  path?: string;
+}
+
+interface ConnectorSchemaProperty {
+  type?: string;
+  title?: string;
+  description?: string;
+  default?: unknown;
+  enum?: unknown[];
+}
+
+function getConnectorProperties(schema: Record<string, unknown> | undefined): Record<string, ConnectorSchemaProperty> {
+  if (!schema) return {};
+  return ((schema.properties as Record<string, ConnectorSchemaProperty> | undefined) ?? {});
+}
+
+function getDefaultConfigFromSchema(schema: Record<string, unknown> | undefined): Record<string, unknown> {
+  if (!schema) return {};
+  const properties = getConnectorProperties(schema);
+  const defaults: Record<string, unknown> = {};
+
+  for (const [name, definition] of Object.entries(properties)) {
+    if (Object.prototype.hasOwnProperty.call(definition, 'default')) {
+      defaults[name] = definition.default;
+      continue;
+    }
+
+    if (Array.isArray(definition.enum) && definition.enum.length > 0) {
+      defaults[name] = definition.enum[0];
+      continue;
+    }
+
+    switch (definition.type) {
+      case 'number':
+      case 'integer':
+        defaults[name] = 0;
+        break;
+      case 'boolean':
+        defaults[name] = false;
+        break;
+      case 'array':
+        defaults[name] = [];
+        break;
+      case 'object':
+        defaults[name] = {};
+        break;
+      default:
+        defaults[name] = '';
+        break;
+    }
+  }
+
+  return defaults;
+}
+
+function ConnectorFields({
+  connector,
+  config,
+  onChange,
+}: {
+  connector: ConnectorPluginDescriptor;
+  config: Record<string, unknown>;
+  onChange: (key: string, value: unknown) => void;
+}) {
+  const properties = getConnectorProperties(connector.configSchema);
+
+  return (
+    <>
+      {Object.entries(properties).map(([key, def]) => {
+        const label = def.title || key;
+        const description = def.description;
+        const isDirectoryField = 
+          key.toLowerCase().includes('dir') || 
+          key.toLowerCase().includes('path') || 
+          label.toLowerCase().includes('directory') || 
+          label.toLowerCase().includes('path');
+
+        const value = config[key] ?? '';
+
+        const isWide = def.type === 'array' || def.type === 'object' || isDirectoryField;
+        const colSpanClass = isWide ? 'sm:col-span-2' : '';
+
+        return (
+          <div key={key} className={`space-y-2 ${colSpanClass}`}>
+            <label className="text-xs text-[var(--c-tx3)]">
+              {label}
+            </label>
+
+            {def.enum && def.enum.length > 0 ? (
+              <select
+                value={String(value)}
+                onChange={(event) => onChange(key, event.target.value)}
+                className="flex h-9 w-full rounded-md border border-[var(--c-br1)] bg-[var(--c-bg1)] px-3 py-2 text-sm text-[var(--c-tx1)] shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-500"
+              >
+                {def.enum.map((option) => (
+                  <option key={String(option)} value={String(option)}>
+                    {String(option)}
+                  </option>
+                ))}
+              </select>
+            ) : def.type === 'boolean' ? (
+              <select
+                value={value === true ? 'true' : 'false'}
+                onChange={(event) => onChange(key, event.target.value === 'true')}
+                className="flex h-9 w-full rounded-md border border-[var(--c-br1)] bg-[var(--c-bg1)] px-3 py-2 text-sm text-[var(--c-tx1)] shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-500"
+              >
+                <option value="true">True</option>
+                <option value="false">False</option>
+              </select>
+            ) : def.type === 'number' || def.type === 'integer' ? (
+              <Input
+                type="number"
+                value={value === undefined || value === null ? '' : String(value)}
+                onChange={(event) => onChange(key, event.target.value === '' ? '' : Number(event.target.value))}
+              />
+            ) : def.type === 'array' ? (
+              <Textarea
+                value={Array.isArray(value) ? value.join(', ') : String(value)}
+                onChange={(event) => onChange(key, event.target.value.split(',').map((item) => item.trim()).filter(Boolean))}
+                rows={2}
+                placeholder="val1, val2, val3"
+              />
+            ) : def.type === 'object' ? (
+              <Textarea
+                value={typeof value === 'object' && value !== null ? JSON.stringify(value, null, 2) : String(value)}
+                onChange={(event) => {
+                  try {
+                    onChange(key, event.target.value ? JSON.parse(event.target.value) : {});
+                  } catch {
+                    onChange(key, event.target.value);
+                  }
+                }}
+                rows={3}
+                placeholder="{}"
+              />
+            ) : (
+              <div className="flex gap-2">
+                <Input
+                  type="text"
+                  value={String(value)}
+                  onChange={(event) => onChange(key, event.target.value)}
+                  className="flex-1"
+                />
+                {isDirectoryField && isRunningInJCEF() && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={async () => {
+                      const response = await CoreCommands.pickDirectory() as PickDirectoryResponse;
+                      if (response && response.status === 'success' && response.path) {
+                        onChange(key, response.path);
+                      }
+                    }}
+                    className="shrink-0"
+                    title="Browse directory"
+                  >
+                    <FolderOpen size={14} />
+                  </Button>
+                )}
+              </div>
+            )}
+            {description && <p className="text-[10px] text-[var(--c-tx4)]">{description}</p>}
+          </div>
+        );
+      })}
+    </>
+  );
+}
 
 interface LeftPanelProps {
   groups: Group[];
@@ -334,7 +505,6 @@ function GroupItem({
   onCloneFlow,
   onDeleteFlow,
   latestConnectors,
-  variables,
 }: {
   group: Group;
   selection: Selection;
@@ -361,7 +531,6 @@ function GroupItem({
   onCloneFlow: (groupId: string, flowId: string, count: number, namingPattern?: string) => void;
   onDeleteFlow: (groupId: string, flowId: string) => Promise<void>;
   latestConnectors: ConnectorPluginDescriptor[];
-  variables: Variable[];
 }) {
   const gCfg = groupStatusCfg[group.status];
   const selectedGroup = selection.type === 'group' && selection.groupId === group.id;
@@ -375,33 +544,31 @@ function GroupItem({
   const [flowTopic, setFlowTopic] = useState('');
   const [flowInterval, setFlowInterval] = useState('1000');
   const [flowBurst, setFlowBurst] = useState('1');
-  const [flowTemplate, setFlowTemplate] = useState('{}');
-  const [flowOutputDir, setFlowOutputDir] = useState('./outputs');
-  const [flowFileFormat, setFlowFileFormat] = useState<'json' | 'txt'>('json');
+  const [connectorConfig, setConnectorConfig] = useState<Record<string, unknown>>({});
+  const selectedConnector = latestConnectors.find((c) => c.pluginId === flowTechnology);
 
   useEffect(() => {
-    if (!flowTechnology && latestConnectors[0]) {
-      setFlowTechnology(latestConnectors[0].pluginId);
+    if (!flowTechnology) {
+      setConnectorConfig({});
+      return;
     }
-  }, [flowTechnology, latestConnectors]);
-
-  useEffect(() => {
-    if (!flowTechnology && latestConnectors[0]) {
-      setFlowTechnology(latestConnectors[0].pluginId);
+    const descriptor = latestConnectors.find((c) => c.pluginId === flowTechnology);
+    if (descriptor) {
+      setConnectorConfig(getDefaultConfigFromSchema(descriptor.configSchema));
+    } else {
+      setConnectorConfig({});
     }
   }, [flowTechnology, latestConnectors]);
 
   const resetCreateFlowForm = () => {
     setFlowName('');
-    setFlowTechnology(latestConnectors[0]?.pluginId ?? '');
+    setFlowTechnology('');
+    setConnectorConfig({});
     setFlowHost('localhost');
     setFlowPort('8080');
     setFlowTopic('');
     setFlowInterval('1000');
     setFlowBurst('1');
-    setFlowTemplate('{}');
-    setFlowOutputDir('./outputs');
-    setFlowFileFormat('json');
   };
 
   const handleDeleteConfirm = async () => {
@@ -419,28 +586,33 @@ function GroupItem({
   const handleCreateFlow = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    const port = Number(flowPort);
+    const selectedConnector = latestConnectors.find((c) => c.pluginId === flowTechnology);
+
+    const host = selectedConnector
+      ? String(connectorConfig['host'] || connectorConfig['bootstrapServers'] || connectorConfig['endpoint'] || 'localhost')
+      : flowHost.trim();
+    const port = selectedConnector
+      ? Number(connectorConfig['port'] || 8080)
+      : Number(flowPort);
+    const topic = selectedConnector
+      ? String(connectorConfig['topic'] || connectorConfig['exchange'] || connectorConfig['queue'] || '')
+      : flowTopic.trim();
+
     const interval = flowInterval.trim() ? Number(flowInterval) : undefined;
     const burst = flowBurst.trim() ? Number(flowBurst) : undefined;
-
-    // Build connector config if needed
-    const connectorConfig = flowTechnology.trim() === 'file' ? {
-      outputDir: flowOutputDir.trim() || './outputs',
-      format: flowFileFormat,
-    } : undefined;
 
     try {
       const createdFlow = await onCreateFlow(
         group.id,
         flowName.trim(),
         flowTechnology.trim(),
-        flowHost.trim(),
+        host,
         port,
-        flowTopic.trim() || undefined,
+        topic || undefined,
         Number.isNaN(interval) ? undefined : interval,
         Number.isNaN(burst) ? undefined : burst,
-        flowTemplate.trim() || '{}',
-        connectorConfig,
+        '{}',
+        selectedConnector ? connectorConfig : undefined,
       );
 
       toast.success(`Flow "${createdFlow.name}" created`);
@@ -609,202 +781,147 @@ function GroupItem({
                 <Plus size={9} /> add flow
               </button>
             </DialogTrigger>
-            <DialogContent className="max-w-lg">
-              <form onSubmit={handleCreateFlow} className="space-y-4">
-                <DialogHeader>
+            <DialogContent className="max-w-lg max-h-[75vh] flex flex-col">
+              <form onSubmit={handleCreateFlow} className="flex-1 flex flex-col min-h-0">
+                <DialogHeader className="shrink-0 mb-4">
                   <DialogTitle>Add flow</DialogTitle>
                   <DialogDescription>
                     Create a new flow inside {group.name}.
                   </DialogDescription>
                 </DialogHeader>
 
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="space-y-2 sm:col-span-2">
-                    <label className="text-xs text-[var(--c-tx3)]" htmlFor={`flow-name-${group.id}`}>
-                      Name
-                    </label>
-                    <Input
-                      id={`flow-name-${group.id}`}
-                      value={flowName}
-                      onChange={(event) => setFlowName(event.target.value)}
-                      placeholder="Orders → Kafka"
-                      autoFocus
-                      required
-                    />
-                  </div>
-
-                  <div className="space-y-2 sm:col-span-2">
-                    <label className="text-xs text-[var(--c-tx3)]" htmlFor={`flow-technology-${group.id}`}>
-                      Technology
-                    </label>
-                    {latestConnectors.length > 0 ? (
-                      <select
-                        id={`flow-technology-${group.id}`}
-                        value={flowTechnology}
-                        onChange={(event) => setFlowTechnology(event.target.value)}
-                        className="flex h-9 w-full rounded-md border border-[var(--c-br1)] bg-[var(--c-bg1)] px-3 py-2 text-sm text-[var(--c-tx1)] shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-500"
-                        required
-                      >
-                        {latestConnectors.map((connector) => (
-                          <option key={connector.pluginId} value={connector.pluginId}>
-                            {connector.displayName} ({connector.pluginId}@{connector.pluginVersion})
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
+                <div className="flex-1 overflow-y-auto pr-1 min-h-0">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-2 sm:col-span-2">
+                      <label className="text-xs text-[var(--c-tx3)]" htmlFor={`flow-name-${group.id}`}>
+                        Name
+                      </label>
                       <Input
-                        id={`flow-technology-${group.id}`}
-                        value={flowTechnology}
-                        onChange={(event) => setFlowTechnology(event.target.value)}
-                        placeholder="HTTP"
+                        id={`flow-name-${group.id}`}
+                        value={flowName}
+                        onChange={(event) => setFlowName(event.target.value)}
+                        placeholder="Orders → Kafka"
+                        autoFocus
                         required
                       />
-                    )}
-                  </div>
+                    </div>
 
-                  {/* File-specific configuration */}
-                  {flowTechnology.trim() === 'file' && (
-                    <>
-                      <div className="space-y-2">
-                        <label className="text-xs text-[var(--c-tx3)]" htmlFor={`flow-output-dir-${group.id}`}>
-                          Output Directory
-                        </label>
-                        <div className="flex gap-2">
-                          <Input
-                            id={`flow-output-dir-${group.id}`}
-                            value={flowOutputDir}
-                            onChange={(event) => setFlowOutputDir(event.target.value)}
-                            placeholder="./outputs"
-                            className="flex-1"
-                          />
-                          {isRunningInJCEF() && (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="icon"
-                              onClick={async () => {
-                                const response = await CoreCommands.pickDirectory();
-                                if (response && response.status === 'success' && (response as any).path) {
-                                  setFlowOutputDir((response as any).path);
-                                }
-                              }}
-                              className="shrink-0"
-                              title="Browse directory"
-                            >
-                              <FolderOpen size={14} />
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="space-y-2">
-                        <label className="text-xs text-[var(--c-tx3)]" htmlFor={`flow-file-format-${group.id}`}>
-                          File Format
-                        </label>
+                    <div className="space-y-2 sm:col-span-2">
+                      <label className="text-xs text-[var(--c-tx3)]" htmlFor={`flow-connector-${group.id}`}>
+                        Connector
+                      </label>
+                      {latestConnectors.length > 0 ? (
                         <select
-                          id={`flow-file-format-${group.id}`}
-                          value={flowFileFormat}
-                          onChange={(event) => setFlowFileFormat(event.target.value as 'json' | 'txt')}
+                          id={`flow-connector-${group.id}`}
+                          value={flowTechnology}
+                          onChange={(event) => setFlowTechnology(event.target.value)}
                           className="flex h-9 w-full rounded-md border border-[var(--c-br1)] bg-[var(--c-bg1)] px-3 py-2 text-sm text-[var(--c-tx1)] shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-500"
+                          required
                         >
-                          <option value="json">JSON Lines (.json)</option>
-                          <option value="txt">Pipe-delimited (.txt)</option>
+                          <option value="">Select a connector...</option>
+                          {latestConnectors.map((connector) => (
+                            <option key={connector.pluginId} value={connector.pluginId}>
+                              {connector.displayName} ({connector.pluginId}@{connector.pluginVersion})
+                            </option>
+                          ))}
                         </select>
-                      </div>
-                    </>
-                  )}
+                      ) : (
+                        <Input
+                          id={`flow-connector-${group.id}`}
+                          value={flowTechnology}
+                          onChange={(event) => setFlowTechnology(event.target.value)}
+                          placeholder="HTTP"
+                          required
+                        />
+                      )}
+                    </div>
 
-                  <div className="space-y-2">
-                    <label className="text-xs text-[var(--c-tx3)]" htmlFor={`flow-host-${group.id}`}>
-                      Host
-                    </label>
-                    <Input
-                      id={`flow-host-${group.id}`}
-                      value={flowHost}
-                      onChange={(event) => setFlowHost(event.target.value)}
-                      placeholder="localhost"
-                      required
-                    />
-                  </div>
+                    {selectedConnector ? (
+                      <ConnectorFields
+                        connector={selectedConnector}
+                        config={connectorConfig}
+                        onChange={(key, val) => setConnectorConfig(prev => ({ ...prev, [key]: val }))}
+                      />
+                    ) : flowTechnology ? (
+                      <>
+                        <div className="space-y-2">
+                          <label className="text-xs text-[var(--c-tx3)]" htmlFor={`flow-host-${group.id}`}>
+                            Host
+                          </label>
+                          <Input
+                            id={`flow-host-${group.id}`}
+                            value={flowHost}
+                            onChange={(event) => setFlowHost(event.target.value)}
+                            placeholder="localhost"
+                            required
+                          />
+                        </div>
 
-                  <div className="space-y-2">
-                    <label className="text-xs text-[var(--c-tx3)]" htmlFor={`flow-port-${group.id}`}>
-                      Port
-                    </label>
-                    <Input
-                      id={`flow-port-${group.id}`}
-                      type="number"
-                      min={1}
-                      max={65535}
-                      value={flowPort}
-                      onChange={(event) => setFlowPort(event.target.value)}
-                      placeholder="8080"
-                      required
-                    />
-                  </div>
+                        <div className="space-y-2">
+                          <label className="text-xs text-[var(--c-tx3)]" htmlFor={`flow-port-${group.id}`}>
+                            Port
+                          </label>
+                          <Input
+                            id={`flow-port-${group.id}`}
+                            type="number"
+                            min={1}
+                            max={65535}
+                            value={flowPort}
+                            onChange={(event) => setFlowPort(event.target.value)}
+                            placeholder="8080"
+                            required
+                          />
+                        </div>
 
-                  <div className="space-y-2">
-                    <label className="text-xs text-[var(--c-tx3)]" htmlFor={`flow-topic-${group.id}`}>
-                      Topic
-                    </label>
-                    <Input
-                      id={`flow-topic-${group.id}`}
-                      value={flowTopic}
-                      onChange={(event) => setFlowTopic(event.target.value)}
-                      placeholder="orders.events"
-                    />
-                  </div>
+                        <div className="space-y-2">
+                          <label className="text-xs text-[var(--c-tx3)]" htmlFor={`flow-topic-${group.id}`}>
+                            Topic
+                          </label>
+                          <Input
+                            id={`flow-topic-${group.id}`}
+                            value={flowTopic}
+                            onChange={(event) => setFlowTopic(event.target.value)}
+                            placeholder="orders.events"
+                          />
+                        </div>
+                      </>
+                    ) : null}
 
-                  <div className="space-y-2">
-                    <label className="text-xs text-[var(--c-tx3)]" htmlFor={`flow-interval-${group.id}`}>
-                      Interval (ms)
-                    </label>
-                    <Input
-                      id={`flow-interval-${group.id}`}
-                      type="number"
-                      min={1}
-                      value={flowInterval}
-                      onChange={(event) => setFlowInterval(event.target.value)}
-                      placeholder="1000"
-                    />
-                  </div>
+                    <div className="space-y-2">
+                      <label className="text-xs text-[var(--c-tx3)]" htmlFor={`flow-interval-${group.id}`}>
+                        Interval (ms)
+                      </label>
+                      <Input
+                        id={`flow-interval-${group.id}`}
+                        type="number"
+                        min={1}
+                        value={flowInterval}
+                        onChange={(event) => setFlowInterval(event.target.value)}
+                        placeholder="1000"
+                      />
+                    </div>
 
-                  <div className="space-y-2">
-                    <label className="text-xs text-[var(--c-tx3)]" htmlFor={`flow-burst-${group.id}`}>
-                      Burst
-                    </label>
-                    <Input
-                      id={`flow-burst-${group.id}`}
-                      type="number"
-                      min={1}
-                      value={flowBurst}
-                      onChange={(event) => setFlowBurst(event.target.value)}
-                      placeholder="1"
-                    />
-                  </div>
-
-                  <div className="space-y-2 sm:col-span-2">
-                    <label className="text-xs text-[var(--c-tx3)]" htmlFor={`flow-template-${group.id}`}>
-                      Template
-                    </label>
-                    <div className="h-40 border border-[var(--c-br1)] rounded-md overflow-hidden bg-[var(--c-bg1)]">
-                      <TemplateEditor
-                        value={flowTemplate}
-                        onChange={setFlowTemplate}
-                        variables={variables}
-                        flowId="" // New flow has no ID yet
-                        groupId={group.id}
-                        className="w-full h-full"
+                    <div className="space-y-2">
+                      <label className="text-xs text-[var(--c-tx3)]" htmlFor={`flow-burst-${group.id}`}>
+                        Burst
+                      </label>
+                      <Input
+                        id={`flow-burst-${group.id}`}
+                        type="number"
+                        min={1}
+                        value={flowBurst}
+                        onChange={(event) => setFlowBurst(event.target.value)}
+                        placeholder="1"
                       />
                     </div>
                   </div>
                 </div>
 
-                <DialogFooter>
+                <DialogFooter className="shrink-0 pt-4 border-t border-[var(--c-br2)] mt-4">
                   <Button type="button" variant="outline" onClick={() => setIsCreateFlowOpen(false)}>
                     Cancel
                   </Button>
-                  <Button type="submit" disabled={!flowName.trim() || !flowTechnology.trim() || !flowHost.trim()}>
+                  <Button type="submit" disabled={!flowName.trim() || !flowTechnology.trim()}>
                     Create flow
                   </Button>
                 </DialogFooter>
@@ -819,7 +936,7 @@ function GroupItem({
 
 export function LeftPanel({
   groups,
-  variables,
+  variables: _variables,
   selection,
   formatTemplate,
   latestConnectors,
@@ -848,9 +965,21 @@ export function LeftPanel({
   const [flowTopic, setFlowTopic] = useState('');
   const [flowInterval, setFlowInterval] = useState('1000');
   const [flowBurst, setFlowBurst] = useState('1');
-  const [flowTemplate, setFlowTemplate] = useState('{}');
-  const [flowOutputDir, setFlowOutputDir] = useState('./outputs');
-  const [flowFileFormat, setFlowFileFormat] = useState<'json' | 'txt'>('json');
+  const [connectorConfig, setConnectorConfig] = useState<Record<string, unknown>>({});
+  const selectedConnector = latestConnectors.find((c) => c.pluginId === flowTechnology);
+
+  useEffect(() => {
+    if (!flowTechnology) {
+      setConnectorConfig({});
+      return;
+    }
+    const descriptor = latestConnectors.find((c) => c.pluginId === flowTechnology);
+    if (descriptor) {
+      setConnectorConfig(getDefaultConfigFromSchema(descriptor.configSchema));
+    } else {
+      setConnectorConfig({});
+    }
+  }, [flowTechnology, latestConnectors]);
 
   const resetCreateGroupForm = () => {
     setGroupName('');
@@ -859,15 +988,13 @@ export function LeftPanel({
 
   const resetCreateFlowForm = () => {
     setFlowName('');
-    setFlowTechnology(latestConnectors[0]?.pluginId ?? 'HTTP');
+    setFlowTechnology('');
+    setConnectorConfig({});
     setFlowHost('localhost');
     setFlowPort('8080');
     setFlowTopic('');
     setFlowInterval('1000');
     setFlowBurst('1');
-    setFlowTemplate('{}');
-    setFlowOutputDir('./outputs');
-    setFlowFileFormat('json');
     setSelectedGroupForFlow(null);
   };
 
@@ -892,28 +1019,33 @@ export function LeftPanel({
       return;
     }
 
-    const port = Number(flowPort);
+    const selectedConnector = latestConnectors.find((c) => c.pluginId === flowTechnology);
+
+    const host = selectedConnector
+      ? String(connectorConfig['host'] || connectorConfig['bootstrapServers'] || connectorConfig['endpoint'] || 'localhost')
+      : flowHost.trim();
+    const port = selectedConnector
+      ? Number(connectorConfig['port'] || 8080)
+      : Number(flowPort);
+    const topic = selectedConnector
+      ? String(connectorConfig['topic'] || connectorConfig['exchange'] || connectorConfig['queue'] || '')
+      : flowTopic.trim();
+
     const interval = flowInterval.trim() ? Number(flowInterval) : undefined;
     const burst = flowBurst.trim() ? Number(flowBurst) : undefined;
-
-    // Build connector config if needed
-    const connectorConfig = flowTechnology.trim() === 'file' ? {
-      outputDir: flowOutputDir.trim() || './outputs',
-      format: flowFileFormat,
-    } : undefined;
 
     try {
       const createdFlow = await onCreateFlow(
         selectedGroupForFlow,
         flowName.trim(),
         flowTechnology.trim(),
-        flowHost.trim(),
+        host,
         port,
-        flowTopic.trim() || undefined,
+        topic || undefined,
         Number.isNaN(interval) ? undefined : interval,
         Number.isNaN(burst) ? undefined : burst,
-        flowTemplate.trim() || '{}',
-        connectorConfig,
+        '{}',
+        selectedConnector ? connectorConfig : undefined,
       );
 
       toast.success(`Flow "${createdFlow.name}" created`);
@@ -1040,222 +1172,167 @@ export function LeftPanel({
 
       {/* Create Flow Dialog */}
       <Dialog open={isCreateFlowOpen} onOpenChange={setIsCreateFlowOpen}>
-        <DialogContent className="max-w-lg">
-          <form onSubmit={handleCreateFlow} className="space-y-4">
-            <DialogHeader>
+        <DialogContent className="max-w-lg max-h-[75vh] flex flex-col">
+          <form onSubmit={handleCreateFlow} className="flex-1 flex flex-col min-h-0">
+            <DialogHeader className="shrink-0 mb-4">
               <DialogTitle>Add flow</DialogTitle>
               <DialogDescription>
                 Create a new flow. Select a group first.
               </DialogDescription>
             </DialogHeader>
 
-            <div className="space-y-2">
-              <label className="text-xs text-[var(--c-tx3)]" htmlFor="flow-group-select">
-                Group
-              </label>
-              <select
-                id="flow-group-select"
-                value={selectedGroupForFlow ?? ''}
-                onChange={(event) => setSelectedGroupForFlow(event.target.value || null)}
-                className="flex h-9 w-full rounded-md border border-[var(--c-br1)] bg-[var(--c-bg1)] px-3 py-2 text-sm text-[var(--c-tx1)] shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-500"
-                required
-              >
-                <option value="">Select a group...</option>
-                {groups.map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-2 sm:col-span-2">
-                <label className="text-xs text-[var(--c-tx3)]" htmlFor="flow-name">
-                  Name
+            <div className="flex-1 overflow-y-auto pr-1 min-h-0 space-y-4">
+              <div className="space-y-2">
+                <label className="text-xs text-[var(--c-tx3)]" htmlFor="flow-group-select">
+                  Group
                 </label>
-                <Input
-                  id="flow-name"
-                  value={flowName}
-                  onChange={(event) => setFlowName(event.target.value)}
-                  placeholder="Orders → Kafka"
-                  autoFocus
+                <select
+                  id="flow-group-select"
+                  value={selectedGroupForFlow ?? ''}
+                  onChange={(event) => setSelectedGroupForFlow(event.target.value || null)}
+                  className="flex h-9 w-full rounded-md border border-[var(--c-br1)] bg-[var(--c-bg1)] px-3 py-2 text-sm text-[var(--c-tx1)] shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-500"
                   required
-                />
+                >
+                  <option value="">Select a group...</option>
+                  {groups.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.name}
+                    </option>
+                  ))}
+                </select>
               </div>
 
-              <div className="space-y-2 sm:col-span-2">
-                <label className="text-xs text-[var(--c-tx3)]" htmlFor="flow-technology">
-                  Technology
-                </label>
-                {latestConnectors.length > 0 ? (
-                  <select
-                    id="flow-technology"
-                    value={flowTechnology}
-                    onChange={(event) => setFlowTechnology(event.target.value)}
-                    className="flex h-9 w-full rounded-md border border-[var(--c-br1)] bg-[var(--c-bg1)] px-3 py-2 text-sm text-[var(--c-tx1)] shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-500"
-                    required
-                  >
-                    {latestConnectors.map((connector) => (
-                      <option key={connector.pluginId} value={connector.pluginId}>
-                        {connector.displayName} ({connector.pluginId}@{connector.pluginVersion})
-                      </option>
-                    ))}
-                  </select>
-                ) : (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-2 sm:col-span-2">
+                  <label className="text-xs text-[var(--c-tx3)]" htmlFor="flow-name">
+                    Name
+                  </label>
                   <Input
-                    id="flow-technology"
-                    value={flowTechnology}
-                    onChange={(event) => setFlowTechnology(event.target.value)}
-                    placeholder="HTTP"
+                    id="flow-name"
+                    value={flowName}
+                    onChange={(event) => setFlowName(event.target.value)}
+                    placeholder="Orders → Kafka"
+                    autoFocus
                     required
                   />
-                )}
-              </div>
+                </div>
 
-              {/* File-specific configuration */}
-              {flowTechnology.trim() === 'file' && (
-                <>
-                  <div className="space-y-2 sm:col-span-2">
-                    <label className="text-xs text-[var(--c-tx3)]" htmlFor="flow-output-dir">
-                      Output Directory
-                    </label>
-                    <div className="flex gap-2">
-                      <Input
-                        id="flow-output-dir"
-                        value={flowOutputDir}
-                        onChange={(event) => setFlowOutputDir(event.target.value)}
-                        placeholder="./outputs"
-                        className="flex-1"
-                      />
-                      {isRunningInJCEF() && (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="icon"
-                          onClick={async () => {
-                            const response = await CoreCommands.pickDirectory();
-                            if (response && response.status === 'success' && (response as any).path) {
-                              setFlowOutputDir((response as any).path);
-                            }
-                          }}
-                          className="shrink-0"
-                          title="Browse directory"
-                        >
-                          <FolderOpen size={14} />
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-xs text-[var(--c-tx3)]" htmlFor="flow-file-format">
-                      File Format
-                    </label>
+                <div className="space-y-2 sm:col-span-2">
+                  <label className="text-xs text-[var(--c-tx3)]" htmlFor="flow-connector">
+                    Connector
+                  </label>
+                  {latestConnectors.length > 0 ? (
                     <select
-                      id="flow-file-format"
-                      value={flowFileFormat}
-                      onChange={(event) => setFlowFileFormat(event.target.value as 'json' | 'txt')}
+                      id="flow-connector"
+                      value={flowTechnology}
+                      onChange={(event) => setFlowTechnology(event.target.value)}
                       className="flex h-9 w-full rounded-md border border-[var(--c-br1)] bg-[var(--c-bg1)] px-3 py-2 text-sm text-[var(--c-tx1)] shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-500"
+                      required
                     >
-                      <option value="json">JSON Lines (.json)</option>
-                      <option value="txt">Pipe-delimited (.txt)</option>
+                      <option value="">Select a connector...</option>
+                      {latestConnectors.map((connector) => (
+                        <option key={connector.pluginId} value={connector.pluginId}>
+                          {connector.displayName} ({connector.pluginId}@{connector.pluginVersion})
+                        </option>
+                      ))}
                     </select>
-                  </div>
-                </>
-              )}
+                  ) : (
+                    <Input
+                      id="flow-connector"
+                      value={flowTechnology}
+                      onChange={(event) => setFlowTechnology(event.target.value)}
+                      placeholder="HTTP"
+                      required
+                    />
+                  )}
+                </div>
 
-              <div className="space-y-2">
-                <label className="text-xs text-[var(--c-tx3)]" htmlFor="flow-host">
-                  Host
-                </label>
-                <Input
-                  id="flow-host"
-                  value={flowHost}
-                  onChange={(event) => setFlowHost(event.target.value)}
-                  placeholder="localhost"
-                  required
-                />
-              </div>
+                {selectedConnector ? (
+                  <ConnectorFields
+                    connector={selectedConnector}
+                    config={connectorConfig}
+                    onChange={(key, val) => setConnectorConfig(prev => ({ ...prev, [key]: val }))}
+                  />
+                ) : flowTechnology ? (
+                  <>
+                    <div className="space-y-2">
+                      <label className="text-xs text-[var(--c-tx3)]" htmlFor="flow-host">
+                        Host
+                      </label>
+                      <Input
+                        id="flow-host"
+                        value={flowHost}
+                        onChange={(event) => setFlowHost(event.target.value)}
+                        placeholder="localhost"
+                        required
+                      />
+                    </div>
 
-              <div className="space-y-2">
-                <label className="text-xs text-[var(--c-tx3)]" htmlFor="flow-port">
-                  Port
-                </label>
-                <Input
-                  id="flow-port"
-                  type="number"
-                  min={1}
-                  max={65535}
-                  value={flowPort}
-                  onChange={(event) => setFlowPort(event.target.value)}
-                  placeholder="8080"
-                  required
-                />
-              </div>
+                    <div className="space-y-2">
+                      <label className="text-xs text-[var(--c-tx3)]" htmlFor="flow-port">
+                        Port
+                      </label>
+                      <Input
+                        id="flow-port"
+                        type="number"
+                        min={1}
+                        max={65535}
+                        value={flowPort}
+                        onChange={(event) => setFlowPort(event.target.value)}
+                        placeholder="8080"
+                        required
+                      />
+                    </div>
 
-              <div className="space-y-2">
-                <label className="text-xs text-[var(--c-tx3)]" htmlFor="flow-topic">
-                  Topic
-                </label>
-                <Input
-                  id="flow-topic"
-                  value={flowTopic}
-                  onChange={(event) => setFlowTopic(event.target.value)}
-                  placeholder="orders.events"
-                />
-              </div>
+                    <div className="space-y-2">
+                      <label className="text-xs text-[var(--c-tx3)]" htmlFor="flow-topic">
+                        Topic
+                      </label>
+                      <Input
+                        id="flow-topic"
+                        value={flowTopic}
+                        onChange={(event) => setFlowTopic(event.target.value)}
+                        placeholder="orders.events"
+                      />
+                    </div>
+                  </>
+                ) : null}
 
-              <div className="space-y-2">
-                <label className="text-xs text-[var(--c-tx3)]" htmlFor="flow-interval">
-                  Interval (ms)
-                </label>
-                <Input
-                  id="flow-interval"
-                  type="number"
-                  min={1}
-                  value={flowInterval}
-                  onChange={(event) => setFlowInterval(event.target.value)}
-                  placeholder="1000"
-                />
-              </div>
+                <div className="space-y-2">
+                  <label className="text-xs text-[var(--c-tx3)]" htmlFor="flow-interval">
+                    Interval (ms)
+                  </label>
+                  <Input
+                    id="flow-interval"
+                    type="number"
+                    min={1}
+                    value={flowInterval}
+                    onChange={(event) => setFlowInterval(event.target.value)}
+                    placeholder="1000"
+                  />
+                </div>
 
-              <div className="space-y-2">
-                <label className="text-xs text-[var(--c-tx3)]" htmlFor="flow-burst">
-                  Burst
-                </label>
-                <Input
-                  id="flow-burst"
-                  type="number"
-                  min={1}
-                  value={flowBurst}
-                  onChange={(event) => setFlowBurst(event.target.value)}
-                  placeholder="1"
-                />
-              </div>
-
-              <div className="space-y-2 sm:col-span-2">
-                <label className="text-xs text-[var(--c-tx3)]" htmlFor="main-flow-template">
-                  Template
-                </label>
-                <div className="h-40 border border-[var(--c-br1)] rounded-md overflow-hidden bg-[var(--c-bg1)]">
-                  <TemplateEditor
-                    value={flowTemplate}
-                    onChange={setFlowTemplate}
-                    variables={variables}
-                    flowId=""
-                    groupId={selectedGroupForFlow || ''}
-                    className="w-full h-full"
+                <div className="space-y-2">
+                  <label className="text-xs text-[var(--c-tx3)]" htmlFor="flow-burst">
+                    Burst
+                  </label>
+                  <Input
+                    id="flow-burst"
+                    type="number"
+                    min={1}
+                    value={flowBurst}
+                    onChange={(event) => setFlowBurst(event.target.value)}
+                    placeholder="1"
                   />
                 </div>
               </div>
             </div>
 
-            <DialogFooter>
+            <DialogFooter className="shrink-0 pt-4 border-t border-[var(--c-br2)] mt-4">
               <Button type="button" variant="outline" onClick={() => setIsCreateFlowOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={!selectedGroupForFlow || !flowName.trim() || !flowTechnology.trim() || !flowHost.trim()}>
+              <Button type="submit" disabled={!selectedGroupForFlow || !flowName.trim() || !flowTechnology.trim()}>
                 Create flow
               </Button>
             </DialogFooter>
@@ -1296,7 +1373,6 @@ export function LeftPanel({
             onCloneFlow={onCloneFlow}
             onDeleteFlow={onDeleteFlow}
             latestConnectors={latestConnectors}
-            variables={variables}
           />
         ))}
       </div>
