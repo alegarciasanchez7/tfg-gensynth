@@ -1,18 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Radio, Globe, Wifi, Zap, Cpu, Layers, AlertTriangle,
-  CheckCircle, Code2, Settings2, Hash,
-  AlignLeft, Copy, RotateCcw, Save, Trash2, Braces, TableProperties, FileCode, FileText, FolderOpen
+  CheckCircle, Code2, Hash,
+  AlignLeft, Copy, RotateCcw, Save, Trash2, Braces, TableProperties, FileCode, FileText
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Flow, Group, ConnectionStatus } from '../../types';
 import { defaultTemplates } from '../../data/mockData';
 import { useApp } from '../../context';
 import { TemplateEditor } from './flows/TemplateEditor';
+import { TechnicalConfigPanel, compareVersions } from './flows/TechnicalConfigPanel';
 import type { ConnectorPluginDescriptor } from '../../core/types';
-import { Button } from '../ui/button';
-import { isRunningInJCEF } from '../../core/jcef';
-import { CoreCommands } from '../../core/bridge';
 
 const connCfg: Record<ConnectionStatus, { color: string; bg: string; dot: string; label: string }> = {
   connected:    { color: 'text-emerald-500', bg: 'bg-emerald-500/10 border-emerald-500/40', dot: 'bg-emerald-400', label: 'CONNECTED' },
@@ -25,338 +23,6 @@ const techIcon: Record<string, React.ReactNode> = {
   Kafka: <Radio size={12} />, HTTP: <Globe size={12} />, MQTT: <Wifi size={12} />,
   WebSocket: <Zap size={12} />, gRPC: <Cpu size={12} />, TCP: <Layers size={12} />,
 };
-
-function FieldRow({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex flex-col gap-1">
-      <label className="text-[10px] text-[var(--c-tx4)] tracking-wider uppercase"
-        style={{ fontFamily: 'JetBrains Mono, monospace' }}>{label}</label>
-      {children}
-    </div>
-  );
-}
-
-function TNumber({ value, unit }: { value: number; unit?: string }) {
-  const [v, setV] = useState(value);
-  return (
-    <div className="flex">
-      <input
-        type="number"
-        value={v}
-        onChange={e => setV(Number(e.target.value))}
-        className="bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded-l px-2.5 py-1.5 text-[11px] text-[var(--c-tx1)] outline-none focus:border-cyan-500/50 transition-all w-full"
-        style={{ fontFamily: 'JetBrains Mono, monospace' }}
-      />
-      {unit && (
-        <span className="px-2 py-1.5 bg-[var(--c-bg4)] border border-l-0 border-[var(--c-br1)] rounded-r text-[10px] text-[var(--c-tx4)] shrink-0 flex items-center"
-          style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-          {unit}
-        </span>
-      )}
-    </div>
-  );
-}
-
-function TSelect({ options, value }: { options: string[]; value: string }) {
-  const [v, setV] = useState(value);
-  return (
-    <select
-      value={v}
-      onChange={e => setV(e.target.value)}
-      className="bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded px-2.5 py-1.5 text-[11px] text-[var(--c-tx1)] outline-none focus:border-cyan-500/50 transition-all"
-      style={{ fontFamily: 'JetBrains Mono, monospace' }}
-    >
-      {options.map(o => <option key={o}>{o}</option>)}
-    </select>
-  );
-}
-
-type ConnectorSchemaProperty = {
-  type?: string;
-  title?: string;
-  description?: string;
-  default?: unknown;
-  enum?: Array<string | number | boolean>;
-  items?: ConnectorSchemaProperty;
-  properties?: Record<string, ConnectorSchemaProperty>;
-};
-
-function getConnectorProperties(schema: Record<string, unknown>): Record<string, ConnectorSchemaProperty> {
-  return (schema.properties as Record<string, ConnectorSchemaProperty> | undefined) ?? {};
-}
-
-function getDefaultValue(definition: ConnectorSchemaProperty): unknown {
-  if (Object.prototype.hasOwnProperty.call(definition, 'default')) {
-    return definition.default;
-  }
-
-  if (definition.enum?.length) {
-    return definition.enum[0];
-  }
-
-  switch (definition.type) {
-    case 'number':
-    case 'integer':
-      return 0;
-    case 'boolean':
-      return false;
-    case 'array':
-      return [];
-    case 'object':
-      return {};
-    default:
-      return '';
-  }
-}
-
-function stringifyConnectorValue(value: unknown, definition: ConnectorSchemaProperty): string {
-  if (value === undefined || value === null) {
-    return '';
-  }
-
-  if (definition.type === 'array') {
-    return Array.isArray(value) ? value.join(', ') : String(value);
-  }
-
-  if (definition.type === 'object') {
-    if (typeof value === 'string') {
-      return value;
-    }
-
-    try {
-      return JSON.stringify(value, null, 2);
-    } catch {
-      return String(value);
-    }
-  }
-
-  return String(value);
-}
-
-function compareVersions(leftVersion: string, rightVersion: string): number {
-  const leftParts = leftVersion.split('.').map((part) => Number(part) || 0);
-  const rightParts = rightVersion.split('.').map((part) => Number(part) || 0);
-  const length = Math.max(leftParts.length, rightParts.length);
-
-  for (let index = 0; index < length; index += 1) {
-    const comparison = (leftParts[index] ?? 0) - (rightParts[index] ?? 0);
-    if (comparison !== 0) {
-      return comparison;
-    }
-  }
-
-  return leftVersion.localeCompare(rightVersion);
-}
-
-function ConnectorSchemaField({
-  name,
-  definition,
-  value,
-  onChange,
-}: {
-  name: string;
-  definition: ConnectorSchemaProperty;
-  value: unknown;
-  onChange: (name: string, nextValue: unknown) => void;
-}) {
-  const label = definition.title ?? name;
-  const description = definition.description;
-
-  if (definition.enum && definition.enum.length > 0) {
-    return (
-      <FieldRow label={label}>
-        <select
-          value={value === undefined || value === null ? '' : String(value)}
-          onChange={(event) => onChange(name, event.target.value)}
-          className="bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded px-2.5 py-1.5 text-[11px] text-[var(--c-tx1)] outline-none focus:border-cyan-500/50 transition-all w-full"
-          style={{ fontFamily: 'JetBrains Mono, monospace' }}
-        >
-          {definition.enum.map((option) => (
-            <option key={String(option)} value={String(option)}>
-              {String(option)}
-            </option>
-          ))}
-        </select>
-        {description && <span className="text-[9px] text-[var(--c-tx4)]">{description}</span>}
-      </FieldRow>
-    );
-  }
-
-  if (definition.type === 'boolean') {
-    return (
-      <FieldRow label={label}>
-        <button
-          type="button"
-          onClick={() => onChange(name, !Boolean(value))}
-          className={`flex items-center justify-between gap-2 px-2.5 py-1.5 rounded border text-[11px] transition-all ${
-            Boolean(value)
-              ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-400'
-              : 'bg-[var(--c-bg1)] border-[var(--c-br1)] text-[var(--c-tx3)]'
-          }`}
-          style={{ fontFamily: 'JetBrains Mono, monospace' }}
-        >
-          <span>{Boolean(value) ? 'true' : 'false'}</span>
-          <span className="text-[9px] uppercase">toggle</span>
-        </button>
-        {description && <span className="text-[9px] text-[var(--c-tx4)]">{description}</span>}
-      </FieldRow>
-    );
-  }
-
-  if (definition.type === 'number' || definition.type === 'integer') {
-    return (
-      <FieldRow label={label}>
-        <input
-          type="number"
-          value={value === undefined || value === null ? '' : String(value)}
-          onChange={(event) => onChange(name, event.target.value === '' ? '' : Number(event.target.value))}
-          className="bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded px-2.5 py-1.5 text-[11px] text-[var(--c-tx1)] outline-none focus:border-cyan-500/50 transition-all w-full"
-          style={{ fontFamily: 'JetBrains Mono, monospace' }}
-        />
-        {description && <span className="text-[9px] text-[var(--c-tx4)]">{description}</span>}
-      </FieldRow>
-    );
-  }
-
-  if (definition.type === 'array') {
-    return (
-      <FieldRow label={label}>
-        <textarea
-          value={stringifyConnectorValue(value, definition)}
-          onChange={(event) => onChange(name, event.target.value.split(',').map((item) => item.trim()).filter(Boolean))}
-          rows={3}
-          className="bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded px-2.5 py-1.5 text-[11px] text-[var(--c-tx1)] outline-none focus:border-cyan-500/50 transition-all w-full resize-none"
-          style={{ fontFamily: 'JetBrains Mono, monospace' }}
-        />
-        {description && <span className="text-[9px] text-[var(--c-tx4)]">{description}</span>}
-      </FieldRow>
-    );
-  }
-
-  if (definition.type === 'object') {
-    return (
-      <FieldRow label={label}>
-        <textarea
-          value={stringifyConnectorValue(value, definition)}
-          onChange={(event) => {
-            try {
-              onChange(name, event.target.value ? JSON.parse(event.target.value) : {});
-            } catch {
-              onChange(name, event.target.value);
-            }
-          }}
-          rows={4}
-          className="bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded px-2.5 py-1.5 text-[11px] text-[var(--c-tx1)] outline-none focus:border-cyan-500/50 transition-all w-full resize-none"
-          style={{ fontFamily: 'JetBrains Mono, monospace' }}
-        />
-        {description && <span className="text-[9px] text-[var(--c-tx4)]">{description}</span>}
-      </FieldRow>
-    );
-  }
-
-  const isDirectoryField = 
-    name.toLowerCase().includes('dir') || 
-    name.toLowerCase().includes('path') || 
-    label.toLowerCase().includes('directory') || 
-    label.toLowerCase().includes('path');
-
-  return (
-    <FieldRow label={label}>
-      <div className="flex gap-2">
-        <input
-          value={value === undefined || value === null ? '' : String(value)}
-          onChange={(event) => onChange(name, event.target.value)}
-          className="bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded px-2.5 py-1.5 text-[11px] text-[var(--c-tx1)] outline-none focus:border-cyan-500/50 transition-all w-full"
-          style={{ fontFamily: 'JetBrains Mono, monospace' }}
-        />
-        {isDirectoryField && isRunningInJCEF() && (
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            onClick={async () => {
-              const response = await CoreCommands.pickDirectory();
-              if (response && response.status === 'success' && (response as any).path) {
-                onChange(name, (response as any).path);
-              }
-            }}
-            className="h-8 w-8 shrink-0 border-[var(--c-br1)] bg-[var(--c-bg1)] hover:bg-[var(--c-bg5)]"
-            title="Browse directory"
-          >
-            <FolderOpen size={14} />
-          </Button>
-        )}
-      </div>
-      {description && <span className="text-[9px] text-[var(--c-tx4)]">{description}</span>}
-    </FieldRow>
-  );
-}
-
-function ConnectorConfigEditor({
-  flowId,
-  connector,
-  config,
-  fallbackFlow,
-  onChange,
-}: {
-  flowId: string;
-  connector: ConnectorPluginDescriptor | null;
-  config: Record<string, unknown>;
-  fallbackFlow: Flow;
-  onChange: (nextConfig: Record<string, unknown>) => void;
-}) {
-  if (!connector) {
-    return (
-      <div className="flex flex-col gap-2 rounded border border-dashed border-[var(--c-br2)] bg-[var(--c-bg1)] px-3 py-4 text-[10px] text-[var(--c-tx4)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-        <span className="text-[var(--c-tx2)]">No connectors available yet.</span>
-        <span>The flow will keep its legacy connection data visible until the catalog is loaded.</span>
-        <div className="grid grid-cols-2 gap-2 pt-2 text-[9px]">
-          <div className="rounded border border-[var(--c-br1)] px-2 py-1">
-            <div className="text-[var(--c-tx5)] uppercase">Host</div>
-            <div className="text-[var(--c-tx2)]">{fallbackFlow.host}</div>
-          </div>
-          <div className="rounded border border-[var(--c-br1)] px-2 py-1">
-            <div className="text-[var(--c-tx5)] uppercase">Port</div>
-            <div className="text-[var(--c-tx2)]">{fallbackFlow.port}</div>
-          </div>
-          <div className="rounded border border-[var(--c-br1)] px-2 py-1 col-span-2">
-            <div className="text-[var(--c-tx5)] uppercase">Endpoint / Topic</div>
-            <div className="text-[var(--c-tx2)]">{fallbackFlow.topic}</div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const properties = getConnectorProperties(connector.configSchema);
-
-  if (Object.keys(properties).length === 0) {
-    return (
-      <div className="rounded border border-dashed border-[var(--c-br2)] bg-[var(--c-bg1)] px-3 py-4 text-[10px] text-[var(--c-tx4)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-        El schema de {connector.displayName} no expone propiedades editables.
-      </div>
-    );
-  }
-
-  return (
-    <div className="grid grid-cols-1 gap-3">
-      {Object.entries(properties).map(([fieldName, fieldDefinition]) => (
-        <ConnectorSchemaField
-          key={`${flowId}:${fieldName}`}
-          name={fieldName}
-          definition={fieldDefinition}
-          value={config[fieldName] ?? getDefaultValue(fieldDefinition)}
-          onChange={(_fieldName, nextValue) => {
-            onChange({
-              ...config,
-              [_fieldName]: nextValue,
-            });
-          }}
-        />
-      ))}
-    </div>
-  );
-}
 
 interface FlowWorkspaceProps {
   flow: Flow;
@@ -435,7 +101,6 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
       draftInterval !== flow.interval ||
       draftBurst !== flow.burst;
     
-    // Check if connector selection or its config changed
     const connectorChanged = 
       (connectorSelection !== null && (
         connectorSelection.pluginId !== flow.technology || 
@@ -550,7 +215,6 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
     }
   };
 
-  // Exposed globally for variable insertion
   (window as unknown as Record<string, unknown>).__insertIntoFlow = (varRef: string) => {
     const ta = textareaRef.current;
     if (!ta) return;
@@ -644,162 +308,30 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
       {/* Main content: two columns */}
       <div className="flex-1 flex overflow-hidden">
         {/* LEFT: Technical config */}
-        <div className={`flex flex-col border-r border-[var(--c-br1)] overflow-y-auto ${activeTab === 'format' ? 'hidden md:flex' : 'flex'}`}
-          style={{ width: '46%', minWidth: 280 }}>
-          <div className="px-4 py-3 border-b border-[var(--c-br2)] shrink-0">
-            <span className="text-[10px] text-[var(--c-tx4)] tracking-widest uppercase flex items-center gap-1.5"
-              style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-              <Settings2 size={10} /> Technical Configuration · {flow.technology}
-            </span>
-          </div>
-
-          <div className="p-4 flex flex-col gap-3">
-            {/* Connector selection */}
-            <div className="flex flex-col gap-2">
-              <span className="text-[9px] text-[var(--c-tx5)] tracking-widest uppercase"
-                style={{ fontFamily: 'JetBrains Mono, monospace' }}>CONNECTOR</span>
-              <div className="grid grid-cols-2 gap-2">
-                <FieldRow label="Connector">
-                  <select
-                    value={connectorSelection?.pluginId ?? latestConnectorForFlow?.pluginId ?? ''}
-                    onChange={(event) => handleConnectorChange(event.target.value)}
-                    className="bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded px-2.5 py-1.5 text-[11px] text-[var(--c-tx1)] outline-none focus:border-cyan-500/50 transition-all w-full"
-                    style={{ fontFamily: 'JetBrains Mono, monospace' }}
-                  >
-                    {availableConnectors.map((connector) => (
-                      <option key={connector.pluginId} value={connector.pluginId}>
-                        {connector.displayName}
-                      </option>
-                    ))}
-                  </select>
-                </FieldRow>
-                <FieldRow label="Version">
-                  <select
-                    value={connectorSelection?.pluginVersion ?? latestConnectorForFlow?.pluginVersion ?? ''}
-                    onChange={(event) => handleConnectorVersionChange(event.target.value)}
-                    className="bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded px-2.5 py-1.5 text-[11px] text-[var(--c-tx1)] outline-none focus:border-cyan-500/50 transition-all w-full"
-                    style={{ fontFamily: 'JetBrains Mono, monospace' }}
-                  >
-                    {connectorVersions.map((connector) => (
-                      <option key={`${connector.pluginId}@${connector.pluginVersion}`} value={connector.pluginVersion}>
-                        {connector.pluginVersion}
-                      </option>
-                    ))}
-                  </select>
-                </FieldRow>
-              </div>
-              {latestConnectorForFlow && (
-                <div className="flex flex-wrap items-center gap-2 rounded border border-[var(--c-br1)] bg-[var(--c-bg1)] px-2.5 py-2 text-[10px] text-[var(--c-tx4)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-                  <span className="text-[var(--c-tx2)]">{latestConnectorForFlow.displayName}</span>
-                  <span>pluginId: {latestConnectorForFlow.pluginId}</span>
-                  <span>core API: {latestConnectorForFlow.coreApiVersion}</span>
-                  {selectedHealth && (
-                    <span className={`rounded border px-1.5 py-0.5 uppercase ${selectedHealth.status === 'healthy' ? 'border-emerald-500/30 text-emerald-500 bg-emerald-500/10' : selectedHealth.status === 'degraded' ? 'border-amber-500/30 text-amber-500 bg-amber-500/10' : 'border-slate-400/30 text-slate-400 bg-slate-500/10'}`}>
-                      {selectedHealth.status}
-                    </span>
-                  )}
-                </div>
-              )}
-              {connectorCatalog.length > 0 ? (
-                <ConnectorConfigEditor
-                  flowId={flow.id}
-                  connector={latestConnectorForFlow}
-                  config={connectorConfig}
-                  fallbackFlow={flow}
-                  onChange={handleConnectorConfigChange}
-                />
-              ) : (
-                <ConnectorConfigEditor
-                  flowId={flow.id}
-                  connector={null}
-                  config={connectorConfig}
-                  fallbackFlow={flow}
-                  onChange={handleConnectorConfigChange}
-                />
-              )}
-            </div>
-
-            {/* Generation */}
-            <div className="h-px bg-[var(--c-br2)]" />
-            <div className="flex flex-col gap-2">
-              <span className="text-[9px] text-[var(--c-tx5)] tracking-widest uppercase"
-                style={{ fontFamily: 'JetBrains Mono, monospace' }}>CONNECTION</span>
-              <div className="grid grid-cols-2 gap-2">
-                <FieldRow label="Host">
-                  <input
-                    value={draftHost}
-                    onChange={(event) => setDraftHost(event.target.value)}
-                    className="bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded px-2.5 py-1.5 text-[11px] text-[var(--c-tx1)] outline-none focus:border-cyan-500/50 transition-all w-full"
-                    style={{ fontFamily: 'JetBrains Mono, monospace' }}
-                  />
-                </FieldRow>
-                <FieldRow label="Port">
-                  <input
-                    type="number"
-                    min={1}
-                    max={65535}
-                    value={draftPort}
-                    onChange={(event) => setDraftPort(Number(event.target.value))}
-                    className="bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded px-2.5 py-1.5 text-[11px] text-[var(--c-tx1)] outline-none focus:border-cyan-500/50 transition-all w-full"
-                    style={{ fontFamily: 'JetBrains Mono, monospace' }}
-                  />
-                </FieldRow>
-              </div>
-              <FieldRow label="Topic / Endpoint">
-                <input
-                  value={draftTopic}
-                  onChange={(event) => setDraftTopic(event.target.value)}
-                  className="bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded px-2.5 py-1.5 text-[11px] text-[var(--c-tx1)] outline-none focus:border-cyan-500/50 transition-all w-full"
-                  style={{ fontFamily: 'JetBrains Mono, monospace' }}
-                />
-              </FieldRow>
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <span className="text-[9px] text-[var(--c-tx5)] tracking-widest uppercase"
-                style={{ fontFamily: 'JetBrains Mono, monospace' }}>GENERATION</span>
-              <div className="grid grid-cols-2 gap-2">
-                <FieldRow label="Interval">
-                  <input
-                    type="number"
-                    min={1}
-                    value={draftInterval}
-                    onChange={(event) => setDraftInterval(Number(event.target.value))}
-                    className="bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded px-2.5 py-1.5 text-[11px] text-[var(--c-tx1)] outline-none focus:border-cyan-500/50 transition-all w-full"
-                    style={{ fontFamily: 'JetBrains Mono, monospace' }}
-                  />
-                </FieldRow>
-                <FieldRow label="Burst">
-                  <input
-                    type="number"
-                    min={1}
-                    value={draftBurst}
-                    onChange={(event) => setDraftBurst(Number(event.target.value))}
-                    className="bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded px-2.5 py-1.5 text-[11px] text-[var(--c-tx1)] outline-none focus:border-cyan-500/50 transition-all w-full"
-                    style={{ fontFamily: 'JetBrains Mono, monospace' }}
-                  />
-                </FieldRow>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <FieldRow label="Pattern"><TSelect options={['random', 'sequential', 'gaussian', 'spike']} value="random" /></FieldRow>
-                <FieldRow label="Jitter"><TNumber value={0} unit="ms" /></FieldRow>
-              </div>
-              <FieldRow label="Rate Limit"><TNumber value={0} unit="msg/s (0=unlimited)" /></FieldRow>
-            </div>
-
-            {/* Error handling */}
-            <div className="h-px bg-[var(--c-br2)]" />
-            <div className="flex flex-col gap-2">
-              <span className="text-[9px] text-[var(--c-tx5)] tracking-widest uppercase"
-                style={{ fontFamily: 'JetBrains Mono, monospace' }}>ERROR HANDLING</span>
-              <div className="grid grid-cols-2 gap-2">
-                <FieldRow label="On Error"><TSelect options={['retry', 'skip', 'stop', 'log']} value="retry" /></FieldRow>
-                <FieldRow label="Max Retries"><TNumber value={3} /></FieldRow>
-              </div>
-              <FieldRow label="Retry Backoff"><TSelect options={['linear', 'exponential', 'fixed']} value="exponential" /></FieldRow>
-            </div>
-          </div>
-        </div>
+        <TechnicalConfigPanel
+          flow={flow}
+          activeTab={activeTab}
+          draftHost={draftHost}
+          setDraftHost={setDraftHost}
+          draftPort={draftPort}
+          setDraftPort={setDraftPort}
+          draftTopic={draftTopic}
+          setDraftTopic={setDraftTopic}
+          draftInterval={draftInterval}
+          setDraftInterval={setDraftInterval}
+          draftBurst={draftBurst}
+          setDraftBurst={setDraftBurst}
+          connectorSelection={connectorSelection}
+          latestConnectorForFlow={latestConnectorForFlow}
+          connectorVersions={connectorVersions}
+          availableConnectors={availableConnectors}
+          selectedHealth={selectedHealth}
+          connectorCatalog={connectorCatalog}
+          connectorConfig={connectorConfig}
+          onConnectorChange={handleConnectorChange}
+          onConnectorVersionChange={handleConnectorVersionChange}
+          onConnectorConfigChange={handleConnectorConfigChange}
+        />
 
         {/* RIGHT: Format editor */}
         <div className={`flex flex-col overflow-hidden ${activeTab === 'technical' ? 'hidden md:flex' : 'flex'} flex-1`}>
