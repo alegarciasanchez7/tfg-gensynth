@@ -13,635 +13,30 @@ import React, {
   useRef,
   type ReactNode,
 } from 'react';
-import { toast } from 'sonner';
-import bridge, { CoreCommands } from '../core/bridge';
-import {
-  createProjectSnapshot,
-  downloadProjectSnapshot,
-  loadProjectSnapshotFromFile,
-  triggerFileSelection,
-  normalizeGroupFromSnapshot,
-  normalizeVariableFromSnapshot,
-} from '../core/fileStorage';
+import { CoreCommands } from '../core/bridge';
 import type {
-  SystemStatusPayload,
-  MetricsPayload,
-  LogPayload,
-  GroupState,
-  FlowState,
-  FlowMetricsPayload,
-  VariableState,
-  ConnectorPluginDescriptor,
-  InitialStatePayload,
-  TracePayload,
-  RollbackReportPayload,
-} from '../core/types';
-import type { Selection, Group, Variable, LogEntry, SystemStatus, Flow, ConnectorHealthStatus, VariableType, VariableScope } from '../types';
-import type { ConnectorHealthSummary } from '../types';
+  Group,
+  Flow,
+  VariableType,
+  VariableScope,
+  Variable,
+} from '../types';
 
-import * as CRUDActions from './crudActions';
-import type { CRUDActionContext } from './crudActions';
-import { normalizeVariableFromCore, normalizeVariableListFromCore } from './variableNormalization';
 import { OptimisticManager } from './optimisticManager';
-import { 
-  executeOptimisticUpdate, 
-  createGroupUpdatePayload,
-  createFlowUpdatePayload,
-  createVariableUpdatePayload,
-} from './optimisticUpdateHelper';
-import {
-  executeCreateOptimistic,
-  generateOptimisticId,
-  createOptimisticGroup,
-  createOptimisticFlow,
-  createOptimisticVariable,
-} from './createOptimisticHelper';
-import { executeDeleteOptimistic } from './deleteOptimisticHelper';
-import {
-  reconcileState,
-  applyReconciliation,
-  logReconciliationResults,
-} from './reconciliationHelper';
+
+// Slices and actions
+import { rootReducer, initialState, type AppState, type AppAction } from './reducer';
+import * as selectionActions from './actions/selectionActions';
+import * as systemActions from './actions/systemActions';
+import * as projectActions from './actions/projectActions';
+import * as templateActions from './actions/templateActions';
+
+// Hooks
+import { useCrudActions } from './hooks/useCrudActions';
+import { useBridgeSubscriptions } from './hooks/useBridgeSubscriptions';
 
 // ─────────────────────────────────────────────────────────────
-// Application State
-// ─────────────────────────────────────────────────────────────
-
-interface AppState {
-  // Connection
-  isConnected: boolean;
-  connectionMode: 'websocket' | 'jcef' | 'mock';
-  
-  // System
-  systemStatus: SystemStatus;
-  projectName: string;
-  
-  // UI
-  isDark: boolean;
-  selection: Selection;
-  bottomTab: 'logs' | 'stats' | 'preview';
-  
-  // Data
-  groups: Group[];
-  variables: Variable[];
-  logs: LogEntry[];
-  formatTemplates: Record<string, string>;
-  connectorCatalog: ConnectorPluginDescriptor[];
-  latestConnectors: ConnectorPluginDescriptor[];
-  flowConnectorSelections: Record<string, { pluginId: string; pluginVersion: string }>;
-  flowConnectorConfigs: Record<string, Record<string, unknown>>;
-  connectorHealthSummary: ConnectorHealthSummary[];
-  
-  // Metrics
-  metrics: MetricsPayload | null;
-  flowMetrics: Record<string, FlowMetricsPayload>;
-  isRestarting: boolean;
-}
-
-const initialState: AppState = {
-  isConnected: false,
-  connectionMode: 'websocket',
-  systemStatus: 'stopped',
-  projectName: 'GenSynth',
-  isDark: typeof localStorage !== 'undefined' ? localStorage.getItem('gensynth-theme') === 'dark' : false,
-  selection: { type: 'none' },
-  bottomTab: 'logs',
-  groups: [],
-  variables: [],
-  logs: [],
-  formatTemplates: {},
-  connectorCatalog: [],
-  latestConnectors: [],
-  flowConnectorSelections: {},
-  flowConnectorConfigs: {},
-  connectorHealthSummary: [],
-  metrics: null,
-  flowMetrics: {},
-  isRestarting: false,
-};
-
-// ─────────────────────────────────────────────────────────────
-// Actions
-// ─────────────────────────────────────────────────────────────
-
-type AppAction =
-  | { type: 'SET_CONNECTED'; payload: { connected: boolean; mode: 'websocket' | 'jcef' | 'mock' } }
-  | { type: 'SET_SYSTEM_STATUS'; payload: SystemStatus }
-  | { type: 'TOGGLE_THEME' }
-  | { type: 'SET_SELECTION'; payload: Selection }
-  | { type: 'SET_BOTTOM_TAB'; payload: 'logs' | 'stats' | 'preview' }
-  | { type: 'SET_GROUPS'; payload: Group[] }
-  | { type: 'UPDATE_GROUP'; payload: Partial<Group> & { id: string } }
-  | { type: 'TOGGLE_GROUP_EXPANDED'; payload: string }
-  | { type: 'SET_VARIABLES'; payload: Variable[] }
-  | { type: 'ADD_LOG'; payload: LogEntry }
-  | { type: 'SET_LOGS'; payload: LogEntry[] }
-  | { type: 'CLEAR_LOGS' }
-  | { type: 'SET_FORMAT_TEMPLATE'; payload: { flowId: string; template: string } }
-  | { type: 'SET_CONNECTOR_CATALOG'; payload: ConnectorPluginDescriptor[] }
-  | { type: 'SET_FLOW_CONNECTOR_SELECTION'; payload: { flowId: string; pluginId: string; pluginVersion: string } }
-  | { type: 'SET_FLOW_CONNECTOR_CONFIG'; payload: { flowId: string; config: Record<string, unknown> } }
-  | { type: 'SET_METRICS'; payload: MetricsPayload }
-  | { type: 'SET_FLOW_METRICS'; payload: FlowMetricsPayload }
-  | { type: 'SET_RESTARTING'; payload: boolean }
-  | {
-      type: 'LOAD_INITIAL_STATE';
-      payload: {
-        groups: Group[];
-        variables: Variable[];
-        logs?: LogEntry[];
-        connectorCatalog?: ConnectorPluginDescriptor[];
-        metrics?: MetricsPayload | null;
-        systemStatus?: SystemStatus;
-        rollbackReport?: RollbackReportPayload;
-      };
-    };
-
-function compareVersions(leftVersion: string, rightVersion: string): number {
-  const leftParts = leftVersion.split('.').map((part) => Number(part) || 0);
-  const rightParts = rightVersion.split('.').map((part) => Number(part) || 0);
-  const length = Math.max(leftParts.length, rightParts.length);
-
-  for (let index = 0; index < length; index += 1) {
-    const comparison = (leftParts[index] ?? 0) - (rightParts[index] ?? 0);
-    if (comparison !== 0) {
-      return comparison;
-    }
-  }
-
-  return leftVersion.localeCompare(rightVersion);
-}
-
-function latestConnectorsFromCatalog(catalog: ConnectorPluginDescriptor[]): ConnectorPluginDescriptor[] {
-  const latestByPluginId = new Map<string, ConnectorPluginDescriptor>();
-
-  for (const descriptor of catalog) {
-    const current = latestByPluginId.get(descriptor.pluginId);
-    if (!current || compareVersions(descriptor.pluginVersion, current.pluginVersion) > 0) {
-      latestByPluginId.set(descriptor.pluginId, descriptor);
-    }
-  }
-
-  return Array.from(latestByPluginId.values()).sort((left, right) =>
-    left.displayName.localeCompare(right.displayName) ||
-    left.pluginId.localeCompare(right.pluginId)
-  );
-}
-
-/**
- * Maps a raw Flow object from the Java Core to a UI-compatible Flow object.
- * Handles formatting numerical metrics (throughput) into user-friendly strings.
- */
-function mapFlowFromCore(flow: FlowState): Flow {
-  return {
-    id: flow.id || 'unknown',
-    name: flow.name || 'Unnamed Flow',
-    technology: flow.technology || 'Generic',
-    connectionStatus: flow.connectionStatus || 'disconnected',
-    throughput: `${flow.throughput || 0} msg/s`,
-    latency: flow.latency || 0,
-    hasError: flow.hasError ?? false,
-    errorMessage: flow.errorMessage,
-    interval: flow.interval ?? 1000,
-    burst: flow.burst ?? 1,
-    topic: flow.topic || '',
-    host: flow.host || 'localhost',
-    port: flow.port || 80,
-    template: flow.template || '{}',
-    format: flow.format || 'json',
-    connectorConfig: flow.connectorConfig || {},
-    enabled: flow.enabled ?? true,
-  };
-}
-
-/**
- * Maps a raw Group object from the Java Core to a UI-compatible Group object.
- * Preserves local UI state like 'expanded' if a previous version of the group exists.
- */
-function mapGroupFromCore(group: GroupState, previousGroup?: Group): Group {
-  return {
-    id: group.id || 'unknown',
-    name: group.name || 'Unnamed Group',
-    status: group.status || 'stopped',
-    throughput: `${group.throughput || 0} msg/s`,
-    description: group.description || '',
-    threads: group.threads || 1,
-    outputMode: group.outputMode || 'serial',
-    enabled: group.enabled ?? true,
-    expanded: previousGroup?.expanded ?? true,
-    flows: (group.flows || []).map(mapFlowFromCore),
-  };
-}
-
-/**
- * Maps a list of raw Group objects from the Java Core to UI-compatible Group objects.
- * Maintains persistent UI state across the transformation.
- */
-function mapGroupsFromCore(groups: GroupState[], previousGroups: Group[] = []): Group[] {
-  return groups.map((group) => {
-    const previous = previousGroups.find((existing) => existing.id === group.id);
-    return mapGroupFromCore(group, previous);
-  });
-}
-
-function getConnectorProperties(schema: Record<string, unknown>): Record<string, Record<string, unknown>> {
-  return ((schema.properties as Record<string, Record<string, unknown>> | undefined) ?? {});
-}
-
-function getDefaultConfigFromSchema(schema: Record<string, unknown>): Record<string, unknown> {
-  const properties = getConnectorProperties(schema);
-  const defaults: Record<string, unknown> = {};
-
-  for (const [name, definition] of Object.entries(properties)) {
-    if (Object.prototype.hasOwnProperty.call(definition, 'default')) {
-      defaults[name] = definition.default;
-      continue;
-    }
-
-    if (Array.isArray(definition.enum) && definition.enum.length > 0) {
-      defaults[name] = definition.enum[0];
-      continue;
-    }
-
-    switch (definition.type) {
-      case 'number':
-      case 'integer':
-        defaults[name] = 0;
-        break;
-      case 'boolean':
-        defaults[name] = false;
-        break;
-      case 'array':
-        defaults[name] = [];
-        break;
-      case 'object':
-        defaults[name] = {};
-        break;
-      default:
-        defaults[name] = '';
-        break;
-    }
-  }
-
-  return defaults;
-}
-
-function findDescriptor(
-  catalog: ConnectorPluginDescriptor[],
-  pluginId: string,
-  pluginVersion?: string,
-): ConnectorPluginDescriptor | null {
-  if (pluginVersion) {
-    return catalog.find((descriptor) => descriptor.pluginId === pluginId && descriptor.pluginVersion === pluginVersion) ?? null;
-  }
-
-  return catalog
-    .filter((descriptor) => descriptor.pluginId === pluginId)
-    .sort((left, right) => compareVersions(right.pluginVersion, left.pluginVersion))[0] ?? null;
-}
-
-function findBestDescriptorForFlow(flow: Flow, catalog: ConnectorPluginDescriptor[]): ConnectorPluginDescriptor | null {
-  const normalizedTechnology = flow.technology.toLowerCase();
-  return findDescriptor(catalog, normalizedTechnology) ?? findDescriptor(catalog, flow.technology) ?? catalog[0] ?? null;
-}
-
-function normalizeConnectorState(
-  groups: Group[],
-  catalog: ConnectorPluginDescriptor[],
-  previousSelections: Record<string, { pluginId: string; pluginVersion: string }> = {},
-  previousConfigs: Record<string, Record<string, unknown>> = {},
-) {
-  const selections: Record<string, { pluginId: string; pluginVersion: string }> = {};
-  const configs: Record<string, Record<string, unknown>> = {};
-
-  for (const group of (groups || [])) {
-    if (!group?.flows) continue;
-    for (const flow of group.flows) {
-      if (!flow) continue;
-      const existingSelection = previousSelections[flow.id];
-      const existingDescriptor = existingSelection
-        ? findDescriptor(catalog, existingSelection.pluginId, existingSelection.pluginVersion)
-        : null;
-      const selectedDescriptor = existingDescriptor ?? findBestDescriptorForFlow(flow, catalog);
-
-      if (!selectedDescriptor) {
-        continue;
-      }
-
-      selections[flow.id] = {
-        pluginId: selectedDescriptor.pluginId,
-        pluginVersion: selectedDescriptor.pluginVersion,
-      };
-
-      configs[flow.id] = previousConfigs[flow.id] ?? getDefaultConfigFromSchema(selectedDescriptor.configSchema);
-    }
-  }
-
-  return { selections, configs, healthSummary: buildConnectorHealthSummary(groups, catalog, selections) };
-}
-
-function buildConnectorHealthSummary(
-  groups: Group[],
-  catalog: ConnectorPluginDescriptor[],
-  selections: Record<string, { pluginId: string; pluginVersion: string }>,
-): ConnectorHealthSummary[] {
-  const summaryByKey = new Map<string, ConnectorHealthSummary>();
-
-  for (const group of groups) {
-    for (const flow of group.flows) {
-      const selection = selections[flow.id];
-      const descriptor = selection
-        ? findDescriptor(catalog, selection.pluginId, selection.pluginVersion)
-        : findBestDescriptorForFlow(flow, catalog);
-
-      if (!descriptor) {
-        continue;
-      }
-
-      const key = `${descriptor.pluginId}@${descriptor.pluginVersion}`;
-      const entry = summaryByKey.get(key) ?? {
-        pluginId: descriptor.pluginId,
-        pluginVersion: descriptor.pluginVersion,
-        displayName: descriptor.displayName,
-        status: 'offline',
-        flowCount: 0,
-        connectedCount: 0,
-        warningCount: 0,
-        errorCount: 0,
-        lastMessage: undefined,
-      };
-
-      entry.flowCount += 1;
-
-      if (flow.hasError || flow.connectionStatus === 'error') {
-        entry.errorCount += 1;
-        entry.lastMessage = flow.errorMessage ?? entry.lastMessage ?? `Flow ${flow.name} is in error state`;
-      } else if (flow.connectionStatus === 'warning') {
-        entry.warningCount += 1;
-        entry.lastMessage = flow.errorMessage ?? entry.lastMessage;
-      } else if (flow.connectionStatus === 'connected') {
-        entry.connectedCount += 1;
-      }
-
-      summaryByKey.set(key, entry);
-    }
-  }
-
-  return Array.from(summaryByKey.values())
-    .map((entry) => {
-      const allConnected = entry.connectedCount === entry.flowCount && entry.flowCount > 0;
-      const hasProblems = entry.errorCount > 0 || entry.warningCount > 0;
-      const status: ConnectorHealthStatus = allConnected ? 'healthy' : hasProblems ? 'degraded' : 'offline';
-
-      return {
-        ...entry,
-        status,
-      };
-    })
-    .sort((left, right) => left.displayName.localeCompare(right.displayName) || left.pluginVersion.localeCompare(right.pluginVersion));
-}
-
-function formatConnectorHealthMessage(summary: ConnectorHealthSummary[]): string {
-  if (summary.length === 0) {
-    return 'Connector health unavailable';
-  }
-
-  return summary
-    .map((entry) => `${entry.displayName}@${entry.pluginVersion}:${entry.status}`)
-    .join(' | ');
-}
-
-function appReducer(state: AppState, action: AppAction): AppState {
-  switch (action.type) {
-    case 'SET_CONNECTED':
-      return { 
-        ...state, 
-        isConnected: action.payload.connected,
-        connectionMode: action.payload.mode,
-      };
-
-    case 'SET_SYSTEM_STATUS':
-      return { ...state, systemStatus: action.payload };
-
-
-    case 'TOGGLE_THEME': {
-      const nextIsDark = !state.isDark;
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem('gensynth-theme', nextIsDark ? 'dark' : 'light');
-      }
-      return { ...state, isDark: nextIsDark };
-    }
-
-    case 'SET_SELECTION':
-      return { ...state, selection: action.payload };
-
-    case 'SET_BOTTOM_TAB':
-      return { ...state, bottomTab: action.payload };
-
-    case 'SET_GROUPS':
-      return (() => {
-        const payload = action.payload || [];
-        const { selections, configs, healthSummary } = normalizeConnectorState(
-          payload,
-          state.connectorCatalog,
-          state.flowConnectorSelections,
-          state.flowConnectorConfigs,
-        );
-
-        return {
-          ...state,
-          groups: payload,
-          flowConnectorSelections: selections,
-          flowConnectorConfigs: configs,
-          connectorHealthSummary: healthSummary,
-        };
-      })();
-
-    case 'UPDATE_GROUP':
-      return {
-        ...state,
-        groups: state.groups.map(g =>
-          g.id === action.payload.id ? { ...g, ...action.payload } : g
-        ),
-        connectorHealthSummary: buildConnectorHealthSummary(
-          state.groups.map(g => (g.id === action.payload.id ? { ...g, ...action.payload } : g)),
-          state.connectorCatalog,
-          state.flowConnectorSelections,
-        ),
-      };
-
-    case 'TOGGLE_GROUP_EXPANDED':
-      return {
-        ...state,
-        groups: state.groups.map(g =>
-          g.id === action.payload ? { ...g, expanded: !g.expanded } : g
-        ),
-      };
-
-    case 'SET_VARIABLES':
-      return { ...state, variables: normalizeVariableListFromCore(action.payload) };
-
-    case 'ADD_LOG':
-      return { 
-        ...state, 
-        logs: [...state.logs.slice(-999), action.payload], // Keep at most 1000 logs
-      };
-
-    case 'SET_LOGS':
-      return { ...state, logs: action.payload };
-
-    case 'CLEAR_LOGS':
-      return { ...state, logs: [] };
-
-    case 'SET_FORMAT_TEMPLATE':
-      return {
-        ...state,
-        formatTemplates: {
-          ...state.formatTemplates,
-          [action.payload.flowId]: action.payload.template,
-        },
-      };
-
-    case 'SET_CONNECTOR_CATALOG':
-      return (() => {
-        const { selections, configs, healthSummary } = normalizeConnectorState(
-          state.groups,
-          action.payload,
-          state.flowConnectorSelections,
-          state.flowConnectorConfigs,
-        );
-
-        return {
-          ...state,
-          connectorCatalog: action.payload,
-          latestConnectors: latestConnectorsFromCatalog(action.payload),
-          flowConnectorSelections: selections,
-          flowConnectorConfigs: configs,
-          connectorHealthSummary: healthSummary,
-        };
-      })();
-
-    case 'SET_FLOW_CONNECTOR_SELECTION':
-      return {
-        ...state,
-        flowConnectorSelections: {
-          ...state.flowConnectorSelections,
-          [action.payload.flowId]: {
-            pluginId: action.payload.pluginId,
-            pluginVersion: action.payload.pluginVersion,
-          },
-        },
-        flowConnectorConfigs: (() => {
-          const descriptor = findDescriptor(
-            state.connectorCatalog,
-            action.payload.pluginId,
-            action.payload.pluginVersion,
-          );
-
-          return {
-            ...state.flowConnectorConfigs,
-            [action.payload.flowId]: descriptor
-              ? getDefaultConfigFromSchema(descriptor.configSchema)
-              : {},
-          };
-        })(),
-        connectorHealthSummary: buildConnectorHealthSummary(
-          state.groups,
-          state.connectorCatalog,
-          {
-            ...state.flowConnectorSelections,
-            [action.payload.flowId]: {
-              pluginId: action.payload.pluginId,
-              pluginVersion: action.payload.pluginVersion,
-            },
-          },
-        ),
-      };
-
-    case 'SET_FLOW_CONNECTOR_CONFIG':
-      return {
-        ...state,
-        flowConnectorConfigs: {
-          ...state.flowConnectorConfigs,
-          [action.payload.flowId]: action.payload.config,
-        },
-      };
-
-    case 'SET_METRICS':
-      return { ...state, metrics: action.payload };
-
-    case 'SET_FLOW_METRICS':
-      return {
-        ...state,
-        flowMetrics: {
-          ...state.flowMetrics,
-          [action.payload.flowId]: action.payload,
-        },
-      };
-
-    case 'LOAD_INITIAL_STATE':
-      return (() => {
-        const connectorCatalog = action.payload.connectorCatalog ?? state.connectorCatalog;
-        
-        // Inject a critical recovery log if a rollback occurred
-        let rollbackLog: LogEntry | null = null;
-        if (action.payload.rollbackReport) {
-          const report = action.payload.rollbackReport;
-          rollbackLog = {
-            id: `rollback_${Date.now()}`,
-            timestamp: new Date().toLocaleTimeString('en-GB', { hour12: false }),
-            level: 'error',
-            source: 'SYSTEM',
-            message: `CRITICAL RECOVERY: ${report.message} (Plugin ID: ${report.pluginId})`,
-          };
-        }
-
-        const { selections, configs, healthSummary } = normalizeConnectorState(
-          action.payload.groups,
-          connectorCatalog,
-          state.flowConnectorSelections,
-          state.flowConnectorConfigs,
-        );
-
-        const newTemplates = { ...state.formatTemplates };
-        action.payload.groups.forEach((group: Group) => {
-          group.flows.forEach((flow: Flow) => {
-            if (flow.template) {
-              newTemplates[flow.id] = flow.template;
-            }
-          });
-        });
-
-        // Ensure logs are not lost if multiple initial state calls happen
-        const baseLogs = action.payload.logs ?? state.logs;
-        const finalLogs = rollbackLog ? [...baseLogs, rollbackLog] : baseLogs;
-
-        return {
-          ...state,
-          groups: action.payload.groups,
-          variables: normalizeVariableListFromCore(action.payload.variables),
-          logs: finalLogs,
-          connectorCatalog,
-          latestConnectors: latestConnectorsFromCatalog(connectorCatalog),
-          flowConnectorSelections: selections,
-          flowConnectorConfigs: configs,
-          connectorHealthSummary: healthSummary,
-          metrics: action.payload.metrics ?? state.metrics,
-          systemStatus: action.payload.systemStatus ?? state.systemStatus,
-          formatTemplates: newTemplates,
-        };
-      })();
-      
-    case 'SET_RESTARTING':
-      return { ...state, isRestarting: action.payload };
-
-    default:
-      return state;
-  }
-}
-
-// ─────────────────────────────────────────────────────────────
-// Context
+// Context Value Interface
 // ─────────────────────────────────────────────────────────────
 
 interface AppContextValue {
@@ -735,9 +130,7 @@ interface AppProviderProps {
 }
 
 export function AppProvider({ children, useMockData = false }: AppProviderProps) {
-  const [state, dispatch] = useReducer(appReducer, initialState);
-  const connectionAttempted = useRef(false);
-  const lastConnectorHealthSignature = useRef('');
+  const [state, dispatch] = useReducer(rootReducer, initialState);
   const preserveLocalSnapshotRef = useRef(false);
   const optimisticManager = useRef<OptimisticManager | null>(null);
   const stateRef = useRef(state);
@@ -752,246 +145,16 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
     optimisticManager.current = new OptimisticManager();
   }
 
-  // Initial connection to the Core
-  useEffect(() => {
-    if (connectionAttempted.current) return;
-    connectionAttempted.current = true;
+  // Subscribe to WebSocket bridge events and connection lifecycle
+  useBridgeSubscriptions({
+    state,
+    stateRef,
+    dispatch,
+    optimisticManager: optimisticManager.current,
+    useMockData,
+  });
 
-    const initConnection = async () => {
-      if (useMockData) {
-        return;
-      }
-
-      try {
-        await bridge.connect();
-        dispatch({ 
-          type: 'SET_CONNECTED', 
-          payload: { connected: true, mode: bridge.getMode() } 
-        });
-
-        // Get initial state from Core; the listener below will hydrate state.
-        await CoreCommands.getInitialState();
-        await CoreCommands.subscribeMetrics();
-      } catch (error) {
-        console.error('[AppContext] Error connecting to the Core:', error);
-        // Connection failed, show empty state
-        dispatch({ type: 'SET_CONNECTED', payload: { connected: false, mode: 'websocket' } });
-      }
-    };
-
-    initConnection();
-  }, [useMockData]);
-
-  useEffect(() => {
-    const signature = state.connectorHealthSummary
-      .map((entry) => `${entry.pluginId}@${entry.pluginVersion}:${entry.status}:${entry.flowCount}:${entry.connectedCount}:${entry.warningCount}:${entry.errorCount}`)
-      .join('|');
-
-    if (!signature || signature === lastConnectorHealthSignature.current) {
-      return;
-    }
-
-    lastConnectorHealthSignature.current = signature;
-
-    const overallStatus = state.connectorHealthSummary.some((entry) => entry.status === 'degraded') ? 'warn' : 'info';
-    dispatch({
-      type: 'ADD_LOG',
-      payload: {
-        id: `health_${Date.now()}`,
-        timestamp: new Date().toLocaleTimeString('en-GB', { hour12: false }),
-        level: overallStatus,
-        source: 'CONNECTORS',
-        message: formatConnectorHealthMessage(state.connectorHealthSummary),
-      },
-    });
-  }, [state.connectorHealthSummary]);
-
-  // Subscribers for Core events
-  useEffect(() => {
-    if (useMockData) return;
-
-    const unsubscribers = [
-      bridge.on('system-status', (status: SystemStatusPayload) => {
-        dispatch({ type: 'SET_SYSTEM_STATUS', payload: status.status });
-      }),
-      
-      bridge.on('metrics', (metrics: MetricsPayload) => {
-        dispatch({ type: 'SET_METRICS', payload: metrics });
-      }),
-
-      bridge.on('initial-state', (snapshot: InitialStatePayload) => {
-        const currentState = stateRef.current;
-        const serverGroups = mapGroupsFromCore(snapshot.groups, currentState.groups);
-        const serverVariables = normalizeVariableListFromCore(snapshot.variables);
-
-        // Reconcile state between local and server
-        const reconciliation = reconcileState({
-          optimisticManager: optimisticManager.current,
-          localState: {
-            groups: currentState.groups,
-            variables: currentState.variables,
-          },
-          serverState: {
-            groups: serverGroups,
-            variables: serverVariables,
-          },
-        });
-
-        // Apply reconciliation results to OptimisticManager
-        applyReconciliation(reconciliation, optimisticManager.current);
-
-        // Log reconciliation results if there are conflicts or resolved operations
-        if (reconciliation.operationsResolved.length > 0 || reconciliation.conflicts.length > 0) {
-          const reconciliationLog = logReconciliationResults(reconciliation);
-          dispatch({
-            type: 'ADD_LOG',
-            payload: {
-              id: `reconciliation_${Date.now()}`,
-              timestamp: new Date().toLocaleTimeString('en-GB', { hour12: false }),
-              level: reconciliation.conflicts.length > 0 ? 'warn' : 'info',
-              source: 'RECONCILIATION',
-              message: reconciliationLog,
-            },
-          });
-        }
-
-        // Update state with server state
-        dispatch({
-          type: 'LOAD_INITIAL_STATE',
-          payload: {
-            groups: serverGroups,
-            variables: serverVariables,
-            connectorCatalog: snapshot.connectorCatalog,
-            metrics: snapshot.metrics,
-            systemStatus: snapshot.systemStatus.status,
-            rollbackReport: snapshot.rollbackReport,
-          },
-        });
-      }),
-      
-      bridge.on('log', (log: LogPayload) => {
-        let formattedTime = log.timestamp;
-        const date = new Date(log.timestamp);
-        if (!isNaN(date.getTime())) {
-          formattedTime = date.toLocaleTimeString('en-GB', { hour12: false });
-        }
-        dispatch({ type: 'ADD_LOG', payload: { ...log, timestamp: formattedTime } });
-      }),
-
-      bridge.on('trace', (trace: TracePayload) => {
-        dispatch({
-          type: 'ADD_LOG',
-          payload: {
-            id: `trace_${trace.commandId}_${trace.type}`,
-            timestamp: new Date(trace.timestamp).toLocaleTimeString('en-GB', { hour12: false }),
-            level: trace.status === 'error' ? 'error' : 'debug',
-            source: 'TRACE',
-            message: `[${trace.type}] ${trace.operation} ${trace.durationMs ? `(${trace.durationMs}ms)` : ''}`,
-            commandId: trace.commandId,
-          },
-        });
-      }),
-      
-      bridge.on('groups-update', (groups: GroupState[]) => {
-        // Use the centralized reconciliation logic to handle optimistic updates and deduplication.
-        const serverGroups = mapGroupsFromCore(groups, stateRef.current.groups);
-        const reconciliation = reconcileState({
-          optimisticManager: optimisticManager.current,
-          localState: { groups: stateRef.current.groups, variables: stateRef.current.variables },
-          serverState: { groups: serverGroups, variables: stateRef.current.variables },
-        });
-
-        // Resolve any operations that the server just confirmed via broadcast
-        if (optimisticManager.current) {
-          reconciliation.operationsResolved.forEach(op => {
-            if (op.success) {
-              optimisticManager.current?.remove(op.commandId);
-            }
-          });
-        }
-
-        dispatch({ type: 'SET_GROUPS', payload: reconciliation.groupsToUpdate });
-      }),
-
-      bridge.on('variables-update', (variables: VariableState[]) => {
-        const serverVariables = normalizeVariableListFromCore(variables as unknown as Variable[]);
-        const reconciliation = reconcileState({
-          optimisticManager: optimisticManager.current,
-          localState: { groups: stateRef.current.groups, variables: stateRef.current.variables },
-          serverState: { groups: stateRef.current.groups, variables: serverVariables },
-        });
-
-        // Resolve any operations that the server just confirmed via broadcast
-        if (optimisticManager.current) {
-          reconciliation.operationsResolved.forEach(op => {
-            if (op.success) {
-              optimisticManager.current?.remove(op.commandId);
-            }
-          });
-        }
-
-        dispatch({ type: 'SET_VARIABLES', payload: reconciliation.variablesToUpdate });
-      }),
-      
-      bridge.on('flow-update', (flowMetrics: FlowMetricsPayload) => {
-        dispatch({ type: 'SET_FLOW_METRICS', payload: flowMetrics });
-      }),
-
-      bridge.on('error', ({ error, commandId, code, details, recoverable }) => {
-        dispatch({
-          type: 'ADD_LOG',
-          payload: {
-            id: `bridge_error_${Date.now()}`,
-            timestamp: new Date().toLocaleTimeString('en-GB', { hour12: false }),
-            level: recoverable ? 'warn' : 'error',
-            source: 'BRIDGE',
-            message: `${code ?? 'BRIDGE_ERROR'}: ${error.message}`,
-            commandId,
-          },
-        });
-        if (details && Object.keys(details).length > 0) {
-          dispatch({
-            type: 'ADD_LOG',
-            payload: {
-              id: `bridge_error_details_${Date.now()}`,
-              timestamp: new Date().toLocaleTimeString('en-GB', { hour12: false }),
-              level: 'debug',
-              source: 'BRIDGE',
-              message: JSON.stringify(details),
-            },
-          });
-        }
-      }),
-      
-      bridge.on('disconnected', () => {
-        dispatch({ type: 'SET_CONNECTED', payload: { connected: false, mode: 'mock' } });
-      }),
-      
-      bridge.on('connected', () => {
-        const currentState = stateRef.current;
-        dispatch({ type: 'SET_CONNECTED', payload: { connected: true, mode: bridge.getMode() } });
-        
-        // If we were waiting for a restart, trigger a full page reload to get fresh catalog and state
-        if (currentState.isRestarting) {
-          console.log('[AppContext] Reconnected after restart. Reloading UI...');
-          window.location.reload();
-        }
-      }),
-
-      bridge.on('restart-required', () => {
-        dispatch({ type: 'SET_RESTARTING', payload: true });
-      }),
-    ];
-
-    return () => {
-      unsubscribers.forEach(unsub => unsub());
-    };
-  }, [useMockData, state.groups]);
-
-  // ─────────────────────────────────────────────────────────
-  // Actions
-  // ─────────────────────────────────────────────────────────
-
+  // Helper for reporting command execution errors in logs
   const reportCommandError = useCallback((source: string, action: string, error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`[AppContext] ${action} failed:`, error);
@@ -1007,72 +170,49 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
     });
   }, []);
 
-  const startSystem = useCallback(async () => {
-    try {
-      if (state.connectionMode !== 'mock') {
-        await CoreCommands.startSystem();
-      }
-      dispatch({ type: 'SET_SYSTEM_STATUS', payload: 'running' });
-    } catch (error) {
-      reportCommandError('SYSTEM', 'startSystem', error);
-    }
-  }, [reportCommandError, state.connectionMode]);
+  // System Actions
+  const startSystem = useCallback(
+    systemActions.startSystem(dispatch, state.connectionMode, reportCommandError),
+    [state.connectionMode, reportCommandError]
+  );
 
-  const stopSystem = useCallback(async () => {
-    try {
-      if (state.connectionMode !== 'mock') {
-        await CoreCommands.stopSystem();
-      }
-      dispatch({ type: 'SET_SYSTEM_STATUS', payload: 'stopped' });
-    } catch (error) {
-      reportCommandError('SYSTEM', 'stopSystem', error);
-    }
-  }, [reportCommandError, state.connectionMode]);
+  const stopSystem = useCallback(
+    systemActions.stopSystem(dispatch, state.connectionMode, reportCommandError),
+    [state.connectionMode, reportCommandError]
+  );
 
-  const toggleSystem = useCallback(async () => {
-    if (state.systemStatus === 'stopped') {
-      await startSystem();
-    } else {
-      await stopSystem();
-    }
-  }, [state.systemStatus, startSystem, stopSystem]);
+  const toggleSystem = useCallback(
+    systemActions.toggleSystem(state.systemStatus, startSystem, stopSystem),
+    [state.systemStatus, startSystem, stopSystem]
+  );
 
-  const selectGroup = useCallback((groupId: string) => {
-    dispatch({ type: 'SET_SELECTION', payload: { type: 'group', groupId } });
-  }, []);
+  // Selection Actions
+  const selectGroup = useCallback(
+    selectionActions.selectGroup(dispatch),
+    []
+  );
 
-  const selectFlow = useCallback((groupId: string, flowId: string) => {
-    dispatch({ type: 'SET_SELECTION', payload: { type: 'flow', groupId, flowId } });
-  }, []);
+  const selectFlow = useCallback(
+    selectionActions.selectFlow(dispatch),
+    []
+  );
 
-  const selectVariable = useCallback((variableId: string) => {
-    dispatch({
-      type: 'SET_SELECTION',
-      payload: { ...state.selection, type: 'variable', variableId },
-    });
-  }, [state.selection]);
+  const selectVariable = useCallback(
+    (variableId: string) => selectionActions.selectVariable(dispatch, state.selection)(variableId),
+    [state.selection]
+  );
 
-  const clearVariableSelection = useCallback(() => {
-    const { selection } = state;
-    if (selection.flowId) {
-      dispatch({
-        type: 'SET_SELECTION',
-        payload: { type: 'flow', groupId: selection.groupId, flowId: selection.flowId },
-      });
-    } else if (selection.groupId) {
-      dispatch({
-        type: 'SET_SELECTION',
-        payload: { type: 'group', groupId: selection.groupId },
-      });
-    } else {
-      dispatch({ type: 'SET_SELECTION', payload: { type: 'none' } });
-    }
-  }, [state]);
+  const clearVariableSelection = useCallback(
+    () => selectionActions.clearVariableSelection(dispatch, state.selection)(),
+    [state.selection]
+  );
 
-  const clearSelection = useCallback(() => {
-    dispatch({ type: 'SET_SELECTION', payload: { type: 'none' } });
-  }, []);
+  const clearSelection = useCallback(
+    selectionActions.clearSelection(dispatch),
+    []
+  );
 
+  // Groups: expand and run control
   const toggleGroupExpanded = useCallback((groupId: string) => {
     dispatch({ type: 'TOGGLE_GROUP_EXPANDED', payload: groupId });
   }, []);
@@ -1099,41 +239,44 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
     }
   }, [reportCommandError, state.connectionMode]);
 
-  const setFormatTemplate = useCallback((flowId: string, template: string) => {
-    dispatch({ type: 'SET_FORMAT_TEMPLATE', payload: { flowId, template } });
-  }, []);
+  // Templates
+  const setFormatTemplate = useCallback(
+    templateActions.setFormatTemplate(dispatch),
+    []
+  );
 
-  const setFlowConnectorSelection = useCallback((flowId: string, pluginId: string, pluginVersion: string) => {
-    dispatch({
-      type: 'SET_FLOW_CONNECTOR_SELECTION',
-      payload: { flowId, pluginId, pluginVersion },
-    });
-  }, []);
+  const setFlowConnectorSelection = useCallback(
+    templateActions.setFlowConnectorSelection(dispatch),
+    []
+  );
 
-  const setFlowConnectorConfig = useCallback((flowId: string, config: Record<string, unknown>) => {
-    dispatch({
-      type: 'SET_FLOW_CONNECTOR_CONFIG',
-      payload: { flowId, config },
-    });
-  }, []);
+  const setFlowConnectorConfig = useCallback(
+    templateActions.setFlowConnectorConfig(dispatch),
+    []
+  );
 
-  const registerTemplateEditor = useCallback((insertFn: ((name: string, scope?: string) => void) | null) => {
-    activeEditorRef.current = insertFn;
-  }, []);
+  const registerTemplateEditor = useCallback(
+    templateActions.registerTemplateEditor(activeEditorRef),
+    []
+  );
 
-  const insertVariable = useCallback((name: string, scope?: string) => {
-    if (activeEditorRef.current) {
-      activeEditorRef.current(name, scope);
-    } else {
-      // Fallback for when no editor is registered or for older implementation compatibility
-      const varRef = `{{${scope ? scope + '.' : ''}${name}}}`;
-      const insertFn = (window as unknown as Record<string, unknown>).__insertIntoFlow;
-      if (typeof insertFn === 'function') {
-        (insertFn as (ref: string) => void)(varRef);
-      }
-    }
-  }, []);
+  const insertVariable = useCallback(
+    templateActions.insertVariable(activeEditorRef),
+    []
+  );
 
+  // Project snapshots
+  const loadProjectState = useCallback(
+    projectActions.loadProjectState(dispatch, state.connectionMode, state.connectorCatalog, state.selection, preserveLocalSnapshotRef),
+    [state.connectionMode, state.connectorCatalog, state.selection]
+  );
+
+  const saveProjectState = useCallback(
+    projectActions.saveProjectState(dispatch, state.connectionMode, state.groups, state.variables),
+    [state.connectionMode, state.groups, state.variables]
+  );
+
+  // UI / Logs
   const setBottomTab = useCallback((tab: 'logs' | 'stats' | 'preview') => {
     dispatch({ type: 'SET_BOTTOM_TAB', payload: tab });
   }, []);
@@ -1142,698 +285,18 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
     dispatch({ type: 'TOGGLE_THEME' });
   }, []);
 
-
   const clearLogs = useCallback(() => {
     dispatch({ type: 'CLEAR_LOGS' });
   }, []);
 
-  const loadProjectState = useCallback(async () => {
-    try {
-      if (state.connectionMode === 'jcef') {
-        const response = await CoreCommands.loadState();
-        if (response && (response as any).status === 'cancelled') {
-          return;
-        }
-        return;
-      }
-
-      // Open file selector
-      const file = await triggerFileSelection();
-      if (!file) {
-        // User cancelled the file selection
-        return;
-      }
-
-      // Load and parse the snapshot
-      const snapshot = await loadProjectSnapshotFromFile(file);
-
-      // Normalize all data to ensure valid structure
-      const normalizedGroups = snapshot.groups.map(normalizeGroupFromSnapshot);
-      const normalizedVariables = snapshot.variables.map(normalizeVariableFromSnapshot);
-
-      // Dispatch state update
-      dispatch({
-        type: 'LOAD_INITIAL_STATE',
-        payload: {
-          groups: normalizedGroups,
-          variables: normalizedVariables,
-          connectorCatalog: state.connectorCatalog,
-        },
-      });
-      preserveLocalSnapshotRef.current = true;
-
-      // Sincronizar con el backend
-      import('../core/bridge').then(({ CoreCommands }) => {
-        CoreCommands.importState(normalizedGroups, normalizedVariables)
-          .catch((err: any) => console.error('[loadProjectState] Error sincronizando backend:', err));
-      });
-
-      const selectionStillExists =
-        state.selection.type === 'group'
-          ? normalizedGroups.some((group) => group.id === state.selection.groupId)
-          : state.selection.type === 'flow'
-            ? normalizedGroups.some((group) =>
-                group.id === state.selection.groupId && group.flows.some((flow) => flow.id === state.selection.flowId),
-              )
-            : state.selection.type === 'variable'
-              ? normalizedVariables.some((variable) => variable.id === state.selection.variableId)
-              : true;
-
-      if (!selectionStillExists) {
-        dispatch({ type: 'SET_SELECTION', payload: { type: 'none' } });
-      }
-
-        // Log success with details
-        const totalFlows = normalizedGroups.reduce((acc, g) => acc + g.flows.length, 0);
-        dispatch({
-          type: 'ADD_LOG',
-          payload: {
-            id: `load_success_${Date.now()}`,
-            timestamp: new Date().toLocaleTimeString('en-GB', { hour12: false }),
-            level: 'info',
-            source: 'SYSTEM',
-            message: `Proyecto cargado: ${normalizedGroups.length} grupos, ${totalFlows} flows, ${normalizedVariables.length} variables`,
-          },
-        });
-      // Log success
-      toast.success(`Proyecto cargado desde: ${file.name}`);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Error desconocido al cargar proyecto';
-      dispatch({
-        type: 'ADD_LOG',
-        payload: {
-          id: `load_error_${Date.now()}`,
-          timestamp: new Date().toLocaleTimeString('en-GB', { hour12: false }),
-          level: 'error',
-          source: 'SYSTEM',
-          message: `Error al cargar proyecto: ${message}`,
-        },
-      });
-      toast.error(message);
-    }
-  }, [state.connectorCatalog]);
-
-  const saveProjectState = useCallback(async () => {
-    try {
-      if (state.connectionMode === 'jcef') {
-        // In Desktop mode, let the backend handle the Save As dialog
-        const response = await CoreCommands.saveState();
-        if (response.status === 'cancelled') {
-          return; // User cancelled the dialog
-        }
-        // Success notification is handled by the server via logs or separate response
-        return;
-      }
-
-      // Standard web browser behavior (Download snapshot)
-      const snapshot = createProjectSnapshot(state.groups, state.variables);
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-      const filename = `gen-synth-${timestamp}.json`;
-
-      downloadProjectSnapshot(snapshot, filename);
-
-      dispatch({
-        type: 'ADD_LOG',
-        payload: {
-          id: `save_success_${Date.now()}`,
-          timestamp: new Date().toLocaleTimeString('en-GB', { hour12: false }),
-          level: 'info',
-          source: 'SYSTEM',
-          message: `Proyecto guardado en: ${filename}`,
-        },
-      });
-
-      toast.success(`Proyecto guardado: ${filename}`);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Error desconocido al guardar proyecto';
-      dispatch({
-        type: 'ADD_LOG',
-        payload: {
-          id: `save_error_${Date.now()}`,
-          timestamp: new Date().toLocaleTimeString('en-GB', { hour12: false }),
-          level: 'error',
-          source: 'SYSTEM',
-          message: `Error al guardar proyecto: ${message}`,
-        },
-      });
-      toast.error(message);
-    }
-  }, [state.groups, state.variables]);
-
-  // ─────────────────────────────────────────────────────────
-  // CRUD Actions: Groups, Flows, Variables
-  // ─────────────────────────────────────────────────────────
-
-  const crudContext: CRUDActionContext = {
+  // CRUD actions hook delegate
+  const crudActions = useCrudActions({
+    state,
+    stateRef,
     dispatch,
-    reportError: reportCommandError,
-    connectionMode: state.connectionMode,
     optimisticManager: optimisticManager.current,
-  };
-
-  const createGroupAction = useCallback(async (name: string, description?: string) => {
-    const optimisticId = generateOptimisticId('group');
-    const optimisticGroup = createOptimisticGroup(optimisticId, name, description);
-
-    try {
-      const applyOptimisticGroup = () => {
-        const currentGroups = stateRef.current.groups;
-        const nextGroups = currentGroups.some((g) => g.id === optimisticId)
-          ? currentGroups
-          : [...currentGroups, optimisticGroup];
-
-        dispatch({
-          type: 'SET_GROUPS',
-          payload: nextGroups,
-        });
-      };
-
-      const rollbackOptimisticGroup = () => {
-        dispatch({
-          type: 'SET_GROUPS',
-          payload: stateRef.current.groups.filter((g) => g.id !== optimisticId),
-        });
-      };
-
-      const createdGroup = await executeCreateOptimistic(
-        {
-          optimisticManager: optimisticManager.current,
-          commandType: 'CREATE_GROUP',
-          optimisticId,
-        },
-        {
-          applyOptimistic: applyOptimisticGroup,
-          rollback: rollbackOptimisticGroup,
-          send: (onResponse) => CRUDActions.createGroup(crudContext, name, description, onResponse),
-          reconcileId: (serverGroup) => {
-            // If server returned different ID, replace optimistic with real
-            const previousGroup = stateRef.current.groups.find(g => g.id === optimisticId);
-            const mappedGroup = mapGroupFromCore(serverGroup as GroupState, previousGroup);
-            
-            dispatch({
-              type: 'SET_GROUPS',
-              payload: stateRef.current.groups.map((g) =>
-                g.id === optimisticId ? mappedGroup : g
-              ),
-            });
-
-            // Update selection if it was pointing to the optimistic ID
-            if (stateRef.current.selection.groupId === optimisticId) {
-              dispatch({
-                type: 'SET_SELECTION',
-                payload: { ...stateRef.current.selection, groupId: mappedGroup.id }
-              });
-            }
-          },
-        }
-      );
-
-      return mapGroupFromCore(createdGroup as GroupState);
-    } catch (error) {
-      reportCommandError('GROUPS', `createGroup(${name})`, error);
-      throw error;
-    }
-  }, [crudContext, reportCommandError]);
-
-  const deleteGroupAction = useCallback(async (groupId: string) => {
-    const previousGroup = state.groups.find(g => g.id === groupId);
-    if (!previousGroup) {
-      throw new Error(`Group ${groupId} not found`);
-    }
-
-    try {
-      await executeDeleteOptimistic(
-        {
-          optimisticManager: optimisticManager.current,
-          commandType: 'DELETE_GROUP',
-          resourceId: groupId,
-        },
-        {
-          applyOptimistic: () => {
-            dispatch({
-              type: 'SET_GROUPS',
-              payload: state.groups.filter(g => g.id !== groupId),
-            });
-          },
-          rollback: () => {
-            dispatch({
-              type: 'SET_GROUPS',
-              payload: [...state.groups, previousGroup],
-            });
-          },
-          send: () => CRUDActions.deleteGroup(crudContext, groupId),
-        }
-      );
-    } catch (error) {
-      reportCommandError('GROUPS', `deleteGroup(${groupId})`, error);
-      throw error;
-    }
-  }, [crudContext, state.groups, reportCommandError]);
-
-  const updateGroupConfigAction = useCallback(
-    async (groupId: string, config: Partial<Omit<Group, 'id' | 'flows'>>, name?: string) => {
-      const previousGroup = state.groups.find(g => g.id === groupId);
-      if (!previousGroup) {
-        throw new Error(`Group ${groupId} not found`);
-      }
-
-      const { optimistic: optimisticPayload, rollback: rollbackPayload } = 
-        createGroupUpdatePayload(previousGroup, config);
-
-      try {
-        await executeOptimisticUpdate(
-          {
-            optimisticManager: optimisticManager.current,
-            commandType: 'UPDATE_GROUP_CONFIG',
-            resourceId: groupId,
-          },
-          {
-            applyOptimistic: () => {
-              dispatch({
-                type: 'UPDATE_GROUP',
-                payload: optimisticPayload as any,
-              });
-            },
-            rollback: () => {
-              dispatch({
-                type: 'UPDATE_GROUP',
-                payload: rollbackPayload as any,
-              });
-            },
-            send: () => CRUDActions.updateGroupConfig(crudContext, groupId, config, name),
-          }
-        );
-      } catch (error) {
-        reportCommandError('GROUPS', `updateGroupConfig(${groupId})`, error);
-        throw error;
-      }
-    },
-    [crudContext, state.groups, reportCommandError],
-  );
-
-  const createFlowAction = useCallback(async (
-    groupId: string,
-    name: string,
-    technology: string,
-    host: string,
-    port: number,
-    topic?: string,
-    interval?: number,
-    burst?: number,
-    template?: string,
-    connectorConfig?: Record<string, unknown>,
-  ) => {
-    const optimisticId = generateOptimisticId('flow');
-    const optimisticFlow = createOptimisticFlow(
-      optimisticId,
-      name,
-      technology,
-      host,
-      port,
-      topic,
-      interval,
-      burst
-    );
-
-    try {
-      const applyOptimisticFlow = () => {
-        dispatch({
-          type: 'SET_GROUPS',
-          payload: stateRef.current.groups.map((g) =>
-            g.id === groupId
-              ? {
-                  ...g,
-                  flows: g.flows.some((f) => f.id === optimisticId)
-                    ? g.flows
-                    : [...g.flows, optimisticFlow],
-                }
-              : g
-          ),
-        });
-      };
-
-      const rollbackOptimisticFlow = () => {
-        dispatch({
-          type: 'SET_GROUPS',
-          payload: stateRef.current.groups.map((g) =>
-            g.id === groupId
-              ? {
-                  ...g,
-                  flows: g.flows.filter((f) => f.id !== optimisticId),
-                }
-              : g
-          ),
-        });
-      };
-
-      const createdFlow = await executeCreateOptimistic(
-        {
-          optimisticManager: optimisticManager.current,
-          commandType: 'CREATE_FLOW',
-          optimisticId,
-        },
-        {
-          applyOptimistic: applyOptimisticFlow,
-          rollback: rollbackOptimisticFlow,
-          send: (onResponse) =>
-            CRUDActions.createFlow(
-              crudContext,
-              groupId,
-              name,
-              technology,
-              host,
-              port,
-              topic,
-              interval,
-              burst,
-              template,
-              connectorConfig,
-              onResponse
-            ),
-          reconcileId: (serverFlow) => {
-            // If server returned different ID, replace optimistic with real
-            const mappedFlow = mapFlowFromCore(serverFlow as FlowState);
-             dispatch({
-               type: 'SET_GROUPS',
-               payload: stateRef.current.groups.map((g) =>
-                 g.id === groupId
-                   ? {
-                       ...g,
-                       flows: g.flows.map((f) =>
-                         f.id === optimisticId ? mappedFlow : f
-                       ),
-                     }
-                   : g
-               ),
-             });
-
-             // Update selection if it was pointing to the optimistic ID
-             if (stateRef.current.selection.flowId === optimisticId) {
-               dispatch({
-                 type: 'SET_SELECTION',
-                 payload: { ...stateRef.current.selection, flowId: mappedFlow.id }
-               });
-             }
-           },
-        }
-      );
-
-      return mapFlowFromCore(createdFlow as FlowState);
-    } catch (error) {
-      reportCommandError('FLOWS', `createFlow(${name})`, error);
-      throw error;
-    }
-  }, [crudContext, reportCommandError]);
-
-  const deleteFlowAction = useCallback(async (groupId: string, flowId: string) => {
-    const group = state.groups.find(g => g.id === groupId);
-    const flow = group?.flows.find(f => f.id === flowId);
-    
-    if (!flow) {
-      throw new Error(`Flow ${flowId} not found in group ${groupId}`);
-    }
-
-    try {
-      await executeDeleteOptimistic(
-        {
-          optimisticManager: optimisticManager.current,
-          commandType: 'DELETE_FLOW',
-          resourceId: flowId,
-        },
-        {
-          applyOptimistic: () => {
-            dispatch({
-              type: 'SET_GROUPS',
-              payload: state.groups.map((g) =>
-                g.id === groupId
-                  ? {
-                      ...g,
-                      flows: g.flows.filter(f => f.id !== flowId),
-                    }
-                  : g
-              ),
-            });
-          },
-          rollback: () => {
-            dispatch({
-              type: 'SET_GROUPS',
-              payload: state.groups.map((g) =>
-                g.id === groupId
-                  ? {
-                      ...g,
-                      flows: [...g.flows, flow],
-                    }
-                  : g
-              ),
-            });
-          },
-          send: () => CRUDActions.deleteFlow(crudContext, groupId, flowId, flow.name),
-        }
-      );
-    } catch (error) {
-      reportCommandError('FLOWS', `deleteFlow(${flowId})`, error);
-      throw error;
-    }
-  }, [crudContext, state.groups, reportCommandError]);
-
-  const updateFlowConfigAction = useCallback(async (
-    groupId: string,
-    flowId: string,
-    config: Partial<Omit<Flow, 'id' | 'connectionStatus' | 'throughput' | 'hasError' | 'errorMessage'>> & { template?: string },
-  ) => {
-    const group = state.groups.find(g => g.id === groupId);
-    const flow = group?.flows.find(f => f.id === flowId);
-    
-    if (!flow) {
-      throw new Error(`Flow ${flowId} not found in group ${groupId}`);
-    }
-
-    const { optimistic: optimisticPayload, rollback: rollbackPayload } = 
-      createFlowUpdatePayload(flow, config as any);
-
-    try {
-      await executeOptimisticUpdate(
-        {
-          optimisticManager: optimisticManager.current,
-          commandType: 'UPDATE_FLOW_CONFIG',
-          resourceId: flowId,
-        },
-        {
-          applyOptimistic: () => {
-            dispatch({
-              type: 'SET_GROUPS',
-              payload: state.groups.map((g) =>
-                g.id === groupId
-                  ? {
-                      ...g,
-                      flows: g.flows.map((f) =>
-                        f.id === flowId
-                          ? { ...f, ...optimisticPayload }
-                          : f,
-                      ),
-                    }
-                  : g,
-              ),
-            });
-          },
-          rollback: () => {
-            dispatch({
-              type: 'SET_GROUPS',
-              payload: state.groups.map((g) =>
-                g.id === groupId
-                  ? {
-                      ...g,
-                      flows: g.flows.map((f) =>
-                        f.id === flowId
-                          ? { ...f, ...rollbackPayload }
-                          : f,
-                      ),
-                    }
-                  : g,
-              ),
-            });
-          },
-          send: () => CRUDActions.updateFlowConfig(crudContext, groupId, flowId, config, flow.name),
-        }
-      );
-    } catch (error) {
-      reportCommandError('FLOWS', `updateFlowConfig(${flowId})`, error);
-      throw error;
-    }
-  }, [crudContext, state.groups, reportCommandError]);
-
-  const cloneGroup = useCallback(async (groupId: string, count: number, namingPattern?: string) => {
-    try {
-      await CoreCommands.cloneGroup(groupId, count, namingPattern);
-      toast.success(`Iniciando clonación de grupo (${count} copias)`);
-    } catch (error) {
-      reportCommandError('GROUPS', `cloneGroup(${groupId})`, error);
-    }
-  }, [reportCommandError]);
-
-  const cloneFlow = useCallback(async (groupId: string, flowId: string, count: number, namingPattern?: string) => {
-    try {
-      await CoreCommands.cloneFlow(groupId, flowId, count, namingPattern);
-      toast.success(`Iniciando clonación de flow (${count} copias)`);
-    } catch (error) {
-      reportCommandError('FLOWS', `cloneFlow(${flowId})`, error);
-    }
-  }, [reportCommandError]);
-
-  const createVariableAction = useCallback(async (
-    name: string,
-    type: VariableType,
-    scope: VariableScope,
-    config?: Record<string, unknown>,
-    flowId?: string,
-    groupId?: string,
-    variableId?: string,
-  ) => {
-    const optimisticId = variableId || generateOptimisticId('var');
-    const optimisticVariable = createOptimisticVariable(optimisticId, name, type, scope, flowId, groupId);
-
-    try {
-      const applyOptimisticVariable = () => {
-        const currentVariables = stateRef.current.variables;
-        const nextVariables = currentVariables.some((v) => v.id === optimisticId)
-          ? currentVariables
-          : [...currentVariables, optimisticVariable];
-
-        dispatch({
-          type: 'SET_VARIABLES',
-          payload: nextVariables,
-        });
-      };
-
-      const rollbackOptimisticVariable = () => {
-        dispatch({
-          type: 'SET_VARIABLES',
-          payload: stateRef.current.variables.filter((v) => v.id !== optimisticId),
-        });
-      };
-
-      const createdVariable = await executeCreateOptimistic(
-        {
-          optimisticManager: optimisticManager.current,
-          commandType: 'CREATE_VARIABLE',
-          optimisticId,
-        },
-        {
-          applyOptimistic: applyOptimisticVariable,
-          rollback: rollbackOptimisticVariable,
-          send: (onResponse) =>
-            CRUDActions.createVariable(crudContext, name, type, scope, config, flowId, groupId, variableId, onResponse),
-          reconcileId: (serverVariable) => {
-            // If server returned different ID, replace optimistic with real
-            const normalizedServer = normalizeVariableFromCore(serverVariable as VariableState);
-            dispatch({
-              type: 'SET_VARIABLES',
-              payload: stateRef.current.variables.map((v) =>
-                v.id === optimisticId ? normalizedServer : v
-              ),
-            });
-
-            // Update selection if it was pointing to the optimistic ID
-            if (stateRef.current.selection.variableId === optimisticId) {
-              dispatch({
-                type: 'SET_SELECTION',
-                payload: { ...stateRef.current.selection, variableId: normalizedServer.id }
-              });
-            }
-          },
-        }
-      );
-
-      return normalizeVariableFromCore(createdVariable as VariableState);
-    } catch (error) {
-      reportCommandError('VARIABLES', `createVariable(${name})`, error);
-      throw error;
-    }
-  }, [crudContext, reportCommandError]);
-
-  const deleteVariableAction = useCallback(async (variableId: string) => {
-    const previousVariable = state.variables.find(v => v.id === variableId);
-    if (!previousVariable) {
-      throw new Error(`Variable ${variableId} not found`);
-    }
-
-    try {
-      await executeDeleteOptimistic(
-        {
-          optimisticManager: optimisticManager.current,
-          commandType: 'DELETE_VARIABLE',
-          resourceId: variableId,
-        },
-        {
-          applyOptimistic: () => {
-            dispatch({
-              type: 'SET_VARIABLES',
-              payload: state.variables.filter(v => v.id !== variableId),
-            });
-          },
-          rollback: () => {
-            dispatch({
-              type: 'SET_VARIABLES',
-              payload: [...state.variables, previousVariable],
-            });
-          },
-          send: () => CRUDActions.deleteVariable(crudContext, variableId, previousVariable.name),
-        }
-      );
-    } catch (error) {
-      reportCommandError('VARIABLES', `deleteVariable(${variableId})`, error);
-      throw error;
-    }
-  }, [crudContext, state.variables, reportCommandError]);
-
-  const updateVariableAction = useCallback(async (
-    variableId: string,
-    updates: Partial<Omit<Variable, 'id'>>,
-  ) => {
-    const previousVariable = state.variables.find(v => v.id === variableId);
-    if (!previousVariable) {
-      throw new Error(`Variable ${variableId} not found`);
-    }
-
-    const { optimistic: optimisticPayload, rollback: rollbackPayload } = 
-      createVariableUpdatePayload(previousVariable, updates);
-
-    try {
-      await executeOptimisticUpdate(
-        {
-          optimisticManager: optimisticManager.current,
-          commandType: 'UPDATE_VARIABLE',
-          resourceId: variableId,
-        },
-        {
-          applyOptimistic: () => {
-            dispatch({
-              type: 'SET_VARIABLES',
-              payload: state.variables.map((v) =>
-                v.id === variableId
-                  ? normalizeVariableFromCore({ ...v, ...optimisticPayload })
-                  : v
-              ),
-            });
-          },
-          rollback: () => {
-            dispatch({
-              type: 'SET_VARIABLES',
-              payload: state.variables.map((v) =>
-                v.id === variableId
-                  ? normalizeVariableFromCore({ ...v, ...rollbackPayload })
-                  : v
-              ),
-            });
-          },
-          send: () => CRUDActions.updateVariable(crudContext, variableId, updates, previousVariable.name),
-        }
-      );
-    } catch (error) {
-      reportCommandError('VARIABLES', `updateVariable(${variableId})`, error);
-      throw error;
-    }
-  }, [crudContext, state.variables, reportCommandError]);
+    reportCommandError,
+  });
 
   const actions = {
     startSystem,
@@ -1849,17 +312,7 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
     toggleGroupExpanded,
     startGroup,
     stopGroup,
-    createGroup: createGroupAction,
-    deleteGroup: deleteGroupAction,
-    updateGroupConfig: updateGroupConfigAction,
-    createFlow: createFlowAction,
-    deleteFlow: deleteFlowAction,
-    updateFlowConfig: updateFlowConfigAction,
-    cloneGroup,
-    cloneFlow,
-    createVariable: createVariableAction,
-    deleteVariable: deleteVariableAction,
-    updateVariable: updateVariableAction,
+    ...crudActions,
     setFormatTemplate,
     setFlowConnectorSelection,
     setFlowConnectorConfig,
@@ -1878,7 +331,7 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
 }
 
 // ─────────────────────────────────────────────────────────────
-// Hook
+// Hooks
 // ─────────────────────────────────────────────────────────────
 
 export function useApp() {
@@ -1889,7 +342,6 @@ export function useApp() {
   return context;
 }
 
-// Hooks of specific slices of state for convenience
 export function useSystemStatus() {
   const { state } = useApp();
   return state.systemStatus;
