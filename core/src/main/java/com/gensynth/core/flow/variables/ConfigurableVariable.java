@@ -20,7 +20,15 @@ public class ConfigurableVariable implements IVariable {
 
     @Override
     public Object getValue() {
-        currentValue = configuration.generateNextValue();
+        if (configuration.hasActiveOverride) {
+            configuration.incrementTick(); // Maintain tick counter progression
+            currentValue = configuration.activeOverrideValue;
+            org.slf4j.LoggerFactory.getLogger(ConfigurableVariable.class)
+                .debug("[VARIABLE OVERRIDE VALUE] Variable '{}' evaluated to override value: '{}'",
+                    configuration.getIdentifier(), currentValue);
+        } else {
+            currentValue = configuration.generateNextValue();
+        }
         return currentValue;
     }
 
@@ -31,6 +39,11 @@ public class ConfigurableVariable implements IVariable {
 
     @Override
     public String getId() {
+        return configuration.getIdentifier();
+    }
+
+    @Override
+    public String getName() {
         return configuration.getIdentifier();
     }
 

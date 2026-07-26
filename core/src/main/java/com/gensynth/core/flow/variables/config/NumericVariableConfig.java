@@ -65,6 +65,48 @@ public class NumericVariableConfig extends VariableConfiguration {
         calculateStepSize();
     }
 
+    private static final java.util.logging.Logger configLogger = java.util.logging.Logger.getLogger(NumericVariableConfig.class.getName());
+
+    @Override
+    public java.util.List<String> validate() {
+        java.util.List<String> errors = new java.util.ArrayList<>();
+        if (fromValue > toValue) {
+            errors.add("Numeric range is invalid: min must be <= max");
+        }
+        if (initialValue != null && (initialValue < fromValue || initialValue > toValue)) {
+            errors.add("Initial value " + initialValue + " is outside [min, max] range [" + fromValue + ", " + toValue + "]");
+        }
+        if (step < 0) {
+            errors.add("Step cannot be negative");
+        }
+        if (step > 0 && step > (toValue - fromValue)) {
+            errors.add("Step " + step + " exceeds the range [min, max]: no value can be generated");
+        }
+        if (pattern == GenerationPattern.SEQUENTIAL && steps <= 0) {
+            errors.add("Steps must be > 0 for SEQUENTIAL pattern");
+        }
+        if (pattern == GenerationPattern.FORMULA && (formula == null || formula.trim().isEmpty())) {
+            errors.add("Formula pattern requires a non-empty formula expression");
+        }
+        if (pattern == GenerationPattern.DISTRIBUTION && "CUSTOM".equalsIgnoreCase(distributionType)) {
+            if (customDistributionGraph == null || customDistributionGraph.isEmpty()) {
+                errors.add("Custom distribution requires at least one segment");
+            } else {
+                double totalWeight = 0;
+                for (Map<String, Object> pt : customDistributionGraph) {
+                    Number wNum = (Number) pt.get("weight");
+                    if (wNum != null) {
+                        totalWeight += wNum.doubleValue();
+                    }
+                }
+                if (totalWeight <= 0) {
+                    errors.add("Custom distribution: all weights are zero or negative");
+                }
+            }
+        }
+        return errors;
+    }
+
     @Override
     public java.util.Set<String> getDependencies() {
         java.util.Set<String> deps = super.getDependencies();
@@ -98,8 +140,7 @@ public class NumericVariableConfig extends VariableConfiguration {
         }
 
         if (tickCounter == 1 && initialValue != null) {
-            if (pattern == GenerationPattern.RANDOM || (pattern == GenerationPattern.SEQUENTIAL
-                    && (sequentialGraph == null || sequentialGraph.isEmpty()))) {
+            if (pattern == GenerationPattern.RANDOM || pattern == GenerationPattern.SEQUENTIAL) {
                 currentValue = initialValue;
                 return formatValue(currentValue);
             }
@@ -113,7 +154,7 @@ public class NumericVariableConfig extends VariableConfiguration {
                     if (numSteps > 0) {
                         long randomStep = ThreadLocalRandom.current().nextLong(0, numSteps + 1);
                         currentValue = fromValue + (randomStep * step);
-                        currentValue = Math.min(currentValue, toValue);
+                        currentValue = Math.min(Math.max(currentValue, fromValue), toValue);
                     } else {
                         currentValue = fromValue;
                     }
@@ -125,6 +166,9 @@ public class NumericVariableConfig extends VariableConfiguration {
                 if (constantMargin > 0.0) {
                     double randomOffset = ThreadLocalRandom.current().nextDouble(-constantMargin, constantMargin);
                     currentValue = constantValue + randomOffset;
+                    if (fromValue < toValue) {
+                        currentValue = Math.min(Math.max(currentValue, fromValue), toValue);
+                    }
                 } else {
                     currentValue = constantValue;
                 }
@@ -157,7 +201,7 @@ public class NumericVariableConfig extends VariableConfiguration {
             double stdDev = (toValue - fromValue) / 6.0; // 99.7% of values within range
             double val = mean + ThreadLocalRandom.current().nextGaussian() * stdDev;
             return Math.min(Math.max(val, fromValue), toValue);
-        } else if ("EXPONENTIAL".equalsIgnoreCase(distribution)) {
+        } else if ("EXPONENTIAL".equalsIgnoreCase(dist)) {
             double val = fromValue - Math.log(ThreadLocalRandom.current().nextDouble()) * ((toValue - fromValue) / 5.0);
             return Math.min(Math.max(val, fromValue), toValue);
         } else {
@@ -184,7 +228,7 @@ public class NumericVariableConfig extends VariableConfiguration {
             expression.setVariables(vars);
             return expression.evaluate();
         } catch (Exception e) {
-            System.err.println("Error evaluating formula: " + formula + " -> " + e.getMessage());
+            configLogger.warning("Error evaluating formula: " + formula + " -> " + e.getMessage());
             return 0.0;
         }
     }

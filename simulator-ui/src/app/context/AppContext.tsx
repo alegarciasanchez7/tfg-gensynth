@@ -101,6 +101,7 @@ interface AppContextValue {
     ) => Promise<Variable>;
     deleteVariable: (variableId: string) => Promise<void>;
     updateVariable: (variableId: string, updates: Partial<Omit<Variable, 'id'>>) => Promise<void>;
+    getVariables: () => Variable[];
     
     // Templates
     setFormatTemplate: (flowId: string, template: string) => void;
@@ -172,7 +173,7 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
 
   // System Actions
   const startSystem = useCallback(
-    systemActions.startSystem(dispatch, state.connectionMode, reportCommandError),
+    systemActions.startSystem(dispatch, state.connectionMode, reportCommandError, () => stateRef.current.variables),
     [state.connectionMode, reportCommandError]
   );
 
@@ -298,6 +299,10 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
     reportCommandError,
   });
 
+  const getVariables = useCallback(() => {
+    return stateRef.current.variables;
+  }, []);
+
   const actions = {
     startSystem,
     stopSystem,
@@ -313,6 +318,7 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
     startGroup,
     stopGroup,
     ...crudActions,
+    getVariables,
     setFormatTemplate,
     setFlowConnectorSelection,
     setFlowConnectorConfig,

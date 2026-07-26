@@ -15,6 +15,10 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import com.gensynth.core.flow.variables.VariableConfiguration;
+import com.gensynth.core.flow.variables.VariableFactory;
+import com.gensynth.core.flow.variables.DependencyResolver;
+import com.gensynth.core.flow.variables.CyclicDependencyException;
 
 /**
  * Handles logic for CRUD and execution of simulation Flows.
@@ -311,6 +315,34 @@ public class FlowCommandHandler implements CommandHandler {
         if ("running".equals(group.status)) {
             return;
         }
+
+        // Validate all variables in the group and perform cycle detection fail-fast
+        Map<String, VariableConfiguration> configs = new HashMap<>();
+        for (Variable var : ctx.getVariablesById().values()) {
+            boolean isGlobal = "GLOBAL".equalsIgnoreCase(var.getScope());
+            boolean isGroupScope = "GROUP".equalsIgnoreCase(var.getScope()) && group.id.equals(var.getGroupId());
+            boolean isLocalScope = false;
+            for (FlowRuntime flow : group.flows) {
+                if ("LOCAL".equalsIgnoreCase(var.getScope()) && flow.id.equals(var.getFlowId())) {
+                    isLocalScope = true;
+                    break;
+                }
+            }
+            if (isGlobal || isGroupScope || isLocalScope) {
+                VariableConfiguration vc = VariableFactory.createFromMap(var.getId(), var.getType(), var.getConfig());
+                configs.put(var.getName(), vc);
+            }
+        }
+
+        DependencyResolver resolver = new DependencyResolver();
+        try {
+            resolver.resolve(configs);
+        } catch (CyclicDependencyException e) {
+            throw new IllegalStateException("Circular dependency detected", e);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalStateException("Broken reference detected: " + e.getMessage(), e);
+        }
+
         ctx.getTemplateEngine().clearVariableCache();
 
         for (FlowRuntime flow : group.flows) {

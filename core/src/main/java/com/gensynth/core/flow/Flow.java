@@ -108,8 +108,10 @@ public class Flow {
 
             Object currentValue = variable.getValue();
             context.put(variableId, currentValue);
-            // Also put by name if possible, to allow referencing by name in formulas.
-            // But IVariable interface doesn't have getName(), we just use ID for now.
+            // Also put by name to allow referencing by name in formulas and conditional rules.
+            if (variable.getName() != null) {
+                context.put(variable.getName(), currentValue);
+            }
 
             DataEvent event = new DataEvent(
                 now,

@@ -64,16 +64,51 @@ public class VariableFactory {
     }
 
     /**
-     * Create configurable variable from configuration
-     */
-    public static ConfigurableVariable createFromConfig(VariableConfiguration config) {
-        return new ConfigurableVariable(config);
-    }
-
-    /**
-     * Instantiates a specific VariableConfiguration based on type and config map.
+     * Instantiates a specific VariableConfiguration based on type and config map,
+     * and performs validations.
      */
     public static VariableConfiguration createFromMap(String id, String type, Map<String, Object> configMap) {
+        VariableConfiguration finalConfig = createFromMapInternal(id, type, configMap);
+        if (finalConfig != null && configMap.containsKey("conditionalRules")) {
+            try {
+                java.util.List<VariableConfiguration.ConditionalRule> rulesList = new java.util.ArrayList<>();
+                Object rulesObj = configMap.get("conditionalRules");
+                if (rulesObj instanceof List) {
+                    for (Object item : (List<?>) rulesObj) {
+                        if (item instanceof Map) {
+                            Map<?, ?> ruleMap = (Map<?, ?>) item;
+                            VariableConfiguration.ConditionalRule rule = new VariableConfiguration.ConditionalRule();
+                            rule.targetVariable = (String) ruleMap.get("targetVariable");
+                            rule.condition = (String) ruleMap.get("condition");
+                            if (rule.condition == null && ruleMap.containsKey("operator")) {
+                                rule.condition = (String) ruleMap.get("operator");
+                            }
+                            rule.value = ruleMap.get("value");
+                            if (ruleMap.get("overrides") instanceof Map) {
+                                @SuppressWarnings("unchecked")
+                                Map<String, Object> ovr = (Map<String, Object>) ruleMap.get("overrides");
+                                rule.overrides = new java.util.HashMap<>(ovr);
+                            }
+                            rulesList.add(rule);
+                        }
+                    }
+                }
+                finalConfig.setConditionalRules(rulesList);
+            } catch (Exception e) {
+                // ignore parsing exceptions
+            }
+        }
+        
+        if (finalConfig != null) {
+            List<String> errors = finalConfig.validate();
+            if (!errors.isEmpty()) {
+                throw new InvalidVariableConfigException(id, type, errors);
+            }
+        }
+        return finalConfig;
+    }
+
+    private static VariableConfiguration createFromMapInternal(String id, String type, Map<String, Object> configMap) {
         if (configMap == null) {
             configMap = Map.of();
         }
@@ -138,6 +173,15 @@ public class VariableFactory {
                     strConfig.fixedSize(((Number) configMap.get("fixedLength")).intValue());
                 if (configMap.containsKey("regexPattern"))
                     strConfig.regex((String) configMap.get("regexPattern"));
+                if (configMap.containsKey("pattern")) {
+                    try {
+                        strConfig.pattern(GenerationPattern.valueOf(((String) configMap.get("pattern")).toUpperCase()));
+                    } catch (Exception e) {
+                        // ignore or default
+                    }
+                }
+                if (configMap.containsKey("constantValue"))
+                    strConfig.constant((String) configMap.get("constantValue"));
                 return strConfig;
 
             case "LIST":
@@ -173,5 +217,12 @@ public class VariableFactory {
             default:
                 throw new IllegalArgumentException("Unknown variable type: " + type);
         }
+    }
+
+    /**
+     * Create configurable variable from configuration
+     */
+    public static ConfigurableVariable createFromConfig(VariableConfiguration config) {
+        return new ConfigurableVariable(config);
     }
 }

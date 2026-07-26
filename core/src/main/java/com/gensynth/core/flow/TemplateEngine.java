@@ -18,8 +18,16 @@ public class TemplateEngine {
     }
 
     public String evaluate(String template, long sequenceNumber, Map<String, Variable> variables, String flowId, String groupId) {
+        return evaluate(template, sequenceNumber, variables, flowId, groupId, new java.util.HashMap<>());
+    }
+
+    public String evaluate(String template, long sequenceNumber, Map<String, Variable> variables, String flowId, String groupId, Map<String, Object> context) {
         if (template == null || template.isEmpty()) {
             return "";
+        }
+
+        if (context == null) {
+            context = new java.util.HashMap<>();
         }
 
         // Replace built-in system variables
@@ -79,7 +87,13 @@ public class TemplateEngine {
                 }
 
                 if (variable != null) {
-                    Object generatedValue = dataGenerator.generateValue(variable);
+                    Object generatedValue = dataGenerator.generateValue(variable, context);
+                    if (variable.getId() != null) {
+                        context.put(variable.getId(), generatedValue);
+                    }
+                    if (variable.getName() != null) {
+                        context.put(variable.getName(), generatedValue);
+                    }
                     // Convert value to string representation
                     boolean isConstantPattern = false;
                     Map<String, Object> varConfig = variable.getConfig();
