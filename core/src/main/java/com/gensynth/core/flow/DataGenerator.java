@@ -15,7 +15,9 @@ public class DataGenerator {
         this.variableCache = new ConcurrentHashMap<>();
     }
 
-    public Object generateValue(Variable variable) {
+    private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(DataGenerator.class);
+
+    public Object generateValue(Variable variable, Map<String, Object> context) {
         String type = variable.getType();
         Map<String, Object> config = variable.getConfig();
 
@@ -24,11 +26,18 @@ public class DataGenerator {
                 VariableConfiguration varConfig = VariableFactory.createFromMap(variable.getName(), type, config);
                 return VariableFactory.createFromConfig(varConfig);
             });
+            if (context != null) {
+                cv.setContext(context);
+            }
             return cv.getValue();
         } catch (Exception e) {
-            System.err.println("Error generating value for " + variable.getName() + ": " + e.getMessage());
+            logger.warn("Error generating value for {}: {}", variable.getName(), e.getMessage());
             return variable.getDefaultValue();
         }
+    }
+
+    public Object generateValue(Variable variable) {
+        return generateValue(variable, null);
     }
 
     public void clearCache() {

@@ -75,6 +75,15 @@ public class PointVariableConfig extends VariableConfiguration {
     }
 
     @Override
+    public java.util.List<String> validate() {
+        java.util.List<String> errors = new java.util.ArrayList<>();
+        if (maxStepDistance < 0) {
+            errors.add("Maximum step distance cannot be negative");
+        }
+        return errors;
+    }
+
+    @Override
     public Object generateNextValue() {
         incrementTick();
         checkAnomalyCondition();

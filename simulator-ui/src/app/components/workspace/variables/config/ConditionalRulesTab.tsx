@@ -1,17 +1,41 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ConditionalRule } from '../../../../types';
+import { 
+  ConditionalRule, 
+  Variable, 
+  NumericVariableConfig, 
+  StringVariableConfig, 
+  ListVariableConfig, 
+  TemporalVariableConfig, 
+  PointVariableConfig, 
+  BooleanVariableConfig 
+} from '../../../../types';
 import { Button } from '../../../ui/button';
 import { Input } from '../../../ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../ui/select';
 import { Trash2, Plus } from 'lucide-react';
 import { useApp } from '../../../../context';
+import { NumericConfigPanel } from './NumericConfigPanel';
+import { StringConfigPanel } from './StringConfigPanel';
+import { ListConfigPanel } from './ListConfigPanel';
+import { TemporalConfigPanel } from './TemporalConfigPanel';
+import { PointConfigPanel } from './PointConfigPanel';
+import { BooleanConfigPanel } from './BooleanConfigPanel';
 
 interface ConditionalRulesTabProps {
   rules: ConditionalRule[];
   onChange: (rules: ConditionalRule[]) => void;
+  variableType: Variable['type'];
+  flowId?: string;
+  groupId?: string;
 }
 
-export const ConditionalRulesTab: React.FC<ConditionalRulesTabProps> = ({ rules, onChange }) => {
+export const ConditionalRulesTab: React.FC<ConditionalRulesTabProps> = ({ 
+  rules, 
+  onChange,
+  variableType,
+  flowId,
+  groupId
+}) => {
   const { state } = useApp();
   const [showSuggestions, setShowSuggestions] = useState<number | null>(null);
   const [filter, setFilter] = useState('');
@@ -45,6 +69,18 @@ export const ConditionalRulesTab: React.FC<ConditionalRulesTabProps> = ({ rules,
     onChange(newRules);
   };
 
+  const handleOverrideChange = (index: number, newOverrides: Partial<any>) => {
+    const newRules = [...rules];
+    const currentOverrides = typeof newRules[index].overrides === 'object' && newRules[index].overrides !== null 
+      ? newRules[index].overrides 
+      : {};
+    newRules[index] = {
+      ...newRules[index],
+      overrides: { ...currentOverrides, ...newOverrides }
+    };
+    onChange(newRules);
+  };
+
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (suggestionsRef.current && !suggestionsRef.current.contains(event.target as Node)) {
@@ -54,6 +90,59 @@ export const ConditionalRulesTab: React.FC<ConditionalRulesTabProps> = ({ rules,
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  const renderOverrideVisualEditor = (rule: ConditionalRule, idx: number) => {
+    const cfg = typeof rule.overrides === 'object' && rule.overrides !== null ? rule.overrides : {};
+    
+    switch (variableType) {
+      case 'numeric':
+        return (
+          <NumericConfigPanel
+            config={cfg as NumericVariableConfig}
+            onChange={(newCfg) => handleOverrideChange(idx, newCfg)}
+            flowId={flowId}
+            groupId={groupId}
+          />
+        );
+      case 'string':
+        return (
+          <StringConfigPanel
+            config={cfg as StringVariableConfig}
+            onChange={(newCfg) => handleOverrideChange(idx, newCfg)}
+          />
+        );
+      case 'list':
+        return (
+          <ListConfigPanel
+            config={cfg as ListVariableConfig}
+            onChange={(newCfg) => handleOverrideChange(idx, newCfg)}
+          />
+        );
+      case 'temporal':
+        return (
+          <TemporalConfigPanel
+            config={cfg as TemporalVariableConfig}
+            onChange={(newCfg) => handleOverrideChange(idx, newCfg)}
+          />
+        );
+      case 'point':
+        return (
+          <PointConfigPanel
+            config={cfg as PointVariableConfig}
+            onChange={(newCfg) => handleOverrideChange(idx, newCfg)}
+          />
+        );
+      case 'boolean':
+        return (
+          <BooleanConfigPanel
+            config={cfg as BooleanVariableConfig}
+            onChange={(newCfg) => handleOverrideChange(idx, newCfg)}
+          />
+        );
+      default:
+        return null;
+    }
+  };
 
   return (
     <div className="space-y-4 pt-2">
@@ -142,21 +231,10 @@ export const ConditionalRulesTab: React.FC<ConditionalRulesTabProps> = ({ rules,
               </div>
 
               <div className="space-y-1">
-                <span className="text-[9px] uppercase tracking-wider text-[var(--c-tx4)] font-semibold">Overrides (JSON)</span>
-                <textarea
-                  className="w-full h-16 p-2 text-[10px] font-mono bg-[var(--c-bg2)] border border-[var(--c-br1)] rounded focus:outline-none focus:ring-1 focus:ring-cyan-500/30 text-[var(--c-tx2)]"
-                  placeholder='{"min": 50, "max": 100}'
-                  value={typeof rule.overrides === 'string' ? rule.overrides : JSON.stringify(rule.overrides || {}, null, 2)}
-                  onChange={(e) => {
-                    let val = e.target.value;
-                    try {
-                      const parsed = JSON.parse(val);
-                      handleUpdateRule(idx, 'overrides', parsed);
-                    } catch (err) {
-                      handleUpdateRule(idx, 'overrides', val);
-                    }
-                  }}
-                />
+                <span className="text-[9px] uppercase tracking-wider text-[var(--c-tx4)] font-semibold">Overrides Configuration</span>
+                <div className="p-3 border rounded border-[var(--c-br1)] bg-[var(--c-bg2)]">
+                  {renderOverrideVisualEditor(rule, idx)}
+                </div>
               </div>
             </div>
           ))}

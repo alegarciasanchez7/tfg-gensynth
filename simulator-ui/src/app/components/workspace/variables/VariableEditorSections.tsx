@@ -4,7 +4,16 @@ import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../components/ui/tabs';
-import type { Variable, VariableConfig } from '../../../types';
+import type { 
+  Variable, 
+  VariableConfig, 
+  NumericVariableConfig, 
+  StringVariableConfig, 
+  ListVariableConfig, 
+  TemporalVariableConfig, 
+  PointVariableConfig, 
+  BooleanVariableConfig 
+} from '../../../types';
 import type { VariableDraft } from './useVariableEditor';
 
 import { NumericConfigPanel } from './config/NumericConfigPanel';
@@ -238,12 +247,12 @@ export function VariableEditorConfigCard({ typeLabel, theme, draft, setDraft }: 
 
   const renderVisualEditor = () => {
     switch (draft.type) {
-      case 'numeric': return <NumericConfigPanel config={parsedConfig} onChange={handleConfigChange} flowId={draft.flowId} groupId={draft.groupId} />;
-      case 'string': return <StringConfigPanel config={parsedConfig} onChange={handleConfigChange} />;
-      case 'list': return <ListConfigPanel config={parsedConfig} onChange={handleConfigChange} />;
-      case 'temporal': return <TemporalConfigPanel config={parsedConfig} onChange={handleConfigChange} />;
-      case 'point': return <PointConfigPanel config={parsedConfig} onChange={handleConfigChange} />;
-      case 'boolean': return <BooleanConfigPanel config={parsedConfig} onChange={handleConfigChange} />;
+      case 'numeric': return <NumericConfigPanel config={parsedConfig as NumericVariableConfig} onChange={handleConfigChange} flowId={draft.flowId} groupId={draft.groupId} />;
+      case 'string': return <StringConfigPanel config={parsedConfig as StringVariableConfig} onChange={handleConfigChange} />;
+      case 'list': return <ListConfigPanel config={parsedConfig as ListVariableConfig} onChange={handleConfigChange} />;
+      case 'temporal': return <TemporalConfigPanel config={parsedConfig as TemporalVariableConfig} onChange={handleConfigChange} />;
+      case 'point': return <PointConfigPanel config={parsedConfig as PointVariableConfig} onChange={handleConfigChange} />;
+      case 'boolean': return <BooleanConfigPanel config={parsedConfig as BooleanVariableConfig} onChange={handleConfigChange} />;
       default: return <p className="text-[11px] text-[var(--c-tx4)] p-6 text-center italic">No visual editor available for this variable type.</p>;
     }
   };
@@ -273,6 +282,9 @@ export function VariableEditorConfigCard({ typeLabel, theme, draft, setDraft }: 
             <ConditionalRulesTab
               rules={parsedConfig.conditionalRules || []}
               onChange={(rules) => handleConfigChange({ conditionalRules: rules })}
+              variableType={draft.type}
+              flowId={draft.flowId}
+              groupId={draft.groupId}
             />
           </div>
         </TabsContent>
@@ -287,15 +299,17 @@ interface VariableEditorActionsProps {
   onSave: () => void;
   onDiscard: () => void;
   onDelete: () => void;
+  saveButtonTitle?: string;
 }
 
-export function VariableEditorActions({ isSaving, isDeleting, onSave, onDiscard, onDelete }: VariableEditorActionsProps) {
+export function VariableEditorActions({ isSaving, isDeleting, onSave, onDiscard, onDelete, saveButtonTitle }: VariableEditorActionsProps) {
   return (
     <div className="flex items-center gap-2">
       <Button
         onClick={onSave}
         disabled={isSaving}
-        className="rounded border border-cyan-500/40 bg-cyan-500/10 px-3 py-1.5 text-xs text-cyan-500 transition-all hover:bg-cyan-500/20"
+        title={saveButtonTitle}
+        className="rounded border border-cyan-500/40 bg-cyan-500/10 px-3 py-1.5 text-xs text-cyan-500 transition-all hover:bg-cyan-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
         variant="ghost"
       >
         Save changes
