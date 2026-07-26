@@ -98,6 +98,26 @@ public class TemporalVariableConfig extends VariableConfiguration {
     }
 
     @Override
+    public java.util.List<String> validate() {
+        java.util.List<String> errors = new java.util.ArrayList<>();
+        if (dateFormat != null && !dateFormat.trim().isEmpty() && !"UNIX_TIMESTAMP".equalsIgnoreCase(dateFormat)) {
+            try {
+                DateTimeFormatter.ofPattern(dateFormat);
+            } catch (IllegalArgumentException e) {
+                errors.add("Invalid date format: " + e.getMessage());
+            }
+        }
+        if (timeZone != null && !timeZone.trim().isEmpty()) {
+            try {
+                ZoneId.of(timeZone);
+            } catch (Exception e) {
+                errors.add("Invalid timezone: " + e.getMessage());
+            }
+        }
+        return errors;
+    }
+
+    @Override
     public Object generateNextValue() {
         tickCounter++;
         checkAnomalyCondition();

@@ -3,7 +3,9 @@ package com.gensynth.core.flow;
 import com.gensynth.core.model.Variable;
 
 import java.time.Instant;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -18,8 +20,16 @@ public class TemplateEngine {
     }
 
     public String evaluate(String template, long sequenceNumber, Map<String, Variable> variables, String flowId, String groupId) {
+        return evaluate(template, sequenceNumber, variables, flowId, groupId, new java.util.HashMap<>());
+    }
+
+    public String evaluate(String template, long sequenceNumber, Map<String, Variable> variables, String flowId, String groupId, Map<String, Object> context) {
         if (template == null || template.isEmpty()) {
             return "";
+        }
+
+        if (context == null) {
+            context = new java.util.HashMap<>();
         }
 
         // Replace built-in system variables
@@ -53,33 +63,24 @@ public class TemplateEngine {
                     namePart = fullVarSpec.substring(lastDot + 1);
                 }
 
-                Variable variable = null;
-                for (Variable v : variables.values()) {
-                    if (!v.getName().equals(namePart)) continue;
-
-                    // If scope is specified in template, it MUST match
-                    if (scopePart != null && !v.getScope().equalsIgnoreCase(scopePart)) continue;
-
-                    // Check actual scoping rules
-                    boolean isAccessible = false;
-                    String vScope = v.getScope().toUpperCase();
-
-                    if ("GLOBAL".equals(vScope)) {
-                        isAccessible = true;
-                    } else if ("GROUP".equals(vScope)) {
-                        isAccessible = groupId != null && groupId.equals(v.getGroupId());
-                    } else if ("LOCAL".equals(vScope)) {
-                        isAccessible = flowId != null && flowId.equals(v.getFlowId());
-                    }
-
-                    if (isAccessible) {
-                        variable = v;
-                        break;
-                    }
-                }
+                Variable variable = findAccessibleVariable(variables, namePart, scopePart, flowId, groupId);
 
                 if (variable != null) {
-                    Object generatedValue = dataGenerator.generateValue(variable);
+                    ensureConditionalDependenciesAvailable(
+                        variable,
+                        variables,
+                        flowId,
+                        groupId,
+                        context,
+                        new HashSet<>()
+                    );
+                    Object generatedValue = dataGenerator.generateValue(variable, context);
+                    if (variable.getId() != null) {
+                        context.put(variable.getId(), generatedValue);
+                    }
+                    if (variable.getName() != null) {
+                        context.put(variable.getName(), generatedValue);
+                    }
                     // Convert value to string representation
                     boolean isConstantPattern = false;
                     Map<String, Object> varConfig = variable.getConfig();
@@ -119,6 +120,117 @@ public class TemplateEngine {
         matcher.appendTail(result);
 
         return result.toString();
+    }
+
+    private Variable findAccessibleVariable(
+        Map<String, Variable> variables,
+        String variableName,
+        String scopeFilter,
+        String flowId,
+        String groupId
+    ) {
+        for (Variable v : variables.values()) {
+            if (!v.getName().equals(variableName)) {
+                continue;
+            }
+
+            if (scopeFilter != null && !v.getScope().equalsIgnoreCase(scopeFilter)) {
+                continue;
+            }
+
+            String vScope = v.getScope().toUpperCase();
+            if ("GLOBAL".equals(vScope)) {
+                return v;
+            }
+            if ("GROUP".equals(vScope) && groupId != null && groupId.equals(v.getGroupId())) {
+                return v;
+            }
+            if ("LOCAL".equals(vScope) && flowId != null && flowId.equals(v.getFlowId())) {
+                return v;
+            }
+        }
+        return null;
+    }
+
+    private void ensureConditionalDependenciesAvailable(
+        Variable variable,
+        Map<String, Variable> variables,
+        String flowId,
+        String groupId,
+        Map<String, Object> context,
+        Set<String> resolutionStack
+    ) {
+        if (variable == null || variable.getConfig() == null) {
+            return;
+        }
+
+        String variableId = variable.getId();
+        if (variableId != null && !resolutionStack.add(variableId)) {
+            return;
+        }
+
+        try {
+            Object rulesObj = variable.getConfig().get("conditionalRules");
+            if (!(rulesObj instanceof java.util.List<?>)) {
+                return;
+            }
+
+            for (Object ruleObj : (java.util.List<?>) rulesObj) {
+                if (!(ruleObj instanceof Map<?, ?>)) {
+                    continue;
+                }
+
+                Object targetObj = ((Map<?, ?>) ruleObj).get("targetVariable");
+                if (!(targetObj instanceof String)) {
+                    continue;
+                }
+
+                String targetVariableName = ((String) targetObj).trim();
+                if (targetVariableName.isEmpty()) {
+                    continue;
+                }
+
+                if (targetVariableName.equals(variable.getName()) || context.containsKey(targetVariableName)) {
+                    continue;
+                }
+
+                Variable dependencyVariable = findAccessibleVariable(
+                    variables,
+                    targetVariableName,
+                    null,
+                    flowId,
+                    groupId
+                );
+                if (dependencyVariable == null) {
+                    continue;
+                }
+
+                if (dependencyVariable.getId() != null && context.containsKey(dependencyVariable.getId())) {
+                    continue;
+                }
+
+                ensureConditionalDependenciesAvailable(
+                    dependencyVariable,
+                    variables,
+                    flowId,
+                    groupId,
+                    context,
+                    resolutionStack
+                );
+
+                Object dependencyValue = dataGenerator.generateValue(dependencyVariable, context);
+                if (dependencyVariable.getId() != null) {
+                    context.put(dependencyVariable.getId(), dependencyValue);
+                }
+                if (dependencyVariable.getName() != null) {
+                    context.put(dependencyVariable.getName(), dependencyValue);
+                }
+            }
+        } finally {
+            if (variableId != null) {
+                resolutionStack.remove(variableId);
+            }
+        }
     }
 
     public void clearVariableCache() {

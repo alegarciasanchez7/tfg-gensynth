@@ -143,6 +143,30 @@ public class ListVariableConfig extends VariableConfiguration {
     }
 
     @Override
+    public java.util.List<String> validate() {
+        java.util.List<String> errors = new java.util.ArrayList<>();
+        if (sourceList == null || sourceList.isEmpty() || sourceSize == 0) {
+            errors.add("List variable requires a non-empty list of items");
+        } else {
+            if (hasWeights) {
+                boolean hasPositiveWeight = false;
+                for (int i = 0; i < sourceSize; i++) {
+                    if (weightsArray[i] < 0) {
+                        errors.add("Weights cannot be negative. Found negative weight: " + weightsArray[i]);
+                    }
+                    if (weightsArray[i] > 0) {
+                        hasPositiveWeight = true;
+                    }
+                }
+                if (!hasPositiveWeight) {
+                    errors.add("List variable has weights config but all weights are zero or negative");
+                }
+            }
+        }
+        return errors;
+    }
+
+    @Override
     public Object generateNextValue() {
         tickCounter++;
         checkAnomalyCondition();
