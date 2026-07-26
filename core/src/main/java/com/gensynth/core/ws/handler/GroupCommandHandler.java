@@ -175,8 +175,21 @@ public class GroupCommandHandler implements CommandHandler {
             if (!ctx.isSystemRunning()) {
                 ctx.setSystemStartedAt(System.currentTimeMillis());
             }
-            flowHandler.startGroupInternal(group);
-            ctx.setSystemRunning(true);
+            try {
+                flowHandler.startGroupInternal(group);
+                ctx.setSystemRunning(true);
+            } catch (IllegalStateException ex) {
+                String errType = "INTERNAL_ERROR";
+                Map<String, Object> details = new java.util.HashMap<>();
+                if (ex.getCause() instanceof com.gensynth.core.flow.variables.CyclicDependencyException) {
+                    errType = "CYCLIC_DEPENDENCY_ERROR";
+                    details.put("cycle", ((com.gensynth.core.flow.variables.CyclicDependencyException) ex.getCause()).getCycle());
+                } else if (ex.getMessage() != null && ex.getMessage().contains("Broken reference")) {
+                    errType = "BROKEN_REFERENCE_ERROR";
+                }
+                server.sendError(conn, commandId, errType, ex.getMessage(), details);
+                return;
+            }
         }
 
         server.sendAck(conn, commandId, "group_started");
