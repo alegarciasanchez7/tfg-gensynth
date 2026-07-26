@@ -22,6 +22,7 @@ public class StringVariableConfig extends VariableConfiguration {
     // Advanced Config
     private String regexPattern;
     private RgxGen rgxGen;
+    private String constantValue;
     
     // Components
     private CharacterSetConfig lowerCase;
@@ -45,6 +46,7 @@ public class StringVariableConfig extends VariableConfiguration {
         this.pattern = GenerationPattern.RANDOM_STRING;
         this.fixedSize = true;
         this.fixedLength = 8;
+        this.constantValue = "";
         this.lowerCase = new CharacterSetConfig(true, 0.3);
         this.upperCase = new CharacterSetConfig(true, 0.2);
         this.numbers = new CharacterSetConfig(true, 0.4);
@@ -53,9 +55,41 @@ public class StringVariableConfig extends VariableConfiguration {
     }
 
     @Override
+    public java.util.List<String> validate() {
+        java.util.List<String> errors = new java.util.ArrayList<>();
+        if (pattern == GenerationPattern.CONSTANT) {
+            return errors;
+        }
+        if (fixedSize) {
+            if (fixedLength <= 0) {
+                errors.add("Fixed string length must be greater than 0");
+            }
+        } else {
+            if (minLength < 0) {
+                errors.add("Minimum string length cannot be negative");
+            }
+            if (minLength > maxLength) {
+                errors.add("Minimum string length (" + minLength + ") cannot be greater than maximum string length (" + maxLength + ")");
+            }
+        }
+        if (regexPattern != null && !regexPattern.trim().isEmpty()) {
+            try {
+                new RgxGen(regexPattern);
+            } catch (Exception e) {
+                errors.add("Invalid regex pattern: " + e.getMessage());
+            }
+        }
+        return errors;
+    }
+
+    @Override
     public Object generateNextValue() {
         tickCounter++;
         
+        if (pattern == GenerationPattern.CONSTANT) {
+            return constantValue != null ? constantValue : "";
+        }
+
         if (regexPattern != null && !regexPattern.trim().isEmpty()) {
             if (rgxGen == null) {
                 rgxGen = new RgxGen(regexPattern);
@@ -145,7 +179,7 @@ public class StringVariableConfig extends VariableConfiguration {
 
     @Override
     public Map<String, Object> toMap() {
-        Map<String, Object> map = new HashMap<>(8);
+        Map<String, Object> map = new HashMap<>(9);
         map.put("identifier", identifier);
         map.put("type", type.name());
         map.put("pattern", pattern.name());
@@ -154,6 +188,7 @@ public class StringVariableConfig extends VariableConfiguration {
         map.put("minLength", minLength);
         map.put("maxLength", maxLength);
         map.put("regexPattern", regexPattern);
+        map.put("constantValue", constantValue);
         return map;
     }
 
@@ -226,12 +261,18 @@ public class StringVariableConfig extends VariableConfiguration {
         return this;
     }
 
+    public StringVariableConfig constant(String val) {
+        this.constantValue = val;
+        return this;
+    }
+
     // Getters
     public boolean isFixedSize() { return fixedSize; }
     public int getFixedLength() { return fixedLength; }
     public int getMinLength() { return minLength; }
     public int getMaxLength() { return maxLength; }
     public String getRegexPattern() { return regexPattern; }
+    public String getConstantValue() { return constantValue; }
 
     /**
      * Character set configuration
