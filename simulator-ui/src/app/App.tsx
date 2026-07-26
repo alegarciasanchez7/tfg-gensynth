@@ -78,6 +78,7 @@ export default function App() {
         onThemeToggle={actions.toggleTheme}
         latestConnectors={latestConnectors}
         connectorHealthSummary={connectorHealthSummary}
+        variables={variables}
       />
 
       {/* ── Resource monitor bar ────────────────────── */}

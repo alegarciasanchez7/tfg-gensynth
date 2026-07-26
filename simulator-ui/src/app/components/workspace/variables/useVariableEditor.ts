@@ -3,6 +3,7 @@ import { Binary, ListChecks, ALargeSmall, CalendarClock, MapPin, ToggleLeft } fr
 import { toast } from 'sonner';
 import { useApp } from '../../../context';
 import type { Variable } from '../../../types';
+import { useVariableValidation } from '../../../context/hooks/useVariableValidation';
 
 export type VariableDraft = {
   name: string;
@@ -124,6 +125,22 @@ export function useVariableEditor(variable: Variable) {
       return;
     }
 
+    const { validateConfig, detectCycle } = useVariableValidation();
+    const variablesList = actions.getVariables?.() || [];
+    const configErrors = validateConfig(draft.type, parsedConfig, variablesList);
+    if (Object.keys(configErrors).length > 0) {
+      toast.error(`Validation error: ${Object.values(configErrors)[0]}`);
+      return;
+    }
+
+    if (draft.type === 'numeric' && parsedConfig.formula) {
+      const cycle = detectCycle(variablesList, variable.id, draft.name, parsedConfig.formula);
+      if (cycle) {
+        toast.error(`Circular dependency detected: ${cycle.join(' → ')}`);
+        return;
+      }
+    }
+
     setIsSaving(true);
     try {
       await actions.updateVariable(variable.id, {
@@ -189,6 +206,34 @@ export function useVariableEditor(variable: Variable) {
     }
   };
 
+  const validationResult = useMemo(() => {
+    let parsedConfig: Variable['config'] = {};
+    try {
+      parsedConfig = parseConfig(draft.configText);
+      const { validateConfig, detectCycle } = useVariableValidation();
+      const variablesList = actions.getVariables?.() || [];
+      const errors = validateConfig(draft.type, parsedConfig, variablesList);
+      
+      let cycle: string[] | null = null;
+      if (draft.type === 'numeric' && parsedConfig.formula) {
+        cycle = detectCycle(variablesList, variable.id, draft.name, parsedConfig.formula);
+      }
+      return { errors, cycle, isJsonValid: true };
+    } catch (e) {
+      return { errors: {}, cycle: null, isJsonValid: false };
+    }
+  }, [draft.configText, draft.type, draft.name, variable.id, actions]);
+
+  const hasValidationError = !validationResult.isJsonValid || Object.keys(validationResult.errors).length > 0 || validationResult.cycle !== null;
+
+  const saveButtonTitle = useMemo(() => {
+    if (!validationResult.isJsonValid) return 'Cannot save: Invalid JSON structure';
+    if (validationResult.cycle) return `Cannot save: Cycle detected (${validationResult.cycle.join(' → ')})`;
+    const firstErrKey = Object.keys(validationResult.errors)[0];
+    if (firstErrKey) return `Cannot save: ${validationResult.errors[firstErrKey]}`;
+    return 'Save changes';
+  }, [validationResult]);
+
   return {
     draft,
     setDraft: setDraft as Dispatch<SetStateAction<VariableDraft>>,
@@ -201,5 +246,8 @@ export function useVariableEditor(variable: Variable) {
     handleDiscard,
     handleDelete,
     scopeOptions: VARIABLE_SCOPES,
+    hasValidationError,
+    saveButtonTitle,
+    validationResult,
   };
 }

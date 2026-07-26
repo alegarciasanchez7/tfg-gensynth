@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Power, Square, FolderOpen, Save, Settings, Package, Plus } from 'lucide-react';
-import type { SystemStatus, ConnectorHealthSummary } from '../../../types';
+import type { SystemStatus, ConnectorHealthSummary, Variable } from '../../../types';
 import type { ConnectorPluginDescriptor } from '../../../core/types';
 import { PluginImportPanel } from './PluginImportPanel';
 import { ConnectorCatalogPanel } from './ConnectorCatalogPanel';
@@ -16,6 +16,7 @@ interface HeaderProps {
   onThemeToggle: () => void;
   latestConnectors: ConnectorPluginDescriptor[];
   connectorHealthSummary: ConnectorHealthSummary[];
+  variables: Variable[];
 }
 
 const StatusBadge = ({ status }: { status: SystemStatus }) => {
@@ -50,12 +51,95 @@ export function Header({
   onThemeToggle,
   latestConnectors,
   connectorHealthSummary,
+  variables = [],
 }: HeaderProps) {
   const [showSettings, setShowSettings] = useState(false);
   const [showCatalog, setShowCatalog] = useState(false);
   const [showPluginImport, setShowPluginImport] = useState(false);
   const [loadingState, setLoadingState] = useState(false);
   const isRunning = systemStatus === 'running';
+
+  // Perform a pre-start check to highlight interlock/cycle/broken-references errors by turning the start button yellow/orange
+  const hasPreStartErrors = useMemo(() => {
+    if (variables.length === 0) return false;
+    const varNames = new Set(variables.map(v => v.name));
+    const getDeps = (formula?: string): string[] => {
+      if (!formula) return [];
+      const deps: string[] = [];
+      const regex = /(?:\[|{{)([a-zA-Z0-9_-]+)(?:\]|}})/g;
+      let match;
+      while ((match = regex.exec(formula)) !== null) {
+        deps.push(match[1]);
+      }
+      return deps;
+    };
+
+    // Check broken references
+    for (const v of variables) {
+      const config = v.config || {};
+      if (v.type === 'numeric' && config.pattern === 'FORMULA' && config.formula) {
+        const formulaDeps = getDeps(config.formula);
+        for (const dep of formulaDeps) {
+          if (dep.toLowerCase() !== 'pi' && dep.toLowerCase() !== 'e' && !varNames.has(dep)) {
+            return true;
+          }
+        }
+      }
+      if (config.conditionalRules && Array.isArray(config.conditionalRules)) {
+        for (const rule of config.conditionalRules) {
+          if (rule.targetVariable && rule.targetVariable.trim()) {
+            if (!varNames.has(rule.targetVariable.trim())) {
+              return true;
+            }
+          }
+        }
+      }
+    }
+
+    // Check cycles
+    const detectCycle = (
+      varsList: any[],
+      currentVarId: string,
+      currentVarName: string,
+      formula?: string
+    ): boolean => {
+      const adjList = new Map<string, string[]>();
+      for (const v of varsList) {
+        if (v.id === currentVarId) {
+          adjList.set(v.name, getDeps(formula));
+        } else {
+          adjList.set(v.name, getDeps(v.config?.formula));
+        }
+      }
+      const visited = new Set<string>();
+      const recStack = new Set<string>();
+      const dfs = (node: string): boolean => {
+        visited.add(node);
+        recStack.add(node);
+        const neighbors = adjList.get(node) || [];
+        for (const neighbor of neighbors) {
+          if (!visited.has(neighbor)) {
+            if (dfs(neighbor)) return true;
+          } else if (recStack.has(neighbor)) {
+            return true;
+          }
+        }
+        recStack.delete(node);
+        return false;
+      };
+      return dfs(currentVarName);
+    };
+
+    for (const v of variables) {
+      if (v.type === 'numeric' && v.config?.formula) {
+        if (detectCycle(variables, v.id, v.name, v.config.formula)) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }, [variables]);
 
   return (
     <div
@@ -85,9 +169,12 @@ export function Header({
       <div className="flex items-center gap-1">
         <button
           onClick={onStatusToggle}
+          title={!isRunning && hasPreStartErrors ? 'Warning: Validation errors or circular dependencies detected! Click to try starting anyway.' : isRunning ? 'Stop simulator' : 'Start simulator'}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-xs transition-all ${isRunning
               ? 'border-red-500/50 bg-red-500/10 text-red-400 hover:bg-red-500/20'
-              : 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
+              : hasPreStartErrors
+                ? 'border-amber-500/50 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20'
+                : 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
             }`}
           style={{ fontFamily: 'JetBrains Mono, monospace' }}
         >
