@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gensynth.core.model.Variable;
 import com.gensynth.core.ws.BridgeContext;
 import com.gensynth.core.ws.UiBridgeWebSocketServer;
+import com.gensynth.core.flow.variables.InvalidVariableConfigException;
 import org.java_websocket.WebSocket;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -71,12 +72,21 @@ public class VariableCommandHandler implements CommandHandler {
             }
 
             String flowId = payload.path("flowId").asText(null);
+            if (flowId == null || flowId.trim().isEmpty() || "null".equalsIgnoreCase(flowId)) {
+                flowId = null;
+            }
             String groupId = payload.path("groupId").asText(null);
+            if (groupId == null || groupId.trim().isEmpty() || "null".equalsIgnoreCase(groupId)) {
+                groupId = null;
+            }
 
             try {
                 createdVariable = new Variable(variableId, name, scope.toUpperCase(), coreType, defaultValue, config, flowId, groupId);
                 ctx.getVariablesById().put(variableId, createdVariable);
                 server.persistState();
+            } catch (InvalidVariableConfigException ex) {
+                server.sendError(conn, commandId, clientRequestId, "VALIDATION_ERROR", ex.getMessage(), Map.of("variableId", variableId, "errors", ex.getErrors()));
+                return;
             } catch (IllegalArgumentException ex) {
                 server.sendError(conn, commandId, clientRequestId, "INVALID_PAYLOAD", ex.getMessage(), Map.of("name", name, "type", type, "scope", scope));
                 return;
@@ -153,8 +163,15 @@ public class VariableCommandHandler implements CommandHandler {
             updatedVariableName = name;
             String type = normalizeVariableTypeForCore(payload.path("type").asText(existing.getType()));
             String scope = payload.path("scope").asText(existing.getScope()).toUpperCase();
-            String flowId = payload.path("flowId").asText(existing.getFlowId());
-            String groupId = payload.path("groupId").asText(existing.getGroupId());
+            
+            String flowId = payload.has("flowId") ? payload.get("flowId").asText() : existing.getFlowId();
+            if (flowId == null || flowId.trim().isEmpty() || "null".equalsIgnoreCase(flowId)) {
+                flowId = null;
+            }
+            String groupId = payload.has("groupId") ? payload.get("groupId").asText() : existing.getGroupId();
+            if (groupId == null || groupId.trim().isEmpty() || "null".equalsIgnoreCase(groupId)) {
+                groupId = null;
+            }
             ObjectMapper objectMapper = ctx.getObjectMapper();
             Map<String, Object> config = payload.has("config") && payload.get("config").isObject()
                 ? objectMapper.convertValue(payload.get("config"), MAP_TYPE)
@@ -166,6 +183,9 @@ public class VariableCommandHandler implements CommandHandler {
                 ctx.getVariablesById().put(variableId, updated);
                 ctx.getTemplateEngine().removeCachedVariable(variableId);
                 server.persistState();
+            } catch (InvalidVariableConfigException ex) {
+                server.sendError(conn, commandId, "VALIDATION_ERROR", ex.getMessage(), Map.of("variableId", variableId, "errors", ex.getErrors()));
+                return;
             } catch (IllegalArgumentException ex) {
                 server.sendError(conn, commandId, "INVALID_PAYLOAD", ex.getMessage(), Map.of("variableId", variableId));
                 return;

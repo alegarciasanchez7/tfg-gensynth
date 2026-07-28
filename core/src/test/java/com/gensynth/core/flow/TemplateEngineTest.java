@@ -6,6 +6,7 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 public class TemplateEngineTest {
@@ -82,5 +83,51 @@ public class TemplateEngineTest {
     public void testEmptyTemplate() {
         assertEquals("", engine.evaluate("", 1, variables, "f1", "g1"));
         assertEquals("", engine.evaluate(null, 1, variables, "f1", "g1"));
+    }
+
+    @Test
+    public void testConditionalRuleCanUseDependencyNotInTemplate() {
+        Variable holaVar = new Variable(
+                "vh",
+                "hola",
+                "GLOBAL",
+                "numeric",
+                0.0,
+                Map.of("min", 20.0, "max", 20.0),
+                null,
+                null
+        );
+
+        Variable productVar = new Variable(
+                "vp",
+                "product",
+                "GROUP",
+                "string",
+                "",
+                Map.of(
+                        "conditionalRules",
+                        List.of(
+                                Map.of(
+                                        "targetVariable", "hola",
+                                        "operator", "GREATER_THAN",
+                                        "value", 10,
+                                        "overrides", Map.of(
+                                                "pattern", "CONSTANT",
+                                                "constantValue", "Macarrones"
+                                        )
+                                )
+                        )
+                ),
+                null,
+                "group-1"
+        );
+
+        variables.put(holaVar.getId(), holaVar);
+        variables.put(productVar.getId(), productVar);
+
+        String template = "{\"product\":\"{{group.product}}\"}";
+        String result = engine.evaluate(template, 1, variables, "flow-1", "group-1");
+
+        assertEquals("{\"product\":\"Macarrones\"}", result);
     }
 }

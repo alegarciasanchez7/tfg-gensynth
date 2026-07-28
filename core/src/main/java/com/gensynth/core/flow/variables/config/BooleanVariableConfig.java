@@ -107,6 +107,11 @@ public class BooleanVariableConfig extends VariableConfiguration {
     }
 
     @Override
+    public java.util.List<String> validate() {
+        return new java.util.ArrayList<>();
+    }
+
+    @Override
     public Object generateNextValue() {
         tickCounter++;
         checkAnomalyCondition();
