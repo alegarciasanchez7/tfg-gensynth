@@ -42,6 +42,7 @@ describe('VariableEditorWorkspace', () => {
     updateVariable: vi.fn().mockResolvedValue(undefined),
     deleteVariable: vi.fn().mockResolvedValue(undefined),
     clearVariableSelection: vi.fn(),
+    getVariables: vi.fn().mockReturnValue([]),
   };
 
   beforeEach(() => {
@@ -54,6 +55,7 @@ describe('VariableEditorWorkspace', () => {
     actions.updateVariable.mockClear();
     actions.deleteVariable.mockClear();
     actions.clearVariableSelection.mockClear();
+    actions.getVariables.mockClear();
     mockToast.success.mockClear();
     mockToast.error.mockClear();
     mockToast.message.mockClear();

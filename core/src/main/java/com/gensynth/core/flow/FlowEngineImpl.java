@@ -10,6 +10,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import com.gensynth.core.flow.variables.VariableConfiguration;
 
 /**
  * Implementation of IFlowEngine using Virtual Threads.
@@ -195,6 +196,28 @@ public class FlowEngineImpl implements IFlowEngine, ILifecycleListener {
         if (group == null) {
             throw new IllegalStateException(
                 String.format("Group %s not found. Add it first with addGroup()", groupId));
+        }
+
+        // Perform validations and cycle checks fail-fast on variables
+        Map<String, VariableConfiguration> flowConfigs = new HashMap<>();
+        for (Flow flow : group.getFlows()) {
+            for (com.gensynth.core.api.IVariable var : flow.getVariables()) {
+                if (var instanceof com.gensynth.core.flow.variables.ConfigurableVariable) {
+                    com.gensynth.core.flow.variables.VariableConfiguration vc = 
+                        ((com.gensynth.core.flow.variables.ConfigurableVariable) var).getConfiguration();
+                    flowConfigs.put(var.getName(), vc);
+                }
+            }
+        }
+
+        // 1. Dependency and Cycle check
+        com.gensynth.core.flow.variables.DependencyResolver resolver = new com.gensynth.core.flow.variables.DependencyResolver();
+        try {
+            resolver.resolve(flowConfigs);
+        } catch (com.gensynth.core.flow.variables.CyclicDependencyException e) {
+            throw new IllegalStateException("Circular dependency detected", e);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalStateException("Broken reference detected: " + e.getMessage(), e);
         }
 
         // Create context and mark as active

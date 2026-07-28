@@ -1,4 +1,4 @@
-import type { FormEvent } from 'react';
+import { useState, useMemo, type FormEvent } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -10,8 +10,9 @@ import {
 import { Input } from '../ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Button } from '../ui/button';
-import { CalendarClock, Binary, ListChecks, ALargeSmall, MapPin, ToggleLeft } from 'lucide-react';
-import type { Group, VariableScope, VariableType } from '../../types';
+import { CalendarClock, Binary, ListChecks, ALargeSmall, MapPin, ToggleLeft, AlertTriangle } from 'lucide-react';
+import type { Group, Variable, VariableScope, VariableType } from '../../types';
+import { useVariableValidation } from '../../context/hooks/useVariableValidation';
 
 interface CreateVariableDialogProps {
   open: boolean;
@@ -29,6 +30,7 @@ interface CreateVariableDialogProps {
   };
   onStateChange: (updates: Partial<CreateVariableDialogProps['state']>) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  variablesList?: Variable[]; // passed down from RightPanel
 }
 
 const varTypes: Array<{ type: VariableType; label: string; icon: any }> = [
@@ -73,7 +75,41 @@ export function CreateVariableDialog({
   state,
   onStateChange,
   onSubmit,
+  variablesList = [],
 }: CreateVariableDialogProps) {
+  const { validateConfig, detectCycle } = useVariableValidation();
+  const [jsonError, setJsonError] = useState<string | null>(null);
+
+  // Parse config JSON safely and perform validation
+  const validationResult = useMemo(() => {
+    setJsonError(null);
+    if (!state.configText.trim()) return { errors: {}, cycle: null };
+    try {
+      const parsedConfig = JSON.parse(state.configText);
+      const errors = validateConfig(state.type, parsedConfig, variablesList);
+      
+      let cycle: string[] | null = null;
+      if (state.type === 'numeric' && parsedConfig.formula) {
+        cycle = detectCycle(variablesList, '', state.name || 'new_var', parsedConfig.formula);
+      }
+
+      return { errors, cycle };
+    } catch (e: any) {
+      setJsonError('Invalid JSON structure');
+      return { errors: {}, cycle: null };
+    }
+  }, [state.configText, state.type, state.name, variablesList]);
+
+  const hasValidationError = Object.keys(validationResult.errors).length > 0 || jsonError !== null || validationResult.cycle !== null;
+
+  const getSubmitButtonTitle = () => {
+    if (jsonError) return 'Cannot save: Invalid JSON structure';
+    if (validationResult.cycle) return `Cannot save: Cycle detected (${validationResult.cycle.join(' → ')})`;
+    const firstErrKey = Object.keys(validationResult.errors)[0];
+    if (firstErrKey) return `Cannot save: ${validationResult.errors[firstErrKey]}`;
+    return 'Create Variable';
+  };
+
   // Flatten flows with group name for the selector
   const allFlows = groups.flatMap(g => 
     g.flows.map(f => ({
@@ -165,7 +201,7 @@ export function CreateVariableDialog({
                                      (scope === 'group' && groups.length === 0);
                     return (
                       <SelectItem 
-                        key={scope} 
+                       key={scope} 
                         value={scope} 
                         disabled={isDisabled}
                         className="font-mono text-[11px]"
@@ -243,6 +279,24 @@ export function CreateVariableDialog({
             </div>
           )}
 
+          {/* Validation Warnings / Blocks display */}
+          {hasValidationError && (
+            <div className="p-2.5 rounded border border-amber-500/30 bg-amber-500/5 text-xs text-amber-400 flex items-start gap-2 animate-in fade-in duration-200">
+              <AlertTriangle size={15} className="shrink-0 mt-0.5" />
+              <div className="flex flex-col gap-0.5">
+                {jsonError && <div>{jsonError}</div>}
+                {validationResult.cycle && (
+                  <div>
+                    Circular dependency detected: <span className="font-mono text-amber-300">{validationResult.cycle.join(' → ')}</span>
+                  </div>
+                )}
+                {Object.values(validationResult.errors).map((err, idx) => (
+                  <div key={idx}>{err}</div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <DialogFooter className="mt-2 pt-4 border-t border-[var(--c-br1)]">
             <Button 
               type="button" 
@@ -254,7 +308,9 @@ export function CreateVariableDialog({
             </Button>
             <Button 
               type="submit"
-              className="bg-cyan-600 hover:bg-cyan-500 text-white shadow-lg shadow-cyan-500/20 px-8"
+              disabled={hasValidationError}
+              title={getSubmitButtonTitle()}
+              className="bg-cyan-600 hover:bg-cyan-500 text-white shadow-lg shadow-cyan-500/20 px-8 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Create Variable
             </Button>
