@@ -25,7 +25,7 @@ describe('ConditionalRulesTab', () => {
   ];
 
   it('renders rules list', () => {
-    render(<ConditionalRulesTab rules={defaultRules} onChange={vi.fn()} />);
+    render(<ConditionalRulesTab rules={defaultRules} onChange={vi.fn()} variableType="numeric" />);
 
     expect(screen.getByDisplayValue('temp')).toBeInTheDocument();
     expect(screen.getByDisplayValue('30')).toBeInTheDocument();
@@ -33,7 +33,7 @@ describe('ConditionalRulesTab', () => {
 
   it('calls onChange when Add Rule is clicked', () => {
     const handleChange = vi.fn();
-    render(<ConditionalRulesTab rules={defaultRules} onChange={handleChange} />);
+    render(<ConditionalRulesTab rules={defaultRules} onChange={handleChange} variableType="numeric" />);
 
     const addButton = screen.getByText(/Add Rule/i);
     fireEvent.click(addButton);

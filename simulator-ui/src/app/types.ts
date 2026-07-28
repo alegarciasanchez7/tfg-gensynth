@@ -45,6 +45,7 @@ export interface NumericVariableConfig extends BaseVariableConfig {
 export interface StringVariableConfig extends BaseVariableConfig {
   fixedLength?: number;
   regexPattern?: string;
+  constantValue?: string;
 }
 
 export interface ListVariableConfig extends BaseVariableConfig {
@@ -148,4 +149,13 @@ export interface ConnectorHealthSummary {
   warningCount: number;
   errorCount: number;
   lastMessage?: string;
+}
+
+export interface StartGroupErrorPayload {
+  errorType: 'VALIDATION_ERROR' | 'CYCLIC_DEPENDENCY_ERROR' | 'BROKEN_REFERENCE_ERROR';
+  commandId?: string;
+  message: string;
+  variableId?: string;
+  errors?: string[];
+  cycle?: string[];
 }

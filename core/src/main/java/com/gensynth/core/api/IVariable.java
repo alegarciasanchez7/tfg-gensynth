@@ -24,6 +24,14 @@ public interface IVariable {
     String getId();
 
     /**
+     * Obtiene el nombre de la variable.
+     * @return El nombre de la variable
+     */
+    default String getName() {
+        return getId();
+    }
+
+    /**
      * Obtiene el tipo de dato de la variable.
      * @return El tipo de dato
      */

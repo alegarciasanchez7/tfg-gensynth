@@ -64,6 +64,7 @@ LOCAL_RUN_TESTING.md
 docs/
 /core/SMOKE_EVIDENCE.txt
 /core/outputs/
+/core/plugins/
 /plugins/
 
 # Desktop Specific (JCEF)

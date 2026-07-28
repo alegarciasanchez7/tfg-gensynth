@@ -250,6 +250,7 @@ export function RightPanel({ variables, selection, onSelectVariable, onInsertVar
         state={createState}
         onStateChange={(updates) => setCreateState(prev => ({ ...prev, ...updates }))}
         onSubmit={handleCreateSubmit}
+        variablesList={variables}
       />
 
       <DeleteVariableDialog
