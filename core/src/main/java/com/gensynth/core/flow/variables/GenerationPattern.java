@@ -13,6 +13,8 @@ public enum GenerationPattern {
     TREND("Trend - Statistical trend (normal/gradual/jumping)"),
     DISTRIBUTION("Distribution - Values based on probability distribution"),
     FORMULA("Formula - Value based on mathematical equation"),
+    SINUSOIDAL("Sinusoidal - Periodic wave with frequency, amplitude, phase and offset"),
+    DRIFT("Drift - Cumulative linear increase/decrease over simulation time"),
     
     // String patterns
     RANDOM_STRING("Random String - Randomized characters"),
