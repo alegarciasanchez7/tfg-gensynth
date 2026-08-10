@@ -45,6 +45,36 @@ public class NumericVariableConfig extends VariableConfiguration {
     private List<Map<String, Object>> sequentialGraph = new ArrayList<>();
     private List<Map<String, Object>> customDistributionGraph = new ArrayList<>();
 
+    // Pattern: SINUSOIDAL
+    private double sineFrequency = 1.0;
+    private double sineAmplitude = 10.0;
+    private double sinePhase = 0.0;
+    private double sineOffset = 0.0;
+
+    // Pattern: DRIFT
+    private double driftRate = 0.5;
+    private Double driftInitialValue = null;
+    private String driftLimitMode = "CLAMP"; // "CLAMP", "WRAP", "RESET", "BOUNCE"
+    private boolean driftReverseDirection = false;
+
+    // Virtual Simulation Clock
+    private double simulationTimeStep = 1.0; // Seconds per tick
+
+    // Noise Modifier Layer
+    private boolean noiseEnabled = false;
+    private String noiseType = "GAUSSIAN"; // "GAUSSIAN", "UNIFORM"
+    private double noiseAmplitude = 1.0;
+    private double noiseStdDev = 1.0;
+
+    // Spike Anomaly Modifier Layer
+    private boolean spikeEnabled = false;
+    private double spikeProbability = 0.05; // 0.0 to 1.0 (or 0 to 100%)
+    private String spikeMode = "FIXED_OFFSET"; // "FIXED_OFFSET", "RANGE_SPIKE", "MULTIPLIER"
+    private double spikeMagnitude = 50.0;
+    private double spikeMin = 100.0;
+    private double spikeMax = 200.0;
+    private double spikeMultiplier = 2.0;
+
     // Internal state
     private double currentValue;
     private boolean isAnomalous;
@@ -130,67 +160,156 @@ public class NumericVariableConfig extends VariableConfiguration {
             return anomalyConfig.getAnomalousValue();
         }
 
+        double baseValue;
+
         if (pattern == GenerationPattern.FORMULA) {
             if (formula != null && !formula.trim().isEmpty()) {
-                currentValue = evaluateFormula();
+                baseValue = evaluateFormula();
             } else {
-                currentValue = 0.0;
+                baseValue = 0.0;
             }
-            return formatValue(currentValue);
-        }
-
-        if (tickCounter == 1 && initialValue != null) {
-            if (pattern == GenerationPattern.RANDOM || pattern == GenerationPattern.SEQUENTIAL) {
-                currentValue = initialValue;
-                return formatValue(currentValue);
-            }
-        }
-
-        switch (pattern) {
-            case RANDOM:
-                if (step > 0 && (toValue - fromValue) > 0) {
-                    double range = toValue - fromValue;
-                    long numSteps = (long) (range / step);
-                    if (numSteps > 0) {
-                        long randomStep = ThreadLocalRandom.current().nextLong(0, numSteps + 1);
-                        currentValue = fromValue + (randomStep * step);
-                        currentValue = Math.min(Math.max(currentValue, fromValue), toValue);
+        } else if (tickCounter == 1 && initialValue != null && 
+                  (pattern == GenerationPattern.RANDOM || pattern == GenerationPattern.SEQUENTIAL)) {
+            baseValue = initialValue;
+        } else {
+            switch (pattern) {
+                case RANDOM:
+                    if (step > 0 && (toValue - fromValue) > 0) {
+                        double range = toValue - fromValue;
+                        long numSteps = (long) (range / step);
+                        if (numSteps > 0) {
+                            long randomStep = ThreadLocalRandom.current().nextLong(0, numSteps + 1);
+                            baseValue = fromValue + (randomStep * step);
+                            baseValue = Math.min(Math.max(baseValue, fromValue), toValue);
+                        } else {
+                            baseValue = fromValue;
+                        }
                     } else {
-                        currentValue = fromValue;
+                        baseValue = generateDistribution();
                     }
-                } else {
-                    currentValue = generateDistribution();
-                }
-                break;
-            case CONSTANT:
-                if (constantMargin > 0.0) {
-                    double randomOffset = ThreadLocalRandom.current().nextDouble(-constantMargin, constantMargin);
-                    currentValue = constantValue + randomOffset;
-                    if (fromValue < toValue) {
-                        currentValue = Math.min(Math.max(currentValue, fromValue), toValue);
+                    break;
+                case CONSTANT:
+                    if (constantMargin > 0.0) {
+                        double randomOffset = ThreadLocalRandom.current().nextDouble(-constantMargin, constantMargin);
+                        baseValue = constantValue + randomOffset;
+                        if (fromValue < toValue) {
+                            baseValue = Math.min(Math.max(baseValue, fromValue), toValue);
+                        }
+                    } else {
+                        baseValue = constantValue;
                     }
-                } else {
-                    currentValue = constantValue;
-                }
-                break;
-            case SEQUENTIAL:
-                currentValue = generateSequential();
-                break;
-            case DISTRIBUTION:
-                if ("CUSTOM".equalsIgnoreCase(distributionType)) {
-                    currentValue = generateCustomDistribution();
-                } else {
-                    currentValue = generateDistribution();
-                }
-                break;
-            case TREND:
-                currentValue = generateTrend();
-                break;
-            default:
-                currentValue = initialValue;
+                    break;
+                case SEQUENTIAL:
+                    baseValue = generateSequential();
+                    break;
+                case DISTRIBUTION:
+                    if ("CUSTOM".equalsIgnoreCase(distributionType)) {
+                        baseValue = generateCustomDistribution();
+                    } else {
+                        baseValue = generateDistribution();
+                    }
+                    break;
+                case TREND:
+                    baseValue = generateTrend();
+                    break;
+                case SINUSOIDAL:
+                    baseValue = generateSinusoidal();
+                    break;
+                case DRIFT:
+                    baseValue = generateDrift();
+                    break;
+                default:
+                    baseValue = initialValue != null ? initialValue : fromValue;
+            }
+        }
+
+        currentValue = baseValue;
+
+        // Apply Noise modifier layer if enabled
+        if (noiseEnabled) {
+            currentValue = applyNoise(currentValue);
+        }
+
+        // Apply Spike anomaly modifier layer if enabled
+        if (spikeEnabled) {
+            currentValue = applySpike(currentValue);
         }
 
         return formatValue(currentValue);
+    }
+
+    private double generateSinusoidal() {
+        // Relative simulation time t in seconds
+        double t = (tickCounter - 1) * simulationTimeStep;
+        return sineOffset + sineAmplitude * Math.sin(2.0 * Math.PI * sineFrequency * t + sinePhase);
+    }
+
+    private double generateDrift() {
+        double startVal = driftInitialValue != null ? driftInitialValue : (initialValue != null ? initialValue : fromValue);
+        double t = (tickCounter - 1) * simulationTimeStep;
+        double effectiveRate = driftReverseDirection ? -driftRate : driftRate;
+        double rawVal = startVal + effectiveRate * t;
+
+        if (fromValue < toValue) {
+            String mode = driftLimitMode != null ? driftLimitMode.toUpperCase() : "CLAMP";
+            switch (mode) {
+                case "BOUNCE":
+                    if (rawVal > toValue) {
+                        driftReverseDirection = true;
+                        rawVal = toValue - (rawVal - toValue);
+                    } else if (rawVal < fromValue) {
+                        driftReverseDirection = false;
+                        rawVal = fromValue + (fromValue - rawVal);
+                    }
+                    return Math.min(Math.max(rawVal, fromValue), toValue);
+                case "WRAP":
+                case "RESET":
+                    if (rawVal > toValue) {
+                        double range = toValue - fromValue;
+                        rawVal = fromValue + ((rawVal - fromValue) % range);
+                    } else if (rawVal < fromValue) {
+                        double range = toValue - fromValue;
+                        rawVal = toValue - ((toValue - rawVal) % range);
+                    }
+                    return rawVal;
+                case "CLAMP":
+                default:
+                    return Math.min(Math.max(rawVal, fromValue), toValue);
+            }
+        }
+        return rawVal;
+    }
+
+    private double applyNoise(double val) {
+        if ("UNIFORM".equalsIgnoreCase(noiseType)) {
+            double jitter = ThreadLocalRandom.current().nextDouble(-noiseAmplitude, noiseAmplitude);
+            return val + jitter;
+        } else { // GAUSSIAN
+            double noise = ThreadLocalRandom.current().nextGaussian() * noiseStdDev;
+            return val + noise;
+        }
+    }
+
+    private double applySpike(double val) {
+        double probThreshold = spikeProbability > 1.0 ? spikeProbability / 100.0 : spikeProbability;
+        if (ThreadLocalRandom.current().nextDouble() < probThreshold) {
+            String mode = spikeMode != null ? spikeMode.toUpperCase() : "FIXED_OFFSET";
+            switch (mode) {
+                case "RANGE_SPIKE":
+                case "OUT_OF_RANGE":
+                    if (spikeMin < spikeMax) {
+                        return spikeMin + (spikeMax - spikeMin) * ThreadLocalRandom.current().nextDouble();
+                    }
+                    return spikeMin;
+                case "MULTIPLIER":
+                    return val * spikeMultiplier;
+                case "FIXED_OFFSET":
+                default:
+                    boolean positive = ThreadLocalRandom.current().nextBoolean();
+                    return val + (positive ? spikeMagnitude : -spikeMagnitude);
+            }
+        }
+        return val;
     }
 
     private double generateDistribution() {
@@ -565,11 +684,12 @@ public class NumericVariableConfig extends VariableConfiguration {
         tickCounter = 0;
         isAnomalous = false;
         anomalyStartTick = 0;
+        driftReverseDirection = false;
     }
 
     @Override
     public Map<String, Object> toMap() {
-        Map<String, Object> map = new HashMap<>(16);
+        Map<String, Object> map = new HashMap<>(32);
         map.put("identifier", identifier);
         map.put("type", type.name());
         map.put("pattern", pattern.name());
@@ -595,8 +715,107 @@ public class NumericVariableConfig extends VariableConfiguration {
         map.put("boundaryMode", boundaryMode);
         map.put("sequentialGraph", sequentialGraph);
         map.put("customDistributionGraph", customDistributionGraph);
+
+        // Sinusoidal
+        map.put("sineFrequency", sineFrequency);
+        map.put("sineAmplitude", sineAmplitude);
+        map.put("sinePhase", sinePhase);
+        map.put("sineOffset", sineOffset);
+
+        // Drift
+        map.put("driftRate", driftRate);
+        map.put("driftInitialValue", driftInitialValue);
+        map.put("driftLimitMode", driftLimitMode);
+
+        // Simulation Clock
+        map.put("simulationTimeStep", simulationTimeStep);
+
+        // Noise
+        map.put("noiseEnabled", noiseEnabled);
+        map.put("noiseType", noiseType);
+        map.put("noiseAmplitude", noiseAmplitude);
+        map.put("noiseStdDev", noiseStdDev);
+
+        // Spikes
+        map.put("spikeEnabled", spikeEnabled);
+        map.put("spikeProbability", spikeProbability);
+        map.put("spikeMode", spikeMode);
+        map.put("spikeMagnitude", spikeMagnitude);
+        map.put("spikeMin", spikeMin);
+        map.put("spikeMax", spikeMax);
+        map.put("spikeMultiplier", spikeMultiplier);
+
         return map;
     }
+
+    // Builder methods for Sinusoidal, Drift, Clock, Noise, Spikes
+    public NumericVariableConfig sineFrequency(double val) { this.sineFrequency = val; return this; }
+    public NumericVariableConfig sineAmplitude(double val) { this.sineAmplitude = val; return this; }
+    public NumericVariableConfig sinePhase(double val) { this.sinePhase = val; return this; }
+    public NumericVariableConfig sineOffset(double val) { this.sineOffset = val; return this; }
+
+    public NumericVariableConfig driftRate(double val) { this.driftRate = val; return this; }
+    public NumericVariableConfig driftInitialValue(Double val) { this.driftInitialValue = val; return this; }
+    public NumericVariableConfig driftLimitMode(String val) { this.driftLimitMode = val; return this; }
+
+    public NumericVariableConfig simulationTimeStep(double val) { this.simulationTimeStep = val; return this; }
+
+    public NumericVariableConfig noiseEnabled(boolean val) { this.noiseEnabled = val; return this; }
+    public NumericVariableConfig noiseType(String val) { this.noiseType = val; return this; }
+    public NumericVariableConfig noiseAmplitude(double val) { this.noiseAmplitude = val; return this; }
+    public NumericVariableConfig noiseStdDev(double val) { this.noiseStdDev = val; return this; }
+
+    public NumericVariableConfig spikeEnabled(boolean val) { this.spikeEnabled = val; return this; }
+    public NumericVariableConfig spikeProbability(double val) { this.spikeProbability = val; return this; }
+    public NumericVariableConfig spikeMode(String val) { this.spikeMode = val; return this; }
+    public NumericVariableConfig spikeMagnitude(double val) { this.spikeMagnitude = val; return this; }
+    public NumericVariableConfig spikeMin(double val) { this.spikeMin = val; return this; }
+    public NumericVariableConfig spikeMax(double val) { this.spikeMax = val; return this; }
+    public NumericVariableConfig spikeMultiplier(double val) { this.spikeMultiplier = val; return this; }
+
+    // Getters & Setters
+    public double getSineFrequency() { return sineFrequency; }
+    public void setSineFrequency(double sineFrequency) { this.sineFrequency = sineFrequency; }
+    public double getSineAmplitude() { return sineAmplitude; }
+    public void setSineAmplitude(double sineAmplitude) { this.sineAmplitude = sineAmplitude; }
+    public double getSinePhase() { return sinePhase; }
+    public void setSinePhase(double sinePhase) { this.sinePhase = sinePhase; }
+    public double getSineOffset() { return sineOffset; }
+    public void setSineOffset(double sineOffset) { this.sineOffset = sineOffset; }
+
+    public double getDriftRate() { return driftRate; }
+    public void setDriftRate(double driftRate) { this.driftRate = driftRate; }
+    public Double getDriftInitialValue() { return driftInitialValue; }
+    public void setDriftInitialValue(Double driftInitialValue) { this.driftInitialValue = driftInitialValue; }
+    public String getDriftLimitMode() { return driftLimitMode; }
+    public void setDriftLimitMode(String driftLimitMode) { this.driftLimitMode = driftLimitMode; }
+
+    public double getSimulationTimeStep() { return simulationTimeStep; }
+    public void setSimulationTimeStep(double simulationTimeStep) { this.simulationTimeStep = simulationTimeStep; }
+
+    public boolean isNoiseEnabled() { return noiseEnabled; }
+    public void setNoiseEnabled(boolean noiseEnabled) { this.noiseEnabled = noiseEnabled; }
+    public String getNoiseType() { return noiseType; }
+    public void setNoiseType(String noiseType) { this.noiseType = noiseType; }
+    public double getNoiseAmplitude() { return noiseAmplitude; }
+    public void setNoiseAmplitude(double noiseAmplitude) { this.noiseAmplitude = noiseAmplitude; }
+    public double getNoiseStdDev() { return noiseStdDev; }
+    public void setNoiseStdDev(double noiseStdDev) { this.noiseStdDev = noiseStdDev; }
+
+    public boolean isSpikeEnabled() { return spikeEnabled; }
+    public void setSpikeEnabled(boolean spikeEnabled) { this.spikeEnabled = spikeEnabled; }
+    public double getSpikeProbability() { return spikeProbability; }
+    public void setSpikeProbability(double spikeProbability) { this.spikeProbability = spikeProbability; }
+    public String getSpikeMode() { return spikeMode; }
+    public void setSpikeMode(String spikeMode) { this.spikeMode = spikeMode; }
+    public double getSpikeMagnitude() { return spikeMagnitude; }
+    public void setSpikeMagnitude(double spikeMagnitude) { this.spikeMagnitude = spikeMagnitude; }
+    public double getSpikeMin() { return spikeMin; }
+    public void setSpikeMin(double spikeMin) { this.spikeMin = spikeMin; }
+    public double getSpikeMax() { return spikeMax; }
+    public void setSpikeMax(double spikeMax) { this.spikeMax = spikeMax; }
+    public double getSpikeMultiplier() { return spikeMultiplier; }
+    public void setSpikeMultiplier(double spikeMultiplier) { this.spikeMultiplier = spikeMultiplier; }
 
     // Builder methods
     @Override
