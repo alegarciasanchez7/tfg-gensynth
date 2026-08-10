@@ -165,6 +165,54 @@ public class VariableFactory {
                     List<Map<String, Object>> distGraph = (List<Map<String, Object>>) configMap.get("customDistributionGraph");
                     numConfig.customDistributionGraph(distGraph);
                 }
+                // Sinusoidal
+                if (configMap.containsKey("sineFrequency") && configMap.get("sineFrequency") != null)
+                    numConfig.sineFrequency(((Number) configMap.get("sineFrequency")).doubleValue());
+                if (configMap.containsKey("sineAmplitude") && configMap.get("sineAmplitude") != null)
+                    numConfig.sineAmplitude(((Number) configMap.get("sineAmplitude")).doubleValue());
+                if (configMap.containsKey("sinePhase") && configMap.get("sinePhase") != null)
+                    numConfig.sinePhase(((Number) configMap.get("sinePhase")).doubleValue());
+                if (configMap.containsKey("sineOffset") && configMap.get("sineOffset") != null)
+                    numConfig.sineOffset(((Number) configMap.get("sineOffset")).doubleValue());
+
+                // Drift
+                if (configMap.containsKey("driftRate") && configMap.get("driftRate") != null)
+                    numConfig.driftRate(((Number) configMap.get("driftRate")).doubleValue());
+                if (configMap.containsKey("driftInitialValue") && configMap.get("driftInitialValue") != null)
+                    numConfig.driftInitialValue(((Number) configMap.get("driftInitialValue")).doubleValue());
+                if (configMap.containsKey("driftLimitMode"))
+                    numConfig.driftLimitMode((String) configMap.get("driftLimitMode"));
+
+                // Virtual Clock
+                if (configMap.containsKey("simulationTimeStep") && configMap.get("simulationTimeStep") != null)
+                    numConfig.simulationTimeStep(((Number) configMap.get("simulationTimeStep")).doubleValue());
+
+                // Noise Layer
+                if (configMap.containsKey("noiseEnabled") && configMap.get("noiseEnabled") != null)
+                    numConfig.noiseEnabled((Boolean) configMap.get("noiseEnabled"));
+                if (configMap.containsKey("noiseType"))
+                    numConfig.noiseType((String) configMap.get("noiseType"));
+                if (configMap.containsKey("noiseAmplitude") && configMap.get("noiseAmplitude") != null)
+                    numConfig.noiseAmplitude(((Number) configMap.get("noiseAmplitude")).doubleValue());
+                if (configMap.containsKey("noiseStdDev") && configMap.get("noiseStdDev") != null)
+                    numConfig.noiseStdDev(((Number) configMap.get("noiseStdDev")).doubleValue());
+
+                // Spike Layer
+                if (configMap.containsKey("spikeEnabled") && configMap.get("spikeEnabled") != null)
+                    numConfig.spikeEnabled((Boolean) configMap.get("spikeEnabled"));
+                if (configMap.containsKey("spikeProbability") && configMap.get("spikeProbability") != null)
+                    numConfig.spikeProbability(((Number) configMap.get("spikeProbability")).doubleValue());
+                if (configMap.containsKey("spikeMode"))
+                    numConfig.spikeMode((String) configMap.get("spikeMode"));
+                if (configMap.containsKey("spikeMagnitude") && configMap.get("spikeMagnitude") != null)
+                    numConfig.spikeMagnitude(((Number) configMap.get("spikeMagnitude")).doubleValue());
+                if (configMap.containsKey("spikeMin") && configMap.get("spikeMin") != null)
+                    numConfig.spikeMin(((Number) configMap.get("spikeMin")).doubleValue());
+                if (configMap.containsKey("spikeMax") && configMap.get("spikeMax") != null)
+                    numConfig.spikeMax(((Number) configMap.get("spikeMax")).doubleValue());
+                if (configMap.containsKey("spikeMultiplier") && configMap.get("spikeMultiplier") != null)
+                    numConfig.spikeMultiplier(((Number) configMap.get("spikeMultiplier")).doubleValue());
+
                 return numConfig;
 
             case "STRING":

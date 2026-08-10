@@ -40,6 +40,35 @@ export interface NumericVariableConfig extends BaseVariableConfig {
   distributionType?: 'UNIFORM' | 'NORMAL' | 'EXPONENTIAL' | 'CUSTOM';
   customDistributionGraph?: Array<{ value?: number; from?: number; to?: number; weight: number }>;
   boundaryMode?: 'LEFT' | 'RIGHT' | 'SPLIT';
+
+  // Sinusoidal / Periodic Wave Pattern
+  sineFrequency?: number;
+  sineAmplitude?: number;
+  sinePhase?: number;
+  sineOffset?: number;
+
+  // Drift Pattern
+  driftRate?: number;
+  driftInitialValue?: number;
+  driftLimitMode?: 'CLAMP' | 'WRAP' | 'RESET' | 'BOUNCE';
+
+  // Virtual Simulation Clock
+  simulationTimeStep?: number;
+
+  // Noise Modifier Layer
+  noiseEnabled?: boolean;
+  noiseType?: 'GAUSSIAN' | 'UNIFORM';
+  noiseAmplitude?: number;
+  noiseStdDev?: number;
+
+  // Spike Anomaly Modifier Layer
+  spikeEnabled?: boolean;
+  spikeProbability?: number;
+  spikeMode?: 'FIXED_OFFSET' | 'RANGE_SPIKE' | 'MULTIPLIER';
+  spikeMagnitude?: number;
+  spikeMin?: number;
+  spikeMax?: number;
+  spikeMultiplier?: number;
 }
 
 export interface StringVariableConfig extends BaseVariableConfig {

@@ -125,6 +125,26 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
   const [suffixStr, setSuffixStr] = useState(config.suffix ?? '');
   const [integerFormatStr, setIntegerFormatStr] = useState(config.integerFormat ?? '');
 
+  // New fields local string states
+  const [sineFreqStr, setSineFreqStr] = useState(String(config.sineFrequency ?? 1.0));
+  const [sineAmpStr, setSineAmpStr] = useState(String(config.sineAmplitude ?? 10.0));
+  const [sinePhaseStr, setSinePhaseStr] = useState(String(config.sinePhase ?? 0.0));
+  const [sineOffsetStr, setSineOffsetStr] = useState(String(config.sineOffset ?? 0.0));
+
+  const [driftRateStr, setDriftRateStr] = useState(String(config.driftRate ?? 0.5));
+  const [driftInitialStr, setDriftInitialStr] = useState(config.driftInitialValue !== undefined && config.driftInitialValue !== null ? String(config.driftInitialValue) : '');
+
+  const [timeStepStr, setTimeStepStr] = useState(String(config.simulationTimeStep ?? 1.0));
+
+  const [noiseAmpStr, setNoiseAmpStr] = useState(String(config.noiseAmplitude ?? 1.0));
+  const [noiseStdDevStr, setNoiseStdDevStr] = useState(String(config.noiseStdDev ?? 1.0));
+
+  const [spikeProbStr, setSpikeProbStr] = useState(String(config.spikeProbability !== undefined ? (config.spikeProbability > 1 ? config.spikeProbability : config.spikeProbability * 100) : 5));
+  const [spikeMagStr, setSpikeMagStr] = useState(String(config.spikeMagnitude ?? 50.0));
+  const [spikeMinStr, setSpikeMinStr] = useState(String(config.spikeMin ?? 100.0));
+  const [spikeMaxStr, setSpikeMaxStr] = useState(String(config.spikeMax ?? 200.0));
+  const [spikeMultStr, setSpikeMultStr] = useState(String(config.spikeMultiplier ?? 2.0));
+
   // Formula Autocomplete Logic
   const { state } = useApp();
   const [showAutocomplete, setShowAutocomplete] = useState(false);
@@ -603,7 +623,9 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
               { value: 'CONSTANT', label: 'Constant' },
               { value: 'SEQUENTIAL', label: 'Sequential' },
               { value: 'DISTRIBUTION', label: 'Distribution' },
-              { value: 'FORMULA', label: 'Formula' }
+              { value: 'FORMULA', label: 'Formula' },
+              { value: 'SINUSOIDAL', label: 'Sinusoidal Wave' },
+              { value: 'DRIFT', label: 'Linear Drift' }
             ]}
           />
         </div>
@@ -855,6 +877,330 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
                       </span>
                     </span>
                   ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {pattern === 'SINUSOIDAL' && (
+            <div className="space-y-3">
+              <div className="text-[11px] font-semibold text-cyan-400 flex items-center gap-1.5">
+                <span>Sinusoidal / Periodic Wave</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label htmlFor="sine-freq" className="text-[10px] uppercase text-[var(--c-tx4)]">Frequency (Hz)</Label>
+                  <Input
+                    id="sine-freq"
+                    type="text"
+                    placeholder="e.g. 1.0"
+                    value={sineFreqStr}
+                    onChange={(e) => handleNumericChange(e.target.value, setSineFreqStr, 'sineFrequency')}
+                    onBlur={(e) => handleNumericBlur(e.target.value, setSineFreqStr, 'sineFrequency', 1.0)}
+                    className="h-8 text-xs font-mono"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="sine-amp" className="text-[10px] uppercase text-[var(--c-tx4)]">Amplitude</Label>
+                  <Input
+                    id="sine-amp"
+                    type="text"
+                    placeholder="e.g. 10.0"
+                    value={sineAmpStr}
+                    onChange={(e) => handleNumericChange(e.target.value, setSineAmpStr, 'sineAmplitude')}
+                    onBlur={(e) => handleNumericBlur(e.target.value, setSineAmpStr, 'sineAmplitude', 10.0)}
+                    className="h-8 text-xs font-mono"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label htmlFor="sine-phase" className="text-[10px] uppercase text-[var(--c-tx4)]">Phase Shift (rad)</Label>
+                  <Input
+                    id="sine-phase"
+                    type="text"
+                    placeholder="e.g. 0.0"
+                    value={sinePhaseStr}
+                    onChange={(e) => handleNumericChange(e.target.value, setSinePhaseStr, 'sinePhase')}
+                    onBlur={(e) => handleNumericBlur(e.target.value, setSinePhaseStr, 'sinePhase', 0.0)}
+                    className="h-8 text-xs font-mono"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="sine-offset" className="text-[10px] uppercase text-[var(--c-tx4)]">DC Offset Level</Label>
+                  <Input
+                    id="sine-offset"
+                    type="text"
+                    placeholder="e.g. 0.0"
+                    value={sineOffsetStr}
+                    onChange={(e) => handleNumericChange(e.target.value, setSineOffsetStr, 'sineOffset')}
+                    onBlur={(e) => handleNumericBlur(e.target.value, setSineOffsetStr, 'sineOffset', 0.0)}
+                    className="h-8 text-xs font-mono"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {pattern === 'DRIFT' && (
+            <div className="space-y-3">
+              <div className="text-[11px] font-semibold text-emerald-400 flex items-center gap-1.5">
+                <span>Linear Drift</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label htmlFor="drift-rate" className="text-[10px] uppercase text-[var(--c-tx4)]">Drift Rate (units/s)</Label>
+                  <Input
+                    id="drift-rate"
+                    type="text"
+                    placeholder="e.g. 0.5"
+                    value={driftRateStr}
+                    onChange={(e) => handleNumericChange(e.target.value, setDriftRateStr, 'driftRate')}
+                    onBlur={(e) => handleNumericBlur(e.target.value, setDriftRateStr, 'driftRate', 0.5)}
+                    className="h-8 text-xs font-mono"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="drift-initial" className="text-[10px] uppercase text-[var(--c-tx4)]">Initial Value</Label>
+                  <Input
+                    id="drift-initial"
+                    type="text"
+                    placeholder="Optional start"
+                    value={driftInitialStr}
+                    onChange={(e) => {
+                      setDriftInitialStr(e.target.value);
+                      if (e.target.value === '' || e.target.value === '-') return;
+                      const parsed = parseFloat(e.target.value);
+                      if (!isNaN(parsed)) onChange({ driftInitialValue: parsed });
+                    }}
+                    className="h-8 text-xs font-mono"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="drift-limit-mode" className="text-[10px] uppercase text-[var(--c-tx4)]">Boundary Collision Mode</Label>
+                <CustomDropdown
+                  id="drift-limit-mode"
+                  value={config.driftLimitMode ?? 'CLAMP'}
+                  onChange={(val) => onChange({ driftLimitMode: val as any })}
+                  options={[
+                    { value: 'CLAMP', label: 'CLAMP (Freeze at min/max limit)' },
+                    { value: 'WRAP', label: 'WRAP / RESET (Reset to opposite extreme)' },
+                    { value: 'BOUNCE', label: 'BOUNCE (Invert direction on collision)' }
+                  ]}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 6. Virtual Simulation Clock */}
+        <div className="space-y-1 pt-1">
+          <div className="flex items-center gap-1.5">
+            <Label htmlFor="numeric-timestep" className="text-[10px] uppercase text-[var(--c-tx4)]">Virtual Clock Delta (seconds / tick)</Label>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button type="button" className="text-[var(--c-tx4)] hover:text-cyan-400 cursor-help transition-colors">
+                  <Info size={10} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-[260px] text-[11px]">
+                Virtual seconds simulated per tick. Allows high-speed relative time simulation while preserving wave frequencies and drift slopes.
+              </TooltipContent>
+            </Tooltip>
+          </div>
+          <Input
+            id="numeric-timestep"
+            type="text"
+            placeholder="e.g. 1.0"
+            value={timeStepStr}
+            onChange={(e) => handleNumericChange(e.target.value, setTimeStepStr, 'simulationTimeStep')}
+            onBlur={(e) => handleNumericBlur(e.target.value, setTimeStepStr, 'simulationTimeStep', 1.0)}
+            className="h-8 text-xs font-mono"
+          />
+        </div>
+
+        {/* 7. Realistic Noise Modifier Layer */}
+        <div className="rounded border border-[var(--c-br1)] bg-[var(--c-bg2)] p-3 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-[var(--c-tx1)]">Noise Injection (Jitter / Gaussian)</span>
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">Modifier Layer</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => onChange({ noiseEnabled: !config.noiseEnabled })}
+              className={`px-2.5 py-1 rounded text-xs font-medium transition-colors cursor-pointer ${
+                config.noiseEnabled
+                  ? 'bg-blue-500/20 text-blue-400 border border-blue-500/40'
+                  : 'bg-white/5 text-[var(--c-tx4)] border border-white/10 hover:bg-white/10'
+              }`}
+            >
+              {config.noiseEnabled ? 'Enabled' : 'Disabled'}
+            </button>
+          </div>
+
+          {config.noiseEnabled && (
+            <div className="space-y-3 pt-2 border-t border-[var(--c-br1)]">
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label htmlFor="noise-type" className="text-[10px] uppercase text-[var(--c-tx4)]">Noise Type</Label>
+                  <CustomDropdown
+                    id="noise-type"
+                    value={config.noiseType ?? 'GAUSSIAN'}
+                    onChange={(val) => onChange({ noiseType: val as any })}
+                    options={[
+                      { value: 'GAUSSIAN', label: 'Gaussian Noise (N(0, σ²))' },
+                      { value: 'UNIFORM', label: 'Uniform Jitter (± Noise)' }
+                    ]}
+                  />
+                </div>
+                {config.noiseType === 'UNIFORM' ? (
+                  <div className="space-y-1">
+                    <Label htmlFor="noise-amp" className="text-[10px] uppercase text-[var(--c-tx4)]">Jitter Amplitude (±)</Label>
+                    <Input
+                      id="noise-amp"
+                      type="text"
+                      placeholder="e.g. 1.0"
+                      value={noiseAmpStr}
+                      onChange={(e) => handleNumericChange(e.target.value, setNoiseAmpStr, 'noiseAmplitude')}
+                      onBlur={(e) => handleNumericBlur(e.target.value, setNoiseAmpStr, 'noiseAmplitude', 1.0)}
+                      className="h-8 text-xs font-mono"
+                    />
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    <Label htmlFor="noise-stddev" className="text-[10px] uppercase text-[var(--c-tx4)]">Standard Deviation (σ)</Label>
+                    <Input
+                      id="noise-stddev"
+                      type="text"
+                      placeholder="e.g. 1.0"
+                      value={noiseStdDevStr}
+                      onChange={(e) => handleNumericChange(e.target.value, setNoiseStdDevStr, 'noiseStdDev')}
+                      onBlur={(e) => handleNumericBlur(e.target.value, setNoiseStdDevStr, 'noiseStdDev', 1.0)}
+                      className="h-8 text-xs font-mono"
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 8. Spike Anomaly Modifier Layer */}
+        <div className="rounded border border-[var(--c-br1)] bg-[var(--c-bg2)] p-3 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-[var(--c-tx1)]">Anomaly Injection / Spikes</span>
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">Out-of-range Spikes</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => onChange({ spikeEnabled: !config.spikeEnabled })}
+              className={`px-2.5 py-1 rounded text-xs font-medium transition-colors cursor-pointer ${
+                config.spikeEnabled
+                  ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
+                  : 'bg-white/5 text-[var(--c-tx4)] border border-white/10 hover:bg-white/10'
+              }`}
+            >
+              {config.spikeEnabled ? 'Enabled' : 'Disabled'}
+            </button>
+          </div>
+
+          {config.spikeEnabled && (
+            <div className="space-y-3 pt-2 border-t border-[var(--c-br1)]">
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label htmlFor="spike-prob" className="text-[10px] uppercase text-[var(--c-tx4)]">Spike Probability (Pspike %)</Label>
+                  <Input
+                    id="spike-prob"
+                    type="text"
+                    placeholder="e.g. 5 (5%)"
+                    value={spikeProbStr}
+                    onChange={(e) => {
+                      setSpikeProbStr(e.target.value);
+                      if (e.target.value === '' || e.target.value === '-') return;
+                      const parsed = parseFloat(e.target.value);
+                      if (!isNaN(parsed)) {
+                        onChange({ spikeProbability: parsed > 1 ? parsed / 100.0 : parsed });
+                      }
+                    }}
+                    onBlur={(e) => {
+                      const parsed = parseFloat(e.target.value);
+                      const valid = isNaN(parsed) ? 5 : Math.max(0, Math.min(100, parsed));
+                      setSpikeProbStr(String(valid));
+                      onChange({ spikeProbability: valid / 100.0 });
+                    }}
+                    className="h-8 text-xs font-mono"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="spike-mode" className="text-[10px] uppercase text-[var(--c-tx4)]">Spike Mode</Label>
+                  <CustomDropdown
+                    id="spike-mode"
+                    value={config.spikeMode ?? 'FIXED_OFFSET'}
+                    onChange={(val) => onChange({ spikeMode: val as any })}
+                    options={[
+                      { value: 'FIXED_OFFSET', label: 'Fixed Offset (± Mag)' },
+                      { value: 'RANGE_SPIKE', label: 'Critical Range (Min..Max)' },
+                      { value: 'MULTIPLIER', label: 'Multiplier (Base × K)' }
+                    ]}
+                  />
+                </div>
+              </div>
+
+              {config.spikeMode === 'RANGE_SPIKE' ? (
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <Label htmlFor="spike-min" className="text-[10px] uppercase text-[var(--c-tx4)]">Min Spike Value</Label>
+                    <Input
+                      id="spike-min"
+                      type="text"
+                      placeholder="e.g. 100.0"
+                      value={spikeMinStr}
+                      onChange={(e) => handleNumericChange(e.target.value, setSpikeMinStr, 'spikeMin')}
+                      onBlur={(e) => handleNumericBlur(e.target.value, setSpikeMinStr, 'spikeMin', 100.0)}
+                      className="h-8 text-xs font-mono"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="spike-max" className="text-[10px] uppercase text-[var(--c-tx4)]">Max Spike Value</Label>
+                    <Input
+                      id="spike-max"
+                      type="text"
+                      placeholder="e.g. 200.0"
+                      value={spikeMaxStr}
+                      onChange={(e) => handleNumericChange(e.target.value, setSpikeMaxStr, 'spikeMax')}
+                      onBlur={(e) => handleNumericBlur(e.target.value, setSpikeMaxStr, 'spikeMax', 200.0)}
+                      className="h-8 text-xs font-mono"
+                    />
+                  </div>
+                </div>
+              ) : config.spikeMode === 'MULTIPLIER' ? (
+                <div className="space-y-1">
+                  <Label htmlFor="spike-mult" className="text-[10px] uppercase text-[var(--c-tx4)]">Multiplier Factor (K)</Label>
+                  <Input
+                    id="spike-mult"
+                    type="text"
+                    placeholder="e.g. 2.5"
+                    value={spikeMultStr}
+                    onChange={(e) => handleNumericChange(e.target.value, setSpikeMultStr, 'spikeMultiplier')}
+                    onBlur={(e) => handleNumericBlur(e.target.value, setSpikeMultStr, 'spikeMultiplier', 2.0)}
+                    className="h-8 text-xs font-mono"
+                  />
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  <Label htmlFor="spike-mag" className="text-[10px] uppercase text-[var(--c-tx4)]">Offset Magnitude (±)</Label>
+                  <Input
+                    id="spike-mag"
+                    type="text"
+                    placeholder="e.g. 50.0"
+                    value={spikeMagStr}
+                    onChange={(e) => handleNumericChange(e.target.value, setSpikeMagStr, 'spikeMagnitude')}
+                    onBlur={(e) => handleNumericBlur(e.target.value, setSpikeMagStr, 'spikeMagnitude', 50.0)}
+                    className="h-8 text-xs font-mono"
+                  />
                 </div>
               )}
             </div>
