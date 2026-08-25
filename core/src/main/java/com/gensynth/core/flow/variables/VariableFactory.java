@@ -2,7 +2,9 @@ package com.gensynth.core.flow.variables;
 
 import com.gensynth.core.flow.variables.config.*;
 import java.util.Map;
+import java.util.HashMap;
 import java.util.List;
+import java.util.ArrayList;
 
 /**
  * Factory for creating configurable variables fluently.
@@ -234,8 +236,60 @@ public class VariableFactory {
 
             case "LIST":
                 ListVariableConfig listConfig = createList(id);
-                if (configMap.containsKey("items")) {
-                    listConfig.list((List<?>) configMap.get("items"));
+                if (configMap.containsKey("items") && configMap.get("items") instanceof List) {
+                    List<?> rawItems = (List<?>) configMap.get("items");
+                    List<ListVariableConfig.ListItem> parsedItems = new ArrayList<>();
+                    for (Object rawItem : rawItems) {
+                        if (rawItem instanceof Map) {
+                            Map<?, ?> itemMap = (Map<?, ?>) rawItem;
+                            String itemId = itemMap.containsKey("id") ? String.valueOf(itemMap.get("id")) : null;
+                            Object val = itemMap.get("value");
+                            double weight = itemMap.containsKey("weight") ? ((Number) itemMap.get("weight")).doubleValue() : 1.0;
+                            ListVariableConfig.ListItem item = new ListVariableConfig.ListItem(itemId, val, weight);
+
+                            if (itemMap.containsKey("embeddedConfig") && itemMap.get("embeddedConfig") instanceof Map) {
+                                @SuppressWarnings("unchecked")
+                                Map<String, Object> subMap = (Map<String, Object>) itemMap.get("embeddedConfig");
+                                String subType = itemMap.containsKey("embeddedType") ? String.valueOf(itemMap.get("embeddedType")) : "NUMERIC";
+                                if (subMap.containsKey("type")) {
+                                    subType = String.valueOf(subMap.get("type"));
+                                }
+                                String subId = id + "_embedded_" + item.getId();
+                                VariableConfiguration embeddedConfig = createFromMapInternal(subId, subType, subMap);
+                                item.setEmbeddedConfig(embeddedConfig);
+                            }
+                            parsedItems.add(item);
+                        } else if (rawItem instanceof ListVariableConfig.ListItem) {
+                            parsedItems.add((ListVariableConfig.ListItem) rawItem);
+                        } else {
+                            parsedItems.add(new ListVariableConfig.ListItem(null, rawItem, 1.0));
+                        }
+                    }
+                    listConfig.items(parsedItems);
+                }
+                if (configMap.containsKey("transitionMatrix") && configMap.get("transitionMatrix") instanceof Map) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Map<String, Object>> rawMatrix = (Map<String, Map<String, Object>>) configMap.get("transitionMatrix");
+                    Map<String, Map<String, Double>> matrix = new HashMap<>();
+                    for (Map.Entry<String, Map<String, Object>> entry : rawMatrix.entrySet()) {
+                        Map<String, Double> innerMap = new HashMap<>();
+                        if (entry.getValue() != null) {
+                            for (Map.Entry<String, Object> innerEntry : entry.getValue().entrySet()) {
+                                if (innerEntry.getValue() instanceof Number) {
+                                    innerMap.put(innerEntry.getKey(), ((Number) innerEntry.getValue()).doubleValue());
+                                }
+                            }
+                        }
+                        matrix.put(entry.getKey(), innerMap);
+                    }
+                    listConfig.transitionMatrix(matrix);
+                }
+                if (configMap.containsKey("selectionStrategy") && configMap.get("selectionStrategy") != null) {
+                    try {
+                        listConfig.selectionStrategy(ListVariableConfig.SelectionStrategy.valueOf(((String) configMap.get("selectionStrategy")).toUpperCase()));
+                    } catch (Exception e) {
+                        // ignore or default
+                    }
                 }
                 return listConfig;
 
