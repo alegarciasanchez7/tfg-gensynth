@@ -240,4 +240,15 @@
     font-weight: var(--font-weight-normal);
     line-height: 1.5;
   }
+
+  select {
+    background-color: var(--c-bg1);
+    color: var(--c-tx2);
+    border-color: var(--c-br1);
+  }
+
+  select option {
+    background-color: var(--c-bg2);
+    color: var(--c-tx1);
+  }
 }

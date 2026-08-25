@@ -12,12 +12,11 @@ import static org.junit.Assert.*;
 public class ListVariableConfigValidationTest {
 
     @Test
-    public void testValidate_emptyList_returnsError() {
+    public void testValidate_emptyList_isValid() {
         ListVariableConfig config = VariableFactory.createList("l1");
-        // No items added, list should be invalid
+        // Empty list is valid during creation/configuration
         List<String> errors = config.validate();
-        assertFalse(errors.isEmpty());
-        assertTrue(errors.get(0).contains("non-empty list of items"));
+        assertTrue(errors.isEmpty());
     }
 
     @Test

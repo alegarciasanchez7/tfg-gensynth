@@ -125,7 +125,7 @@ public class App {
                         ", \"message\": \"Plugin caused a critical startup failure and was automatically removed.\"}");
             }
 
-            Files.writeString(reportPath, json);
+            Files.writeString(reportPath, json, java.nio.charset.StandardCharsets.UTF_8);
             logger.info("[PLUGINS] Rollback report saved to {}", reportPath);
         } catch (IOException e) {
             logger.error("Failed to save rollback report", e);

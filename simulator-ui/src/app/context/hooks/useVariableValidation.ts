@@ -63,9 +63,7 @@ export function useVariableValidation() {
         }
       }
     } else if (type === 'list') {
-      if (!config.items || config.items.length === 0) {
-        errors.items = 'List items cannot be empty';
-      } else {
+      if (config.items && config.items.length > 0) {
         const hasNegativeWeight = config.items.some(
           (item: any) => typeof item === 'object' && item !== null && item.weight < 0
         );
