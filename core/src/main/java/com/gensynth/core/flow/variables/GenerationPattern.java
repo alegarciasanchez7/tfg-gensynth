@@ -18,6 +18,9 @@ public enum GenerationPattern {
     
     // String patterns
     RANDOM_STRING("Random String - Randomized characters"),
+    REGEX("Regex Pattern - Regex generated string"),
+    TEMPLATE("Template - Dynamic interpolated string template with variable placeholders"),
+    FORMATTED_MASK("Formatted Mask - Preset masks like MAC, IP, UUID, alphanumeric"),
     
     // List patterns
     RANDOM_FROM_LIST("Random from List - Pick randomly"),
