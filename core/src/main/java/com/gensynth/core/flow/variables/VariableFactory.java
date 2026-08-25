@@ -232,6 +232,22 @@ public class VariableFactory {
                 }
                 if (configMap.containsKey("constantValue"))
                     strConfig.constant((String) configMap.get("constantValue"));
+                if (configMap.containsKey("template"))
+                    strConfig.template((String) configMap.get("template"));
+                if (configMap.containsKey("formattedMaskType"))
+                    strConfig.formattedMaskType((String) configMap.get("formattedMaskType"));
+                if (configMap.containsKey("customMask"))
+                    strConfig.customMask((String) configMap.get("customMask"));
+                if (configMap.containsKey("alphanumericCase"))
+                    strConfig.alphanumericCase((String) configMap.get("alphanumericCase"));
+                if (configMap.containsKey("corruptionEnabled") && configMap.get("corruptionEnabled") != null)
+                    strConfig.corruptionEnabled((Boolean) configMap.get("corruptionEnabled"));
+                if (configMap.containsKey("corruptionProbability") && configMap.get("corruptionProbability") != null)
+                    strConfig.corruptionProbability(((Number) configMap.get("corruptionProbability")).doubleValue());
+                if (configMap.containsKey("corruptionMode"))
+                    strConfig.corruptionMode((String) configMap.get("corruptionMode"));
+                if (configMap.containsKey("corruptionMagnitude") && configMap.get("corruptionMagnitude") != null)
+                    strConfig.corruptionMagnitude(((Number) configMap.get("corruptionMagnitude")).intValue());
                 return strConfig;
 
             case "LIST":
