@@ -77,8 +77,22 @@ export interface StringVariableConfig extends BaseVariableConfig {
   constantValue?: string;
 }
 
+export type ListSelectionStrategy = 'WEIGHTED_RANDOM' | 'SEQUENTIAL' | 'SHUFFLE' | 'MARKOV_CHAIN';
+
+export interface ListItemConfig {
+  id: string;
+  value?: any;
+  weight?: number;
+  isEmbedded?: boolean;
+  embeddedType?: VariableType;
+  embeddedConfig?: VariableConfig;
+}
+
 export interface ListVariableConfig extends BaseVariableConfig {
-  items?: Array<any | { value: any; weight: number }>;
+  selectionStrategy?: ListSelectionStrategy;
+  items?: ListItemConfig[];
+  transitionMatrix?: Record<string, Record<string, number>>;
+  shuffle?: boolean;
 }
 
 export interface BooleanVariableConfig extends BaseVariableConfig {

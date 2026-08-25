@@ -23,6 +23,7 @@ public enum GenerationPattern {
     RANDOM_FROM_LIST("Random from List - Pick randomly"),
     SEQUENTIAL_FROM_LIST("Sequential from List - Sequential pick"),
     CONSTANT_FROM_LIST("Constant from List - Fixed item"),
+    MARKOV_CHAIN("Markov Chain - State transition matrix"),
     
     // Date patterns
     FIXED_TEMPORAL("Fixed Temporal - Constant date/time"),
