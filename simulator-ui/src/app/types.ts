@@ -71,10 +71,23 @@ export interface NumericVariableConfig extends BaseVariableConfig {
   spikeMultiplier?: number;
 }
 
+export type StringFormattedMaskType = 'MAC_ADDRESS' | 'IPV4' | 'IPV6' | 'UUID_V4' | 'CUSTOM_MASK' | 'ALPHANUMERIC';
+export type StringCorruptionMode = 'TRUNCATE' | 'INJECT_ANOMALOUS' | 'REPLACE_CHAR' | 'NULL_BYTE' | 'MIXED';
+
 export interface StringVariableConfig extends BaseVariableConfig {
   fixedLength?: number;
   regexPattern?: string;
   constantValue?: string;
+  
+  template?: string;
+  formattedMaskType?: StringFormattedMaskType;
+  customMask?: string;
+  alphanumericCase?: 'UPPER' | 'LOWER' | 'MIXED';
+  
+  corruptionEnabled?: boolean;
+  corruptionProbability?: number;
+  corruptionMode?: StringCorruptionMode;
+  corruptionMagnitude?: number;
 }
 
 export type ListSelectionStrategy = 'WEIGHTED_RANDOM' | 'SEQUENTIAL' | 'SHUFFLE' | 'MARKOV_CHAIN';
