@@ -134,8 +134,36 @@ export interface TemporalVariableConfig extends BaseVariableConfig {
   driftRateMsPerTick?: number;
 }
 
+export type CoordinateSystem = 'CARTESIAN_2D' | 'CARTESIAN_3D' | 'GEOSPATIAL';
+export type GeospatialFormat = 'DECIMAL_DEGREES' | 'DEGREES_MINUTES_SECONDS';
+export type BoundaryBehavior = 'BOUNCE' | 'CLAMP' | 'WRAP';
+
+export interface Point3DCoord {
+  x?: number;
+  y?: number;
+  z?: number;
+}
+
 export interface PointVariableConfig extends BaseVariableConfig {
+  coordinateSystem?: CoordinateSystem;
+  geospatialFormat?: GeospatialFormat;
+  boundaryBehavior?: BoundaryBehavior;
+  minPoint?: Point3DCoord;
+  maxPoint?: Point3DCoord;
+  fixedPoint?: Point3DCoord;
   maxStepDistance?: number;
+  inertia?: number;
+  waypoints?: Point3DCoord[];
+  interpolationSteps?: number;
+  navigationSpeed?: number;
+  loopPath?: boolean;
+  orbitCenter?: Point3DCoord;
+  orbitRadius?: number;
+  angularSpeed?: number;
+  spiralRate?: number;
+  gpsNoiseEnabled?: boolean;
+  jitterRadius?: number;
+  boundaryPolygon?: Point3DCoord[];
 }
 
 export type VariableConfig = 

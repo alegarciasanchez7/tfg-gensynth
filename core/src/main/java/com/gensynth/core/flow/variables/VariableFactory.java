@@ -361,8 +361,47 @@ public class VariableFactory {
 
             case "POINT":
                 PointVariableConfig pointConfig = createPoint(id);
+                if (configMap.containsKey("coordinateSystem")) {
+                    try {
+                        pointConfig.coordinateSystem(CoordinateSystem.valueOf(configMap.get("coordinateSystem").toString()));
+                    } catch (Exception ignored) {}
+                }
+                if (configMap.containsKey("geospatialFormat")) {
+                    try {
+                        pointConfig.geospatialFormat(GeospatialFormat.valueOf(configMap.get("geospatialFormat").toString()));
+                    } catch (Exception ignored) {}
+                }
+                if (configMap.containsKey("boundaryBehavior")) {
+                    try {
+                        pointConfig.boundaryBehavior(BoundaryBehavior.valueOf(configMap.get("boundaryBehavior").toString()));
+                    } catch (Exception ignored) {}
+                }
                 if (configMap.containsKey("maxStepDistance"))
                     pointConfig.maxStepDistance(((Number) configMap.get("maxStepDistance")).doubleValue());
+                if (configMap.containsKey("inertia"))
+                    pointConfig.inertia(((Number) configMap.get("inertia")).doubleValue());
+                if (configMap.containsKey("orbitRadius"))
+                    pointConfig.orbitRadius(((Number) configMap.get("orbitRadius")).doubleValue());
+                if (configMap.containsKey("angularSpeed"))
+                    pointConfig.angularSpeed(((Number) configMap.get("angularSpeed")).doubleValue());
+                if (configMap.containsKey("spiralRate"))
+                    pointConfig.spiralRate(((Number) configMap.get("spiralRate")).doubleValue());
+                if (configMap.containsKey("jitterRadius"))
+                    pointConfig.jitterRadius(((Number) configMap.get("jitterRadius")).doubleValue());
+                if (configMap.containsKey("gpsNoiseEnabled"))
+                    pointConfig.gpsNoiseEnabled(Boolean.TRUE.equals(configMap.get("gpsNoiseEnabled")));
+                if (configMap.containsKey("interpolationSteps"))
+                    pointConfig.interpolationSteps(((Number) configMap.get("interpolationSteps")).intValue());
+                if (configMap.get("boundaryPolygon") instanceof List<?> polyList) {
+                    for (Object item : polyList) {
+                        if (item instanceof Map<?, ?> ptMap) {
+                            double px = ptMap.containsKey("x") ? ((Number) ptMap.get("x")).doubleValue() : (ptMap.containsKey("lat") ? ((Number) ptMap.get("lat")).doubleValue() : 0.0);
+                            double py = ptMap.containsKey("y") ? ((Number) ptMap.get("y")).doubleValue() : (ptMap.containsKey("lon") ? ((Number) ptMap.get("lon")).doubleValue() : 0.0);
+                            double pz = ptMap.containsKey("z") ? ((Number) ptMap.get("z")).doubleValue() : (ptMap.containsKey("alt") ? ((Number) ptMap.get("alt")).doubleValue() : 0.0);
+                            pointConfig.addBoundaryPolygonPoint(px, py, pz);
+                        }
+                    }
+                }
                 return pointConfig;
 
             default:

@@ -23,6 +23,7 @@ import { TemporalConfigPanel } from './config/TemporalConfigPanel';
 import { PointConfigPanel } from './config/PointConfigPanel';
 import { BooleanConfigPanel } from './config/BooleanConfigPanel';
 import { ConditionalRulesTab } from './config/ConditionalRulesTab';
+import { SpatialBoundariesTab } from './config/SpatialBoundariesTab';
 
 export type VariableEditorTheme = {
   icon: LucideIcon;
@@ -269,6 +270,9 @@ export function VariableEditorConfigCard({ typeLabel, theme, draft, setDraft }: 
         <TabsList className="mb-2 bg-[var(--c-bg2)] border-[var(--c-br1)]">
           <TabsTrigger value="visual">Visual Editor</TabsTrigger>
           <TabsTrigger value="rules">Rules</TabsTrigger>
+          {draft.type === 'point' && (
+            <TabsTrigger value="boundaries">Spatial Boundaries</TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="visual" className="mt-0">
@@ -288,6 +292,17 @@ export function VariableEditorConfigCard({ typeLabel, theme, draft, setDraft }: 
             />
           </div>
         </TabsContent>
+
+        {draft.type === 'point' && (
+          <TabsContent value="boundaries" className="mt-0">
+            <div className="p-3 border rounded border-[var(--c-br1)] bg-[var(--c-bg2)]">
+              <SpatialBoundariesTab
+                config={parsedConfig as PointVariableConfig}
+                onChange={handleConfigChange}
+              />
+            </div>
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );
