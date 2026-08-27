@@ -324,6 +324,39 @@ public class VariableFactory {
                     dateConfig.timeZone((String) configMap.get("timeZone"));
                 if (configMap.containsKey("temporalType"))
                     dateConfig.temporalType((String) configMap.get("temporalType"));
+                if (configMap.containsKey("timeAdvanceMode") && configMap.get("timeAdvanceMode") != null)
+                    dateConfig.timeAdvanceMode(String.valueOf(configMap.get("timeAdvanceMode")));
+                if (configMap.containsKey("clockDriftEnabled") && configMap.get("clockDriftEnabled") != null)
+                    dateConfig.clockDriftEnabled((Boolean) configMap.get("clockDriftEnabled"));
+                if (configMap.containsKey("maxDriftMs") && configMap.get("maxDriftMs") != null)
+                    dateConfig.maxDriftMs(((Number) configMap.get("maxDriftMs")).longValue());
+                if (configMap.containsKey("driftType") && configMap.get("driftType") != null)
+                    dateConfig.driftType(String.valueOf(configMap.get("driftType")));
+                if (configMap.containsKey("driftRateMsPerTick") && configMap.get("driftRateMsPerTick") != null)
+                    dateConfig.driftRateMsPerTick(((Number) configMap.get("driftRateMsPerTick")).doubleValue());
+                if (configMap.containsKey("backfillStrategy") && configMap.get("backfillStrategy") != null)
+                    dateConfig.backfillStrategy(String.valueOf(configMap.get("backfillStrategy")));
+                if (configMap.containsKey("incrementMs") && configMap.get("incrementMs") != null)
+                    dateConfig.incrementMillis(((Number) configMap.get("incrementMs")).longValue());
+                if (configMap.containsKey("startDate") && configMap.get("startDate") != null) {
+                    try {
+                        dateConfig.startDate(java.time.Instant.parse(String.valueOf(configMap.get("startDate"))));
+                    } catch (Exception ignored) {}
+                }
+                if (configMap.containsKey("fixedDate") && configMap.get("fixedDate") != null) {
+                    try {
+                        dateConfig.fixedDate(java.time.Instant.parse(String.valueOf(configMap.get("fixedDate"))));
+                    } catch (Exception ignored) {}
+                }
+                if (configMap.containsKey("rangeStart") && configMap.get("rangeStart") != null) {
+                    try {
+                        java.time.Instant rStart = java.time.Instant.parse(String.valueOf(configMap.get("rangeStart")));
+                        java.time.Instant rEnd = configMap.containsKey("rangeEnd") && configMap.get("rangeEnd") != null
+                            ? java.time.Instant.parse(String.valueOf(configMap.get("rangeEnd")))
+                            : rStart.plusSeconds(3600);
+                        dateConfig.range(rStart, rEnd);
+                    } catch (Exception ignored) {}
+                }
                 return dateConfig;
 
             case "POINT":
