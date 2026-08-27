@@ -9,9 +9,14 @@ import java.util.Objects;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
- * Generates 3D points using fixed, random and path interpolation modes.
+ * Generates 2D, 3D, and Geospatial points using customizable coordinate systems, 
+ * movement patterns, boundary behaviors, and GPS noise jitter.
  */
 public class PointVariableConfig extends VariableConfiguration {
+
+    private CoordinateSystem coordinateSystem;
+    private GeospatialFormat geospatialFormat;
+    private BoundaryBehavior boundaryBehavior;
 
     private Point3D fixedPoint;
     private Point3D minPoint;
@@ -19,12 +24,31 @@ public class PointVariableConfig extends VariableConfiguration {
 
     private List<Point3D> path;
     private int interpolationSteps;
+    private double navigationSpeed;
+    private boolean loopPath;
     private int currentSegmentIndex;
     private int stepInSegment;
 
-    // Continuous movement
+    // Continuous movement / Random walk
     private double maxStepDistance;
+    private double inertia; // 0.0 (pure random step) to 1.0 (full momentum retention)
     private Point3D lastPoint;
+    private Point3D lastVelocity;
+
+    // Circular Orbit
+    private Point3D orbitCenter;
+    private double orbitRadius;
+    private double angularSpeed; // radians per tick
+    private double spiralRate;   // radius change per tick
+    private double currentAngle;
+    private double currentRadius;
+
+    // GPS Jitter / Noise
+    private boolean gpsNoiseEnabled;
+    private double jitterRadius;
+
+    // Custom Multi-Vertex Spatial Polygon (Min 3 vertices)
+    private List<Point3D> boundaryPolygon;
 
     // Anomaly state
     private long cachedWhenTicks = -1;
@@ -34,17 +58,71 @@ public class PointVariableConfig extends VariableConfiguration {
     public PointVariableConfig() {
         this.type = VariableType.POINT;
         this.pattern = GenerationPattern.RANDOM_POINT;
+        this.coordinateSystem = CoordinateSystem.CARTESIAN_3D;
+        this.geospatialFormat = GeospatialFormat.DECIMAL_DEGREES;
+        this.boundaryBehavior = BoundaryBehavior.CLAMP;
+
         this.fixedPoint = new Point3D(0.0, 0.0, 0.0);
         this.minPoint = new Point3D(0.0, 0.0, 0.0);
         this.maxPoint = new Point3D(1.0, 1.0, 1.0);
+        this.boundaryPolygon = new ArrayList<>();
         this.path = new ArrayList<>(8);
         this.interpolationSteps = 1;
+        this.navigationSpeed = 1.0;
+        this.loopPath = true;
         this.currentSegmentIndex = 0;
         this.stepInSegment = 0;
+
         this.maxStepDistance = 0.1;
+        this.inertia = 0.0;
         this.lastPoint = null;
+        this.lastVelocity = new Point3D(0.0, 0.0, 0.0);
+
+        this.orbitCenter = new Point3D(0.0, 0.0, 0.0);
+        this.orbitRadius = 10.0;
+        this.angularSpeed = 0.1;
+        this.spiralRate = 0.0;
+        this.currentAngle = 0.0;
+        this.currentRadius = -1.0;
+
+        this.gpsNoiseEnabled = false;
+        this.jitterRadius = 0.0;
+
         this.isAnomalous = false;
         this.anomalyStartTick = 0;
+    }
+
+    public CoordinateSystem getCoordinateSystem() {
+        return coordinateSystem;
+    }
+
+    public PointVariableConfig coordinateSystem(CoordinateSystem system) {
+        if (system != null) {
+            this.coordinateSystem = system;
+        }
+        return this;
+    }
+
+    public GeospatialFormat getGeospatialFormat() {
+        return geospatialFormat;
+    }
+
+    public PointVariableConfig geospatialFormat(GeospatialFormat format) {
+        if (format != null) {
+            this.geospatialFormat = format;
+        }
+        return this;
+    }
+
+    public BoundaryBehavior getBoundaryBehavior() {
+        return boundaryBehavior;
+    }
+
+    public PointVariableConfig boundaryBehavior(BoundaryBehavior behavior) {
+        if (behavior != null) {
+            this.boundaryBehavior = behavior;
+        }
+        return this;
     }
 
     public PointVariableConfig fixedPoint(double x, double y, double z) {
@@ -74,11 +152,102 @@ public class PointVariableConfig extends VariableConfiguration {
         return this;
     }
 
+    public PointVariableConfig navigationSpeed(double speed) {
+        this.navigationSpeed = speed;
+        return this;
+    }
+
+    public PointVariableConfig loopPath(boolean loop) {
+        this.loopPath = loop;
+        return this;
+    }
+
+    public PointVariableConfig inertia(double inertia) {
+        this.inertia = Math.max(0.0, Math.min(1.0, inertia));
+        return this;
+    }
+
+    public double getInertia() {
+        return inertia;
+    }
+
+    public PointVariableConfig orbitCenter(double x, double y, double z) {
+        this.orbitCenter = new Point3D(x, y, z);
+        return this;
+    }
+
+    public PointVariableConfig orbitRadius(double radius) {
+        this.orbitRadius = radius;
+        return this;
+    }
+
+    public PointVariableConfig angularSpeed(double speedRadPerTick) {
+        this.angularSpeed = speedRadPerTick;
+        return this;
+    }
+
+    public PointVariableConfig spiralRate(double rate) {
+        this.spiralRate = rate;
+        return this;
+    }
+
+    public PointVariableConfig gpsNoiseEnabled(boolean enabled) {
+        this.gpsNoiseEnabled = enabled;
+        return this;
+    }
+
+    public PointVariableConfig jitterRadius(double radius) {
+        this.jitterRadius = Math.max(0.0, radius);
+        if (radius > 0) {
+            this.gpsNoiseEnabled = true;
+        }
+        return this;
+    }
+
+    public PointVariableConfig addBoundaryPolygonPoint(double x, double y, double z) {
+        this.boundaryPolygon.add(new Point3D(x, y, z));
+        return this;
+    }
+
+    public PointVariableConfig boundaryPolygon(List<Point3D> points) {
+        if (points != null) {
+            this.boundaryPolygon = new ArrayList<>(points);
+        }
+        return this;
+    }
+
+    public List<Point3D> getBoundaryPolygon() {
+        return boundaryPolygon;
+    }
+
+    /**
+     * Ray-Casting algorithm for checking point inclusion inside 2D/Geospatial boundary polygon.
+     */
+    public boolean isPointInsidePolygon(double x, double y) {
+        if (boundaryPolygon == null || boundaryPolygon.size() < 3) {
+            return true;
+        }
+        boolean inside = false;
+        int n = boundaryPolygon.size();
+        for (int i = 0, j = n - 1; i < n; j = i++) {
+            double xi = boundaryPolygon.get(i).x, yi = boundaryPolygon.get(i).y;
+            double xj = boundaryPolygon.get(j).x, yj = boundaryPolygon.get(j).y;
+            boolean intersect = ((yi > y) != (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+            if (intersect) {
+                inside = !inside;
+            }
+        }
+        return inside;
+    }
+
     @Override
     public java.util.List<String> validate() {
         java.util.List<String> errors = new java.util.ArrayList<>();
         if (maxStepDistance < 0) {
             errors.add("Maximum step distance cannot be negative");
+        }
+        if (jitterRadius < 0) {
+            errors.add("Jitter radius cannot be negative");
         }
         return errors;
     }
@@ -92,7 +261,7 @@ public class PointVariableConfig extends VariableConfiguration {
             Object val = anomalyConfig.getAnomalousValue();
             if (val instanceof Point3D) {
                 Point3D p = (Point3D) val;
-                return Map.of("x", p.x, "y", p.y, "z", p.z);
+                return formatPointOutput(p);
             }
             return val;
         }
@@ -106,17 +275,23 @@ public class PointVariableConfig extends VariableConfiguration {
                 point = generateRandomPoint();
                 break;
             case PATH_INTERPOLATOR:
+            case WAYPOINT_NAVIGATION:
                 point = generatePathPoint();
                 break;
             case CONTINUOUS_MOVEMENT:
-                point = generateContinuousPoint();
+            case RANDOM_WALK:
+                point = generateRandomWalkPoint();
+                break;
+            case CIRCULAR_ORBIT:
+                point = generateCircularOrbitPoint();
                 break;
             default:
                 point = fixedPoint;
                 break;
         }
-        
-        return Map.of("x", point.x, "y", point.y, "z", point.z);
+
+        Point3D finalPoint = applyJitter(point);
+        return formatPointOutput(finalPoint);
     }
 
     private Point3D generateRandomPoint() {
@@ -147,29 +322,167 @@ public class PointVariableConfig extends VariableConfiguration {
         stepInSegment++;
         if (stepInSegment >= interpolationSteps) {
             stepInSegment = 0;
-            currentSegmentIndex = (currentSegmentIndex + 1) % path.size();
+            if (loopPath) {
+                currentSegmentIndex = (currentSegmentIndex + 1) % path.size();
+            } else if (currentSegmentIndex < path.size() - 2) {
+                currentSegmentIndex++;
+            }
         }
 
         return result;
     }
 
-    private Point3D generateContinuousPoint() {
+    private Point3D generateRandomWalkPoint() {
         if (lastPoint == null) {
             lastPoint = generateRandomPoint();
+            lastVelocity = new Point3D(0.0, 0.0, 0.0);
             return lastPoint;
         }
 
-        // Random walk within maxStepDistance
-        double dx = (ThreadLocalRandom.current().nextDouble() * 2 - 1) * maxStepDistance;
-        double dy = (ThreadLocalRandom.current().nextDouble() * 2 - 1) * maxStepDistance;
-        double dz = (ThreadLocalRandom.current().nextDouble() * 2 - 1) * maxStepDistance;
+        // Random step vector
+        double rx = (ThreadLocalRandom.current().nextDouble() * 2 - 1) * maxStepDistance;
+        double ry = (ThreadLocalRandom.current().nextDouble() * 2 - 1) * maxStepDistance;
+        double rz = (ThreadLocalRandom.current().nextDouble() * 2 - 1) * maxStepDistance;
 
-        double nextX = Math.max(minPoint.x, Math.min(maxPoint.x, lastPoint.x + dx));
-        double nextY = Math.max(minPoint.y, Math.min(maxPoint.y, lastPoint.y + dy));
-        double nextZ = Math.max(minPoint.z, Math.min(maxPoint.z, lastPoint.z + dz));
+        // Apply momentum / inertia angle factor
+        double vx = (inertia * lastVelocity.x) + ((1.0 - inertia) * rx);
+        double vy = (inertia * lastVelocity.y) + ((1.0 - inertia) * ry);
+        double vz = (inertia * lastVelocity.z) + ((1.0 - inertia) * rz);
 
-        lastPoint = new Point3D(nextX, nextY, nextZ);
+        double targetX = lastPoint.x + vx;
+        double targetY = lastPoint.y + vy;
+        double targetZ = lastPoint.z + vz;
+
+        Point3D bounded = applyBoundaries(targetX, targetY, targetZ, vx, vy, vz);
+        lastPoint = bounded;
         return lastPoint;
+    }
+
+    private Point3D generateCircularOrbitPoint() {
+        if (currentRadius < 0) {
+            currentRadius = orbitRadius;
+        }
+
+        double x = orbitCenter.x + currentRadius * Math.cos(currentAngle);
+        double y = orbitCenter.y + currentRadius * Math.sin(currentAngle);
+        double z = orbitCenter.z;
+
+        currentAngle += angularSpeed;
+        if (spiralRate != 0.0) {
+            currentRadius += spiralRate;
+        }
+
+        return new Point3D(x, y, z);
+    }
+
+    private Point3D applyBoundaries(double x, double y, double z, double vx, double vy, double vz) {
+        double newX = x;
+        double newY = y;
+        double newZ = z;
+        double newVx = vx;
+        double newVy = vy;
+        double newVz = vz;
+
+        switch (boundaryBehavior) {
+            case CLAMP:
+                newX = Math.max(minPoint.x, Math.min(maxPoint.x, x));
+                newY = Math.max(minPoint.y, Math.min(maxPoint.y, y));
+                newZ = Math.max(minPoint.z, Math.min(maxPoint.z, z));
+                break;
+
+            case WRAP:
+                newX = wrapValue(x, minPoint.x, maxPoint.x);
+                newY = wrapValue(y, minPoint.y, maxPoint.y);
+                newZ = wrapValue(z, minPoint.z, maxPoint.z);
+                break;
+
+            case BOUNCE:
+                if (x < minPoint.x || x > maxPoint.x) {
+                    newVx = -vx;
+                    newX = Math.max(minPoint.x, Math.min(maxPoint.x, x < minPoint.x ? minPoint.x + (minPoint.x - x) : maxPoint.x - (x - maxPoint.x)));
+                }
+                if (y < minPoint.y || y > maxPoint.y) {
+                    newVy = -vy;
+                    newY = Math.max(minPoint.y, Math.min(maxPoint.y, y < minPoint.y ? minPoint.y + (minPoint.y - y) : maxPoint.y - (y - maxPoint.y)));
+                }
+                if (z < minPoint.z || z > maxPoint.z) {
+                    newVz = -vz;
+                    newZ = Math.max(minPoint.z, Math.min(maxPoint.z, z < minPoint.z ? minPoint.z + (minPoint.z - z) : maxPoint.z - (z - maxPoint.z)));
+                }
+                break;
+        }
+
+        lastVelocity = new Point3D(newVx, newVy, newVz);
+        return new Point3D(newX, newY, newZ);
+    }
+
+    private double wrapValue(double val, double min, double max) {
+        double range = max - min;
+        if (range <= 0) return min;
+        while (val < min) val += range;
+        while (val > max) val -= range;
+        return val;
+    }
+
+    private Point3D applyJitter(Point3D p) {
+        if (!gpsNoiseEnabled && jitterRadius <= 0) {
+            return p;
+        }
+        double jx = ThreadLocalRandom.current().nextGaussian() * jitterRadius;
+        double jy = ThreadLocalRandom.current().nextGaussian() * jitterRadius;
+        double jz = ThreadLocalRandom.current().nextGaussian() * jitterRadius;
+        return new Point3D(p.x + jx, p.y + jy, p.z + jz);
+    }
+
+    private Map<String, Object> formatPointOutput(Point3D p) {
+        Map<String, Object> map = new HashMap<>(6);
+        switch (coordinateSystem) {
+            case CARTESIAN_2D:
+                map.put("x", p.x);
+                map.put("y", p.y);
+                break;
+
+            case CARTESIAN_3D:
+                map.put("x", p.x);
+                map.put("y", p.y);
+                map.put("z", p.z);
+                break;
+
+            case GEOSPATIAL:
+                if (geospatialFormat == GeospatialFormat.DEGREES_MINUTES_SECONDS) {
+                    map.put("latitude", convertToDMS(p.x, true));
+                    map.put("longitude", convertToDMS(p.y, false));
+                    map.put("altitude", p.z);
+                    map.put("latitudeDecimal", p.x);
+                    map.put("longitudeDecimal", p.y);
+                } else {
+                    map.put("latitude", p.x);
+                    map.put("longitude", p.y);
+                    map.put("altitude", p.z);
+                }
+                break;
+        }
+        return map;
+    }
+
+    /**
+     * Converts decimal degrees coordinate to formatted Degrees, Minutes, Seconds (DMS) string.
+     */
+    public static String convertToDMS(double val, boolean isLatitude) {
+        char direction;
+        if (isLatitude) {
+            direction = val >= 0 ? 'N' : 'S';
+        } else {
+            direction = val >= 0 ? 'E' : 'W';
+        }
+
+        double absVal = Math.abs(val);
+        int degrees = (int) absVal;
+        double minutesRemainder = (absVal - degrees) * 60.0;
+        int minutes = (int) minutesRemainder;
+        double seconds = (minutesRemainder - minutes) * 60.0;
+
+        return String.format("%d° %d' %.2f\" %c", degrees, minutes, seconds, direction);
     }
 
     private double randomInRange(double min, double max) {
@@ -189,6 +502,9 @@ public class PointVariableConfig extends VariableConfiguration {
         currentSegmentIndex = 0;
         stepInSegment = 0;
         lastPoint = null;
+        lastVelocity = new Point3D(0.0, 0.0, 0.0);
+        currentAngle = 0.0;
+        currentRadius = -1.0;
         isAnomalous = false;
         anomalyStartTick = 0;
         cachedWhenTicks = -1;
@@ -196,14 +512,23 @@ public class PointVariableConfig extends VariableConfiguration {
 
     @Override
     public Map<String, Object> toMap() {
-        Map<String, Object> map = new HashMap<>(8);
+        Map<String, Object> map = new HashMap<>(16);
         map.put("identifier", identifier);
         map.put("type", type.toString());
         map.put("pattern", pattern.toString());
+        map.put("coordinateSystem", coordinateSystem.toString());
+        map.put("geospatialFormat", geospatialFormat.toString());
+        map.put("boundaryBehavior", boundaryBehavior.toString());
         map.put("fixedPoint", fixedPoint.toString());
         map.put("pathSize", path.size());
         map.put("interpolationSteps", interpolationSteps);
         map.put("maxStepDistance", maxStepDistance);
+        map.put("inertia", inertia);
+        map.put("orbitRadius", orbitRadius);
+        map.put("angularSpeed", angularSpeed);
+        map.put("spiralRate", spiralRate);
+        map.put("gpsNoiseEnabled", gpsNoiseEnabled);
+        map.put("jitterRadius", jitterRadius);
         return map;
     }
 
@@ -296,6 +621,38 @@ public class PointVariableConfig extends VariableConfiguration {
 
     public double getMaxStepDistance() {
         return maxStepDistance;
+    }
+
+    public Point3D getFixedPoint() {
+        return fixedPoint;
+    }
+
+    public Point3D getMinPoint() {
+        return minPoint;
+    }
+
+    public Point3D getMaxPoint() {
+        return maxPoint;
+    }
+
+    public Point3D getOrbitCenter() {
+        return orbitCenter;
+    }
+
+    public double getOrbitRadius() {
+        return orbitRadius;
+    }
+
+    public double getAngularSpeed() {
+        return angularSpeed;
+    }
+
+    public double getSpiralRate() {
+        return spiralRate;
+    }
+
+    public List<Point3D> getPath() {
+        return path;
     }
 
     public static class Point3D {

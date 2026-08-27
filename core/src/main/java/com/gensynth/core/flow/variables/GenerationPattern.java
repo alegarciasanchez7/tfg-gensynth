@@ -39,6 +39,9 @@ public enum GenerationPattern {
     RANDOM_POINT("Random Point - Random XYZ within bounds"),
     PATH_INTERPOLATOR("Path Interpolator - Interpolate across path points"),
     CONTINUOUS_MOVEMENT("Continuous Movement - Random walk within bounds"),
+    RANDOM_WALK("Random Walk - Smooth random walk with momentum"),
+    WAYPOINT_NAVIGATION("Waypoint Navigation - Follow waypoint sequence at set speed"),
+    CIRCULAR_ORBIT("Circular Orbit - Orbit or spiral around central point"),
 
     // Boolean patterns
     CONSTANT_BOOLEAN("Constant Boolean - Fixed TRUE/FALSE"),
