@@ -112,10 +112,26 @@ export interface BooleanVariableConfig extends BaseVariableConfig {
   currentValue?: boolean;
 }
 
+export type TemporalType = 'DATE' | 'TIMESTAMP' | 'TIME';
+export type TimeAdvanceMode = 'WALL_CLOCK' | 'SIMULATED_STEP' | 'BACKFILL_HISTORICAL' | 'FIXED';
+export type ClockDriftType = 'RANDOM_JITTER' | 'CONSTANT_OFFSET' | 'PROGRESSIVE_DRIFT';
+export type BackfillStrategy = 'SEQUENTIAL_STEP' | 'RANDOM_IN_RANGE';
+
 export interface TemporalVariableConfig extends BaseVariableConfig {
-  temporalType?: 'DATE' | 'TIMESTAMP' | 'TIME';
+  temporalType?: TemporalType;
+  timeAdvanceMode?: TimeAdvanceMode;
   dateFormat?: string;
   timeZone?: string;
+  startDate?: string;
+  incrementMs?: number;
+  fixedDate?: string;
+  rangeStart?: string;
+  rangeEnd?: string;
+  backfillStrategy?: BackfillStrategy;
+  clockDriftEnabled?: boolean;
+  maxDriftMs?: number;
+  driftType?: ClockDriftType;
+  driftRateMsPerTick?: number;
 }
 
 export interface PointVariableConfig extends BaseVariableConfig {
