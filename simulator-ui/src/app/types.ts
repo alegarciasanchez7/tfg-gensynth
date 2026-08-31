@@ -144,6 +144,10 @@ export interface Point3DCoord {
   z?: number;
 }
 
+export type AltitudeUnit = 'METERS' | 'FEET' | 'KILOMETERS' | 'MILES';
+export type AltitudeReference = 'MSL' | 'AGL' | 'ELLIPSOID';
+export type AltitudePattern = 'FOLLOW_XY' | 'FIXED_ALTITUDE' | 'RANDOM_UNIFORM' | 'RANDOM_WALK' | 'SINE_OSCILLATION';
+
 export interface PointVariableConfig extends BaseVariableConfig {
   coordinateSystem?: CoordinateSystem;
   geospatialFormat?: GeospatialFormat;
@@ -164,6 +168,12 @@ export interface PointVariableConfig extends BaseVariableConfig {
   gpsNoiseEnabled?: boolean;
   jitterRadius?: number;
   boundaryPolygon?: Point3DCoord[];
+  altitudeUnit?: AltitudeUnit;
+  altitudeReference?: AltitudeReference;
+  altitudePattern?: AltitudePattern;
+  initialAltitude?: number;
+  maxVerticalStep?: number;
+  altitudeOscillationSpeed?: number;
 }
 
 export type VariableConfig = 

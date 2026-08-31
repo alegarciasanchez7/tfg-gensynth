@@ -361,6 +361,11 @@ public class VariableFactory {
 
             case "POINT":
                 PointVariableConfig pointConfig = createPoint(id);
+                if (configMap.containsKey("pattern")) {
+                    try {
+                        pointConfig.pattern(GenerationPattern.valueOf(configMap.get("pattern").toString().toUpperCase()));
+                    } catch (Exception ignored) {}
+                }
                 if (configMap.containsKey("coordinateSystem")) {
                     try {
                         pointConfig.coordinateSystem(CoordinateSystem.valueOf(configMap.get("coordinateSystem").toString()));
@@ -375,6 +380,22 @@ public class VariableFactory {
                     try {
                         pointConfig.boundaryBehavior(BoundaryBehavior.valueOf(configMap.get("boundaryBehavior").toString()));
                     } catch (Exception ignored) {}
+                }
+                if (configMap.get("fixedPoint") instanceof Map<?, ?> fpMap) {
+                    double fx = fpMap.containsKey("x") ? ((Number) fpMap.get("x")).doubleValue() : (fpMap.containsKey("lat") ? ((Number) fpMap.get("lat")).doubleValue() : 0.0);
+                    double fy = fpMap.containsKey("y") ? ((Number) fpMap.get("y")).doubleValue() : (fpMap.containsKey("lon") ? ((Number) fpMap.get("lon")).doubleValue() : 0.0);
+                    double fz = fpMap.containsKey("z") ? ((Number) fpMap.get("z")).doubleValue() : (fpMap.containsKey("alt") ? ((Number) fpMap.get("alt")).doubleValue() : 0.0);
+                    pointConfig.fixedPoint(fx, fy, fz);
+                }
+                if (configMap.get("path") instanceof List<?> pathList) {
+                    for (Object item : pathList) {
+                        if (item instanceof Map<?, ?> ptMap) {
+                            double px = ptMap.containsKey("x") ? ((Number) ptMap.get("x")).doubleValue() : (ptMap.containsKey("lat") ? ((Number) ptMap.get("lat")).doubleValue() : 0.0);
+                            double py = ptMap.containsKey("y") ? ((Number) ptMap.get("y")).doubleValue() : (ptMap.containsKey("lon") ? ((Number) ptMap.get("lon")).doubleValue() : 0.0);
+                            double pz = ptMap.containsKey("z") ? ((Number) ptMap.get("z")).doubleValue() : (ptMap.containsKey("alt") ? ((Number) ptMap.get("alt")).doubleValue() : 0.0);
+                            pointConfig.addPathPoint(px, py, pz);
+                        }
+                    }
                 }
                 if (configMap.containsKey("maxStepDistance"))
                     pointConfig.maxStepDistance(((Number) configMap.get("maxStepDistance")).doubleValue());
@@ -392,6 +413,62 @@ public class VariableFactory {
                     pointConfig.gpsNoiseEnabled(Boolean.TRUE.equals(configMap.get("gpsNoiseEnabled")));
                 if (configMap.containsKey("interpolationSteps"))
                     pointConfig.interpolationSteps(((Number) configMap.get("interpolationSteps")).intValue());
+
+                if (configMap.containsKey("altitudeUnit")) {
+                    try {
+                        pointConfig.altitudeUnit(PointVariableConfig.AltitudeUnit.valueOf(configMap.get("altitudeUnit").toString().toUpperCase()));
+                    } catch (Exception ignored) {}
+                }
+                if (configMap.containsKey("altitudeReference")) {
+                    try {
+                        pointConfig.altitudeReference(PointVariableConfig.AltitudeReference.valueOf(configMap.get("altitudeReference").toString().toUpperCase()));
+                    } catch (Exception ignored) {}
+                }
+                if (configMap.containsKey("altitudePattern")) {
+                    try {
+                        pointConfig.altitudePattern(PointVariableConfig.AltitudePattern.valueOf(configMap.get("altitudePattern").toString().toUpperCase()));
+                    } catch (Exception ignored) {}
+                }
+                if (configMap.containsKey("initialAltitude") && configMap.get("initialAltitude") != null) {
+                    pointConfig.initialAltitude(((Number) configMap.get("initialAltitude")).doubleValue());
+                }
+                if (configMap.containsKey("maxVerticalStep")) {
+                    pointConfig.maxVerticalStep(((Number) configMap.get("maxVerticalStep")).doubleValue());
+                }
+                if (configMap.containsKey("altitudeOscillationSpeed")) {
+                    pointConfig.altitudeOscillationSpeed(((Number) configMap.get("altitudeOscillationSpeed")).doubleValue());
+                }
+
+                // Deserialization of minPoint / maxPoint range bounds
+                double minX = 0.0, maxX = 1.0, minY = 0.0, maxY = 1.0, minZ = 0.0, maxZ = 100.0;
+                boolean rangeSet = false;
+
+                if (configMap.get("minPoint") instanceof Map<?, ?> minMap) {
+                    minX = minMap.containsKey("x") ? ((Number) minMap.get("x")).doubleValue() : (minMap.containsKey("lat") ? ((Number) minMap.get("lat")).doubleValue() : 0.0);
+                    minY = minMap.containsKey("y") ? ((Number) minMap.get("y")).doubleValue() : (minMap.containsKey("lon") ? ((Number) minMap.get("lon")).doubleValue() : 0.0);
+                    minZ = minMap.containsKey("z") ? ((Number) minMap.get("z")).doubleValue() : (minMap.containsKey("alt") ? ((Number) minMap.get("alt")).doubleValue() : 0.0);
+                    rangeSet = true;
+                }
+                if (configMap.get("maxPoint") instanceof Map<?, ?> maxMap) {
+                    maxX = maxMap.containsKey("x") ? ((Number) maxMap.get("x")).doubleValue() : (maxMap.containsKey("lat") ? ((Number) maxMap.get("lat")).doubleValue() : 1.0);
+                    maxY = maxMap.containsKey("y") ? ((Number) maxMap.get("y")).doubleValue() : (maxMap.containsKey("lon") ? ((Number) maxMap.get("lon")).doubleValue() : 1.0);
+                    maxZ = maxMap.containsKey("z") ? ((Number) maxMap.get("z")).doubleValue() : (maxMap.containsKey("alt") ? ((Number) maxMap.get("alt")).doubleValue() : 100.0);
+                    rangeSet = true;
+                }
+
+                if (configMap.containsKey("minLat")) { minX = ((Number) configMap.get("minLat")).doubleValue(); rangeSet = true; }
+                if (configMap.containsKey("maxLat")) { maxX = ((Number) configMap.get("maxLat")).doubleValue(); rangeSet = true; }
+                if (configMap.containsKey("minLon")) { minY = ((Number) configMap.get("minLon")).doubleValue(); rangeSet = true; }
+                if (configMap.containsKey("maxLon")) { maxY = ((Number) configMap.get("maxLon")).doubleValue(); rangeSet = true; }
+                if (configMap.containsKey("minAlt")) { minZ = ((Number) configMap.get("minAlt")).doubleValue(); rangeSet = true; }
+                if (configMap.containsKey("maxAlt")) { maxZ = ((Number) configMap.get("maxAlt")).doubleValue(); rangeSet = true; }
+                if (configMap.containsKey("minZ")) { minZ = ((Number) configMap.get("minZ")).doubleValue(); rangeSet = true; }
+                if (configMap.containsKey("maxZ")) { maxZ = ((Number) configMap.get("maxZ")).doubleValue(); rangeSet = true; }
+
+                if (rangeSet) {
+                    pointConfig.range(minX, maxX, minY, maxY, minZ, maxZ);
+                }
+
                 if (configMap.get("boundaryPolygon") instanceof List<?> polyList) {
                     for (Object item : polyList) {
                         if (item instanceof Map<?, ?> ptMap) {
@@ -400,6 +477,18 @@ public class VariableFactory {
                             double pz = ptMap.containsKey("z") ? ((Number) ptMap.get("z")).doubleValue() : (ptMap.containsKey("alt") ? ((Number) ptMap.get("alt")).doubleValue() : 0.0);
                             pointConfig.addBoundaryPolygonPoint(px, py, pz);
                         }
+                    }
+                    if (!pointConfig.getBoundaryPolygon().isEmpty()) {
+                        double pMinX = Double.MAX_VALUE, pMaxX = -Double.MAX_VALUE;
+                        double pMinY = Double.MAX_VALUE, pMaxY = -Double.MAX_VALUE;
+                        for (PointVariableConfig.Point3D pt : pointConfig.getBoundaryPolygon()) {
+                            pMinX = Math.min(pMinX, pt.x);
+                            pMaxX = Math.max(pMaxX, pt.x);
+                            pMinY = Math.min(pMinY, pt.y);
+                            pMaxY = Math.max(pMaxY, pt.y);
+                        }
+                        // Always preserve user-configured minZ and maxZ altitude range
+                        pointConfig.range(pMinX, pMaxX, pMinY, pMaxY, minZ, maxZ);
                     }
                 }
                 return pointConfig;

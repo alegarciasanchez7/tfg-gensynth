@@ -3,7 +3,8 @@ import { PointVariableConfig, BoundaryBehavior, CoordinateSystem, Point3DCoord }
 import { Input } from '../../../ui/input';
 import { Label } from '../../../ui/label';
 import { Button } from '../../../ui/button';
-import { Maximize2 } from 'lucide-react';
+import { Info, Maximize2 } from 'lucide-react';
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '../../../ui/tooltip';
 import { Canvas2DBoundaryEditor } from './Canvas2DBoundaryEditor';
 import { Isometric3DBoundaryEditor } from './Isometric3DBoundaryEditor';
 import { GeospatialMapBoundaryEditor } from './GeospatialMapBoundaryEditor';
@@ -55,6 +56,12 @@ export const SpatialBoundariesTab: React.FC<SpatialBoundariesTabProps> = ({ conf
     maxY?: number;
     minZ?: number;
     maxZ?: number;
+    altitudeUnit?: any;
+    altitudeReference?: any;
+    altitudePattern?: any;
+    initialAltitude?: number;
+    maxVerticalStep?: number;
+    altitudeOscillationSpeed?: number;
     polygon?: Point3DCoord[];
   }) => {
     const newMin = {
@@ -70,6 +77,12 @@ export const SpatialBoundariesTab: React.FC<SpatialBoundariesTabProps> = ({ conf
     onChange({
       minPoint: newMin,
       maxPoint: newMax,
+      altitudeUnit: updates.altitudeUnit ?? config.altitudeUnit,
+      altitudeReference: updates.altitudeReference ?? config.altitudeReference,
+      altitudePattern: updates.altitudePattern ?? config.altitudePattern,
+      initialAltitude: updates.initialAltitude ?? config.initialAltitude,
+      maxVerticalStep: updates.maxVerticalStep ?? config.maxVerticalStep,
+      altitudeOscillationSpeed: updates.altitudeOscillationSpeed ?? config.altitudeOscillationSpeed,
       boundaryPolygon: updates.polygon ?? polygon,
     });
   };
@@ -114,10 +127,34 @@ export const SpatialBoundariesTab: React.FC<SpatialBoundariesTabProps> = ({ conf
             maxLat={maxPoint.x ?? 90}
             minLon={minPoint.y ?? -180}
             maxLon={maxPoint.y ?? 180}
+            minAlt={minPoint.z ?? 0}
+            maxAlt={maxPoint.z ?? 100}
+            altitudeUnit={config.altitudeUnit ?? 'METERS'}
+            altitudeReference={config.altitudeReference ?? 'MSL'}
+            altitudePattern={config.altitudePattern ?? 'FOLLOW_XY'}
+            initialAltitude={config.initialAltitude}
+            maxVerticalStep={config.maxVerticalStep ?? 1.0}
+            altitudeOscillationSpeed={config.altitudeOscillationSpeed ?? 0.1}
             polygon={polygon}
             width={canvasW}
             height={canvasH}
-            onChange={(b) => updateBounds({ minX: b.minLat, maxX: b.maxLat, minY: b.minLon, maxY: b.maxLon, polygon: b.polygon })}
+            onChange={(b) =>
+              updateBounds({
+                minX: b.minLat,
+                maxX: b.maxLat,
+                minY: b.minLon,
+                maxY: b.maxLon,
+                minZ: b.minAlt,
+                maxZ: b.maxAlt,
+                altitudeUnit: b.altitudeUnit,
+                altitudeReference: b.altitudeReference,
+                altitudePattern: b.altitudePattern,
+                initialAltitude: b.initialAltitude,
+                maxVerticalStep: b.maxVerticalStep,
+                altitudeOscillationSpeed: b.altitudeOscillationSpeed,
+                polygon: b.polygon,
+              })
+            }
           />
         )}
       </>
@@ -125,160 +162,262 @@ export const SpatialBoundariesTab: React.FC<SpatialBoundariesTabProps> = ({ conf
   };
 
   return (
-    <div className="space-y-4">
-      {/* 1. Header with Expand View Button */}
-      <div className="flex items-center justify-between">
-        <Label className="text-[10px] uppercase text-[var(--c-tx4)]">Spatial Boundary Collision & Limit Rules</Label>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => setIsModalOpen(true)}
-          className="h-7 text-xs border-[var(--c-br1)] bg-[var(--c-bg2)] hover:bg-white/10 text-violet-300 flex items-center gap-1.5 cursor-pointer"
-        >
-          <Maximize2 size={12} />
-          <span>Expand View / High-Precision Editor</span>
-        </Button>
-      </div>
-
-      {/* 2. Boundary Behavior Quick Selector */}
-      <div className="rounded border border-[var(--c-br1)] bg-[var(--c-bg4)] p-3 space-y-2">
-        <div className="grid grid-cols-3 gap-2">
-          {[
-            { value: 'CLAMP', label: 'Clamp (Stop)', desc: 'Halts motion at boundary edges' },
-            { value: 'BOUNCE', label: 'Bounce (Rebound)', desc: 'Inverts velocity vector component' },
-            { value: 'WRAP', label: 'Wrap (Toroidal)', desc: 'Wraps position to opposite side' },
-          ].map((b) => (
-            <button
-              key={b.value}
-              type="button"
-              onClick={() => onChange({ boundaryBehavior: b.value as BoundaryBehavior })}
-              className={`p-2 rounded border text-left transition-colors cursor-pointer ${
-                boundaryBehavior === b.value
-                  ? 'border-violet-500 bg-violet-500/10 text-violet-300'
-                  : 'border-[var(--c-br1)] bg-[var(--c-bg2)] text-[var(--c-tx3)] hover:bg-white/5'
-              }`}
-            >
-              <div className="text-xs font-semibold">{b.label}</div>
-              <div className="text-[9px] text-[var(--c-tx4)] mt-0.5">{b.desc}</div>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* 3. Visual Interactive Boundary Canvas */}
-      <div className="rounded border border-[var(--c-br1)] bg-[var(--c-bg4)] p-3 space-y-2">
-        {renderVisualEditor(false)}
-      </div>
-
-      {/* 4. Manual Numeric Input Grid */}
-      <div className="rounded border border-[var(--c-br1)] bg-[var(--c-bg4)] p-3 space-y-3">
-        <Label className="text-[10px] uppercase text-[var(--c-tx4)]">Exact Coordinate Boundary Ranges</Label>
-
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1">
-            <Label htmlFor="bound-min-x" className="text-[9px] text-[var(--c-tx4)]">Min {labelX}</Label>
-            <Input
-              id="bound-min-x"
-              type="text"
-              value={minXStr}
-              onChange={(e) => {
-                setMinXStr(e.target.value);
-                const val = parseFloat(e.target.value);
-                if (!isNaN(val)) updateBounds({ minX: val });
-              }}
-              className="h-8 text-xs font-mono"
-            />
+    <TooltipProvider delayDuration={200}>
+      <div className="space-y-4">
+        {/* 1. Editor Header / Controls */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5">
+            <Label className="text-[10px] uppercase text-[var(--c-tx4)]">
+              Visual Spatial Boundaries & Geofence
+            </Label>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button type="button" className="text-[var(--c-tx4)] hover:text-cyan-400 cursor-help transition-colors">
+                  <Info size={10} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-[280px] space-y-1 text-[11px] leading-relaxed">
+                <p>{"Interactive 2D, 3D and Leaflet World Map editor."}</p>
+                <p>{"• Draw selection box or drag vertex markers to define geofence limits."}</p>
+                <p>{"• Right-click edges to insert vertices, right-click points to delete."}</p>
+              </TooltipContent>
+            </Tooltip>
           </div>
-          <div className="space-y-1">
-            <Label htmlFor="bound-max-x" className="text-[9px] text-[var(--c-tx4)]">Max {labelX}</Label>
-            <Input
-              id="bound-max-x"
-              type="text"
-              value={maxXStr}
-              onChange={(e) => {
-                setMaxXStr(e.target.value);
-                const val = parseFloat(e.target.value);
-                if (!isNaN(val)) updateBounds({ maxX: val });
-              }}
-              className="h-8 text-xs font-mono"
-            />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setIsModalOpen(true)}
+            className="h-7 text-xs gap-1.5 border-violet-500/40 text-violet-400 hover:bg-violet-500/10 cursor-pointer"
+          >
+            <Maximize2 size={12} />
+            <span>Expand View / High-Precision Editor</span>
+          </Button>
+        </div>
+
+        {/* 2. Boundary Behavior Quick Selector */}
+        <div className="rounded border border-[var(--c-br1)] bg-[var(--c-bg4)] p-3 space-y-2">
+          <div className="flex items-center gap-1.5 mb-1">
+            <Label className="text-[10px] uppercase text-[var(--c-tx4)]">
+              Boundary Collision Action
+            </Label>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button type="button" className="text-[var(--c-tx4)] hover:text-cyan-400 cursor-help transition-colors">
+                  <Info size={10} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-[280px] space-y-1 text-[11px] leading-relaxed">
+                <p>{"Action taken when a point touches the geofence limit:"}</p>
+                <p>{"• Clamp: Stops at boundary wall."}</p>
+                <p>{"• Bounce: Rebounds trajectory velocity."}</p>
+                <p>{"• Wrap: Teleports to opposite side of space."}</p>
+              </TooltipContent>
+            </Tooltip>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              { value: 'CLAMP', label: 'Clamp (Stop)', desc: 'Halts motion at boundary edges' },
+              { value: 'BOUNCE', label: 'Bounce (Rebound)', desc: 'Inverts velocity vector component' },
+              { value: 'WRAP', label: 'Wrap (Toroidal)', desc: 'Wraps position to opposite side' },
+            ].map((b) => (
+              <button
+                key={b.value}
+                type="button"
+                onClick={() => onChange({ boundaryBehavior: b.value as BoundaryBehavior })}
+                className={`p-2 rounded border text-left transition-colors cursor-pointer ${
+                  boundaryBehavior === b.value
+                    ? 'border-violet-500 bg-violet-500/10 text-violet-300'
+                    : 'border-[var(--c-br1)] bg-[var(--c-bg2)] text-[var(--c-tx3)] hover:bg-white/5'
+                }`}
+              >
+                <div className="text-xs font-semibold">{b.label}</div>
+                <div className="text-[9px] text-[var(--c-tx4)] mt-0.5">{b.desc}</div>
+              </button>
+            ))}
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1">
-            <Label htmlFor="bound-min-y" className="text-[9px] text-[var(--c-tx4)]">Min {labelY}</Label>
-            <Input
-              id="bound-min-y"
-              type="text"
-              value={minYStr}
-              onChange={(e) => {
-                setMinYStr(e.target.value);
-                const val = parseFloat(e.target.value);
-                if (!isNaN(val)) updateBounds({ minY: val });
-              }}
-              className="h-8 text-xs font-mono"
-            />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="bound-max-y" className="text-[9px] text-[var(--c-tx4)]">Max {labelY}</Label>
-            <Input
-              id="bound-max-y"
-              type="text"
-              value={maxYStr}
-              onChange={(e) => {
-                setMaxYStr(e.target.value);
-                const val = parseFloat(e.target.value);
-                if (!isNaN(val)) updateBounds({ maxY: val });
-              }}
-              className="h-8 text-xs font-mono"
-            />
-          </div>
+        {/* 3. Visual Interactive Boundary Canvas */}
+        <div className="rounded border border-[var(--c-br1)] bg-[var(--c-bg4)] p-3 space-y-2">
+          {!isModalOpen ? (
+            renderVisualEditor(false)
+          ) : (
+            <div className="py-8 text-center text-xs text-[var(--c-tx4)] italic">
+              Visual editor expanded in modal window...
+            </div>
+          )}
         </div>
 
-        {!is2D && (
+        {/* 4. Manual Numeric Input Grid (Outer Envelope Bounding Box) */}
+        <div className="rounded border border-[var(--c-br1)] bg-[var(--c-bg4)] p-3 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <Label className="text-[10px] uppercase text-[var(--c-tx4)]">
+                Outer Envelope Bounding Box (AABB Bounds)
+              </Label>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button type="button" className="text-[var(--c-tx4)] hover:text-cyan-400 cursor-help transition-colors">
+                    <Info size={10} />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-[280px] space-y-1 text-[11px] leading-relaxed">
+                  <p>{"Axis-Aligned Bounding Box (AABB) enclosing the overall spatial envelope."}</p>
+                </TooltipContent>
+              </Tooltip>
+            </div>
+            <span className="text-[9px] text-[var(--c-tx4)]">
+              {polygon.length >= 3 ? `Encloses ${polygon.length}-Vertex Custom Figure` : 'Standard Rectangular Bounds'}
+            </span>
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <Label htmlFor="bound-min-z" className="text-[9px] text-[var(--c-tx4)]">Min {labelZ}</Label>
+              <Label htmlFor="bound-min-x" className="text-[9px] text-[var(--c-tx4)]">Min {labelX}</Label>
               <Input
-                id="bound-min-z"
+                id="bound-min-x"
                 type="text"
-                value={minZStr}
+                value={minXStr}
                 onChange={(e) => {
-                  setMinZStr(e.target.value);
+                  setMinXStr(e.target.value);
                   const val = parseFloat(e.target.value);
-                  if (!isNaN(val)) updateBounds({ minZ: val });
+                  if (!isNaN(val)) updateBounds({ minX: val });
                 }}
                 className="h-8 text-xs font-mono"
               />
             </div>
             <div className="space-y-1">
-              <Label htmlFor="bound-max-z" className="text-[9px] text-[var(--c-tx4)]">Max {labelZ}</Label>
+              <Label htmlFor="bound-max-x" className="text-[9px] text-[var(--c-tx4)]">Max {labelX}</Label>
               <Input
-                id="bound-max-z"
+                id="bound-max-x"
                 type="text"
-                value={maxZStr}
+                value={maxXStr}
                 onChange={(e) => {
-                  setMaxZStr(e.target.value);
+                  setMaxXStr(e.target.value);
                   const val = parseFloat(e.target.value);
-                  if (!isNaN(val)) updateBounds({ maxZ: val });
+                  if (!isNaN(val)) updateBounds({ maxX: val });
                 }}
                 className="h-8 text-xs font-mono"
               />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label htmlFor="bound-min-y" className="text-[9px] text-[var(--c-tx4)]">Min {labelY}</Label>
+              <Input
+                id="bound-min-y"
+                type="text"
+                value={minYStr}
+                onChange={(e) => {
+                  setMinYStr(e.target.value);
+                  const val = parseFloat(e.target.value);
+                  if (!isNaN(val)) updateBounds({ minY: val });
+                }}
+                className="h-8 text-xs font-mono"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="bound-max-y" className="text-[9px] text-[var(--c-tx4)]">Max {labelY}</Label>
+              <Input
+                id="bound-max-y"
+                type="text"
+                value={maxYStr}
+                onChange={(e) => {
+                  setMaxYStr(e.target.value);
+                  const val = parseFloat(e.target.value);
+                  if (!isNaN(val)) updateBounds({ maxY: val });
+                }}
+                className="h-8 text-xs font-mono"
+              />
+            </div>
+          </div>
+
+          {!is2D && (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label htmlFor="bound-min-z" className="text-[9px] text-[var(--c-tx4)]">Min {labelZ}</Label>
+                <Input
+                  id="bound-min-z"
+                  type="text"
+                  value={minZStr}
+                  onChange={(e) => {
+                    setMinZStr(e.target.value);
+                    const val = parseFloat(e.target.value);
+                    if (!isNaN(val)) updateBounds({ minZ: val });
+                  }}
+                  className="h-8 text-xs font-mono"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="bound-max-z" className="text-[9px] text-[var(--c-tx4)]">Max {labelZ}</Label>
+                <Input
+                  id="bound-max-z"
+                  type="text"
+                  value={maxZStr}
+                  onChange={(e) => {
+                    setMaxZStr(e.target.value);
+                    const val = parseFloat(e.target.value);
+                    if (!isNaN(val)) updateBounds({ maxZ: val });
+                  }}
+                  className="h-8 text-xs font-mono"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 5. Custom Polygon Vertices List Inspector */}
+        {polygon.length >= 3 && (
+          <div className="rounded border border-[var(--c-br1)] bg-[var(--c-bg4)] p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <Label className="text-[10px] uppercase text-[var(--c-tx4)]">
+                  Exact Individual Polygon Vertices ({polygon.length} Points)
+                </Label>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button type="button" className="text-[var(--c-tx4)] hover:text-cyan-400 cursor-help transition-colors">
+                      <Info size={10} />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-[280px] space-y-1 text-[11px] leading-relaxed">
+                    <p>{"Coordinates of each vertex of the custom polygon geofence."}</p>
+                    <p>{"Evaluated with Even-Odd Ray-Casting algorithm."}</p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+              <span className="text-[9px] text-violet-400 font-mono">Ray-Casting Algorithm Active</span>
+            </div>
+
+            <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
+              {polygon.map((pt, i) => (
+                <div
+                  key={i}
+                  className="flex items-center justify-between p-1.5 rounded border border-[var(--c-br1)] bg-[var(--c-bg2)] text-xs font-mono text-[var(--c-tx2)]"
+                >
+                  <span className="text-[10px] font-semibold text-violet-300 w-16">Vertex {i + 1}:</span>
+                  <div className="flex gap-3 text-[11px]">
+                    <span>{labelX}: <strong className="text-white">{pt.x ?? 0}</strong></span>
+                    <span>{labelY}: <strong className="text-white">{pt.y ?? pt.x ?? 0}</strong></span>
+                    {!is2D && <span>{labelZ}: <strong className="text-white">{pt.z ?? 0}</strong></span>}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}
-      </div>
 
-      {/* 5. Expand View Modal */}
-      <BoundaryExpandModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        title={coordSystem === 'GEOSPATIAL' ? 'Geospatial Geofence Editor' : (is2D ? '2D Spatial Boundary Grid' : '3D Spatial Volume Editor')}
-      >
-        {renderVisualEditor(true)}
-      </BoundaryExpandModal>
-    </div>
+        {/* 6. Expand View Modal */}
+        <BoundaryExpandModal
+          isOpen={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+          title={coordSystem === 'GEOSPATIAL' ? 'Geospatial Geofence Editor' : (is2D ? '2D Spatial Boundary Grid' : '3D Spatial Volume Editor')}
+        >
+          {renderVisualEditor(true)}
+        </BoundaryExpandModal>
+      </div>
+    </TooltipProvider>
   );
 };

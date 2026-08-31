@@ -298,4 +298,116 @@ public class PointVariableExhaustiveGenerationTest {
             assertTrue("Geo Longitude must be within geofence max 3.0", lon <= 3.0);
         }
     }
+
+    @Test
+    public void testAltitudeUnitsAndReferences() {
+        config.coordinateSystem(CoordinateSystem.GEOSPATIAL)
+              .geospatialFormat(GeospatialFormat.DECIMAL_DEGREES)
+              .altitudeUnit(PointVariableConfig.AltitudeUnit.FEET)
+              .altitudeReference(PointVariableConfig.AltitudeReference.AGL);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> val = (Map<String, Object>) config.generateNextValue();
+        assertEquals("FEET", val.get("altitudeUnit"));
+        assertEquals("AGL", val.get("altitudeReference"));
+
+        config.altitudeUnit(PointVariableConfig.AltitudeUnit.KILOMETERS)
+              .altitudeReference(PointVariableConfig.AltitudeReference.ELLIPSOID);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> val2 = (Map<String, Object>) config.generateNextValue();
+        assertEquals("KILOMETERS", val2.get("altitudeUnit"));
+        assertEquals("ELLIPSOID", val2.get("altitudeReference"));
+    }
+
+    @Test
+    public void testAllIndependentAltitudePatterns() {
+        double minAlt = 20.0;
+        double maxAlt = 80.0;
+        config.coordinateSystem(CoordinateSystem.GEOSPATIAL)
+              .range(36.0, 43.0, -9.0, 3.0, minAlt, maxAlt);
+
+        // 1. FIXED_ALTITUDE
+        config.altitudePattern(PointVariableConfig.AltitudePattern.FIXED_ALTITUDE)
+              .fixedPoint(40.0, 0.0, 50.0);
+        for (int i = 0; i < 10; i++) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> pt = (Map<String, Object>) config.generateNextValue();
+            double alt = (Double) pt.get("altitude");
+            assertEquals(50.0, alt, 1e-6);
+        }
+
+        // 2. RANDOM_UNIFORM
+        config.altitudePattern(PointVariableConfig.AltitudePattern.RANDOM_UNIFORM);
+        for (int i = 0; i < 50; i++) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> pt = (Map<String, Object>) config.generateNextValue();
+            double alt = (Double) pt.get("altitude");
+            assertTrue("Alt must be >= minAlt 20.0, got: " + alt, alt >= minAlt);
+            assertTrue("Alt must be <= maxAlt 80.0, got: " + alt, alt <= maxAlt);
+        }
+
+        // 3. RANDOM_WALK
+        config.altitudePattern(PointVariableConfig.AltitudePattern.RANDOM_WALK)
+              .maxVerticalStep(2.0);
+        for (int i = 0; i < 50; i++) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> pt = (Map<String, Object>) config.generateNextValue();
+            double alt = (Double) pt.get("altitude");
+            assertTrue("Walk Alt must be >= minAlt 20.0, got: " + alt, alt >= minAlt);
+            assertTrue("Walk Alt must be <= maxAlt 80.0, got: " + alt, alt <= maxAlt);
+        }
+
+        // 4. SINE_OSCILLATION
+        config.altitudePattern(PointVariableConfig.AltitudePattern.SINE_OSCILLATION)
+              .altitudeOscillationSpeed(0.2);
+        for (int i = 0; i < 50; i++) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> pt = (Map<String, Object>) config.generateNextValue();
+            double alt = (Double) pt.get("altitude");
+            assertTrue("Sine Alt must be >= minAlt 20.0, got: " + alt, alt >= minAlt);
+            assertTrue("Sine Alt must be <= maxAlt 80.0, got: " + alt, alt <= maxAlt);
+        }
+    }
+
+    @Test
+    public void testFullSerializationAndDeserializationRoundtrip() {
+        PointVariableConfig orig = new PointVariableConfig()
+                .identifier("sensor_roundtrip")
+                .coordinateSystem(CoordinateSystem.GEOSPATIAL)
+                .geospatialFormat(GeospatialFormat.DEGREES_MINUTES_SECONDS)
+                .pattern(GenerationPattern.RANDOM_WALK)
+                .boundaryBehavior(BoundaryBehavior.BOUNCE)
+                .altitudeUnit(PointVariableConfig.AltitudeUnit.FEET)
+                .altitudeReference(PointVariableConfig.AltitudeReference.AGL)
+                .altitudePattern(PointVariableConfig.AltitudePattern.SINE_OSCILLATION)
+                .maxVerticalStep(3.5)
+                .altitudeOscillationSpeed(0.15)
+                .range(36.0, 44.0, -9.0, 4.0, 10.0, 500.0);
+
+        Map<String, Object> map = orig.toMap();
+        map.put("minAlt", 10.0);
+        map.put("maxAlt", 500.0);
+
+        VariableConfiguration deserializedConfig = VariableFactory.createFromMap("sensor_roundtrip", "POINT", map);
+        assertTrue(deserializedConfig instanceof PointVariableConfig);
+
+        PointVariableConfig restored = (PointVariableConfig) deserializedConfig;
+        assertEquals(CoordinateSystem.GEOSPATIAL, restored.getCoordinateSystem());
+        assertEquals(GeospatialFormat.DEGREES_MINUTES_SECONDS, restored.getGeospatialFormat());
+        assertEquals(PointVariableConfig.AltitudeUnit.FEET, restored.getAltitudeUnit());
+        assertEquals(PointVariableConfig.AltitudeReference.AGL, restored.getAltitudeReference());
+        assertEquals(PointVariableConfig.AltitudePattern.SINE_OSCILLATION, restored.getAltitudePattern());
+        assertEquals(3.5, restored.getMaxVerticalStep(), 1e-6);
+        assertEquals(0.15, restored.getAltitudeOscillationSpeed(), 1e-6);
+
+        // Generate values from restored config to verify generation functionality
+        @SuppressWarnings("unchecked")
+        Map<String, Object> generated = (Map<String, Object>) restored.generateNextValue();
+        assertNotNull(generated.get("latitude"));
+        assertNotNull(generated.get("longitude"));
+        assertNotNull(generated.get("altitude"));
+        assertEquals("FEET", generated.get("altitudeUnit"));
+        assertEquals("AGL", generated.get("altitudeReference"));
+    }
 }
