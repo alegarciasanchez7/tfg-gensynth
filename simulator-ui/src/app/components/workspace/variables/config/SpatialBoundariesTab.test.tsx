@@ -56,9 +56,10 @@ describe('SpatialBoundariesTab', () => {
 
     render(<SpatialBoundariesTab config={geoConfig} onChange={vi.fn()} />);
 
-    expect(screen.getByText(/Geographic World Map/i)).toBeInTheDocument();
+    expect(screen.getByText(/Drag vertices/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/Min Latitude/i)).toHaveValue('36');
     expect(screen.getByLabelText(/Max Longitude/i)).toHaveValue('3');
+    expect(screen.getByLabelText(/Altitude Measurement Unit/i)).toBeInTheDocument();
   });
 
   it('opens expand view modal when expand button is clicked', () => {
