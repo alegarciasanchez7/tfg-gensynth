@@ -1,6 +1,6 @@
 import React from 'react';
 import { Button } from '../../../ui/button';
-import { X, Maximize2, Minimize2 } from 'lucide-react';
+import { X, Maximize2 } from 'lucide-react';
 
 interface BoundaryExpandModalProps {
   isOpen: boolean;
@@ -18,7 +18,7 @@ export const BoundaryExpandModal: React.FC<BoundaryExpandModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200">
       <div className="relative w-full max-w-4xl max-h-[90vh] bg-[var(--c-bg2)] border border-[var(--c-br1)] rounded-xl shadow-2xl flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--c-br1)] bg-[var(--c-bg4)]">

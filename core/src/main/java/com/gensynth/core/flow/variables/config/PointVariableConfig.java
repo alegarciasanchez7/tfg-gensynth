@@ -55,6 +55,35 @@ public class PointVariableConfig extends VariableConfiguration {
     private boolean isAnomalous;
     private long anomalyStartTick;
 
+    public enum AltitudeUnit {
+        METERS,
+        FEET,
+        KILOMETERS,
+        MILES
+    }
+
+    public enum AltitudeReference {
+        MSL,       // Mean Sea Level (Orthometric Height / ASL)
+        AGL,       // Above Ground Level (Relative to terrain)
+        ELLIPSOID  // WGS84 Ellipsoid Height (HAE)
+    }
+
+    public enum AltitudePattern {
+        FOLLOW_XY,        // Uses the primary movement pattern for altitude Z
+        FIXED_ALTITUDE,   // Holds constant fixed elevation Z
+        RANDOM_UNIFORM,   // Generates uniform random elevation between minAlt and maxAlt
+        RANDOM_WALK,      // Continuous smooth climb/descent random walk
+        SINE_OSCILLATION  // Sinusoidal wave up/down hover oscillation
+    }
+
+    private AltitudeUnit altitudeUnit = AltitudeUnit.METERS;
+    private AltitudeReference altitudeReference = AltitudeReference.MSL;
+    private AltitudePattern altitudePattern = AltitudePattern.FOLLOW_XY;
+    private double maxVerticalStep = 1.0;
+    private double altitudeOscillationSpeed = 0.1;
+    private double currentAltitudeAngle = 0.0;
+    private Double lastZ = null;
+
     public PointVariableConfig() {
         this.type = VariableType.POINT;
         this.pattern = GenerationPattern.RANDOM_POINT;
@@ -173,11 +202,24 @@ public class PointVariableConfig extends VariableConfiguration {
 
     public PointVariableConfig orbitCenter(double x, double y, double z) {
         this.orbitCenter = new Point3D(x, y, z);
+        double r = (this.orbitRadius > 0 ? this.orbitRadius : 10.0) * 2.0;
+        if (x - r < minPoint.x || x + r > maxPoint.x || y - r < minPoint.y || y + r > maxPoint.y) {
+            this.minPoint = new Point3D(Math.min(minPoint.x, x - r), Math.min(minPoint.y, y - r), Math.min(minPoint.z, z));
+            this.maxPoint = new Point3D(Math.max(maxPoint.x, x + r), Math.max(maxPoint.y, y + r), Math.max(maxPoint.z, z));
+        }
         return this;
     }
 
     public PointVariableConfig orbitRadius(double radius) {
         this.orbitRadius = radius;
+        if (this.orbitCenter != null) {
+            double cx = orbitCenter.x, cy = orbitCenter.y, cz = orbitCenter.z;
+            double r = radius * 2.0;
+            if (cx - r < minPoint.x || cx + r > maxPoint.x || cy - r < minPoint.y || cy + r > maxPoint.y) {
+                this.minPoint = new Point3D(Math.min(minPoint.x, cx - r), Math.min(minPoint.y, cy - r), Math.min(minPoint.z, cz));
+                this.maxPoint = new Point3D(Math.max(maxPoint.x, cx + r), Math.max(maxPoint.y, cy + r), Math.max(maxPoint.z, cz));
+            }
+        }
         return this;
     }
 
@@ -197,10 +239,7 @@ public class PointVariableConfig extends VariableConfiguration {
     }
 
     public PointVariableConfig jitterRadius(double radius) {
-        this.jitterRadius = Math.max(0.0, radius);
-        if (radius > 0) {
-            this.gpsNoiseEnabled = true;
-        }
+        this.jitterRadius = radius;
         return this;
     }
 
@@ -220,6 +259,107 @@ public class PointVariableConfig extends VariableConfiguration {
         return boundaryPolygon;
     }
 
+    public AltitudeUnit getAltitudeUnit() {
+        return altitudeUnit;
+    }
+
+    public PointVariableConfig altitudeUnit(AltitudeUnit unit) {
+        if (unit != null) this.altitudeUnit = unit;
+        return this;
+    }
+
+    public AltitudeReference getAltitudeReference() {
+        return altitudeReference;
+    }
+
+    public PointVariableConfig altitudeReference(AltitudeReference ref) {
+        if (ref != null) this.altitudeReference = ref;
+        return this;
+    }
+
+    public AltitudePattern getAltitudePattern() {
+        return altitudePattern;
+    }
+
+    public PointVariableConfig altitudePattern(AltitudePattern pattern) {
+        if (pattern != null) this.altitudePattern = pattern;
+        return this;
+    }
+
+    private Double initialAltitude = null;
+
+    public Double getInitialAltitude() {
+        return initialAltitude;
+    }
+
+    public PointVariableConfig initialAltitude(Double alt) {
+        this.initialAltitude = alt;
+        return this;
+    }
+
+    public double getMaxVerticalStep() {
+        return maxVerticalStep;
+    }
+
+    public PointVariableConfig maxVerticalStep(double step) {
+        this.maxVerticalStep = step;
+        return this;
+    }
+
+    public double getAltitudeOscillationSpeed() {
+        return altitudeOscillationSpeed;
+    }
+
+    public PointVariableConfig altitudeOscillationSpeed(double speed) {
+        this.altitudeOscillationSpeed = speed;
+        return this;
+    }
+
+    private Point3D applyAltitudePattern(Point3D p) {
+        if (altitudePattern == AltitudePattern.FOLLOW_XY || altitudePattern == null) {
+            return p;
+        }
+
+        double minZ = minPoint.z;
+        double maxZ = maxPoint.z;
+        double midZ = (minZ + maxZ) / 2.0;
+        double ampZ = Math.abs(maxZ - minZ) / 2.0;
+        double newZ = p.z;
+
+        switch (altitudePattern) {
+            case FIXED_ALTITUDE:
+                newZ = (fixedPoint != null && fixedPoint.z != 0.0) ? fixedPoint.z : midZ;
+                break;
+
+            case RANDOM_UNIFORM:
+                newZ = randomInRange(minZ, maxZ);
+                break;
+
+            case RANDOM_WALK:
+                if (lastZ == null) {
+                    lastZ = randomInRange(minZ, maxZ);
+                }
+                double step = (maxVerticalStep > 0) ? maxVerticalStep : 1.0;
+                double delta = (ThreadLocalRandom.current().nextDouble() * 2 - 1) * step;
+                lastZ = Math.max(minZ, Math.min(maxZ, lastZ + delta));
+                newZ = lastZ;
+                break;
+
+            case SINE_OSCILLATION:
+                double speed = (altitudeOscillationSpeed > 0) ? altitudeOscillationSpeed : 0.1;
+                newZ = midZ + (ampZ * Math.sin(currentAltitudeAngle));
+                currentAltitudeAngle += speed;
+                newZ = Math.max(minZ, Math.min(maxZ, newZ));
+                break;
+            case FOLLOW_XY:
+                break;
+            default:
+                break;
+        }
+
+        return new Point3D(p.x, p.y, newZ);
+    }
+
     /**
      * Ray-Casting algorithm for checking point inclusion inside 2D/Geospatial boundary polygon.
      */
@@ -232,8 +372,7 @@ public class PointVariableConfig extends VariableConfiguration {
         for (int i = 0, j = n - 1; i < n; j = i++) {
             double xi = boundaryPolygon.get(i).x, yi = boundaryPolygon.get(i).y;
             double xj = boundaryPolygon.get(j).x, yj = boundaryPolygon.get(j).y;
-            boolean intersect = ((yi > y) != (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
-            if (intersect) {
+            if (((yi > y) != (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) {
                 inside = !inside;
             }
         }
@@ -241,8 +380,8 @@ public class PointVariableConfig extends VariableConfiguration {
     }
 
     @Override
-    public java.util.List<String> validate() {
-        java.util.List<String> errors = new java.util.ArrayList<>();
+    public List<String> validate() {
+        List<String> errors = new ArrayList<>();
         if (maxStepDistance < 0) {
             errors.add("Maximum step distance cannot be negative");
         }
@@ -260,13 +399,13 @@ public class PointVariableConfig extends VariableConfiguration {
         if (isAnomalous) {
             Object val = anomalyConfig.getAnomalousValue();
             if (val instanceof Point3D) {
-                Point3D p = (Point3D) val;
-                return formatPointOutput(p);
+                return formatPointOutput((Point3D) val);
             }
             return val;
         }
 
         Point3D point;
+
         switch (pattern) {
             case FIXED_POINT:
                 point = fixedPoint;
@@ -290,20 +429,42 @@ public class PointVariableConfig extends VariableConfiguration {
                 break;
         }
 
-        Point3D finalPoint = applyJitter(point);
+        Point3D altitudePoint = applyAltitudePattern(point);
+        Point3D finalPoint = applyJitter(altitudePoint);
         return formatPointOutput(finalPoint);
     }
 
+    public Point3D getCenterPoint() {
+        return new Point3D(
+            (minPoint.x + maxPoint.x) / 2.0,
+            (minPoint.y + maxPoint.y) / 2.0,
+            (minPoint.z + maxPoint.z) / 2.0
+        );
+    }
+
     private Point3D generateRandomPoint() {
-        double x = randomInRange(minPoint.x, maxPoint.x);
-        double y = randomInRange(minPoint.y, maxPoint.y);
-        double z = randomInRange(minPoint.z, maxPoint.z);
-        return new Point3D(x, y, z);
+        for (int i = 0; i < 100; i++) {
+            double x = randomInRange(minPoint.x, maxPoint.x);
+            double y = randomInRange(minPoint.y, maxPoint.y);
+            double z = (initialAltitude != null && (altitudePattern == AltitudePattern.FOLLOW_XY || altitudePattern == null))
+                ? initialAltitude
+                : randomInRange(minPoint.z, maxPoint.z);
+            if (isPointInsidePolygon(x, y)) {
+                return new Point3D(x, y, z);
+            }
+        }
+        Point3D center = getCenterPoint();
+        if (initialAltitude != null && (altitudePattern == AltitudePattern.FOLLOW_XY || altitudePattern == null)) {
+            return new Point3D(center.x, center.y, initialAltitude);
+        }
+        return center;
     }
 
     private Point3D generatePathPoint() {
         if (path.isEmpty()) {
-            return fixedPoint;
+            return fixedPoint != null && (fixedPoint.x != 0 || fixedPoint.y != 0 || minPoint.x == 0)
+                ? fixedPoint
+                : getCenterPoint();
         }
         if (path.size() == 1) {
             return path.get(0);
@@ -335,14 +496,33 @@ public class PointVariableConfig extends VariableConfiguration {
     private Point3D generateRandomWalkPoint() {
         if (lastPoint == null) {
             lastPoint = generateRandomPoint();
+            if (initialAltitude != null && (altitudePattern == AltitudePattern.FOLLOW_XY || altitudePattern == null)) {
+                lastPoint = new Point3D(lastPoint.x, lastPoint.y, initialAltitude);
+            }
             lastVelocity = new Point3D(0.0, 0.0, 0.0);
             return lastPoint;
         }
 
+        double spanX = Math.abs(maxPoint.x - minPoint.x);
+        double spanY = Math.abs(maxPoint.y - minPoint.y);
+        double spanZ = Math.abs(maxPoint.z - minPoint.z);
+
+        double stepXY = (maxStepDistance > 0 && maxStepDistance < Math.max(spanX, spanY)) 
+            ? maxStepDistance 
+            : Math.max(Math.max(spanX, spanY) * 0.05, 0.0001);
+
+        double stepZ;
+        if (coordinateSystem == CoordinateSystem.GEOSPATIAL && spanZ > 0) {
+            // Scale altitude (Z) step proportional to altitude span (e.g. 5% of altitude range)
+            stepZ = (maxStepDistance >= 1.0) ? maxStepDistance : Math.max(spanZ * 0.05, 0.01);
+        } else {
+            stepZ = stepXY;
+        }
+
         // Random step vector
-        double rx = (ThreadLocalRandom.current().nextDouble() * 2 - 1) * maxStepDistance;
-        double ry = (ThreadLocalRandom.current().nextDouble() * 2 - 1) * maxStepDistance;
-        double rz = (ThreadLocalRandom.current().nextDouble() * 2 - 1) * maxStepDistance;
+        double rx = (ThreadLocalRandom.current().nextDouble() * 2 - 1) * stepXY;
+        double ry = (ThreadLocalRandom.current().nextDouble() * 2 - 1) * stepXY;
+        double rz = (ThreadLocalRandom.current().nextDouble() * 2 - 1) * stepZ;
 
         // Apply momentum / inertia angle factor
         double vx = (inertia * lastVelocity.x) + ((1.0 - inertia) * rx);
@@ -359,20 +539,27 @@ public class PointVariableConfig extends VariableConfiguration {
     }
 
     private Point3D generateCircularOrbitPoint() {
+        double spanX = Math.abs(maxPoint.x - minPoint.x);
+        double spanY = Math.abs(maxPoint.y - minPoint.y);
+
+        Point3D center = (orbitCenter != null && (orbitCenter.x != 0 || orbitCenter.y != 0 || minPoint.x == 0))
+            ? orbitCenter
+            : getCenterPoint();
+
         if (currentRadius < 0) {
-            currentRadius = orbitRadius;
+            currentRadius = (orbitRadius > 0) ? orbitRadius : Math.max(Math.min(spanX, spanY) * 0.35, 0.0001);
         }
 
-        double x = orbitCenter.x + currentRadius * Math.cos(currentAngle);
-        double y = orbitCenter.y + currentRadius * Math.sin(currentAngle);
-        double z = orbitCenter.z;
+        double x = center.x + currentRadius * Math.cos(currentAngle);
+        double y = center.y + currentRadius * Math.sin(currentAngle);
+        double z = center.z;
 
-        currentAngle += angularSpeed;
+        currentAngle += (angularSpeed != 0 ? angularSpeed : 0.05);
         if (spiralRate != 0.0) {
             currentRadius += spiralRate;
         }
 
-        return new Point3D(x, y, z);
+        return applyBoundaries(x, y, z, 0, 0, 0);
     }
 
     private Point3D applyBoundaries(double x, double y, double z, double vx, double vy, double vz) {
@@ -410,6 +597,16 @@ public class PointVariableConfig extends VariableConfiguration {
                     newZ = Math.max(minPoint.z, Math.min(maxPoint.z, z < minPoint.z ? minPoint.z + (minPoint.z - z) : maxPoint.z - (z - maxPoint.z)));
                 }
                 break;
+        }
+
+        if (boundaryPolygon != null && boundaryPolygon.size() >= 3 && !isPointInsidePolygon(newX, newY)) {
+            Point3D center = getCenterPoint();
+            if (boundaryBehavior == BoundaryBehavior.BOUNCE) {
+                newVx = -newVx;
+                newVy = -newVy;
+            }
+            newX = lerp(newX, center.x, 0.5);
+            newY = lerp(newY, center.y, 0.5);
         }
 
         lastVelocity = new Point3D(newVx, newVy, newVz);
@@ -460,6 +657,12 @@ public class PointVariableConfig extends VariableConfiguration {
                     map.put("longitude", p.y);
                     map.put("altitude", p.z);
                 }
+                if (altitudeUnit != null) {
+                    map.put("altitudeUnit", altitudeUnit.toString());
+                }
+                if (altitudeReference != null) {
+                    map.put("altitudeReference", altitudeReference.toString());
+                }
                 break;
         }
         return map;
@@ -502,8 +705,10 @@ public class PointVariableConfig extends VariableConfiguration {
         currentSegmentIndex = 0;
         stepInSegment = 0;
         lastPoint = null;
+        lastZ = null;
         lastVelocity = new Point3D(0.0, 0.0, 0.0);
         currentAngle = 0.0;
+        currentAltitudeAngle = 0.0;
         currentRadius = -1.0;
         isAnomalous = false;
         anomalyStartTick = 0;
@@ -512,7 +717,7 @@ public class PointVariableConfig extends VariableConfiguration {
 
     @Override
     public Map<String, Object> toMap() {
-        Map<String, Object> map = new HashMap<>(16);
+        Map<String, Object> map = new HashMap<>(22);
         map.put("identifier", identifier);
         map.put("type", type.toString());
         map.put("pattern", pattern.toString());
@@ -529,6 +734,14 @@ public class PointVariableConfig extends VariableConfiguration {
         map.put("spiralRate", spiralRate);
         map.put("gpsNoiseEnabled", gpsNoiseEnabled);
         map.put("jitterRadius", jitterRadius);
+        map.put("altitudeUnit", altitudeUnit != null ? altitudeUnit.toString() : "METERS");
+        map.put("altitudeReference", altitudeReference != null ? altitudeReference.toString() : "MSL");
+        map.put("altitudePattern", altitudePattern != null ? altitudePattern.toString() : "FOLLOW_XY");
+        if (initialAltitude != null) {
+            map.put("initialAltitude", initialAltitude);
+        }
+        map.put("maxVerticalStep", maxVerticalStep);
+        map.put("altitudeOscillationSpeed", altitudeOscillationSpeed);
         return map;
     }
 
