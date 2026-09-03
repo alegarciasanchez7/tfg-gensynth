@@ -21,6 +21,28 @@ import java.awt.event.WindowEvent;
  */
 public class MainFrame extends JFrame {
     private static final Logger logger = LoggerFactory.getLogger(MainFrame.class);
+    private static volatile MainFrame activeFrame;
+    private static volatile boolean restarting = false;
+
+    public static void setRestarting(boolean value) {
+        restarting = value;
+    }
+
+    public static boolean isRestarting() {
+        return restarting;
+    }
+
+    public static void closeActiveFrame() {
+        if (activeFrame != null) {
+            try {
+                if (activeFrame.browser != null) {
+                    activeFrame.browser.close(true);
+                }
+                activeFrame.dispose();
+            } catch (Exception ignored) {}
+            activeFrame = null;
+        }
+    }
     
     private final CefClient client;
     private final CefBrowser browser;
@@ -29,6 +51,7 @@ public class MainFrame extends JFrame {
 
     public MainFrame(String title, String initialUrl, CefApp cefApp) {
         super(title);
+        activeFrame = this;
 
         logger.info("Creating MainFrame for URL: {}", initialUrl);
 
@@ -43,6 +66,9 @@ public class MainFrame extends JFrame {
         this.messageRouter = CefMessageRouter.create(config);
         this.messageRouter.addHandler(new GensynthMessageRouter(this), true);
         this.client.addMessageRouter(this.messageRouter);
+        
+        // Add native dialog handler for <input type="file"> to work cross-platform
+        this.client.addDialogHandler(new NativeDialogHandler(this));
         
         // Log all browser console and JavaScript messages to Java SLF4J logger
         this.client.addDisplayHandler(new org.cef.handler.CefDisplayHandlerAdapter() {
@@ -59,6 +85,9 @@ public class MainFrame extends JFrame {
         // 4. Create the browser instance (Windowed Rendering)
         this.browser = client.createBrowser(initialUrl, false, false);
         this.browserUI = browser.getUIComponent();
+        
+        // Fix for drag and drop: Attach native AWT DropTarget so files can be dropped from OS
+        new java.awt.dnd.DropTarget(this.browserUI, new NativeDropHandler());
 
         // 3. Configure the Window layout
         configureLayout();
@@ -68,9 +97,17 @@ public class MainFrame extends JFrame {
             @Override
             public void windowClosing(WindowEvent e) {
                 logger.info("Closing MainFrame...");
-                // In Phase 3, we will add a check for unsaved changes via the bridge
+                if (browser != null) {
+                    try {
+                        browser.close(true);
+                    } catch (Exception ex) {
+                        logger.warn("Error closing CEF browser: {}", ex.getMessage());
+                    }
+                }
                 dispose();
-                System.exit(0);
+                if (!restarting) {
+                    System.exit(0);
+                }
             }
         });
     }
