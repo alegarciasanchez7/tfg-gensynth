@@ -20,22 +20,25 @@ public class NativeDropHandler extends DropTargetAdapter {
     public void drop(DropTargetDropEvent dtde) {
         try {
             dtde.acceptDrop(DnDConstants.ACTION_COPY);
-            List<File> droppedFiles = (List<File>) dtde.getTransferable().getTransferData(DataFlavor.javaFileListFlavor);
-            
-            if (droppedFiles != null && !droppedFiles.isEmpty()) {
-                File file = droppedFiles.get(0);
-                logger.info("Native drop detected: {}", file.getAbsolutePath());
-                
-                if (file.getName().endsWith(".jar")) {
-                    byte[] fileContent = Files.readAllBytes(file.toPath());
-                    String base64 = Base64.getEncoder().encodeToString(fileContent);
-                    
-                    Map<String, Object> payload = new LinkedHashMap<>();
-                    payload.put("filename", file.getName());
-                    payload.put("base64", base64);
-                    
-                    if (App.getWsServer() != null) {
-                        App.getWsServer().broadcastMessage("NATIVE_FILE_DROPPED", payload);
+            Object data = dtde.getTransferable().getTransferData(DataFlavor.javaFileListFlavor);
+            if (data instanceof List<?> list) {
+                for (Object item : list) {
+                    if (item instanceof File file) {
+                        logger.info("Native drop detected: {}", file.getAbsolutePath());
+                        
+                        if (file.getName().endsWith(".jar")) {
+                            byte[] fileContent = Files.readAllBytes(file.toPath());
+                            String base64 = Base64.getEncoder().encodeToString(fileContent);
+                            
+                            Map<String, Object> payload = new LinkedHashMap<>();
+                            payload.put("filename", file.getName());
+                            payload.put("base64", base64);
+                            
+                            if (App.getWsServer() != null) {
+                                App.getWsServer().broadcastMessage("NATIVE_FILE_DROPPED", payload);
+                            }
+                        }
+                        break;
                     }
                 }
             }

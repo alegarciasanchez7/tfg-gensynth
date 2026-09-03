@@ -8,8 +8,6 @@ import com.gensynth.core.ws.BridgeContext;
 import com.gensynth.core.ws.UiBridgeWebSocketServer;
 import com.gensynth.core.flow.variables.InvalidVariableConfigException;
 import org.java_websocket.WebSocket;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -20,7 +18,6 @@ import java.util.UUID;
  */
 public class VariableCommandHandler implements CommandHandler {
 
-    private static final Logger logger = LoggerFactory.getLogger(VariableCommandHandler.class);
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
     
     private final BridgeContext ctx;

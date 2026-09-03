@@ -727,6 +727,7 @@ public class PointVariableConfig extends VariableConfiguration {
         map.put("fixedPoint", fixedPoint.toString());
         map.put("pathSize", path.size());
         map.put("interpolationSteps", interpolationSteps);
+        map.put("navigationSpeed", navigationSpeed);
         map.put("maxStepDistance", maxStepDistance);
         map.put("inertia", inertia);
         map.put("orbitRadius", orbitRadius);
@@ -825,6 +826,10 @@ public class PointVariableConfig extends VariableConfiguration {
 
     public int getInterpolationSteps() {
         return interpolationSteps;
+    }
+
+    public double getNavigationSpeed() {
+        return navigationSpeed;
     }
 
     public PointVariableConfig maxStepDistance(double maxStepDistance) {
