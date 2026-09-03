@@ -6,8 +6,9 @@ import { Point3DCoord, AltitudeUnit, AltitudeReference, AltitudePattern } from '
 import { Input } from '../../../ui/input';
 import { Label } from '../../../ui/label';
 import { Button } from '../../../ui/button';
-import { Info, BoxSelect, AlertTriangle, WifiOff } from 'lucide-react';
+import { Info, BoxSelect, AlertTriangle, WifiOff, Maximize2, Minimize2 } from 'lucide-react';
 import { Tooltip, TooltipTrigger, TooltipContent } from '../../../ui/tooltip';
+import { useBoundaryModalContext } from './BoundaryExpandModal';
 
 // Helper to format DMS coordinates for map tooltips & cursor HUD
 const formatDmsHelper = (val: number, isLat: boolean) => {
@@ -236,6 +237,18 @@ function MapAutoFitBounds({ polygon }: { polygon: Point3DCoord[] }) {
   return null;
 }
 
+// Leaflet Map Resize Invalidater Helper
+function MapResizeHandler({ isExpanded }: { isExpanded: boolean }) {
+  const map = useMap();
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      map.invalidateSize();
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [isExpanded, map]);
+  return null;
+}
+
 export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorProps> = ({
   minLat,
   maxLat,
@@ -253,6 +266,23 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
   onChange,
   height = 280,
 }) => {
+  const modalCtx = useBoundaryModalContext();
+  const [isMapExpanded, setIsMapExpanded] = useState(modalCtx?.isFullScreen ?? false);
+
+  useEffect(() => {
+    if (modalCtx && modalCtx.isFullScreen !== isMapExpanded) {
+      setIsMapExpanded(modalCtx.isFullScreen);
+    }
+  }, [modalCtx?.isFullScreen]);
+
+  const handleToggleExpandMap = () => {
+    const nextVal = !isMapExpanded;
+    setIsMapExpanded(nextVal);
+    if (modalCtx && modalCtx.setIsFullScreen) {
+      modalCtx.setIsFullScreen(nextVal);
+    }
+  };
+
   const [activePolygon, setActivePolygon] = useState<Point3DCoord[]>(
     polygon.length >= 3
       ? polygon
@@ -651,7 +681,26 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
         </div>
       )}
 
-      <div className="rounded border border-[var(--c-br1)] overflow-hidden relative" style={{ height: `${height}px` }}>
+      <div className="rounded border border-[var(--c-br1)] overflow-hidden relative transition-all duration-300" style={{ height: isMapExpanded ? 'calc(100vh - 145px)' : `${height}px` }}>
+        {/* Custom Map Expand / Maximize Button Overlay (directly below +/- Leaflet zoom controls) */}
+        <div className="absolute top-[74px] left-[10px] z-[1000]">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={handleToggleExpandMap}
+                className="w-7 h-7 bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 rounded shadow-md flex items-center justify-center text-slate-200 hover:text-cyan-400 transition-colors cursor-pointer"
+                aria-label={isMapExpanded ? 'Restore Normal Map View' : 'Expand Full Map View'}
+              >
+                {isMapExpanded ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right" className="text-[10px] px-2 py-1 leading-tight">
+              {isMapExpanded ? 'Restore normal view' : 'Expand full map view'}
+            </TooltipContent>
+          </Tooltip>
+        </div>
+
         {/* Compact Bottom-Left "New Box Region" Button Overlay */}
         <button
           type="button"
@@ -763,6 +812,7 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
             onCursorLeave={() => setCursorPos(null)}
           />
           <MapAutoFitBounds polygon={activePolygon} />
+          <MapResizeHandler isExpanded={isMapExpanded} />
           {positions.length >= 3 && (
             <Polygon
               positions={positions}
@@ -809,7 +859,19 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
         </MapContainer>
       </div>
 
-      <div className="rounded border border-[var(--c-br1)] bg-[var(--c-bg4)] p-3 space-y-3">
+      {isMapExpanded ? (
+        <div className="flex items-center justify-between p-2.5 rounded border border-cyan-500/30 bg-cyan-950/30 text-[11px] text-cyan-300">
+          <span>Full Map View Active — Altitude settings are hidden to maximize map area.</span>
+          <button
+            type="button"
+            onClick={handleToggleExpandMap}
+            className="underline hover:text-white cursor-pointer font-medium text-xs"
+          >
+            Restore Altitude Settings &amp; Normal View
+          </button>
+        </div>
+      ) : (
+        <div className="rounded border border-[var(--c-br1)] bg-[var(--c-bg4)] p-3 space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5">
             <Label className="text-[10px] uppercase text-[var(--c-tx4)]">
@@ -1101,6 +1163,7 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 };
