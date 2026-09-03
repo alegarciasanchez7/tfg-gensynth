@@ -46,7 +46,11 @@ public enum GenerationPattern {
     // Boolean patterns
     CONSTANT_BOOLEAN("Constant Boolean - Fixed TRUE/FALSE"),
     DUTY_CYCLE("Duty Cycle - ON/OFF with durations"),
-    ALTERNATING_BOOLEAN("Alternating Boolean - Toggle at intervals");
+    ALTERNATING_BOOLEAN("Alternating Boolean - Toggle at intervals"),
+    PROBABILITY("Probability - Configurable P(true) ratio per tick"),
+    FLIP_INTERVAL("Flip Interval - Toggle state every N cycles"),
+    BURST_MODE("Burst Mode - Stays true for N cycles then returns to false"),
+    MARKOV("Markov Chain - State transition matrix for digital states");
 
     private final String description;
 

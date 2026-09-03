@@ -225,6 +225,82 @@ public class BooleanVariableConfigTest {
     }
 
     @Test
+    public void testProbabilityPattern() {
+        config.pattern(GenerationPattern.PROBABILITY)
+            .trueProbability(1.0); // Always true
+
+        assertEquals(true, config.generateNextValue());
+        assertEquals(true, config.generateNextValue());
+
+        config.trueProbability(0.0); // Always false
+        assertEquals(false, config.generateNextValue());
+        assertEquals(false, config.generateNextValue());
+    }
+
+    @Test
+    public void testFlipIntervalPattern() {
+        config.pattern(GenerationPattern.FLIP_INTERVAL)
+            .flipInterval(3)
+            .startWithTrue(true);
+
+        assertEquals(true, config.generateNextValue()); // Tick 1
+        assertEquals(true, config.generateNextValue()); // Tick 2
+        assertEquals(true, config.generateNextValue()); // Tick 3 (toggles next)
+        assertEquals(false, config.generateNextValue()); // Tick 4
+        assertEquals(false, config.generateNextValue()); // Tick 5
+        assertEquals(false, config.generateNextValue()); // Tick 6
+        assertEquals(true, config.generateNextValue()); // Tick 7
+    }
+
+    @Test
+    public void testBurstModePattern() {
+        config.pattern(GenerationPattern.BURST_MODE)
+            .burstDurationTicks(2)
+            .burstIdleTicks(2)
+            .startWithTrue(true);
+
+        assertEquals(true, config.generateNextValue()); // Burst 1
+        assertEquals(true, config.generateNextValue()); // Burst 2
+        assertEquals(false, config.generateNextValue()); // Idle 1
+        assertEquals(false, config.generateNextValue()); // Idle 2
+        assertEquals(true, config.generateNextValue()); // Burst 1
+    }
+
+    @Test
+    public void testMarkovPattern() {
+        config.pattern(GenerationPattern.MARKOV)
+            .pTrueToTrue(1.0)
+            .pFalseToTrue(1.0)
+            .startWithTrue(true);
+
+        assertEquals(true, config.generateNextValue());
+        assertEquals(true, config.generateNextValue());
+    }
+
+    @Test
+    public void testFactoryCreateFromMapNewPatterns() {
+        Map<String, Object> map = java.util.Map.of(
+            "pattern", "BURST_MODE",
+            "burstDurationTicks", 4,
+            "burstIdleTicks", 2,
+            "trueProbability", 0.75,
+            "pTrueToTrue", 0.9,
+            "pFalseToTrue", 0.1
+        );
+
+        VariableConfiguration created = VariableFactory.createFromMap("bool1", "BOOLEAN", map);
+        assertTrue(created instanceof BooleanVariableConfig);
+        BooleanVariableConfig boolCreated = (BooleanVariableConfig) created;
+
+        assertEquals(GenerationPattern.BURST_MODE, boolCreated.getPattern());
+        assertEquals(4, boolCreated.getBurstDurationTicks());
+        assertEquals(2, boolCreated.getBurstIdleTicks());
+        assertEquals(0.75, boolCreated.getTrueProbability(), 0.001);
+        assertEquals(0.9, boolCreated.getPTrueToTrue(), 0.001);
+        assertEquals(0.1, boolCreated.getPFalseToTrue(), 0.001);
+    }
+
+    @Test
     public void testFactoryIntegration() {
         BooleanVariableConfig boolConfig = VariableFactory.createBoolean("flag")
             .pattern(GenerationPattern.CONSTANT_BOOLEAN)

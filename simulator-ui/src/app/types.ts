@@ -108,8 +108,27 @@ export interface ListVariableConfig extends BaseVariableConfig {
   shuffle?: boolean;
 }
 
+export type BooleanGenerationPattern =
+  | 'CONSTANT_BOOLEAN'
+  | 'DUTY_CYCLE'
+  | 'ALTERNATING_BOOLEAN'
+  | 'PROBABILITY'
+  | 'FLIP_INTERVAL'
+  | 'BURST_MODE'
+  | 'MARKOV';
+
 export interface BooleanVariableConfig extends BaseVariableConfig {
+  pattern?: BooleanGenerationPattern;
   currentValue?: boolean;
+  onDurationTicks?: number;
+  offDurationTicks?: number;
+  alternationInterval?: number;
+  trueProbability?: number;
+  flipInterval?: number;
+  burstDurationTicks?: number;
+  burstIdleTicks?: number;
+  pTrueToTrue?: number;
+  pFalseToTrue?: number;
 }
 
 export type TemporalType = 'DATE' | 'TIMESTAMP' | 'TIME';
