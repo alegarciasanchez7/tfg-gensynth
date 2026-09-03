@@ -311,8 +311,31 @@ public class VariableFactory {
 
             case "BOOLEAN":
                 BooleanVariableConfig boolConfig = createBoolean(id);
-                if (configMap.containsKey("currentValue"))
+                if (configMap.containsKey("pattern") && configMap.get("pattern") != null) {
+                    try {
+                        boolConfig.pattern(GenerationPattern.valueOf(((String) configMap.get("pattern")).toUpperCase()));
+                    } catch (Exception ignored) {}
+                }
+                if (configMap.containsKey("currentValue") && configMap.get("currentValue") != null)
                     boolConfig.constantValue((Boolean) configMap.get("currentValue"));
+                if (configMap.containsKey("onDurationTicks") && configMap.get("onDurationTicks") != null)
+                    boolConfig.onDurationTicks(((Number) configMap.get("onDurationTicks")).intValue());
+                if (configMap.containsKey("offDurationTicks") && configMap.get("offDurationTicks") != null)
+                    boolConfig.offDurationTicks(((Number) configMap.get("offDurationTicks")).intValue());
+                if (configMap.containsKey("alternationInterval") && configMap.get("alternationInterval") != null)
+                    boolConfig.alternationInterval(((Number) configMap.get("alternationInterval")).intValue());
+                if (configMap.containsKey("trueProbability") && configMap.get("trueProbability") != null)
+                    boolConfig.trueProbability(((Number) configMap.get("trueProbability")).doubleValue());
+                if (configMap.containsKey("flipInterval") && configMap.get("flipInterval") != null)
+                    boolConfig.flipInterval(((Number) configMap.get("flipInterval")).intValue());
+                if (configMap.containsKey("burstDurationTicks") && configMap.get("burstDurationTicks") != null)
+                    boolConfig.burstDurationTicks(((Number) configMap.get("burstDurationTicks")).intValue());
+                if (configMap.containsKey("burstIdleTicks") && configMap.get("burstIdleTicks") != null)
+                    boolConfig.burstIdleTicks(((Number) configMap.get("burstIdleTicks")).intValue());
+                if (configMap.containsKey("pTrueToTrue") && configMap.get("pTrueToTrue") != null)
+                    boolConfig.pTrueToTrue(((Number) configMap.get("pTrueToTrue")).doubleValue());
+                if (configMap.containsKey("pFalseToTrue") && configMap.get("pFalseToTrue") != null)
+                    boolConfig.pFalseToTrue(((Number) configMap.get("pFalseToTrue")).doubleValue());
                 return boolConfig;
 
             case "DATE":

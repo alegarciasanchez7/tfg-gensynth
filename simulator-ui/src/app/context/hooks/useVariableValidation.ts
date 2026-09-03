@@ -86,6 +86,26 @@ export function useVariableValidation() {
       if (config.maxStepDistance !== undefined && config.maxStepDistance < 0) {
         errors.maxStepDistance = 'Maximum step distance cannot be negative';
       }
+    } else if (type === 'boolean') {
+      const boolCfg = config as any;
+      if (boolCfg.trueProbability !== undefined && (boolCfg.trueProbability < 0 || boolCfg.trueProbability > 1)) {
+        errors.trueProbability = 'Probability must be between 0.0 and 1.0';
+      }
+      if (boolCfg.flipInterval !== undefined && boolCfg.flipInterval <= 0) {
+        errors.flipInterval = 'Flip interval must be greater than zero';
+      }
+      if (boolCfg.burstDurationTicks !== undefined && boolCfg.burstDurationTicks <= 0) {
+        errors.burstDurationTicks = 'Burst duration must be greater than zero';
+      }
+      if (boolCfg.burstIdleTicks !== undefined && boolCfg.burstIdleTicks < 0) {
+        errors.burstIdleTicks = 'Burst idle duration cannot be negative';
+      }
+      if (boolCfg.pTrueToTrue !== undefined && (boolCfg.pTrueToTrue < 0 || boolCfg.pTrueToTrue > 1)) {
+        errors.pTrueToTrue = 'Probability must be between 0.0 and 1.0';
+      }
+      if (boolCfg.pFalseToTrue !== undefined && (boolCfg.pFalseToTrue < 0 || boolCfg.pFalseToTrue > 1)) {
+        errors.pFalseToTrue = 'Probability must be between 0.0 and 1.0';
+      }
     }
 
     // Validate conditional rules targets exist
