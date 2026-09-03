@@ -4,6 +4,8 @@ import { Input } from '../../../ui/input';
 import { Label } from '../../../ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../ui/select';
 import { Switch } from '../../../ui/switch';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../../../ui/tooltip';
+import { Info } from 'lucide-react';
 
 interface TemporalConfigPanelProps {
   config: TemporalVariableConfig;
@@ -14,6 +16,30 @@ const PRESETS: Record<TemporalType, string[]> = {
   DATE: ['yyyy-MM-dd', 'dd/MM/yyyy', 'MM-dd-yyyy', 'yyyy.MM.dd'],
   TIMESTAMP: ["yyyy-MM-dd'T'HH:mm:ss.SSSZ", 'ISO_INSTANT', 'UNIX_TIMESTAMP', 'yyyy-MM-dd HH:mm:ss'],
   TIME: ['HH:mm:ss', 'HH:mm', 'HH:mm:ss.SSS', 'hh:mm a']
+};
+
+const ADVANCE_MODE_DESCRIPTIONS: Record<TimeAdvanceMode, string> = {
+  WALL_CLOCK: 'Emits the current real system clock time of the host machine at the moment each event is generated.',
+  SIMULATED_STEP: 'Advances a virtual simulation clock by a fixed step duration (t_next = t_current + Δt) per tick.',
+  BACKFILL_HISTORICAL: 'Generates timestamps across a historical date range for bulk historical data simulation.',
+  FIXED: 'Emits a constant, static timestamp value across all generated events.',
+};
+
+const DRIFT_TYPE_DESCRIPTIONS: Record<ClockDriftType, string> = {
+  RANDOM_JITTER: 'Injects random bounded timestamp perturbation (± max jitter ms) per tick to simulate latency.',
+  CONSTANT_OFFSET: 'Applies a fixed static millisecond time shift offset to all emitted timestamps.',
+  PROGRESSIVE_DRIFT: 'Linearly accumulates time drift rate (ms per tick) simulating uncalibrated hardware clocks.',
+};
+
+const TEMPORAL_TYPE_DESCRIPTIONS: Record<TemporalType, string> = {
+  DATE: 'Formats output as date only (e.g. yyyy-MM-dd).',
+  TIMESTAMP: 'Formats output as full date and time with timezone/offset (e.g. ISO-8601).',
+  TIME: 'Formats output as time-of-day only (e.g. HH:mm:ss).',
+};
+
+const BACKFILL_STRATEGY_DESCRIPTIONS: Record<BackfillStrategy, string> = {
+  SEQUENTIAL_STEP: 'Steps sequentially from range start date to range end date using fixed millisecond increments.',
+  RANDOM_IN_RANGE: 'Picks uniform random timestamps anywhere within the historical start and end span.',
 };
 
 export const TemporalConfigPanel: React.FC<TemporalConfigPanelProps> = ({ config, onChange }) => {
@@ -43,11 +69,50 @@ export const TemporalConfigPanel: React.FC<TemporalConfigPanelProps> = ({ config
     <div className="space-y-6">
       {/* 1. Time Advance Mode Section */}
       <div className="p-3 bg-[var(--c-bg2)]/50 border border-[var(--c-br1)] rounded-md space-y-3">
-        <h4 className="text-[12px] font-medium text-[var(--c-tx1)] border-b border-[var(--c-br1)] pb-1.5">
-          Time Advance Mode
-        </h4>
+        <div className="flex items-center justify-between border-b border-[var(--c-br1)] pb-1.5">
+          <h4 className="text-[12px] font-medium text-[var(--c-tx1)]">
+            Time Advance Mode
+          </h4>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className="text-[var(--c-tx4)] hover:text-cyan-400 cursor-help transition-colors"
+                aria-label="Time advance mode info"
+              >
+                <Info size={12} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-[280px] space-y-1 text-[11px] leading-relaxed">
+              <p className="font-semibold text-cyan-400">{advanceMode}</p>
+              <p>{ADVANCE_MODE_DESCRIPTIONS[advanceMode]}</p>
+            </TooltipContent>
+          </Tooltip>
+        </div>
+
         <div className="space-y-2">
-          <Label htmlFor="time-advance-mode">Advance Mode</Label>
+          <div className="flex items-center gap-1.5">
+            <Label htmlFor="time-advance-mode">Advance Mode</Label>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className="text-[var(--c-tx4)] hover:text-cyan-400 cursor-help transition-colors"
+                  aria-label="Advance mode selector info"
+                >
+                  <Info size={11} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-[280px] space-y-1 text-[11px] leading-relaxed">
+                <p className="font-semibold text-cyan-400">Available Advance Modes:</p>
+                <p>• Wall Clock: Real system time at event generation.</p>
+                <p>• Simulated Step: Incremental tick-driven clock (t + Δt).</p>
+                <p>• Backfill Historical: Mass historical range generation.</p>
+                <p>• Fixed: Constant unchanging timestamp.</p>
+              </TooltipContent>
+            </Tooltip>
+          </div>
+
           <Select
             value={advanceMode}
             onValueChange={(val: TimeAdvanceMode) => handleAdvanceModeChange(val)}
@@ -122,7 +187,23 @@ export const TemporalConfigPanel: React.FC<TemporalConfigPanelProps> = ({ config
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label htmlFor="backfill-strategy" className="text-[10px]">Sampling Strategy</Label>
+                <div className="flex items-center gap-1">
+                  <Label htmlFor="backfill-strategy" className="text-[10px]">Sampling Strategy</Label>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="text-[var(--c-tx4)] hover:text-cyan-400 cursor-help transition-colors"
+                        aria-label="Backfill strategy info"
+                      >
+                        <Info size={10} />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-[260px] text-[11px] leading-relaxed">
+                      {BACKFILL_STRATEGY_DESCRIPTIONS[config.backfillStrategy ?? 'SEQUENTIAL_STEP']}
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
                 <Select
                   value={config.backfillStrategy ?? 'SEQUENTIAL_STEP'}
                   onValueChange={(val: BackfillStrategy) => onChange({ backfillStrategy: val })}
@@ -173,9 +254,27 @@ export const TemporalConfigPanel: React.FC<TemporalConfigPanelProps> = ({ config
       {/* 2. Clock Drift & Skew (NTP Jitter) Simulation Section */}
       <div className="p-3 bg-[var(--c-bg2)]/50 border border-[var(--c-br1)] rounded-md space-y-3">
         <div className="flex items-center justify-between border-b border-[var(--c-br1)] pb-1.5">
-          <h4 className="text-[12px] font-medium text-[var(--c-tx1)]">
-            Clock Drift / Skew (NTP Jitter)
-          </h4>
+          <div className="flex items-center gap-1.5">
+            <h4 className="text-[12px] font-medium text-[var(--c-tx1)]">
+              Clock Drift / Skew (NTP Jitter)
+            </h4>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className="text-[var(--c-tx4)] hover:text-cyan-400 cursor-help transition-colors"
+                  aria-label="Clock drift section info"
+                >
+                  <Info size={12} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-[280px] space-y-1 text-[11px] leading-relaxed">
+                <p className="font-semibold text-cyan-400">Clock Skew Simulation:</p>
+                <p>Simulates hardware clock drift and NTP synchronization jitter typically present in IoT edge devices and remote gateways.</p>
+              </TooltipContent>
+            </Tooltip>
+          </div>
+
           <div className="flex items-center gap-2">
             <Label htmlFor="clock-drift-toggle" className="text-[10px] text-[var(--c-tx3)]">
               {config.clockDriftEnabled ? 'Enabled' : 'Disabled'}
@@ -193,7 +292,23 @@ export const TemporalConfigPanel: React.FC<TemporalConfigPanelProps> = ({ config
           <div className="space-y-3 pt-1">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label htmlFor="drift-type" className="text-[10px]">Drift Mode</Label>
+                <div className="flex items-center gap-1">
+                  <Label htmlFor="drift-type" className="text-[10px]">Drift Mode</Label>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="text-[var(--c-tx4)] hover:text-cyan-400 cursor-help transition-colors"
+                        aria-label="Drift mode info"
+                      >
+                        <Info size={10} />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-[260px] text-[11px] leading-relaxed">
+                      {DRIFT_TYPE_DESCRIPTIONS[config.driftType ?? 'RANDOM_JITTER']}
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
                 <Select
                   value={config.driftType ?? 'RANDOM_JITTER'}
                   onValueChange={(val: ClockDriftType) => onChange({ driftType: val })}
@@ -251,7 +366,23 @@ export const TemporalConfigPanel: React.FC<TemporalConfigPanelProps> = ({ config
 
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
-            <Label htmlFor="temporal-type">Output Category</Label>
+            <div className="flex items-center gap-1.5">
+              <Label htmlFor="temporal-type">Output Category</Label>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    className="text-[var(--c-tx4)] hover:text-cyan-400 cursor-help transition-colors"
+                    aria-label="Output category info"
+                  >
+                    <Info size={11} />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-[260px] text-[11px] leading-relaxed">
+                  {TEMPORAL_TYPE_DESCRIPTIONS[tType]}
+                </TooltipContent>
+              </Tooltip>
+            </div>
             <Select
               value={tType}
               onValueChange={(val: TemporalType) => {
