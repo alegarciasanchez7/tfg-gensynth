@@ -170,6 +170,16 @@ export type AltitudePattern = 'FOLLOW_XY' | 'FIXED_ALTITUDE' | 'RANDOM_UNIFORM' 
 export type Shape3DType = 'cube' | 'pyramid' | 'cone' | 'sphere';
 export type SelectionMode3D = 'vertices' | 'edges' | 'faces';
 
+export type ObstacleType = 'WALL_SEGMENT' | 'OBSTACLE_POLYGON';
+
+export interface BoundaryObstacle {
+  id: string;
+  type: ObstacleType;
+  name?: string;
+  points: Point3DCoord[];
+  enabled?: boolean;
+}
+
 export interface PointVariableConfig extends BaseVariableConfig {
   coordinateSystem?: CoordinateSystem;
   geospatialFormat?: GeospatialFormat;
@@ -195,6 +205,7 @@ export interface PointVariableConfig extends BaseVariableConfig {
   gpsNoiseEnabled?: boolean;
   jitterRadius?: number;
   boundaryPolygon?: Point3DCoord[];
+  obstacles?: BoundaryObstacle[];
   altitudeUnit?: AltitudeUnit;
   altitudeReference?: AltitudeReference;
   altitudePattern?: AltitudePattern;

@@ -514,6 +514,39 @@ public class VariableFactory {
                         pointConfig.range(pMinX, pMaxX, pMinY, pMaxY, minZ, maxZ);
                     }
                 }
+
+                if (configMap.get("obstacles") instanceof List<?> obsList) {
+                    for (Object item : obsList) {
+                        if (item instanceof Map<?, ?> obsMap) {
+                            String obsName = obsMap.containsKey("name") ? obsMap.get("name").toString() : "Obstacle";
+                            String typeStr = obsMap.containsKey("type") ? obsMap.get("type").toString() : "WALL_SEGMENT";
+                            BoundaryObstacle.ObstacleType obsType;
+                            try {
+                                obsType = BoundaryObstacle.ObstacleType.valueOf(typeStr.toUpperCase());
+                            } catch (Exception ignored) {
+                                obsType = BoundaryObstacle.ObstacleType.WALL_SEGMENT;
+                            }
+                            BoundaryObstacle obstacle = new BoundaryObstacle().name(obsName).type(obsType);
+                            if (obsMap.containsKey("id") && obsMap.get("id") != null) {
+                                obstacle.id(obsMap.get("id").toString());
+                            }
+                            if (obsMap.containsKey("enabled") && obsMap.get("enabled") != null) {
+                                obstacle.enabled(Boolean.TRUE.equals(obsMap.get("enabled")));
+                            }
+                            if (obsMap.get("points") instanceof List<?> ptsList) {
+                                for (Object pItem : ptsList) {
+                                    if (pItem instanceof Map<?, ?> ptMap) {
+                                        double px = ptMap.containsKey("x") ? ((Number) ptMap.get("x")).doubleValue() : 0.0;
+                                        double py = ptMap.containsKey("y") ? ((Number) ptMap.get("y")).doubleValue() : 0.0;
+                                        double pz = ptMap.containsKey("z") ? ((Number) ptMap.get("z")).doubleValue() : 0.0;
+                                        obstacle.addPoint(px, py, pz);
+                                    }
+                                }
+                            }
+                            pointConfig.addObstacle(obstacle);
+                        }
+                    }
+                }
                 return pointConfig;
 
             default:

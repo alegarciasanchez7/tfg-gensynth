@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { PointVariableConfig, BoundaryBehavior, CoordinateSystem, Point3DCoord, Shape3DType } from '../../../../types';
+import { PointVariableConfig, BoundaryBehavior, CoordinateSystem, Point3DCoord, Shape3DType, type BoundaryObstacle } from '../../../../types';
 import { Input } from '../../../ui/input';
 import { Label } from '../../../ui/label';
 import { Button } from '../../../ui/button';
@@ -8,12 +8,90 @@ import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '../../
 import { Canvas2DBoundaryEditor } from './Canvas2DBoundaryEditor';
 import { Isometric3DBoundaryEditor } from './Isometric3DBoundaryEditor';
 import { GeospatialMapBoundaryEditor } from './GeospatialMapBoundaryEditor';
-import { BoundaryExpandModal } from './BoundaryExpandModal';
+import { BoundaryExpandModal, useBoundaryModalContext } from './BoundaryExpandModal';
+import { BoundaryObstaclesEditor } from './BoundaryObstaclesEditor';
 
 interface SpatialBoundariesTabProps {
   config: PointVariableConfig;
   onChange: (newConfig: Partial<PointVariableConfig>) => void;
 }
+
+// Modal View Component that adapts dynamically based on isFullScreen context
+const Modal2DVisualEditor: React.FC<{
+  minPoint: Point3DCoord;
+  maxPoint: Point3DCoord;
+  polygon: Point3DCoord[];
+  config: PointVariableConfig;
+  updateBounds: (b: any) => void;
+  onChange: (b: any) => void;
+}> = ({ minPoint, maxPoint, polygon, config, updateBounds, onChange }) => {
+  const { isFullScreen } = useBoundaryModalContext();
+  const [selectedObstacleId, setSelectedObstacleId] = useState<string | null>(null);
+
+  if (isFullScreen) {
+    return (
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch flex-1 min-h-0 h-full w-full">
+        <div className="lg:col-span-7 xl:col-span-8 flex flex-col h-full min-h-0">
+          <Canvas2DBoundaryEditor
+            minX={minPoint.x ?? 0}
+            maxX={maxPoint.x ?? 100}
+            minY={minPoint.y ?? 0}
+            maxY={maxPoint.y ?? 100}
+            polygon={polygon}
+            obstacles={config.obstacles || []}
+            selectedObstacleId={selectedObstacleId}
+            onSelectObstacle={setSelectedObstacleId}
+            fillContainer={true}
+            showToolbar={true}
+            onChange={(b) => updateBounds({ minX: b.minX, maxX: b.maxX, minY: b.minY, maxY: b.maxY, polygon: b.polygon, obstacles: b.obstacles })}
+          />
+        </div>
+        <div className="lg:col-span-5 xl:col-span-4 flex flex-col h-full min-h-0 bg-[var(--c-bg4)] p-4 rounded-xl border border-[var(--c-br1)] overflow-y-auto space-y-4">
+          <h3 className="text-xs font-semibold uppercase text-violet-300 tracking-wider shrink-0">
+            2D Barriers & Obstacles Management
+          </h3>
+          <div className="flex-1 min-h-0">
+            <BoundaryObstaclesEditor
+              obstacles={config.obstacles || []}
+              selectedObstacleId={selectedObstacleId}
+              onSelectObstacle={setSelectedObstacleId}
+              onChange={(newObs) => onChange({ obstacles: newObs })}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Standard Windowed High-Precision Editor Modal
+  return (
+    <div className="space-y-4">
+      <Canvas2DBoundaryEditor
+        minX={minPoint.x ?? 0}
+        maxX={maxPoint.x ?? 100}
+        minY={minPoint.y ?? 0}
+        maxY={maxPoint.y ?? 100}
+        polygon={polygon}
+        obstacles={config.obstacles || []}
+        selectedObstacleId={selectedObstacleId}
+        onSelectObstacle={setSelectedObstacleId}
+        width={850}
+        height={420}
+        fillContainer={false}
+        showToolbar={true}
+        onChange={(b) => updateBounds({ minX: b.minX, maxX: b.maxX, minY: b.minY, maxY: b.maxY, polygon: b.polygon, obstacles: b.obstacles })}
+      />
+      <div className="bg-[var(--c-bg4)] p-4 rounded-xl border border-[var(--c-br1)]">
+        <BoundaryObstaclesEditor
+          obstacles={config.obstacles || []}
+          selectedObstacleId={selectedObstacleId}
+          onSelectObstacle={setSelectedObstacleId}
+          onChange={(newObs) => onChange({ obstacles: newObs })}
+        />
+      </div>
+    </div>
+  );
+};
 
 export const SpatialBoundariesTab: React.FC<SpatialBoundariesTabProps> = ({ config, onChange }) => {
   const coordSystem: CoordinateSystem = config.coordinateSystem ?? 'CARTESIAN_3D';
@@ -24,6 +102,7 @@ export const SpatialBoundariesTab: React.FC<SpatialBoundariesTabProps> = ({ conf
   const polygon = config.boundaryPolygon ?? [];
 
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [tabSelectedObsId, setTabSelectedObsId] = useState<string | null>(null);
 
   // Local state strings for precise numeric typing
   const [minXStr, setMinXStr] = useState(String(minPoint.x ?? 0));
@@ -63,6 +142,7 @@ export const SpatialBoundariesTab: React.FC<SpatialBoundariesTabProps> = ({ conf
     maxVerticalStep?: number;
     altitudeOscillationSpeed?: number;
     polygon?: Point3DCoord[];
+    obstacles?: BoundaryObstacle[];
     shape3DType?: Shape3DType;
     shape3DWidth?: number;
     shape3DLength?: number;
@@ -89,6 +169,7 @@ export const SpatialBoundariesTab: React.FC<SpatialBoundariesTabProps> = ({ conf
       maxVerticalStep: updates.maxVerticalStep ?? config.maxVerticalStep,
       altitudeOscillationSpeed: updates.altitudeOscillationSpeed ?? config.altitudeOscillationSpeed,
       boundaryPolygon: updates.polygon ?? polygon,
+      obstacles: updates.obstacles ?? config.obstacles,
       shape3DType: updates.shape3DType ?? config.shape3DType,
       shape3DWidth: updates.shape3DWidth ?? config.shape3DWidth,
       shape3DLength: updates.shape3DLength ?? config.shape3DLength,
@@ -98,8 +179,21 @@ export const SpatialBoundariesTab: React.FC<SpatialBoundariesTabProps> = ({ conf
   };
 
   const renderVisualEditor = (modalMode = false) => {
-    const canvasW = modalMode ? 720 : 360;
-    const canvasH = modalMode ? 460 : (isGeo ? 180 : 220);
+    const canvasW = modalMode ? 820 : 360;
+    const canvasH = modalMode ? 520 : (isGeo ? 180 : 200);
+
+    if (modalMode && is2D) {
+      return (
+        <Modal2DVisualEditor
+          minPoint={minPoint}
+          maxPoint={maxPoint}
+          polygon={polygon}
+          config={config}
+          updateBounds={updateBounds}
+          onChange={onChange}
+        />
+      );
+    }
 
     return (
       <>
@@ -110,9 +204,14 @@ export const SpatialBoundariesTab: React.FC<SpatialBoundariesTabProps> = ({ conf
             minY={minPoint.y ?? 0}
             maxY={maxPoint.y ?? 100}
             polygon={polygon}
+            obstacles={config.obstacles || []}
+            selectedObstacleId={tabSelectedObsId}
+            onSelectObstacle={setTabSelectedObsId}
             width={canvasW}
             height={canvasH}
-            onChange={(b) => updateBounds({ minX: b.minX, maxX: b.maxX, minY: b.minY, maxY: b.maxY, polygon: b.polygon })}
+            fillContainer={false}
+            showToolbar={false}
+            onChange={(b) => updateBounds({ minX: b.minX, maxX: b.maxX, minY: b.minY, maxY: b.maxY, polygon: b.polygon, obstacles: b.obstacles })}
           />
         )}
 
@@ -274,6 +373,16 @@ export const SpatialBoundariesTab: React.FC<SpatialBoundariesTabProps> = ({ conf
             </div>
           )}
         </div>
+
+        {/* 3b. 2D Wall Barriers & Forbidden Interior Obstacle Zones */}
+        {is2D && (
+          <BoundaryObstaclesEditor
+            obstacles={config.obstacles || []}
+            selectedObstacleId={tabSelectedObsId}
+            onSelectObstacle={setTabSelectedObsId}
+            onChange={(newObs) => onChange({ obstacles: newObs })}
+          />
+        )}
 
         {/* 4. Manual Numeric Input Grid (Outer Envelope Bounding Box) */}
         <div className="rounded border border-[var(--c-br1)] bg-[var(--c-bg4)] p-3 space-y-3">

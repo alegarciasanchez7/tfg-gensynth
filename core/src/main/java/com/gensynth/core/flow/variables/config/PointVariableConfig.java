@@ -87,6 +87,7 @@ public class PointVariableConfig extends VariableConfiguration {
     private AltitudeReference altitudeReference = AltitudeReference.MSL;
     private AltitudePattern altitudePattern = AltitudePattern.FOLLOW_XY;
     private Shape3DType shape3DType = Shape3DType.CUBE;
+    private List<BoundaryObstacle> obstacles = new ArrayList<>();
     private double shape3DWidth = 100.0;
     private double shape3DLength = 100.0;
     private double shape3DHeight = 100.0;
@@ -107,6 +108,7 @@ public class PointVariableConfig extends VariableConfiguration {
         this.minPoint = new Point3D(0.0, 0.0, 0.0);
         this.maxPoint = new Point3D(1.0, 1.0, 1.0);
         this.boundaryPolygon = new ArrayList<>();
+        this.obstacles = new ArrayList<>();
         this.path = new ArrayList<>(8);
         this.interpolationSteps = 1;
         this.navigationSpeed = 1.0;
@@ -269,6 +271,102 @@ public class PointVariableConfig extends VariableConfiguration {
 
     public List<Point3D> getBoundaryPolygon() {
         return boundaryPolygon;
+    }
+
+    public List<BoundaryObstacle> getObstacles() {
+        return obstacles;
+    }
+
+    public PointVariableConfig obstacles(List<BoundaryObstacle> list) {
+        if (list != null) {
+            this.obstacles = new ArrayList<>(list);
+        }
+        return this;
+    }
+
+    public PointVariableConfig addObstacle(BoundaryObstacle obstacle) {
+        if (obstacle != null) {
+            this.obstacles.add(obstacle);
+        }
+        return this;
+    }
+
+    public boolean isPointInAnyObstacle(double x, double y) {
+        if (obstacles == null || obstacles.isEmpty()) {
+            return false;
+        }
+        for (BoundaryObstacle obs : obstacles) {
+            if (obs != null && obs.isEnabled() && obs.getType() == BoundaryObstacle.ObstacleType.OBSTACLE_POLYGON) {
+                if (obs.getPoints() != null && obs.getPoints().size() >= 3) {
+                    if (isPointInsideSpecificPolygon(x, y, obs.getPoints())) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    private boolean isPointInsideSpecificPolygon(double x, double y, List<Point3D> poly) {
+        boolean inside = false;
+        int n = poly.size();
+        for (int i = 0, j = n - 1; i < n; j = i++) {
+            double xi = poly.get(i).x, yi = poly.get(i).y;
+            double xj = poly.get(j).x, yj = poly.get(j).y;
+            if (((yi > y) != (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) {
+                inside = !inside;
+            }
+        }
+        return inside;
+    }
+
+    public boolean doLineSegmentsIntersect(double p0_x, double p0_y, double p1_x, double p1_y,
+                                          double p2_x, double p2_y, double p3_x, double p3_y) {
+        double s1_x = p1_x - p0_x;
+        double s1_y = p1_y - p0_y;
+        double s2_x = p3_x - p2_x;
+        double s2_y = p3_y - p2_y;
+
+        double denom = (-s2_x * s1_y + s1_x * s2_y);
+        if (Math.abs(denom) < 1e-9) {
+            return false;
+        }
+
+        double s = (-s1_y * (p0_x - p2_x) + s1_x * (p0_y - p2_y)) / denom;
+        double t = ( s2_x * (p0_y - p2_y) - s2_y * (p0_x - p2_x)) / denom;
+
+        return (s >= 0.0 && s <= 1.0 && t >= 0.0 && t <= 1.0);
+    }
+
+    public boolean doesSegmentIntersectAnyWall(double x1, double y1, double x2, double y2) {
+        if (obstacles == null || obstacles.isEmpty()) {
+            return false;
+        }
+        for (BoundaryObstacle obs : obstacles) {
+            if (obs == null || !obs.isEnabled()) continue;
+            List<Point3D> pts = obs.getPoints();
+            if (pts == null) continue;
+
+            if (obs.getType() == BoundaryObstacle.ObstacleType.WALL_SEGMENT && pts.size() >= 2) {
+                for (int i = 0; i < pts.size() - 1; i++) {
+                    Point3D a = pts.get(i);
+                    Point3D b = pts.get(i + 1);
+                    if (doLineSegmentsIntersect(x1, y1, x2, y2, a.x, a.y, b.x, b.y)) {
+                        return true;
+                    }
+                }
+            } else if (obs.getType() == BoundaryObstacle.ObstacleType.OBSTACLE_POLYGON && pts.size() >= 3) {
+                int n = pts.size();
+                for (int i = 0; i < n; i++) {
+                    Point3D a = pts.get(i);
+                    Point3D b = pts.get((i + 1) % n);
+                    if (doLineSegmentsIntersect(x1, y1, x2, y2, a.x, a.y, b.x, b.y)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     public Shape3DType getShape3DType() {
@@ -501,13 +599,13 @@ public class PointVariableConfig extends VariableConfiguration {
     }
 
     private Point3D generateRandomPoint() {
-        for (int i = 0; i < 100; i++) {
+        for (int i = 0; i < 200; i++) {
             double x = randomInRange(minPoint.x, maxPoint.x);
             double y = randomInRange(minPoint.y, maxPoint.y);
             double z = (initialAltitude != null && (altitudePattern == AltitudePattern.FOLLOW_XY || altitudePattern == null))
                 ? initialAltitude
                 : randomInRange(minPoint.z, maxPoint.z);
-            if (isPointInsidePolygon(x, y)) {
+            if (isPointInsidePolygon(x, y) && !isPointInAnyObstacle(x, y)) {
                 return new Point3D(x, y, z);
             }
         }
@@ -552,8 +650,10 @@ public class PointVariableConfig extends VariableConfiguration {
     }
 
     private Point3D generateRandomWalkPoint() {
-        if (lastPoint == null) {
-            Point3D initial = generateRandomPoint();
+        if (lastPoint == null || isPointInAnyObstacle(lastPoint.x, lastPoint.y)) {
+            Point3D initial = (fixedPoint != null && (fixedPoint.x != 0 || fixedPoint.y != 0 || minPoint.x == 0))
+                ? fixedPoint
+                : generateRandomPoint();
             if (initialAltitude != null && (altitudePattern == AltitudePattern.FOLLOW_XY || altitudePattern == null)) {
                 initial = new Point3D(initial.x, initial.y, initialAltitude);
             }
@@ -572,7 +672,6 @@ public class PointVariableConfig extends VariableConfiguration {
 
         double stepZ;
         if (coordinateSystem == CoordinateSystem.GEOSPATIAL && spanZ > 0) {
-            // Scale altitude (Z) step proportional to altitude span (e.g. 5% of altitude range)
             stepZ = (maxStepDistance >= 1.0) ? maxStepDistance : Math.max(spanZ * 0.05, 0.01);
         } else {
             stepZ = stepXY;
@@ -591,6 +690,16 @@ public class PointVariableConfig extends VariableConfiguration {
         double targetX = lastPoint.x + vx;
         double targetY = lastPoint.y + vy;
         double targetZ = lastPoint.z + vz;
+
+        // Check if movement segment hits a wall barrier or steps inside an obstacle zone
+        if (doesSegmentIntersectAnyWall(lastPoint.x, lastPoint.y, targetX, targetY) || isPointInAnyObstacle(targetX, targetY)) {
+            if (boundaryBehavior == BoundaryBehavior.BOUNCE) {
+                lastVelocity = new Point3D(-vx, -vy, vz);
+            } else {
+                lastVelocity = new Point3D(0.0, 0.0, 0.0);
+            }
+            return lastPoint;
+        }
 
         Point3D bounded = applyBoundaries(targetX, targetY, targetZ, vx, vy, vz);
         lastPoint = bounded;
