@@ -167,10 +167,18 @@ export type AltitudeUnit = 'METERS' | 'FEET' | 'KILOMETERS' | 'MILES';
 export type AltitudeReference = 'MSL' | 'AGL' | 'ELLIPSOID';
 export type AltitudePattern = 'FOLLOW_XY' | 'FIXED_ALTITUDE' | 'RANDOM_UNIFORM' | 'RANDOM_WALK' | 'SINE_OSCILLATION';
 
+export type Shape3DType = 'cube' | 'pyramid' | 'cone' | 'sphere';
+export type SelectionMode3D = 'vertices' | 'edges' | 'faces';
+
 export interface PointVariableConfig extends BaseVariableConfig {
   coordinateSystem?: CoordinateSystem;
   geospatialFormat?: GeospatialFormat;
   boundaryBehavior?: BoundaryBehavior;
+  shape3DType?: Shape3DType;
+  shape3DWidth?: number;
+  shape3DLength?: number;
+  shape3DRadius?: number;
+  shape3DHeight?: number;
   minPoint?: Point3DCoord;
   maxPoint?: Point3DCoord;
   fixedPoint?: Point3DCoord;

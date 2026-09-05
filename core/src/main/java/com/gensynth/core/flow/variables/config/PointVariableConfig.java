@@ -76,9 +76,21 @@ public class PointVariableConfig extends VariableConfiguration {
         SINE_OSCILLATION  // Sinusoidal wave up/down hover oscillation
     }
 
+    public enum Shape3DType {
+        CUBE,
+        PYRAMID,
+        CONE,
+        SPHERE
+    }
+
     private AltitudeUnit altitudeUnit = AltitudeUnit.METERS;
     private AltitudeReference altitudeReference = AltitudeReference.MSL;
     private AltitudePattern altitudePattern = AltitudePattern.FOLLOW_XY;
+    private Shape3DType shape3DType = Shape3DType.CUBE;
+    private double shape3DWidth = 100.0;
+    private double shape3DLength = 100.0;
+    private double shape3DHeight = 100.0;
+    private double shape3DRadius = 50.0;
     private double maxVerticalStep = 1.0;
     private double altitudeOscillationSpeed = 0.1;
     private double currentAltitudeAngle = 0.0;
@@ -259,6 +271,51 @@ public class PointVariableConfig extends VariableConfiguration {
         return boundaryPolygon;
     }
 
+    public Shape3DType getShape3DType() {
+        return shape3DType;
+    }
+
+    public PointVariableConfig shape3DType(Shape3DType shape) {
+        if (shape != null) this.shape3DType = shape;
+        return this;
+    }
+
+    public double getShape3DWidth() {
+        return shape3DWidth;
+    }
+
+    public PointVariableConfig shape3DWidth(double width) {
+        this.shape3DWidth = Math.max(0.1, width);
+        return this;
+    }
+
+    public double getShape3DLength() {
+        return shape3DLength;
+    }
+
+    public PointVariableConfig shape3DLength(double length) {
+        this.shape3DLength = Math.max(0.1, length);
+        return this;
+    }
+
+    public double getShape3DRadius() {
+        return shape3DRadius;
+    }
+
+    public PointVariableConfig shape3DRadius(double radius) {
+        this.shape3DRadius = Math.max(0.1, radius);
+        return this;
+    }
+
+    public double getShape3DHeight() {
+        return shape3DHeight;
+    }
+
+    public PointVariableConfig shape3DHeight(double height) {
+        this.shape3DHeight = (Math.abs(height) < 0.1) ? 0.1 : height;
+        return this;
+    }
+
     public AltitudeUnit getAltitudeUnit() {
         return altitudeUnit;
     }
@@ -411,7 +468,8 @@ public class PointVariableConfig extends VariableConfiguration {
                 point = fixedPoint;
                 break;
             case RANDOM_POINT:
-                point = generateRandomPoint();
+                Point3D rawRand = generateRandomPoint();
+                point = applyBoundaries(rawRand.x, rawRand.y, rawRand.z, 0, 0, 0);
                 break;
             case PATH_INTERPOLATOR:
             case WAYPOINT_NAVIGATION:
@@ -495,11 +553,12 @@ public class PointVariableConfig extends VariableConfiguration {
 
     private Point3D generateRandomWalkPoint() {
         if (lastPoint == null) {
-            lastPoint = generateRandomPoint();
+            Point3D initial = generateRandomPoint();
             if (initialAltitude != null && (altitudePattern == AltitudePattern.FOLLOW_XY || altitudePattern == null)) {
-                lastPoint = new Point3D(lastPoint.x, lastPoint.y, initialAltitude);
+                initial = new Point3D(initial.x, initial.y, initialAltitude);
             }
             lastVelocity = new Point3D(0.0, 0.0, 0.0);
+            lastPoint = applyBoundaries(initial.x, initial.y, initial.z, 0, 0, 0);
             return lastPoint;
         }
 
@@ -570,33 +629,174 @@ public class PointVariableConfig extends VariableConfiguration {
         double newVy = vy;
         double newVz = vz;
 
-        switch (boundaryBehavior) {
-            case CLAMP:
-                newX = Math.max(minPoint.x, Math.min(maxPoint.x, x));
-                newY = Math.max(minPoint.y, Math.min(maxPoint.y, y));
-                newZ = Math.max(minPoint.z, Math.min(maxPoint.z, z));
-                break;
+        if (coordinateSystem != CoordinateSystem.CARTESIAN_3D) {
+            double boundMinX = Math.min(minPoint.x, maxPoint.x);
+            double boundMaxX = Math.max(minPoint.x, maxPoint.x);
+            double boundMinY = Math.min(minPoint.y, maxPoint.y);
+            double boundMaxY = Math.max(minPoint.y, maxPoint.y);
+            double boundMinZ = Math.min(minPoint.z, maxPoint.z);
+            double boundMaxZ = Math.max(minPoint.z, maxPoint.z);
 
-            case WRAP:
-                newX = wrapValue(x, minPoint.x, maxPoint.x);
-                newY = wrapValue(y, minPoint.y, maxPoint.y);
-                newZ = wrapValue(z, minPoint.z, maxPoint.z);
-                break;
+            switch (boundaryBehavior) {
+                case CLAMP:
+                    newX = Math.max(boundMinX, Math.min(boundMaxX, x));
+                    newY = Math.max(boundMinY, Math.min(boundMaxY, y));
+                    newZ = Math.max(boundMinZ, Math.min(boundMaxZ, z));
+                    break;
 
-            case BOUNCE:
-                if (x < minPoint.x || x > maxPoint.x) {
+                case WRAP:
+                    newX = wrapValue(x, boundMinX, boundMaxX);
+                    newY = wrapValue(y, boundMinY, boundMaxY);
+                    newZ = wrapValue(z, boundMinZ, boundMaxZ);
+                    break;
+
+                case BOUNCE:
+                    if (x < boundMinX || x > boundMaxX) {
+                        newVx = -vx;
+                        newX = Math.max(boundMinX, Math.min(boundMaxX, x < boundMinX ? boundMinX + (boundMinX - x) : boundMaxX - (x - boundMaxX)));
+                    }
+                    if (y < boundMinY || y > boundMaxY) {
+                        newVy = -vy;
+                        newY = Math.max(boundMinY, Math.min(boundMaxY, y < boundMinY ? boundMinY + (boundMinY - y) : boundMaxY - (y - boundMaxY)));
+                    }
+                    if (z < boundMinZ || z > boundMaxZ) {
+                        newVz = -vz;
+                        newZ = Math.max(boundMinZ, Math.min(boundMaxZ, z < boundMinZ ? boundMinZ + (boundMinZ - z) : boundMaxZ - (z - boundMaxZ)));
+                    }
+                    break;
+            }
+            lastVelocity = new Point3D(newVx, newVy, newVz);
+            return new Point3D(newX, newY, newZ);
+        }
+
+        if (shape3DType == Shape3DType.SPHERE) {
+            double cx = (minPoint.x + maxPoint.x) / 2.0;
+            double cy = (minPoint.y + maxPoint.y) / 2.0;
+            double cz = (minPoint.z + maxPoint.z) / 2.0;
+            double radius = shape3DRadius > 0 ? shape3DRadius : 50.0;
+
+            double dx = x - cx;
+            double dy = y - cy;
+            double dz = z - cz;
+            double dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+            if (dist > radius) {
+                if (boundaryBehavior == BoundaryBehavior.BOUNCE) {
                     newVx = -vx;
-                    newX = Math.max(minPoint.x, Math.min(maxPoint.x, x < minPoint.x ? minPoint.x + (minPoint.x - x) : maxPoint.x - (x - maxPoint.x)));
-                }
-                if (y < minPoint.y || y > maxPoint.y) {
                     newVy = -vy;
-                    newY = Math.max(minPoint.y, Math.min(maxPoint.y, y < minPoint.y ? minPoint.y + (minPoint.y - y) : maxPoint.y - (y - maxPoint.y)));
-                }
-                if (z < minPoint.z || z > maxPoint.z) {
                     newVz = -vz;
-                    newZ = Math.max(minPoint.z, Math.min(maxPoint.z, z < minPoint.z ? minPoint.z + (minPoint.z - z) : maxPoint.z - (z - maxPoint.z)));
+                    double factor = (radius * 0.95) / (dist > 0 ? dist : 1.0);
+                    newX = cx + dx * factor;
+                    newY = cy + dy * factor;
+                    newZ = cz + dz * factor;
+                } else if (boundaryBehavior == BoundaryBehavior.WRAP) {
+                    double factor = -0.8;
+                    newX = cx + dx * factor;
+                    newY = cy + dy * factor;
+                    newZ = cz + dz * factor;
+                } else { // CLAMP
+                    double factor = radius / (dist > 0 ? dist : 1.0);
+                    newX = cx + dx * factor;
+                    newY = cy + dy * factor;
+                    newZ = cz + dz * factor;
                 }
-                break;
+            }
+        } else if (shape3DType == Shape3DType.CONE) {
+            double baseZ = minPoint.z;
+            double topZ = minPoint.z + shape3DHeight;
+            double zMin = Math.min(baseZ, topZ);
+            double zMax = Math.max(baseZ, topZ);
+            newZ = Math.max(zMin, Math.min(zMax, z));
+
+            double height = Math.abs(shape3DHeight) > 0.001 ? Math.abs(shape3DHeight) : 100.0;
+            double normZ = shape3DHeight >= 0 
+                ? Math.max(0.0, Math.min(1.0, (newZ - baseZ) / height))
+                : Math.max(0.0, Math.min(1.0, (baseZ - newZ) / height));
+            double radiusAtZ = (shape3DRadius > 0 ? shape3DRadius : 50.0) * (1.0 - normZ);
+
+            double cx = (minPoint.x + maxPoint.x) / 2.0;
+            double cy = (minPoint.y + maxPoint.y) / 2.0;
+            double dx = x - cx;
+            double dy = y - cy;
+            double distXY = Math.sqrt(dx * dx + dy * dy);
+
+            if (distXY > radiusAtZ) {
+                if (boundaryBehavior == BoundaryBehavior.BOUNCE) {
+                    newVx = -vx;
+                    newVy = -vy;
+                }
+                double factor = radiusAtZ / (distXY > 0 ? distXY : 1.0);
+                newX = cx + dx * factor;
+                newY = cy + dy * factor;
+            }
+        } else if (shape3DType == Shape3DType.PYRAMID) {
+            double baseZ = minPoint.z;
+            double topZ = minPoint.z + shape3DHeight;
+            double zMin = Math.min(baseZ, topZ);
+            double zMax = Math.max(baseZ, topZ);
+            newZ = Math.max(zMin, Math.min(zMax, z));
+
+            double height = Math.abs(shape3DHeight) > 0.001 ? Math.abs(shape3DHeight) : 100.0;
+            double normZ = shape3DHeight >= 0 
+                ? Math.max(0.0, Math.min(1.0, (newZ - baseZ) / height))
+                : Math.max(0.0, Math.min(1.0, (baseZ - newZ) / height));
+            double scale = 1.0 - normZ;
+
+            double cx = (minPoint.x + maxPoint.x) / 2.0;
+            double cy = (minPoint.y + maxPoint.y) / 2.0;
+            double halfX = (shape3DWidth > 0 ? shape3DWidth : 100.0) / 2.0 * scale;
+            double halfY = (shape3DLength > 0 ? shape3DLength : 100.0) / 2.0 * scale;
+
+            newX = Math.max(cx - halfX, Math.min(cx + halfX, x));
+            newY = Math.max(cy - halfY, Math.min(cy + halfY, y));
+            if (boundaryBehavior == BoundaryBehavior.BOUNCE && (x != newX || y != newY)) {
+                newVx = -vx;
+                newVy = -vy;
+            }
+        } else {
+            // CUBE / BOX
+            double halfX = (shape3DWidth > 0 ? shape3DWidth : Math.abs(maxPoint.x - minPoint.x)) / 2.0;
+            double halfY = (shape3DLength > 0 ? shape3DLength : Math.abs(maxPoint.y - minPoint.y)) / 2.0;
+            double cx = (minPoint.x + maxPoint.x) / 2.0;
+            double cy = (minPoint.y + maxPoint.y) / 2.0;
+            double bZ1 = minPoint.z;
+            double bZ2 = minPoint.z + shape3DHeight;
+            double boundMinZ = Math.min(bZ1, bZ2);
+            double boundMaxZ = Math.max(bZ1, bZ2);
+
+            double boundMinX = cx - halfX;
+            double boundMaxX = cx + halfX;
+            double boundMinY = cy - halfY;
+            double boundMaxY = cy + halfY;
+
+            switch (boundaryBehavior) {
+                case CLAMP:
+                    newX = Math.max(boundMinX, Math.min(boundMaxX, x));
+                    newY = Math.max(boundMinY, Math.min(boundMaxY, y));
+                    newZ = Math.max(boundMinZ, Math.min(boundMaxZ, z));
+                    break;
+
+                case WRAP:
+                    newX = wrapValue(x, boundMinX, boundMaxX);
+                    newY = wrapValue(y, boundMinY, boundMaxY);
+                    newZ = wrapValue(z, boundMinZ, boundMaxZ);
+                    break;
+
+                case BOUNCE:
+                    if (x < boundMinX || x > boundMaxX) {
+                        newVx = -vx;
+                        newX = Math.max(boundMinX, Math.min(boundMaxX, x < boundMinX ? boundMinX + (boundMinX - x) : boundMaxX - (x - boundMaxX)));
+                    }
+                    if (y < boundMinY || y > boundMaxY) {
+                        newVy = -vy;
+                        newY = Math.max(boundMinY, Math.min(boundMaxY, y < boundMinY ? boundMinY + (boundMinY - y) : boundMaxY - (y - boundMaxY)));
+                    }
+                    if (z < boundMinZ || z > boundMaxZ) {
+                        newVz = -vz;
+                        newZ = Math.max(boundMinZ, Math.min(boundMaxZ, z < boundMinZ ? boundMinZ + (boundMinZ - z) : boundMaxZ - (z - boundMaxZ)));
+                    }
+                    break;
+            }
         }
 
         if (boundaryPolygon != null && boundaryPolygon.size() >= 3 && !isPointInsidePolygon(newX, newY)) {
