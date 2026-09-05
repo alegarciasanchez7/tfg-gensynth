@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { PointVariableConfig, BoundaryBehavior, CoordinateSystem, Point3DCoord } from '../../../../types';
+import { PointVariableConfig, BoundaryBehavior, CoordinateSystem, Point3DCoord, Shape3DType } from '../../../../types';
 import { Input } from '../../../ui/input';
 import { Label } from '../../../ui/label';
 import { Button } from '../../../ui/button';
@@ -63,6 +63,11 @@ export const SpatialBoundariesTab: React.FC<SpatialBoundariesTabProps> = ({ conf
     maxVerticalStep?: number;
     altitudeOscillationSpeed?: number;
     polygon?: Point3DCoord[];
+    shape3DType?: Shape3DType;
+    shape3DWidth?: number;
+    shape3DLength?: number;
+    shape3DHeight?: number;
+    shape3DRadius?: number;
   }) => {
     const newMin = {
       x: updates.minX ?? minPoint.x ?? 0,
@@ -84,12 +89,17 @@ export const SpatialBoundariesTab: React.FC<SpatialBoundariesTabProps> = ({ conf
       maxVerticalStep: updates.maxVerticalStep ?? config.maxVerticalStep,
       altitudeOscillationSpeed: updates.altitudeOscillationSpeed ?? config.altitudeOscillationSpeed,
       boundaryPolygon: updates.polygon ?? polygon,
+      shape3DType: updates.shape3DType ?? config.shape3DType,
+      shape3DWidth: updates.shape3DWidth ?? config.shape3DWidth,
+      shape3DLength: updates.shape3DLength ?? config.shape3DLength,
+      shape3DHeight: updates.shape3DHeight ?? config.shape3DHeight,
+      shape3DRadius: updates.shape3DRadius ?? config.shape3DRadius,
     });
   };
 
   const renderVisualEditor = (modalMode = false) => {
-    const canvasW = modalMode ? 760 : 360;
-    const canvasH = modalMode ? 420 : (isGeo ? 180 : 200);
+    const canvasW = modalMode ? 720 : 360;
+    const canvasH = modalMode ? 460 : (isGeo ? 180 : 220);
 
     return (
       <>
@@ -115,9 +125,25 @@ export const SpatialBoundariesTab: React.FC<SpatialBoundariesTabProps> = ({ conf
             minZ={minPoint.z ?? 0}
             maxZ={maxPoint.z ?? 100}
             polygon={polygon}
-            width={modalMode ? 520 : 260}
-            height={modalMode ? 320 : 160}
-            onChange={(b) => updateBounds({ minZ: b.minZ, maxZ: b.maxZ, polygon: b.polygon })}
+            shape3DType={config.shape3DType ?? 'cube'}
+            shape3DWidth={config.shape3DWidth}
+            shape3DLength={config.shape3DLength}
+            shape3DHeight={config.shape3DHeight}
+            shape3DRadius={config.shape3DRadius ?? 50}
+            width={canvasW}
+            height={canvasH}
+            onChange={(b) =>
+              updateBounds({
+                minZ: b.minZ,
+                maxZ: b.maxZ,
+                polygon: b.polygon,
+                shape3DType: b.shape3DType,
+                shape3DWidth: b.shape3DWidth,
+                shape3DLength: b.shape3DLength,
+                shape3DHeight: b.shape3DHeight,
+                shape3DRadius: b.shape3DRadius,
+              })
+            }
           />
         )}
 
