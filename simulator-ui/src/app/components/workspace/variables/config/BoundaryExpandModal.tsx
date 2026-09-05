@@ -90,7 +90,7 @@ export const BoundaryExpandModal: React.FC<BoundaryExpandModalProps> = ({
           </div>
 
           {/* Modal Content */}
-          <div className={`overflow-y-auto space-y-4 flex-1 ${isFullScreen ? 'p-3' : 'p-6'}`}>
+          <div className={`flex-1 min-h-0 ${isFullScreen ? 'p-3 flex flex-col overflow-hidden' : 'p-6 overflow-y-auto space-y-4'}`}>
             {children}
           </div>
 
