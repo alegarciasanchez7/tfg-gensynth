@@ -287,6 +287,8 @@ export function VariableEditorConfigCard({ typeLabel, theme, draft, setDraft }: 
               rules={parsedConfig.conditionalRules || []}
               onChange={(rules) => handleConfigChange({ conditionalRules: rules })}
               variableType={draft.type}
+              variableScope={draft.scope}
+              currentVariableName={draft.name}
               flowId={draft.flowId}
               groupId={draft.groupId}
             />

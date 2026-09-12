@@ -161,7 +161,7 @@ export function PluginImportPanel({ onClose }: PluginImportPanelProps) {
   return (
     <div
         ref={ref}
-        className="absolute left-0 top-full mt-2 z-50 bg-[var(--c-bg2)] border border-[var(--c-br1)] rounded-lg shadow-2xl shadow-black/40 py-4 px-5 animate-in fade-in slide-in-from-top-2 duration-200"
+        className="absolute left-0 top-full mt-2 z-[100] bg-[var(--c-bg2)] border border-[var(--c-br1)] rounded-lg shadow-2xl shadow-black/50 py-4 px-5 animate-in fade-in slide-in-from-top-2 duration-200"
         style={{ fontFamily: 'JetBrains Mono, monospace', width: 420 }}
       >
         {/* Header */}
