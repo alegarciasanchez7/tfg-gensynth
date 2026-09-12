@@ -5,6 +5,7 @@ import type { ConnectorPluginDescriptor } from '../../../core/types';
 import { PluginImportPanel } from './PluginImportPanel';
 import { ConnectorCatalogPanel } from './ConnectorCatalogPanel';
 import { SettingsPanel } from './SettingsPanel';
+import { ResourceBar } from '../resource-bar/ResourceBar';
 
 interface HeaderProps {
   systemStatus: SystemStatus;
@@ -143,11 +144,12 @@ export function Header({
 
   return (
     <div
-      className="flex items-center gap-3 px-4 border-b border-[var(--c-br1)] bg-[var(--c-bg2)] shrink-0 relative"
-      style={{ height: 52 }}
+      className="relative z-[100] flex items-center gap-3 px-4 border-b border-[var(--c-br1)] bg-[var(--c-bg2)] shrink-0 select-none overflow-visible"
+      style={{ height: 50 }}
     >
+      {/* ── Left: Main Project Controls ── */}
       {/* Logo + Name */}
-      <div className="flex items-center gap-2.5 mr-2">
+      <div className="flex items-center gap-2.5 mr-1 shrink-0">
         <div className="flex items-center justify-center w-7 h-7 overflow-hidden">
           <img src="/logo_azul.png" alt="GenSynth Logo" className="w-full h-full object-contain" />
         </div>
@@ -160,13 +162,15 @@ export function Header({
       </div>
 
       {/* Separator */}
-      <div className="w-px h-7 bg-[var(--c-br1)]" />
+      <div className="w-px h-6 bg-[var(--c-br1)] shrink-0" />
 
       {/* Status badge */}
-      <StatusBadge status={systemStatus} />
+      <div className="shrink-0">
+        <StatusBadge status={systemStatus} />
+      </div>
 
       {/* Power controls */}
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1 shrink-0">
         <button
           onClick={onStatusToggle}
           title={!isRunning && hasPreStartErrors ? 'Warning: Validation errors or circular dependencies detected! Click to try starting anyway.' : isRunning ? 'Stop simulator' : 'Start simulator'}
@@ -187,10 +191,10 @@ export function Header({
       </div>
 
       {/* Separator */}
-      <div className="w-px h-7 bg-[var(--c-br1)]" />
+      <div className="w-px h-6 bg-[var(--c-br1)] shrink-0" />
 
       {/* File actions */}
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1 shrink-0">
         <button
           onClick={async () => {
             setLoadingState(true);
@@ -226,10 +230,10 @@ export function Header({
       </div>
 
       {/* Separator */}
-      <div className="w-px h-7 bg-[var(--c-br1)]" />
+      <div className="w-px h-6 bg-[var(--c-br1)] shrink-0" />
 
       {/* Connector catalog button */}
-      <div className="relative">
+      <div className="relative shrink-0">
         <button
           onClick={() => setShowCatalog(s => !s)}
           className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded border text-xs transition-all ${showCatalog
@@ -250,7 +254,7 @@ export function Header({
       </div>
 
       {/* Plugin import button */}
-      <div className="relative">
+      <div className="relative shrink-0">
         <button
           id="plugin-import-toggle"
           onClick={() => setShowPluginImport(s => !s)}
@@ -267,11 +271,24 @@ export function Header({
         )}
       </div>
 
+      {/* ── Prominent Section Divider ── */}
+      <div className="flex items-center shrink-0 mx-1.5">
+        <div className="w-0.5 h-6 bg-[var(--c-br3)]/60 rounded-full" />
+      </div>
+
+      {/* ── Telemetry / Resource Monitor ── */}
+      <ResourceBar />
+
       {/* Spacer */}
-      <div className="flex-1" />
+      <div className="flex-1 min-w-[12px]" />
+
+      {/* Version badge */}
+      <div className="text-[10px] text-[var(--c-tx5)] tracking-wider shrink-0 mr-1" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+        GenSynth 0.5.0-alpha
+      </div>
 
       {/* Settings */}
-      <div className="relative">
+      <div className="relative shrink-0">
         <button
           onClick={() => setShowSettings(s => !s)}
           className={`flex items-center justify-center w-7 h-7 rounded border transition-all ${showSettings
