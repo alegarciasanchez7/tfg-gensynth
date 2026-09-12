@@ -1,5 +1,4 @@
 import { Header } from './components/layout/header/Header';
-import { ResourceBar } from './components/layout/resource-bar/ResourceBar';
 import { LeftPanel } from './components/layout/panels/left/LeftPanel';
 import { Workspace } from './components/workspace/Workspace';
 import { RightPanel } from './components/layout/panels/right/RightPanel';
@@ -67,7 +66,7 @@ export default function App() {
       }}
     >
       <RestartOverlay isVisible={isRestarting} />
-      {/* ── Header ─────────────────────────────────── */}
+      {/* ── Header (with integrated telemetry) ────── */}
       <Header
         systemStatus={systemStatus}
         onStatusToggle={actions.toggleSystem}
@@ -80,9 +79,6 @@ export default function App() {
         connectorHealthSummary={connectorHealthSummary}
         variables={variables}
       />
-
-      {/* ── Resource monitor bar ────────────────────── */}
-      <ResourceBar />
 
       {/* ── Main 3-column layout ────────────────────── */}
       <div className="flex flex-1 overflow-hidden">
