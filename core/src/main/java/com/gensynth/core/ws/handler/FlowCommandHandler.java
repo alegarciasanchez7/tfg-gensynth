@@ -331,6 +331,9 @@ public class FlowCommandHandler implements CommandHandler {
             if (isGlobal || isGroupScope || isLocalScope) {
                 VariableConfiguration vc = VariableFactory.createFromMap(var.getId(), var.getType(), var.getConfig());
                 configs.put(var.getName(), vc);
+                if (var.getId() != null && !var.getId().equals(var.getName())) {
+                    configs.put(var.getId(), vc);
+                }
             }
         }
 
@@ -341,6 +344,50 @@ public class FlowCommandHandler implements CommandHandler {
             throw new IllegalStateException("Circular dependency detected", e);
         } catch (IllegalArgumentException e) {
             throw new IllegalStateException("Broken reference detected: " + e.getMessage(), e);
+        }
+
+        // Validate flow templates for invalid sub-item access on non-FIXED_SUBSET list strategies
+        java.util.regex.Pattern tagPattern = java.util.regex.Pattern.compile("\\{\\{([^}]+)\\}\\}");
+        for (FlowRuntime flow : group.flows) {
+            String template = flow.template;
+            if (template != null && !template.isEmpty()) {
+                java.util.regex.Matcher matcher = tagPattern.matcher(template);
+                while (matcher.find()) {
+                    String fullSpec = matcher.group(1).trim();
+                    if ("uuid".equals(fullSpec) || "ts".equals(fullSpec) || "n".equals(fullSpec)) {
+                        continue;
+                    }
+                    String scopePart = null;
+                    String namePart = fullSpec;
+                    boolean isItemAccess = false;
+
+                    if (fullSpec.contains(".")) {
+                        String[] parts = fullSpec.split("\\.");
+                        if (parts.length >= 3 && parts[parts.length - 1].toLowerCase().startsWith("item")) {
+                            scopePart = parts[0].toLowerCase();
+                            namePart = parts[1];
+                            isItemAccess = true;
+                        } else if (parts.length == 2 && parts[1].toLowerCase().startsWith("item")) {
+                            scopePart = null;
+                            namePart = parts[0];
+                            isItemAccess = true;
+                        }
+                    }
+
+                    if (isItemAccess) {
+                        Variable variable = ctx.getTemplateEngine().findAccessibleVariable(
+                            ctx.getVariablesById(), namePart, scopePart, flow.id, group.id
+                        );
+                        if (variable != null && "list".equalsIgnoreCase(variable.getType())) {
+                            Map<String, Object> varConfig = variable.getConfig();
+                            Object stratObj = varConfig != null ? varConfig.get("selectionStrategy") : null;
+                            if (stratObj != null && !"FIXED_SUBSET".equalsIgnoreCase(stratObj.toString())) {
+                                throw new IllegalStateException("Invalid item reference in flow '" + flow.name + "': Variable '" + variable.getName() + "' uses selection strategy '" + stratObj + "' (not 'FIXED_SUBSET') and cannot be referenced with sub-item index (.itemX).");
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         ctx.getTemplateEngine().clearVariableCache();

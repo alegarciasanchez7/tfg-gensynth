@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Radio, Globe, Wifi, Zap, Cpu, Layers, AlertTriangle,
   CheckCircle, Code2, Hash,
@@ -33,7 +33,6 @@ interface FlowWorkspaceProps {
 
 export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowWorkspaceProps) {
   const conn = connCfg[flow.connectionStatus];
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [formatMode, setFormatMode] = useState<'json' | 'xml' | 'csv' | 'plain'>(flow.format || (flow.technology === 'file' ? 'plain' : 'json'));
   const [activeTab, setActiveTab] = useState<'technical' | 'format'>('technical');
   const { state, actions } = useApp();
@@ -224,19 +223,6 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
     } finally {
       setIsDeletingFlow(false);
     }
-  };
-
-  (window as unknown as Record<string, unknown>).__insertIntoFlow = (varRef: string) => {
-    const ta = textareaRef.current;
-    if (!ta) return;
-    const start = ta.selectionStart;
-    const end = ta.selectionEnd;
-    const newVal = currentTemplate.slice(0, start) + varRef + currentTemplate.slice(end);
-    onTemplateChange(newVal);
-    requestAnimationFrame(() => {
-      ta.focus();
-      ta.setSelectionRange(start + varRef.length, start + varRef.length);
-    });
   };
 
   return (

@@ -256,6 +256,13 @@ public class TemporalVariableConfig extends VariableConfiguration {
             return anomalyConfig.getAnomalousValue();
         }
 
+        if (sourceListVariableId != null && !sourceListVariableId.trim().isEmpty()) {
+            Object refVal = resolveListReferenceValue();
+            if (refVal != null) {
+                return refVal;
+            }
+        }
+
         long currentSeq = sequenceIndex;
         Instant generatedInstant = computeBaseInstant();
 

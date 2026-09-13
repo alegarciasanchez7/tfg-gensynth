@@ -1,5 +1,5 @@
 import React from 'react';
-import { TemporalVariableConfig, TimeAdvanceMode, ClockDriftType, BackfillStrategy, TemporalType } from '../../../../types';
+import { TemporalVariableConfig, TimeAdvanceMode, ClockDriftType, BackfillStrategy, TemporalType, VariableScope } from '../../../../types';
 import { Input } from '../../../ui/input';
 import { Label } from '../../../ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../ui/select';
@@ -7,9 +7,14 @@ import { Switch } from '../../../ui/switch';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../../ui/tooltip';
 import { Info } from 'lucide-react';
 
+import { ListReferenceSelector } from './ListReferenceSelector';
+
 interface TemporalConfigPanelProps {
   config: TemporalVariableConfig;
   onChange: (newConfig: Partial<TemporalVariableConfig>) => void;
+  flowId?: string;
+  groupId?: string;
+  variableScope?: VariableScope;
 }
 
 const PRESETS: Record<TemporalType, string[]> = {
@@ -42,7 +47,7 @@ const BACKFILL_STRATEGY_DESCRIPTIONS: Record<BackfillStrategy, string> = {
   RANDOM_IN_RANGE: 'Picks uniform random timestamps anywhere within the historical start and end span.',
 };
 
-export const TemporalConfigPanel: React.FC<TemporalConfigPanelProps> = ({ config, onChange }) => {
+export const TemporalConfigPanel: React.FC<TemporalConfigPanelProps> = ({ config, onChange, flowId, groupId, variableScope }) => {
   const tType: TemporalType = config.temporalType ?? 'TIMESTAMP';
   const advanceMode: TimeAdvanceMode = config.timeAdvanceMode ?? 'WALL_CLOCK';
   const presets = PRESETS[tType] || PRESETS.TIMESTAMP;
@@ -53,11 +58,8 @@ export const TemporalConfigPanel: React.FC<TemporalConfigPanelProps> = ({ config
       updates.startDate = new Date().toISOString();
       if (!config.incrementMs) updates.incrementMs = 1000;
     } else if (mode === 'BACKFILL_HISTORICAL' && !config.rangeStart) {
-      const now = new Date();
-      const past = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-      updates.rangeStart = past.toISOString();
-      updates.rangeEnd = now.toISOString();
-      updates.backfillStrategy = config.backfillStrategy ?? 'SEQUENTIAL_STEP';
+      updates.rangeStart = new Date(Date.now() - 86400000 * 7).toISOString();
+      if (!config.rangeEnd) updates.rangeEnd = new Date().toISOString();
       if (!config.incrementMs) updates.incrementMs = 60000;
     } else if (mode === 'FIXED' && !config.fixedDate) {
       updates.fixedDate = new Date().toISOString();
@@ -67,6 +69,14 @@ export const TemporalConfigPanel: React.FC<TemporalConfigPanelProps> = ({ config
 
   return (
     <div className="space-y-6">
+      <ListReferenceSelector
+        config={config}
+        onChange={onChange}
+        variableScope={variableScope || 'local'}
+        variableType="temporal"
+        flowId={flowId}
+        groupId={groupId}
+      />
       {/* 1. Time Advance Mode Section */}
       <div className="p-3 bg-[var(--c-bg2)]/50 border border-[var(--c-br1)] rounded-md space-y-3">
         <div className="flex items-center justify-between border-b border-[var(--c-br1)] pb-1.5">

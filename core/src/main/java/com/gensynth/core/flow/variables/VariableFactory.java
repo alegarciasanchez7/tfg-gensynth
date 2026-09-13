@@ -102,6 +102,26 @@ public class VariableFactory {
         }
         
         if (finalConfig != null) {
+            if (configMap.containsKey("sourceListVariableId") && configMap.get("sourceListVariableId") != null) {
+                finalConfig.setSourceListVariableId(String.valueOf(configMap.get("sourceListVariableId")));
+            }
+            if (configMap.containsKey("sourceListSelectionMode") && configMap.get("sourceListSelectionMode") != null) {
+                finalConfig.setSourceListSelectionMode(String.valueOf(configMap.get("sourceListSelectionMode")));
+            }
+            if (configMap.containsKey("selectedListItemId") && configMap.get("selectedListItemId") != null) {
+                finalConfig.setSelectedListItemId(String.valueOf(configMap.get("selectedListItemId")));
+            }
+            if (configMap.get("selectedListItemIds") instanceof List<?> list) {
+                List<String> strList = new ArrayList<>();
+                for (Object item : list) {
+                    if (item != null) strList.add(String.valueOf(item));
+                }
+                finalConfig.setSelectedListItemIds(strList);
+            }
+            if (configMap.containsKey("randomSubsetCount") && configMap.get("randomSubsetCount") instanceof Number) {
+                finalConfig.setRandomSubsetCount(((Number) configMap.get("randomSubsetCount")).intValue());
+            }
+
             List<String> errors = finalConfig.validate();
             if (!errors.isEmpty()) {
                 throw new InvalidVariableConfigException(id, type, errors);
@@ -306,6 +326,14 @@ public class VariableFactory {
                     } catch (Exception e) {
                         // ignore or default
                     }
+                }
+                if (configMap.containsKey("itemOrder") && configMap.get("itemOrder") instanceof List) {
+                    List<?> rawOrder = (List<?>) configMap.get("itemOrder");
+                    List<String> parsedOrder = new ArrayList<>();
+                    for (Object obj : rawOrder) {
+                        if (obj != null) parsedOrder.add(String.valueOf(obj));
+                    }
+                    listConfig.setItemOrder(parsedOrder);
                 }
                 return listConfig;
 

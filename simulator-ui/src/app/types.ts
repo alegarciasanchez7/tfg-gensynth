@@ -17,9 +17,16 @@ export interface ConditionalRule {
   overrides: Record<string, any>;
 }
 
+export type ListReferenceSelectionMode = 'RANDOM_ITEM' | 'FIXED_ITEM' | 'SUBSET_SPECIFIC' | 'SUBSET_RANDOM';
+
 export interface BaseVariableConfig {
   pattern?: string;
   conditionalRules?: ConditionalRule[];
+  sourceListVariableId?: string;
+  sourceListSelectionMode?: ListReferenceSelectionMode;
+  selectedListItemId?: string;
+  selectedListItemIds?: string[];
+  randomSubsetCount?: number;
   [key: string]: any;
 }
 
@@ -90,7 +97,7 @@ export interface StringVariableConfig extends BaseVariableConfig {
   corruptionMagnitude?: number;
 }
 
-export type ListSelectionStrategy = 'WEIGHTED_RANDOM' | 'SEQUENTIAL' | 'SHUFFLE' | 'MARKOV_CHAIN';
+export type ListSelectionStrategy = 'WEIGHTED_RANDOM' | 'SEQUENTIAL' | 'SHUFFLE' | 'MARKOV_CHAIN' | 'FIXED_SUBSET';
 
 export interface ListItemConfig {
   id: string;
@@ -106,6 +113,7 @@ export interface ListVariableConfig extends BaseVariableConfig {
   items?: ListItemConfig[];
   transitionMatrix?: Record<string, Record<string, number>>;
   shuffle?: boolean;
+  itemOrder?: string[];
 }
 
 export type BooleanGenerationPattern =

@@ -11,6 +11,70 @@ interface TemplateEditorProps {
   className?: string;
 }
 
+function getEffectiveListItems(v: Variable, variables: Variable[]): Array<{ id: string; label: string }> {
+  const config = v.config || {};
+  const localItems: any[] = (config.items || []).map((item: any, idx: number) => {
+    if (typeof item === 'object' && item !== null) {
+      return {
+        id: item.id || `item_${idx + 1}`,
+        value: item.value !== undefined && item.value !== '' ? String(item.value) : (item.embeddedType ? item.embeddedType : `Item ${idx + 1}`),
+      };
+    }
+    return { id: `item_${idx + 1}`, value: String(item) };
+  });
+
+  let inheritedItems: any[] = [];
+  if (config.sourceListVariableId) {
+    const parentVar = variables.find(pv => pv.id === config.sourceListVariableId || pv.name === config.sourceListVariableId);
+    if (parentVar) {
+      const parentItems: any[] = (parentVar.config?.items || []).map((item: any, idx: number) => {
+        if (typeof item === 'object' && item !== null) {
+          return {
+            id: item.id || `item_${idx + 1}`,
+            value: item.value !== undefined && item.value !== '' ? String(item.value) : `Item ${idx + 1}`,
+          };
+        }
+        return { id: `item_${idx + 1}`, value: String(item) };
+      });
+
+      const selectionMode = config.sourceListSelectionMode || 'SUBSET_SPECIFIC';
+      if (selectionMode === 'SUBSET_SPECIFIC' && config.selectedListItemIds && config.selectedListItemIds.length > 0) {
+        inheritedItems = config.selectedListItemIds
+          .map((id: string) => parentItems.find((p: any) => p.id === id || String(p.value) === id))
+          .filter(Boolean);
+      } else if (selectionMode === 'SUBSET_RANDOM') {
+        const count = Math.min(Math.max(1, config.randomSubsetCount || 1), parentItems.length || 10);
+        const parentName = parentVar.name || 'Parent List';
+        inheritedItems = Array.from({ length: count }, (_, i) => ({
+          id: `random_item_${i + 1}`,
+          value: `Random Item ${i + 1} - ${parentName}`,
+        }));
+      } else if (selectionMode === 'FIXED_ITEM' && config.selectedListItemId) {
+        const match = parentItems.find((p: any) => p.id === config.selectedListItemId || String(p.value) === config.selectedListItemId);
+        inheritedItems = match ? [match] : [];
+      } else {
+        inheritedItems = parentItems;
+      }
+    }
+  }
+
+  let combined = [...inheritedItems, ...localItems];
+
+  if (config.itemOrder && Array.isArray(config.itemOrder) && config.itemOrder.length > 0) {
+    const orderMap = new Map(config.itemOrder.map((id: string, index: number) => [id, index]));
+    combined.sort((a, b) => {
+      const idxA = orderMap.has(a.id) ? orderMap.get(a.id)! : (orderMap.has(String(a.value)) ? orderMap.get(String(a.value))! : 99999);
+      const idxB = orderMap.has(b.id) ? orderMap.get(b.id)! : (orderMap.has(String(b.value)) ? orderMap.get(String(b.value))! : 99999);
+      return idxA - idxB;
+    });
+  }
+
+  return combined.map((item, idx) => ({
+    id: item.id || `item_${idx}`,
+    label: item.value ? String(item.value) : `Item ${idx + 1}`,
+  }));
+}
+
 export function TemplateEditor({
   value,
   onChange,
@@ -46,15 +110,38 @@ export function TemplateEditor({
       if (isSystem) {
         isValid = true;
       } else {
-        const dotIndex = fullSpec.indexOf('.');
-        const scope = dotIndex !== -1 ? fullSpec.substring(0, dotIndex).toLowerCase() : null;
-        const name = dotIndex !== -1 ? fullSpec.substring(dotIndex + 1) : fullSpec;
+        let scope: string | null = null;
+        let name = fullSpec;
+        let isItemAccess = false;
+
+        if (fullSpec.includes('.')) {
+          const parts = fullSpec.split('.');
+          if (parts.length >= 3 && parts[parts.length - 1].toLowerCase().startsWith('item')) {
+            scope = parts[0].toLowerCase();
+            name = parts[1];
+            isItemAccess = true;
+          } else if (parts.length === 2) {
+            if (parts[1].toLowerCase().startsWith('item')) {
+              scope = null;
+              name = parts[0];
+              isItemAccess = true;
+            } else if (parts[1] === '') {
+              scope = null;
+              name = parts[0];
+            } else {
+              scope = parts[0].toLowerCase();
+              name = parts[1];
+            }
+          } else if (parts.length === 3 && parts[2] === '') {
+            scope = parts[0].toLowerCase();
+            name = parts[1];
+          }
+        }
 
         const variable = variables.find(v => {
           if (v.name !== name) return false;
           if (scope && v.scope !== scope) return false;
           
-          // Ensure we pick the variable that actually belongs to this context if there are duplicates
           if (v.scope === 'global') return true;
           if (v.scope === 'group') return v.groupId === groupId;
           if (v.scope === 'local') return v.flowId === flowId;
@@ -63,7 +150,16 @@ export function TemplateEditor({
         });
         
         if (variable) {
-          isValid = true;
+          if (isItemAccess && variable.type === 'list') {
+            const strategy = variable.config?.selectionStrategy;
+            if (strategy && strategy !== 'FIXED_SUBSET') {
+              isValid = false;
+            } else {
+              isValid = true;
+            }
+          } else {
+            isValid = true;
+          }
         }
       }
 
@@ -90,27 +186,52 @@ export function TemplateEditor({
     const lastBraces = textBeforeCursor.lastIndexOf('{{');
     if (lastBraces === -1) return [];
 
-    const query = textBeforeCursor.substring(lastBraces + 2).toLowerCase();
+    const query = textBeforeCursor.substring(lastBraces + 2).trim().toLowerCase();
     
-    // Filter variables that are at least potentially valid (system + current scope)
-    const options = [
+    const options: Array<{ name: string; scope: string; detail?: string }> = [
       { name: 'uuid', scope: 'system' },
       { name: 'ts', scope: 'system' },
       { name: 'n', scope: 'system' },
-      ...variables
-        .filter(v => {
-          if (v.scope === 'global') return true;
-          if (v.scope === 'group') return v.groupId === groupId;
-          if (v.scope === 'local') return v.flowId === flowId;
-          return false;
-        })
-        .map(v => ({ name: v.name, scope: v.scope }))
     ];
+
+    const accessibleVars = variables.filter(v => {
+      if (v.scope === 'global') return true;
+      if (v.scope === 'group') return v.groupId === groupId;
+      if (v.scope === 'local') return v.flowId === flowId;
+      return false;
+    });
+
+    accessibleVars.forEach(v => {
+      if (v.type === 'list') {
+        const strategy = v.config?.selectionStrategy || 'FIXED_SUBSET';
+        const isFixedSubset = strategy === 'FIXED_SUBSET';
+
+        options.push({ 
+          name: v.name, 
+          scope: v.scope, 
+          detail: isFixedSubset ? 'Fixed Subset / Entire List' : 'Single Item Selection' 
+        });
+
+        if (isFixedSubset) {
+          const effectiveItems = getEffectiveListItems(v, variables);
+          effectiveItems.forEach((item, index) => {
+            options.push({
+              name: `${v.name}.item${index}`,
+              scope: v.scope,
+              detail: `item${index} (${item.label})`,
+            });
+          });
+        }
+      } else {
+        options.push({ name: v.name, scope: v.scope });
+      }
+    });
 
     return options
       .filter(o => {
         const full = `${o.scope}.${o.name}`.toLowerCase();
-        return full.includes(query) || o.name.toLowerCase().includes(query);
+        const simpleName = o.name.toLowerCase();
+        return full.startsWith(query) || full.includes(query) || simpleName.startsWith(query) || simpleName.includes(query);
       });
   }, [showAutocomplete, value, cursorPos, variables, flowId, groupId]);
 
@@ -168,6 +289,9 @@ export function TemplateEditor({
     }
   };
 
+  const valueRef = useRef(value);
+  valueRef.current = value;
+
   const insertOption = (opt: { name: string; scope: string }) => {
     const varRef = opt.scope === 'system' ? opt.name : `${opt.scope}.${opt.name}`;
     insertAtCursor(varRef);
@@ -176,23 +300,28 @@ export function TemplateEditor({
 
   const insertAtCursor = (varRef: string) => {
     const ta = textareaRef.current;
-    if (!ta) return;
+    const currentVal = valueRef.current;
 
-    const start = ta.selectionStart;
-    const end = ta.selectionEnd;
-    const textBefore = value.substring(0, start);
+    let start = ta ? ta.selectionStart : currentVal.length;
+    let end = ta ? ta.selectionEnd : currentVal.length;
+    const textBefore = currentVal.substring(0, start);
     
     // Check if we should replace a partially typed {{...
-    // If textBefore ends with {{ or {{ + something, we replace from the {{
+    // If textBefore ends with {{ or {{ + something, we replace from the {{ up to matching }}
     const lastOpen = textBefore.lastIndexOf('{{');
     let finalStart = start;
+    let finalEnd = end;
+
     if (lastOpen !== -1 && lastOpen >= textBefore.lastIndexOf('}}')) {
-      // We are likely inside an unclosed brace or just after one
       finalStart = lastOpen;
+      const closingPos = currentVal.indexOf('}}', finalStart);
+      if (closingPos !== -1 && closingPos >= start - 2) {
+        finalEnd = closingPos + 2;
+      }
     }
     
     const replacement = `{{${varRef}}}`;
-    const newValue = value.substring(0, finalStart) + replacement + value.substring(end);
+    const newValue = currentVal.substring(0, finalStart) + replacement + currentVal.substring(finalEnd);
     
     onChange(newValue);
     
@@ -206,17 +335,43 @@ export function TemplateEditor({
     }, 0);
   };
 
-  // Register with AppContext when focused
-  const handleFocus = () => {
-    actions.registerTemplateEditor((name: string, scope?: string) => {
+  useEffect(() => {
+    actions?.registerTemplateEditor?.((name: string, scope?: string) => {
       const ref = scope ? `${scope}.${name}` : name;
       insertAtCursor(ref);
     });
+
+    return () => {
+      actions?.registerTemplateEditor?.(null);
+    };
+  }, [actions]);
+
+  const handleFocus = () => {};
+
+  const checkInsideBraces = (val: string, pos: number) => {
+    const textBefore = val.substring(0, pos);
+    const lastOpen = textBefore.lastIndexOf('{{');
+    const lastClose = textBefore.lastIndexOf('}}');
+    if (lastOpen !== -1 && lastOpen > lastClose) {
+      setShowAutocomplete(true);
+    } else {
+      setShowAutocomplete(false);
+    }
   };
+
+  const dropdownPosition = useMemo(() => {
+    const textBefore = value.substring(0, cursorPos);
+    const lines = textBefore.split('\n');
+    const lineIndex = lines.length - 1;
+    const charIndex = lines[lineIndex].length;
+    return {
+      top: `${Math.min(lineIndex * 21 + 32, 220)}px`,
+      left: `${Math.min(Math.max(charIndex * 7.5 + 12, 12), 350)}px`,
+    };
+  }, [value, cursorPos]);
 
   const handleBlur = () => {
     // Small delay to allow clicking on autocomplete items
-    // But we use onMouseDown on items to trigger before this
     setTimeout(() => {
       setShowAutocomplete(false);
     }, 150);
@@ -258,11 +413,21 @@ export function TemplateEditor({
         ref={textareaRef}
         value={value}
         onChange={(e) => {
-          onChange(e.target.value);
-          setCursorPos(e.target.selectionStart);
-          if (showAutocomplete && !e.target.value.substring(0, e.target.selectionStart).includes('{{')) {
-            setShowAutocomplete(false);
-          }
+          const val = e.target.value;
+          const pos = e.target.selectionStart;
+          onChange(val);
+          setCursorPos(pos);
+          checkInsideBraces(val, pos);
+        }}
+        onClick={(e) => {
+          const pos = e.currentTarget.selectionStart;
+          setCursorPos(pos);
+          checkInsideBraces(e.currentTarget.value, pos);
+        }}
+        onKeyUp={(e) => {
+          const pos = e.currentTarget.selectionStart;
+          setCursorPos(pos);
+          checkInsideBraces(e.currentTarget.value, pos);
         }}
         onKeyDown={handleKeyDown}
         onFocus={handleFocus}
@@ -278,8 +443,8 @@ export function TemplateEditor({
           ref={autocompleteRef}
           className="absolute z-50 bg-[var(--c-bg2)] border border-[var(--c-br1)] rounded shadow-xl min-w-[220px] max-h-60 overflow-y-auto scrollbar-thin scrollbar-thumb-[var(--c-br3)]"
           style={{ 
-            top: '45px', 
-            left: '45px'
+            top: dropdownPosition.top, 
+            left: dropdownPosition.left
           }}
         >
           {autocompleteOptions.map((opt, i) => (
@@ -293,7 +458,9 @@ export function TemplateEditor({
             >
               <div className="flex flex-col">
                 <span className="text-xs font-bold">{opt.name}</span>
-                <span className="text-[10px] uppercase opacity-60 tracking-wider">{opt.scope}</span>
+                <span className="text-[10px] uppercase opacity-60 tracking-wider">
+                  {opt.scope} {opt.detail ? `• ${opt.detail}` : ''}
+                </span>
               </div>
               {opt.scope === 'local' && <span className="text-[8px] px-1 rounded bg-sky-500/10 text-sky-500 border border-sky-500/20">Local</span>}
               {opt.scope === 'group' && <span className="text-[8px] px-1 rounded bg-violet-500/10 text-violet-500 border border-violet-500/20">Group</span>}

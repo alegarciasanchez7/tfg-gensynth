@@ -104,4 +104,21 @@ public class DependencyResolverTest {
             fail("Expected IllegalArgumentException but got CyclicDependencyException");
         }
     }
+
+    @Test
+    public void testResolve_uuidAndNameReference_resolvesSuccessfully() throws Exception {
+        VariableConfiguration parentList = VariableFactory.createList("available_vegetables").identifier("v0000002-0000-4000-8000-000000000099");
+        VariableConfiguration childList = VariableFactory.createList("vegetables_7").sourceListVariableId("v0000002-0000-4000-8000-000000000099");
+
+        Map<String, VariableConfiguration> configs = new HashMap<>();
+        configs.put("available_vegetables", parentList);
+        configs.put("v0000002-0000-4000-8000-000000000099", parentList);
+        configs.put("vegetables_7", childList);
+
+        DependencyResolver resolver = new DependencyResolver();
+        List<String> order = resolver.resolve(configs);
+
+        assertTrue(order.contains("vegetables_7"));
+        assertTrue(order.contains("available_vegetables") || order.contains("v0000002-0000-4000-8000-000000000099"));
+    }
 }

@@ -1,5 +1,5 @@
 import React from 'react';
-import { BooleanVariableConfig, BooleanGenerationPattern } from '../../../../types';
+import { BooleanVariableConfig, BooleanGenerationPattern, VariableScope } from '../../../../types';
 import { Switch } from '../../../ui/switch';
 import { Label } from '../../../ui/label';
 import { Input } from '../../../ui/input';
@@ -7,9 +7,14 @@ import { CustomDropdown } from '../../../ui/custom-dropdown';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../../ui/tooltip';
 import { Info } from 'lucide-react';
 
+import { ListReferenceSelector } from './ListReferenceSelector';
+
 interface BooleanConfigPanelProps {
   config: BooleanVariableConfig;
   onChange: (newConfig: Partial<BooleanVariableConfig>) => void;
+  flowId?: string;
+  groupId?: string;
+  variableScope?: VariableScope;
 }
 
 const PATTERN_OPTIONS = [
@@ -32,7 +37,7 @@ const PATTERN_DESCRIPTIONS: Record<BooleanGenerationPattern, string> = {
   ALTERNATING_BOOLEAN: 'Toggles between TRUE and FALSE every N ticks.',
 };
 
-export const BooleanConfigPanel: React.FC<BooleanConfigPanelProps> = ({ config, onChange }) => {
+export const BooleanConfigPanel: React.FC<BooleanConfigPanelProps> = ({ config, onChange, flowId, groupId, variableScope }) => {
   const currentPattern: BooleanGenerationPattern = config.pattern ?? 'CONSTANT_BOOLEAN';
   const currentValue = config.currentValue ?? true;
 
@@ -43,6 +48,14 @@ export const BooleanConfigPanel: React.FC<BooleanConfigPanelProps> = ({ config, 
 
   return (
     <div className="space-y-5">
+      <ListReferenceSelector
+        config={config}
+        onChange={onChange}
+        variableScope={variableScope || 'local'}
+        variableType="boolean"
+        flowId={flowId}
+        groupId={groupId}
+      />
       {/* Pattern Selection */}
       <div className="space-y-1.5">
         <div className="flex items-center gap-1.5">

@@ -56,17 +56,34 @@ public class TemplateEngine {
                 // User variable resolution with scope enforcement
                 String scopePart = null;
                 String namePart = fullVarSpec;
+                Integer itemIndex = null;
 
                 if (fullVarSpec.contains(".")) {
-                    int lastDot = fullVarSpec.lastIndexOf('.');
-                    scopePart = fullVarSpec.substring(0, lastDot).toLowerCase();
-                    namePart = fullVarSpec.substring(lastDot + 1);
+                    String[] parts = fullVarSpec.split("\\.");
+                    if (parts.length >= 3 && parts[parts.length - 1].toLowerCase().startsWith("item")) {
+                        scopePart = parts[0].toLowerCase();
+                        namePart = parts[1];
+                        try {
+                            itemIndex = Integer.parseInt(parts[parts.length - 1].substring(4));
+                        } catch (NumberFormatException ignored) {}
+                    } else if (parts.length == 2) {
+                        if (parts[1].toLowerCase().startsWith("item")) {
+                            scopePart = null;
+                            namePart = parts[0];
+                            try {
+                                itemIndex = Integer.parseInt(parts[1].substring(4));
+                            } catch (NumberFormatException ignored) {}
+                        } else {
+                            scopePart = parts[0].toLowerCase();
+                            namePart = parts[1];
+                        }
+                    }
                 }
 
                 Variable variable = findAccessibleVariable(variables, namePart, scopePart, flowId, groupId);
 
                 if (variable != null) {
-                    ensureConditionalDependenciesAvailable(
+                    ensureDependenciesAvailable(
                         variable,
                         variables,
                         flowId,
@@ -91,7 +108,24 @@ public class TemplateEngine {
                         }
                     }
 
-                    if (isConstantPattern && generatedValue instanceof Double) {
+                    if (itemIndex != null && "list".equalsIgnoreCase(variable.getType())) {
+                        Object stratObj = varConfig != null ? varConfig.get("selectionStrategy") : null;
+                        if (stratObj != null && !"FIXED_SUBSET".equalsIgnoreCase(stratObj.toString())) {
+                            throw new IllegalStateException("Invalid item reference: Variable '" + variable.getName() + "' uses selection strategy '" + stratObj + "' (not 'FIXED_SUBSET') and cannot be referenced with sub-item index (.itemX).");
+                        }
+                    }
+
+                    if (itemIndex != null && generatedValue instanceof java.util.List<?>) {
+                        java.util.List<?> list = (java.util.List<?>) generatedValue;
+                        if (itemIndex >= 0 && itemIndex < list.size()) {
+                            Object element = list.get(itemIndex);
+                            replacement = element != null ? element.toString() : "";
+                        } else {
+                            replacement = "";
+                        }
+                    } else if (generatedValue instanceof java.util.List<?>) {
+                        replacement = formatListToJson((java.util.List<?>) generatedValue);
+                    } else if (isConstantPattern && generatedValue instanceof Double) {
                         double d = (Double) generatedValue;
                         if (d % 1.0 == 0.0) {
                             replacement = String.format(java.util.Locale.US, "%.0f", d);
@@ -122,15 +156,17 @@ public class TemplateEngine {
         return result.toString();
     }
 
-    private Variable findAccessibleVariable(
+    public Variable findAccessibleVariable(
         Map<String, Variable> variables,
-        String variableName,
+        String variableNameOrId,
         String scopeFilter,
         String flowId,
         String groupId
     ) {
         for (Variable v : variables.values()) {
-            if (!v.getName().equals(variableName)) {
+            boolean matchesName = v.getName() != null && v.getName().equals(variableNameOrId);
+            boolean matchesId = v.getId() != null && v.getId().equals(variableNameOrId);
+            if (!matchesName && !matchesId) {
                 continue;
             }
 
@@ -152,7 +188,7 @@ public class TemplateEngine {
         return null;
     }
 
-    private void ensureConditionalDependenciesAvailable(
+    private void ensureDependenciesAvailable(
         Variable variable,
         Map<String, Variable> variables,
         String flowId,
@@ -170,33 +206,41 @@ public class TemplateEngine {
         }
 
         try {
-            Object rulesObj = variable.getConfig().get("conditionalRules");
-            if (!(rulesObj instanceof java.util.List<?>)) {
-                return;
+            com.gensynth.core.flow.variables.VariableConfiguration varConfig = null;
+            try {
+                varConfig = com.gensynth.core.flow.variables.VariableFactory.createFromMap(
+                    variable.getName(), variable.getType(), variable.getConfig()
+                );
+            } catch (Exception ignored) {}
+
+            Set<String> deps = new HashSet<>();
+            if (varConfig != null) {
+                deps.addAll(varConfig.getDependencies());
+            } else {
+                Object rulesObj = variable.getConfig().get("conditionalRules");
+                if (rulesObj instanceof java.util.List<?>) {
+                    for (Object ruleObj : (java.util.List<?>) rulesObj) {
+                        if (ruleObj instanceof Map<?, ?> map) {
+                            Object targetObj = map.get("targetVariable");
+                            if (targetObj instanceof String s && !s.trim().isEmpty()) {
+                                deps.add(s.trim());
+                            }
+                        }
+                    }
+                }
             }
 
-            for (Object ruleObj : (java.util.List<?>) rulesObj) {
-                if (!(ruleObj instanceof Map<?, ?>)) {
+            for (String depNameOrId : deps) {
+                if (depNameOrId.equals(variable.getName()) || depNameOrId.equals(variable.getId())) {
                     continue;
                 }
-
-                Object targetObj = ((Map<?, ?>) ruleObj).get("targetVariable");
-                if (!(targetObj instanceof String)) {
-                    continue;
-                }
-
-                String targetVariableName = ((String) targetObj).trim();
-                if (targetVariableName.isEmpty()) {
-                    continue;
-                }
-
-                if (targetVariableName.equals(variable.getName()) || context.containsKey(targetVariableName)) {
+                if (context.containsKey(depNameOrId) || context.containsKey(depNameOrId + "_config")) {
                     continue;
                 }
 
                 Variable dependencyVariable = findAccessibleVariable(
                     variables,
-                    targetVariableName,
+                    depNameOrId,
                     null,
                     flowId,
                     groupId
@@ -205,11 +249,11 @@ public class TemplateEngine {
                     continue;
                 }
 
-                if (dependencyVariable.getId() != null && context.containsKey(dependencyVariable.getId())) {
+                if (dependencyVariable.getId() != null && (context.containsKey(dependencyVariable.getId()) || context.containsKey(dependencyVariable.getId() + "_config"))) {
                     continue;
                 }
 
-                ensureConditionalDependenciesAvailable(
+                ensureDependenciesAvailable(
                     dependencyVariable,
                     variables,
                     flowId,
@@ -241,5 +285,23 @@ public class TemplateEngine {
         if (variableId != null) {
             this.dataGenerator.removeCachedVariable(variableId);
         }
+    }
+
+    private String formatListToJson(java.util.List<?> list) {
+        StringBuilder sb = new StringBuilder("[");
+        for (int i = 0; i < list.size(); i++) {
+            if (i > 0) sb.append(", ");
+            Object item = list.get(i);
+            if (item == null) {
+                sb.append("null");
+            } else if (item instanceof Number || item instanceof Boolean) {
+                sb.append(item.toString());
+            } else {
+                String str = item.toString().replace("\"", "\\\"");
+                sb.append("\"").append(str).append("\"");
+            }
+        }
+        sb.append("]");
+        return sb.toString();
     }
 }

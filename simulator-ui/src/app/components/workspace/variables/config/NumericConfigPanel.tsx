@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useApp } from '../../../../context';
-import { NumericVariableConfig } from '../../../../types';
+import { NumericVariableConfig, VariableScope } from '../../../../types';
 import { Input } from '../../../ui/input';
 import { Label } from '../../../ui/label';
 import { SequentialGraphEditor } from './SequentialGraphEditor';
@@ -8,11 +8,14 @@ import { DistributionGraphEditor } from './DistributionGraphEditor';
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '../../../ui/tooltip';
 import { Info } from 'lucide-react';
 
+import { ListReferenceSelector } from './ListReferenceSelector';
+
 interface NumericConfigPanelProps {
   config: NumericVariableConfig;
   onChange: (newConfig: Partial<NumericVariableConfig>) => void;
   flowId?: string;
   groupId?: string;
+  variableScope?: VariableScope;
 }
 
 interface CustomDropdownProps {
@@ -107,6 +110,7 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
   onChange,
   flowId,
   groupId,
+  variableScope,
 }) => {
   const min = config.min ?? 0;
   const max = config.max ?? 100;
@@ -440,6 +444,15 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
   return (
     <TooltipProvider delayDuration={200}>
       <div className="space-y-4">
+        <ListReferenceSelector
+          config={config}
+          onChange={onChange}
+          variableScope={variableScope || 'local'}
+          variableType="numeric"
+          flowId={flowId}
+          groupId={groupId}
+        />
+
         {pattern !== 'CONSTANT' && (
           <>
             {/* 1. Range Config */}

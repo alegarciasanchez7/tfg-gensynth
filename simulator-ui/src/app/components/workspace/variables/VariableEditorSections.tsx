@@ -248,12 +248,12 @@ export function VariableEditorConfigCard({ typeLabel, theme, draft, setDraft }: 
 
   const renderVisualEditor = () => {
     switch (draft.type) {
-      case 'numeric': return <NumericConfigPanel config={parsedConfig as NumericVariableConfig} onChange={handleConfigChange} flowId={draft.flowId} groupId={draft.groupId} />;
-      case 'string': return <StringConfigPanel config={parsedConfig as StringVariableConfig} onChange={handleConfigChange} />;
-      case 'list': return <ListConfigPanel config={parsedConfig as ListVariableConfig} onChange={handleConfigChange} />;
-      case 'temporal': return <TemporalConfigPanel config={parsedConfig as TemporalVariableConfig} onChange={handleConfigChange} />;
-      case 'point': return <PointConfigPanel config={parsedConfig as PointVariableConfig} onChange={handleConfigChange} />;
-      case 'boolean': return <BooleanConfigPanel config={parsedConfig as BooleanVariableConfig} onChange={handleConfigChange} />;
+      case 'numeric': return <NumericConfigPanel config={parsedConfig as NumericVariableConfig} onChange={handleConfigChange} flowId={draft.flowId} groupId={draft.groupId} variableScope={draft.scope} />;
+      case 'string': return <StringConfigPanel config={parsedConfig as StringVariableConfig} onChange={handleConfigChange} flowId={draft.flowId} groupId={draft.groupId} variableScope={draft.scope} />;
+      case 'list': return <ListConfigPanel config={parsedConfig as ListVariableConfig} onChange={handleConfigChange} flowId={draft.flowId} groupId={draft.groupId} variableScope={draft.scope} />;
+      case 'temporal': return <TemporalConfigPanel config={parsedConfig as TemporalVariableConfig} onChange={handleConfigChange} flowId={draft.flowId} groupId={draft.groupId} variableScope={draft.scope} />;
+      case 'point': return <PointConfigPanel config={parsedConfig as PointVariableConfig} onChange={handleConfigChange} flowId={draft.flowId} groupId={draft.groupId} variableScope={draft.scope} />;
+      case 'boolean': return <BooleanConfigPanel config={parsedConfig as BooleanVariableConfig} onChange={handleConfigChange} flowId={draft.flowId} groupId={draft.groupId} variableScope={draft.scope} />;
       default: return <p className="text-[11px] text-[var(--c-tx4)] p-6 text-center italic">No visual editor available for this variable type.</p>;
     }
   };

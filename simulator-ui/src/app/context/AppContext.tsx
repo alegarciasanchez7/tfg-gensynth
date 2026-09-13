@@ -22,6 +22,7 @@ import type {
   Variable,
 } from '../types';
 
+import { toast } from 'sonner';
 import { OptimisticManager } from './optimisticManager';
 
 // Slices and actions
@@ -173,7 +174,14 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
 
   // System Actions
   const startSystem = useCallback(
-    systemActions.startSystem(dispatch, state.connectionMode, reportCommandError, () => stateRef.current.variables),
+    systemActions.startSystem(
+      dispatch,
+      state.connectionMode,
+      reportCommandError,
+      () => stateRef.current.variables,
+      () => stateRef.current.groups,
+      () => stateRef.current.formatTemplates
+    ),
     [state.connectionMode, reportCommandError]
   );
 
@@ -219,6 +227,63 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
   }, []);
 
   const startGroup = useCallback(async (groupId: string) => {
+    // Validate list strategy item access in group templates
+    const targetGroup = stateRef.current.groups.find(g => g.id === groupId);
+    const variables = stateRef.current.variables;
+    const formatTemplates = stateRef.current.formatTemplates;
+
+    if (targetGroup) {
+      for (const flow of targetGroup.flows || []) {
+        const template = formatTemplates[flow.id] ?? flow.template ?? '';
+        if (!template) continue;
+
+        const regex = /\{\{([^}]+)\}\}/g;
+        let match;
+        while ((match = regex.exec(template)) !== null) {
+          const fullSpec = match[1].trim();
+          if (['uuid', 'ts', 'n'].includes(fullSpec)) continue;
+
+          let scope: string | null = null;
+          let name = fullSpec;
+          let isItemAccess = false;
+
+          if (fullSpec.includes('.')) {
+            const parts = fullSpec.split('.');
+            if (parts.length >= 3 && parts[parts.length - 1].toLowerCase().startsWith('item')) {
+              scope = parts[0].toLowerCase();
+              name = parts[1];
+              isItemAccess = true;
+            } else if (parts.length === 2 && parts[1].toLowerCase().startsWith('item')) {
+              scope = null;
+              name = parts[0];
+              isItemAccess = true;
+            }
+          }
+
+          if (isItemAccess) {
+            const targetVar = variables.find((v: any) => {
+              if (v.name !== name) return false;
+              if (scope && v.scope !== scope) return false;
+              if (v.scope === 'global') return true;
+              if (v.scope === 'group') return v.groupId === groupId;
+              if (v.scope === 'local') return v.flowId === flow.id;
+              return false;
+            });
+
+            if (targetVar && targetVar.type === 'list') {
+              const strategy = targetVar.config?.selectionStrategy;
+              if (strategy && strategy !== 'FIXED_SUBSET') {
+                const errText = `Invalid item reference in flow '${flow.name}': Variable '${targetVar.name}' uses strategy '${strategy}' (not 'FIXED_SUBSET') and cannot be referenced with sub-item index (.itemX).`;
+                toast.error(errText);
+                reportCommandError('GROUPS', `startGroup(${groupId})`, new Error(errText));
+                return;
+              }
+            }
+          }
+        }
+      }
+    }
+
     try {
       if (state.connectionMode !== 'mock') {
         await CoreCommands.startGroup(groupId);

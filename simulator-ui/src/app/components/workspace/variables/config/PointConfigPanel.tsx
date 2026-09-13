@@ -3,7 +3,8 @@ import {
   PointVariableConfig, 
   CoordinateSystem, 
   GeospatialFormat, 
-  BoundaryBehavior 
+  BoundaryBehavior,
+  VariableScope 
 } from '../../../../types';
 import { Input } from '../../../ui/input';
 import { Label } from '../../../ui/label';
@@ -11,9 +12,14 @@ import { Label } from '../../../ui/label';
 import { Info } from 'lucide-react';
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '../../../ui/tooltip';
 
+import { ListReferenceSelector } from './ListReferenceSelector';
+
 interface PointConfigPanelProps {
   config: PointVariableConfig;
   onChange: (newConfig: Partial<PointVariableConfig>) => void;
+  flowId?: string;
+  groupId?: string;
+  variableScope?: VariableScope;
 }
 
 interface CustomDropdownProps {
@@ -92,7 +98,7 @@ const CustomDropdown: React.FC<CustomDropdownProps> = ({ id, value, onChange, op
   );
 };
 
-export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onChange }) => {
+export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onChange, flowId, groupId, variableScope }) => {
   const coordSystem: CoordinateSystem = config.coordinateSystem ?? 'CARTESIAN_3D';
   const geoFormat: GeospatialFormat = config.geospatialFormat ?? 'DECIMAL_DEGREES';
   const pattern = config.pattern ?? 'RANDOM_POINT';
@@ -116,6 +122,14 @@ export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onCh
   return (
     <TooltipProvider delayDuration={200}>
       <div className="space-y-4">
+        <ListReferenceSelector
+          config={config}
+          onChange={onChange}
+          variableScope={variableScope || 'local'}
+          variableType="point"
+          flowId={flowId}
+          groupId={groupId}
+        />
         {/* 1. Coordinate System Selector */}
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1">
