@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useApp } from '../../../../context';
-import { StringVariableConfig, StringFormattedMaskType, StringCorruptionMode } from '../../../../types';
+import { StringVariableConfig, StringFormattedMaskType, StringCorruptionMode, VariableScope } from '../../../../types';
 import { Input } from '../../../ui/input';
 import { Label } from '../../../ui/label';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../../../ui/tabs';
@@ -9,11 +9,14 @@ import { Switch } from '../../../ui/switch';
 import { CustomDropdown } from '../../../ui/custom-dropdown';
 import { ShieldAlert, Sparkles, Braces, Code } from 'lucide-react';
 
+import { ListReferenceSelector } from './ListReferenceSelector';
+
 interface StringConfigPanelProps {
   config: StringVariableConfig;
   onChange: (newConfig: Partial<StringVariableConfig>) => void;
   flowId?: string;
   groupId?: string;
+  variableScope?: VariableScope;
 }
 
 const MASK_OPTIONS = [
@@ -37,7 +40,8 @@ export const StringConfigPanel: React.FC<StringConfigPanelProps> = ({
   config, 
   onChange,
   flowId,
-  groupId 
+  groupId,
+  variableScope,
 }) => {
   const currentPattern = config.pattern || 'RANDOM_STRING';
   
@@ -228,6 +232,15 @@ export const StringConfigPanel: React.FC<StringConfigPanelProps> = ({
 
   return (
     <div className="space-y-4">
+      <ListReferenceSelector
+        config={config}
+        onChange={onChange}
+        variableScope={variableScope || 'local'}
+        variableType="string"
+        flowId={flowId}
+        groupId={groupId}
+      />
+
       <div className="space-y-2">
         <Label className="text-[10px] uppercase text-[var(--c-tx4)]">String Generation Mode</Label>
         <Tabs

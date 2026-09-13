@@ -160,6 +160,24 @@ public class NumericVariableConfig extends VariableConfiguration {
             return anomalyConfig.getAnomalousValue();
         }
 
+        if (sourceListVariableId != null && !sourceListVariableId.trim().isEmpty()) {
+            Object refVal = resolveListReferenceValue();
+            if (refVal != null) {
+                try {
+                    if (refVal instanceof Number) {
+                        currentValue = ((Number) refVal).doubleValue();
+                    } else {
+                        currentValue = Double.parseDouble(refVal.toString().trim());
+                    }
+                    if (noiseEnabled) currentValue = applyNoise(currentValue);
+                    if (spikeEnabled) currentValue = applySpike(currentValue);
+                    return formatValue(currentValue);
+                } catch (Exception ignored) {
+                    // Fallback to standard numeric generation
+                }
+            }
+        }
+
         double baseValue;
 
         if (pattern == GenerationPattern.FORMULA) {

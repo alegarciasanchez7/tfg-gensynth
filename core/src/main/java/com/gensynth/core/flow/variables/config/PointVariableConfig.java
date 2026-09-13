@@ -559,6 +559,18 @@ public class PointVariableConfig extends VariableConfiguration {
             return val;
         }
 
+        if (sourceListVariableId != null && !sourceListVariableId.trim().isEmpty()) {
+            Object refVal = resolveListReferenceValue();
+            if (refVal != null) {
+                if (refVal instanceof Point3D) {
+                    Point3D altitudePoint = applyAltitudePattern((Point3D) refVal);
+                    Point3D finalPoint = applyJitter(altitudePoint);
+                    return formatPointOutput(finalPoint);
+                }
+                return refVal;
+            }
+        }
+
         Point3D point;
 
         switch (pattern) {
