@@ -108,9 +108,11 @@ public class Flow {
 
             Object currentValue = variable.getValue();
             context.put(variableId, currentValue);
+            context.put(variableId + "_config", variable);
             // Also put by name to allow referencing by name in formulas and conditional rules.
             if (variable.getName() != null) {
                 context.put(variable.getName(), currentValue);
+                context.put(variable.getName() + "_config", variable);
             }
 
             DataEvent event = new DataEvent(

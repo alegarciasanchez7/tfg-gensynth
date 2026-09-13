@@ -15,7 +15,8 @@ public class ListVariableConfig extends VariableConfiguration {
         WEIGHTED_RANDOM,
         SEQUENTIAL,
         SHUFFLE,
-        MARKOV_CHAIN
+        MARKOV_CHAIN,
+        FIXED_SUBSET
     }
 
     public static class ListItem {
@@ -86,6 +87,7 @@ public class ListVariableConfig extends VariableConfiguration {
     private SelectionStrategy selectionStrategy = SelectionStrategy.WEIGHTED_RANDOM;
     private List<ListItem> items = new ArrayList<>();
     private Map<String, Map<String, Double>> transitionMatrix = new HashMap<>();
+    private List<String> itemOrder = new ArrayList<>();
 
     // Runtime state
     private int currentIndex = 0;
@@ -95,7 +97,6 @@ public class ListVariableConfig extends VariableConfiguration {
 
     // Fast cache arrays for WEIGHTED_RANDOM
     private double[] cachedWeights;
-    private double cachedTotalWeight = 0.0;
 
     // Anomaly state
     private long cachedWhenTicks = -1;
@@ -220,11 +221,8 @@ public class ListVariableConfig extends VariableConfiguration {
     private void rebuildCache() {
         int size = items.size();
         cachedWeights = new double[size];
-        cachedTotalWeight = 0.0;
         for (int i = 0; i < size; i++) {
-            double w = items.get(i).getWeight();
-            cachedWeights[i] = w;
-            cachedTotalWeight += w;
+            cachedWeights[i] = items.get(i).getWeight();
         }
         resetRuntimeState();
     }
@@ -297,6 +295,17 @@ public class ListVariableConfig extends VariableConfiguration {
             return anomalyConfig.getAnomalousValue();
         }
 
+        if (selectionStrategy == SelectionStrategy.FIXED_SUBSET) {
+            List<ListItem> activeItems = getEffectiveItems();
+            List<Object> values = new ArrayList<>();
+            for (ListItem item : activeItems) {
+                if (item != null) {
+                    values.add(item.generateValue());
+                }
+            }
+            return values;
+        }
+
         if (pattern == GenerationPattern.CONSTANT_FROM_LIST) {
             return items.get(0).generateValue();
         }
@@ -305,42 +314,139 @@ public class ListVariableConfig extends VariableConfiguration {
         return (selectedItem != null) ? selectedItem.generateValue() : null;
     }
 
+    public List<ListItem> getEffectiveItems() {
+        List<ListItem> effective = new ArrayList<>();
+        if (sourceListVariableId != null && !sourceListVariableId.trim().isEmpty() && currentContext != null) {
+            String refId = sourceListVariableId.trim();
+            Object varObj = currentContext.get(refId + "_config");
+            if (varObj == null) {
+                varObj = currentContext.get(refId);
+            }
+            ListVariableConfig sourceListConfig = null;
+            if (varObj instanceof com.gensynth.core.flow.variables.ConfigurableVariable) {
+                VariableConfiguration cfg = ((com.gensynth.core.flow.variables.ConfigurableVariable) varObj).getConfiguration();
+                if (cfg instanceof ListVariableConfig) {
+                    sourceListConfig = (ListVariableConfig) cfg;
+                }
+            } else if (varObj instanceof ListVariableConfig) {
+                sourceListConfig = (ListVariableConfig) varObj;
+            }
+
+            if (sourceListConfig != null && !sourceListConfig.getEffectiveItems().isEmpty()) {
+                List<ListItem> parentItems = sourceListConfig.getEffectiveItems();
+                if ("SUBSET_SPECIFIC".equalsIgnoreCase(sourceListSelectionMode) && selectedListItemIds != null && !selectedListItemIds.isEmpty()) {
+                    Map<String, ListItem> parentMap = new HashMap<>();
+                    for (ListItem pItem : parentItems) {
+                        parentMap.put(pItem.getId(), pItem);
+                        if (pItem.getValue() != null) {
+                            parentMap.put(String.valueOf(pItem.getValue()), pItem);
+                        }
+                    }
+                    for (String sid : selectedListItemIds) {
+                        ListItem matched = parentMap.get(sid);
+                        if (matched != null && !effective.contains(matched)) {
+                            effective.add(matched);
+                        }
+                    }
+                } else if ("SUBSET_RANDOM".equalsIgnoreCase(sourceListSelectionMode)) {
+                    List<ListItem> copy = new ArrayList<>(parentItems);
+                    Collections.shuffle(copy);
+                    int count = Math.min(randomSubsetCount > 0 ? randomSubsetCount : 1, copy.size());
+                    effective.addAll(copy.subList(0, count));
+                } else if ("FIXED_ITEM".equalsIgnoreCase(sourceListSelectionMode) && selectedListItemId != null) {
+                    for (ListItem pItem : parentItems) {
+                        if (selectedListItemId.equals(pItem.getId()) || (pItem.getValue() != null && selectedListItemId.equals(String.valueOf(pItem.getValue())))) {
+                            effective.add(pItem);
+                            break;
+                        }
+                    }
+                } else {
+                    effective.addAll(parentItems);
+                }
+            }
+        }
+
+        // Add local items
+        if (items != null && !items.isEmpty()) {
+            effective.addAll(items);
+        }
+
+        // Reorder by itemOrder if specified
+        if (itemOrder != null && !itemOrder.isEmpty()) {
+            Map<String, ListItem> itemMap = new HashMap<>();
+            for (ListItem item : effective) {
+                itemMap.put(item.getId(), item);
+                if (item.getValue() != null) {
+                    itemMap.put(String.valueOf(item.getValue()), item);
+                }
+            }
+
+            List<ListItem> reordered = new ArrayList<>();
+            for (String orderId : itemOrder) {
+                ListItem matched = itemMap.remove(orderId);
+                if (matched != null) {
+                    reordered.add(matched);
+                    if (matched.getId() != null) itemMap.remove(matched.getId());
+                    if (matched.getValue() != null) itemMap.remove(String.valueOf(matched.getValue()));
+                }
+            }
+            // Append any items that were not specified in itemOrder
+            for (ListItem item : effective) {
+                if (!reordered.contains(item)) {
+                    reordered.add(item);
+                }
+            }
+            return reordered;
+        }
+
+        return effective;
+    }
+
+    public List<String> getItemOrder() {
+        return itemOrder;
+    }
+
+    public void setItemOrder(List<String> itemOrder) {
+        this.itemOrder = itemOrder != null ? new ArrayList<>(itemOrder) : new ArrayList<>();
+    }
+
     private ListItem selectNextItem() {
-        if (items.isEmpty()) return null;
+        List<ListItem> activeItems = getEffectiveItems();
+        if (activeItems.isEmpty()) return null;
 
         if (pattern == GenerationPattern.SEQUENTIAL_FROM_LIST && selectionStrategy != SelectionStrategy.SHUFFLE) {
-            return selectSequential();
+            return selectSequential(activeItems);
         }
         if (pattern == GenerationPattern.CONSTANT_FROM_LIST) {
-            return items.get(0);
+            return activeItems.get(0);
         }
 
         switch (selectionStrategy) {
             case SEQUENTIAL:
-                return selectSequential();
+                return selectSequential(activeItems);
             case SHUFFLE:
-                return selectShuffle();
+                return selectShuffle(activeItems);
             case MARKOV_CHAIN:
-                return selectMarkovChain();
+                return selectMarkovChain(activeItems);
             case WEIGHTED_RANDOM:
             default:
-                return selectWeightedRandom();
+                return selectWeightedRandom(activeItems);
         }
     }
 
-    private ListItem selectSequential() {
-        if (currentIndex >= items.size()) {
+    private ListItem selectSequential(List<ListItem> activeItems) {
+        if (currentIndex >= activeItems.size()) {
             currentIndex = 0;
         }
-        ListItem item = items.get(currentIndex);
-        currentIndex = (currentIndex + 1) % items.size();
+        ListItem item = activeItems.get(currentIndex);
+        currentIndex = (currentIndex + 1) % activeItems.size();
         return item;
     }
 
-    private ListItem selectShuffle() {
-        if (shuffleIndices.size() != items.size() || currentShufflePointer >= shuffleIndices.size()) {
+    private ListItem selectShuffle(List<ListItem> activeItems) {
+        if (shuffleIndices.size() != activeItems.size() || currentShufflePointer >= shuffleIndices.size()) {
             shuffleIndices.clear();
-            for (int i = 0; i < items.size(); i++) {
+            for (int i = 0; i < activeItems.size(); i++) {
                 shuffleIndices.add(i);
             }
             Collections.shuffle(shuffleIndices);
@@ -348,48 +454,47 @@ public class ListVariableConfig extends VariableConfiguration {
         }
         int itemIndex = shuffleIndices.get(currentShufflePointer);
         currentShufflePointer++;
-        return items.get(itemIndex);
+        return activeItems.get(itemIndex);
     }
 
-    private ListItem selectWeightedRandom() {
-        if (cachedWeights == null || cachedWeights.length != items.size()) {
-            rebuildCache();
+    private ListItem selectWeightedRandom(List<ListItem> activeItems) {
+        double totalWeight = 0;
+        for (ListItem item : activeItems) {
+            totalWeight += item.getWeight();
         }
-        if (cachedTotalWeight <= 0) {
-            int randomIndex = ThreadLocalRandom.current().nextInt(items.size());
-            return items.get(randomIndex);
+        if (totalWeight <= 0) {
+            int randomIndex = ThreadLocalRandom.current().nextInt(activeItems.size());
+            return activeItems.get(randomIndex);
         }
 
-        double randomWeight = ThreadLocalRandom.current().nextDouble() * cachedTotalWeight;
+        double randomWeight = ThreadLocalRandom.current().nextDouble() * totalWeight;
         double currentSum = 0.0;
-        for (int i = 0; i < items.size(); i++) {
-            currentSum += cachedWeights[i];
+        for (ListItem item : activeItems) {
+            currentSum += item.getWeight();
             if (randomWeight <= currentSum) {
-                return items.get(i);
+                return item;
             }
         }
-        return items.get(items.size() - 1);
+        return activeItems.get(activeItems.size() - 1);
     }
 
-    private ListItem selectMarkovChain() {
-        if (currentMarkovStateId == null) {
-            currentMarkovStateId = items.get(0).getId();
+    private ListItem selectMarkovChain(List<ListItem> activeItems) {
+        if (currentMarkovStateId == null && !activeItems.isEmpty()) {
+            currentMarkovStateId = activeItems.get(0).getId();
         }
 
-        // Find current item corresponding to current state
         ListItem currentItem = null;
-        for (ListItem item : items) {
+        for (ListItem item : activeItems) {
             if (item.getId().equals(currentMarkovStateId)) {
                 currentItem = item;
                 break;
             }
         }
         if (currentItem == null) {
-            currentItem = items.get(0);
+            currentItem = activeItems.get(0);
             currentMarkovStateId = currentItem.getId();
         }
 
-        // Calculate next state for subsequent call
         Map<String, Double> transitions = transitionMatrix.get(currentMarkovStateId);
         if (transitions != null && !transitions.isEmpty()) {
             double sum = 0.0;

@@ -117,6 +117,17 @@ public class StringVariableConfig extends VariableConfiguration {
     public Object generateNextValue() {
         tickCounter++;
         
+        if (sourceListVariableId != null && !sourceListVariableId.trim().isEmpty()) {
+            Object refVal = resolveListReferenceValue();
+            if (refVal != null) {
+                String result = String.valueOf(refVal);
+                if (corruptionEnabled && corruptionProbability > 0) {
+                    result = applyDataCorruption(result);
+                }
+                return result;
+            }
+        }
+
         String result = "";
         
         if (pattern == GenerationPattern.CONSTANT) {

@@ -247,6 +247,16 @@ public class BooleanVariableConfig extends VariableConfiguration {
         if (isAnomalous) {
             return anomalyConfig.getAnomalousValue();
         }
+
+        if (sourceListVariableId != null && !sourceListVariableId.trim().isEmpty()) {
+            Object refVal = resolveListReferenceValue();
+            if (refVal != null) {
+                if (refVal instanceof Boolean) {
+                    return refVal;
+                }
+                return Boolean.parseBoolean(refVal.toString().trim());
+            }
+        }
         
         switch (pattern) {
             case CONSTANT_BOOLEAN:

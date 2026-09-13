@@ -66,4 +66,11 @@ describe('ListConfigPanel', () => {
 
     expect(screen.getByText(/Markov Transition Probability Matrix/i)).toBeInTheDocument();
   });
+
+  it('renders selection strategy info tooltip icon with accessibility label', () => {
+    render(<ListConfigPanel config={defaultConfig} onChange={vi.fn()} />);
+
+    const infoButton = screen.getByRole('button', { name: /Selection strategy info/i });
+    expect(infoButton).toBeInTheDocument();
+  });
 });
