@@ -13,14 +13,20 @@ public enum GenerationPattern {
     TREND("Trend - Statistical trend (normal/gradual/jumping)"),
     DISTRIBUTION("Distribution - Values based on probability distribution"),
     FORMULA("Formula - Value based on mathematical equation"),
+    SINUSOIDAL("Sinusoidal - Periodic wave with frequency, amplitude, phase and offset"),
+    DRIFT("Drift - Cumulative linear increase/decrease over simulation time"),
     
     // String patterns
     RANDOM_STRING("Random String - Randomized characters"),
+    REGEX("Regex Pattern - Regex generated string"),
+    TEMPLATE("Template - Dynamic interpolated string template with variable placeholders"),
+    FORMATTED_MASK("Formatted Mask - Preset masks like MAC, IP, UUID, alphanumeric"),
     
     // List patterns
     RANDOM_FROM_LIST("Random from List - Pick randomly"),
     SEQUENTIAL_FROM_LIST("Sequential from List - Sequential pick"),
     CONSTANT_FROM_LIST("Constant from List - Fixed item"),
+    MARKOV_CHAIN("Markov Chain - State transition matrix"),
     
     // Date patterns
     FIXED_TEMPORAL("Fixed Temporal - Constant date/time"),
@@ -33,11 +39,19 @@ public enum GenerationPattern {
     RANDOM_POINT("Random Point - Random XYZ within bounds"),
     PATH_INTERPOLATOR("Path Interpolator - Interpolate across path points"),
     CONTINUOUS_MOVEMENT("Continuous Movement - Random walk within bounds"),
+    RANDOM_WALK("Random Walk - Smooth random walk with momentum"),
+    WAYPOINT_NAVIGATION("Waypoint Navigation - Follow waypoint sequence at set speed"),
+    CIRCULAR_ORBIT("Circular Orbit - Orbit or spiral around central point"),
+    GRAPH_ROUTE("Graph Route - Move along connected graph nodes and edges"),
 
     // Boolean patterns
     CONSTANT_BOOLEAN("Constant Boolean - Fixed TRUE/FALSE"),
     DUTY_CYCLE("Duty Cycle - ON/OFF with durations"),
-    ALTERNATING_BOOLEAN("Alternating Boolean - Toggle at intervals");
+    ALTERNATING_BOOLEAN("Alternating Boolean - Toggle at intervals"),
+    PROBABILITY("Probability - Configurable P(true) ratio per tick"),
+    FLIP_INTERVAL("Flip Interval - Toggle state every N cycles"),
+    BURST_MODE("Burst Mode - Stays true for N cycles then returns to false"),
+    MARKOV("Markov Chain - State transition matrix for digital states");
 
     private final String description;
 

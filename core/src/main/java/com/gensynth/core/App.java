@@ -125,7 +125,7 @@ public class App {
                         ", \"message\": \"Plugin caused a critical startup failure and was automatically removed.\"}");
             }
 
-            Files.writeString(reportPath, json);
+            Files.writeString(reportPath, json, java.nio.charset.StandardCharsets.UTF_8);
             logger.info("[PLUGINS] Rollback report saved to {}", reportPath);
         } catch (IOException e) {
             logger.error("Failed to save rollback report", e);
@@ -137,7 +137,20 @@ public class App {
      */
     private void start() {
         webSocketServer.start();
+        confirmSuccessfulPluginBoot();
         logger.info("Gen-Synth Core started successfully!");
+    }
+
+    private void confirmSuccessfulPluginBoot() {
+        Path markerPath = Paths.get("plugins", ".pending_install.json");
+        if (Files.exists(markerPath)) {
+            try {
+                Files.delete(markerPath);
+                logger.info("[PLUGINS] Plugin installation confirmed successful. Removed pending install marker.");
+            } catch (IOException e) {
+                logger.error("Error clearing pending install marker: {}", e.getMessage());
+            }
+        }
     }
 
     /**
@@ -147,7 +160,7 @@ public class App {
         logger.info("Gen-Synth Core stopping...");
         if (webSocketServer != null) {
             try {
-                webSocketServer.stop();
+                webSocketServer.shutdown();
             } catch (Exception e) {
                 logger.error("Error stopping WebSocket server: {}", e.getMessage());
             }

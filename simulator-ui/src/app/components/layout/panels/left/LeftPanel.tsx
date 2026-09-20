@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from 'react';
-import { Plus, ChevronDown, Layers, Radio } from 'lucide-react';
+import { useState, useRef, useEffect, type FormEvent } from 'react';
+import { Plus, ChevronDown, Layers, Radio, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '../../../ui/button';
 import {
@@ -65,11 +65,46 @@ export function LeftPanel({
   onCloneFlow,
   onDeleteFlow,
 }: LeftPanelProps) {
+  const [width, setWidth] = useState(260);
+  const [collapsed, setCollapsed] = useState(false);
+  const [isResizing, setIsResizing] = useState(false);
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [isCreateGroupOpen, setIsCreateGroupOpen] = useState(false);
   const [groupName, setGroupName] = useState('');
   const [groupDescription, setGroupDescription] = useState('');
   const [isCreateFlowOpen, setIsCreateFlowOpen] = useState(false);
+
+  const startX = useRef(0);
+  const startW = useRef(0);
+
+  const handleMouseDownResizer = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    startX.current = e.clientX;
+    startW.current = width;
+    setIsResizing(true);
+  };
+
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const delta = e.clientX - startX.current;
+      const newWidth = Math.max(180, Math.min(500, startW.current + delta));
+      setWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing]);
 
   const resetCreateGroupForm = () => {
     setGroupName('');
@@ -90,62 +125,84 @@ export function LeftPanel({
     }
   };
 
+  if (collapsed) {
+    return (
+      <div className="flex flex-col border-r border-[var(--c-br1)] bg-[var(--c-bg2)] shrink-0 z-20">
+        <button
+          onClick={() => setCollapsed(false)}
+          title="Expand Groups & Flows"
+          className="flex items-center gap-2 px-2 py-3 text-[10px] font-bold text-[var(--c-tx3)] hover:text-cyan-400 hover:bg-[var(--c-bg5)] transition-all tracking-widest uppercase border-b border-[var(--c-br2)]"
+          style={{ writingMode: 'vertical-rl', fontFamily: 'JetBrains Mono, monospace' }}
+        >
+          <PanelLeftOpen size={13} className="rotate-90" />
+          <span>GROUPS &amp; FLOWS</span>
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div
-      className="flex flex-col border-r border-[var(--c-br1)] bg-[var(--c-bg2)] shrink-0 overflow-hidden"
-      style={{ width: 260 }}
+      className="flex flex-col border-r border-[var(--c-br1)] bg-[var(--c-bg2)] shrink-0 relative"
+      style={{ width }}
     >
-      {/* Panel Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--c-br2)] shrink-0 relative gap-2">
-        <span
-          className="inline-flex items-center rounded border border-[var(--c-br1)] bg-[var(--c-bg1)] px-2 py-1 text-[10px] text-[var(--c-tx4)] tracking-widest uppercase shrink-0"
-          style={{ fontFamily: 'JetBrains Mono, monospace' }}
-        >
-          Groups &amp; Flows
-        </span>
+        {/* Panel Header */}
+        <div className="p-3 border-b border-[var(--c-br2)] bg-[var(--c-bg2)]/50 flex items-center justify-between shrink-0 relative gap-2">
+          <div className="flex items-center gap-1.5 min-w-0 truncate">
+            <h2
+              className="text-[11px] font-bold uppercase tracking-[0.2em] text-[var(--c-tx3)] truncate"
+              style={{ fontFamily: 'JetBrains Mono, monospace' }}
+            >
+              GROUPS &amp; FLOWS
+            </h2>
+            <button
+              onClick={() => setCollapsed(true)}
+              title="Collapse Groups & Flows"
+              className="p-1 rounded text-[var(--c-tx4)] hover:text-[var(--c-tx1)] hover:bg-[var(--c-bg5)] transition-all shrink-0"
+            >
+              <PanelLeftClose size={13} />
+            </button>
+          </div>
 
         {/* Add dropdown menu */}
         <div className="relative shrink-0">
           <button
             onClick={() => setShowAddMenu(!showAddMenu)}
-            className={`inline-flex items-center gap-1 rounded border px-2.5 py-1 text-[11px] transition-all whitespace-nowrap ${
-              showAddMenu
-                ? 'border-cyan-500/50 text-cyan-500 bg-cyan-500/10'
-                : 'border-[var(--c-br1)] text-[var(--c-tx4)] hover:text-[var(--c-tx2)] hover:border-[var(--c-br3)] hover:bg-[var(--c-bg5)]'
-            }`}
+            className="flex items-center gap-1.5 px-2 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-[10px] font-bold transition-all shadow-lg shadow-cyan-500/10"
             aria-label="Add group or flow"
             style={{ fontFamily: 'JetBrains Mono, monospace' }}
           >
-            <Plus size={11} />
-            <span>add</span>
-            <ChevronDown size={10} className={`transition-transform ${showAddMenu ? 'rotate-180' : ''}`} />
+            <Plus size={12} /> ADD
+            <ChevronDown size={10} className={`transition-transform duration-200 ${showAddMenu ? 'rotate-180' : ''}`} />
           </button>
 
           {showAddMenu && (
-            <div className="absolute right-0 top-full mt-1 z-50 bg-[var(--c-bg8)] border border-[var(--c-br1)] rounded shadow-xl shadow-black/20 min-w-40 py-1">
+            <div className="absolute right-0 top-full mt-1.5 z-50 bg-[var(--c-bg2)] border border-[var(--c-br1)] rounded shadow-2xl py-1 min-w-36 animate-in fade-in zoom-in-95 duration-150">
               <button
                 onClick={() => {
                   setShowAddMenu(false);
                   setIsCreateGroupOpen(true);
                 }}
-                className="w-full text-left px-3 py-1.5 flex items-center gap-2 text-[10px] text-[var(--c-tx4)] hover:text-[var(--c-tx2)] hover:bg-cyan-500/5 transition-colors"
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[10px] text-[var(--c-tx2)] hover:bg-cyan-500/10 hover:text-cyan-400 transition-colors"
+                style={{ fontFamily: 'JetBrains Mono, monospace' }}
               >
                 <span className="inline-flex h-4 w-4 items-center justify-center rounded border border-cyan-500/20 bg-cyan-500/10 text-cyan-500">
                   <Layers size={9} />
                 </span>
-                <span>add group</span>
+                <span className="capitalize">Add Group</span>
               </button>
               <button
                 onClick={() => {
                   setShowAddMenu(false);
                   setIsCreateFlowOpen(true);
                 }}
-                className="w-full text-left px-3 py-1.5 flex items-center gap-2 text-[10px] text-[var(--c-tx4)] hover:text-[var(--c-tx2)] hover:bg-violet-500/5 transition-colors"
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[10px] text-[var(--c-tx2)] hover:bg-violet-500/10 hover:text-violet-400 transition-colors"
+                style={{ fontFamily: 'JetBrains Mono, monospace' }}
               >
                 <span className="inline-flex h-4 w-4 items-center justify-center rounded border border-violet-500/20 bg-violet-500/10 text-violet-500">
                   <Radio size={8} />
                 </span>
-                <span>add flow</span>
+                <span className="capitalize">Add Flow</span>
               </button>
             </div>
           )}
@@ -219,19 +276,7 @@ export function LeftPanel({
         onSelectFlow={onSelectFlow}
       />
 
-      {/* Scope legend */}
-      <div className="flex items-center gap-3 px-3 py-1.5 border-b border-[var(--c-br2)] shrink-0">
-        {(['local', 'group', 'global'] as const).map(s => (
-          <div key={s} className="flex items-center gap-1">
-            <div className={`w-1.5 h-1.5 rounded-full ${
-              s === 'local' ? 'bg-sky-400' : s === 'group' ? 'bg-violet-400' : 'bg-amber-400'
-            }`} />
-            <span className="text-[9px] text-[var(--c-tx5)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-              {s}
-            </span>
-          </div>
-        ))}
-      </div>
+
 
       {/* Groups list */}
       <div className="flex-1 overflow-y-auto py-1">
@@ -265,6 +310,22 @@ export function LeftPanel({
           {groups.reduce((s, g) => s + g.flows.length, 0)} flows total
         </span>
       </div>
+      {/* Ultrafine Resizer Handle on Right Edge */}
+      <div
+        onMouseDown={handleMouseDownResizer}
+        className="absolute top-0 bottom-0 -right-1 w-2 cursor-col-resize z-40 group flex justify-center"
+        title="Drag to resize width"
+      >
+        <div
+          className={`w-[2px] h-full transition-colors ${
+            isResizing ? 'bg-cyan-500' : 'bg-transparent group-hover:bg-cyan-500/60'
+          }`}
+        />
+      </div>
+
+      {isResizing && (
+        <div className="fixed inset-0 z-[9999] cursor-col-resize select-none" />
+      )}
     </div>
   );
 }

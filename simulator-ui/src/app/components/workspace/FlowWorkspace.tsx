@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Radio, Globe, Wifi, Zap, Cpu, Layers, AlertTriangle,
   CheckCircle, Code2, Hash,
@@ -33,7 +33,6 @@ interface FlowWorkspaceProps {
 
 export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowWorkspaceProps) {
   const conn = connCfg[flow.connectionStatus];
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [formatMode, setFormatMode] = useState<'json' | 'xml' | 'csv' | 'plain'>(flow.format || (flow.technology === 'file' ? 'plain' : 'json'));
   const [activeTab, setActiveTab] = useState<'technical' | 'format'>('technical');
   const { state, actions } = useApp();
@@ -83,6 +82,7 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
   ) ?? null;
 
   const currentTemplate = template ?? flow.template ?? '';
+  const [draftName, setDraftName] = useState(flow.name);
   const [draftHost, setDraftHost] = useState(flow.host);
   const [draftPort, setDraftPort] = useState(flow.port);
   const [draftTopic, setDraftTopic] = useState(flow.topic);
@@ -92,9 +92,11 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
   const [isDeletingFlow, setIsDeletingFlow] = useState(false);
 
   const hasChanges = useMemo(() => {
+    const nameChanged = draftName.trim() !== flow.name;
     const templateChanged = currentTemplate !== flow.template;
     const formatChanged = formatMode !== (flow.format || 'json');
     const configChanged = 
+      draftName.trim() !== flow.name ||
       draftHost !== flow.host ||
       draftPort !== flow.port ||
       draftTopic !== flow.topic ||
@@ -108,17 +110,18 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
       )) ||
       JSON.stringify(connectorConfig) !== JSON.stringify(flow.connectorConfig ?? {});
 
-    return templateChanged || formatChanged || configChanged || connectorChanged;
-  }, [currentTemplate, flow, formatMode, draftHost, draftPort, draftTopic, draftInterval, draftBurst, connectorSelection, connectorConfig]);
+    return nameChanged || templateChanged || formatChanged || configChanged || connectorChanged;
+  }, [draftName, currentTemplate, flow, formatMode, draftHost, draftPort, draftTopic, draftInterval, draftBurst, connectorSelection, connectorConfig]);
 
   useEffect(() => {
+    setDraftName(flow.name);
     setDraftHost(flow.host);
     setDraftPort(flow.port);
     setDraftTopic(flow.topic);
     setDraftInterval(flow.interval);
     setDraftBurst(flow.burst);
     setFormatMode(flow.format || (flow.technology === 'file' ? 'plain' : 'json'));
-  }, [flow.host, flow.port, flow.topic, flow.interval, flow.burst, flow.format, flow.technology, flow.id]);
+  }, [flow.name, flow.host, flow.port, flow.topic, flow.interval, flow.burst, flow.format, flow.technology, flow.id]);
 
   const handleFormatModeChange = (mode: 'json' | 'xml' | 'csv' | 'plain') => {
     setFormatMode(mode);
@@ -159,6 +162,7 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
   };
 
   const handleDiscard = () => {
+    setDraftName(flow.name);
     setDraftHost(flow.host);
     setDraftPort(flow.port);
     setDraftTopic(flow.topic);
@@ -169,6 +173,11 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
   };
 
   const handleSaveChanges = async () => {
+    if (!draftName.trim()) {
+      toast.error('Flow name is required');
+      return;
+    }
+
     if (!draftHost.trim()) {
       toast.error('Host is required');
       return;
@@ -177,6 +186,7 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
     try {
       setIsSaving(true);
       await actions.updateFlowConfig(group.id, flow.id, {
+        name: draftName.trim(),
         template: currentTemplate,
         format: formatMode,
         technology: connectorSelection?.pluginId ?? latestConnectorForFlow?.pluginId ?? flow.technology,
@@ -215,19 +225,6 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
     }
   };
 
-  (window as unknown as Record<string, unknown>).__insertIntoFlow = (varRef: string) => {
-    const ta = textareaRef.current;
-    if (!ta) return;
-    const start = ta.selectionStart;
-    const end = ta.selectionEnd;
-    const newVal = currentTemplate.slice(0, start) + varRef + currentTemplate.slice(end);
-    onTemplateChange(newVal);
-    requestAnimationFrame(() => {
-      ta.focus();
-      ta.setSelectionRange(start + varRef.length, start + varRef.length);
-    });
-  };
-
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Flow header */}
@@ -235,7 +232,7 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
         <div className="flex items-center gap-2">
           <span className="text-cyan-500">{techIcon[flow.technology] ?? <Layers size={12} />}</span>
           <span className="text-sm text-[var(--c-tx1)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-            {flow.name}
+            {draftName || flow.name}
           </span>
         </div>
         <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded border text-[10px] ${conn.bg} ${conn.color}`}
@@ -311,6 +308,8 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
         <TechnicalConfigPanel
           flow={flow}
           activeTab={activeTab}
+          draftName={draftName}
+          setDraftName={setDraftName}
           draftHost={draftHost}
           setDraftHost={setDraftHost}
           draftPort={draftPort}

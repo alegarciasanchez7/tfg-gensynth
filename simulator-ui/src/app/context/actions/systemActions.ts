@@ -7,6 +7,8 @@ export const startSystem = (
   connectionMode: string,
   reportCommandError: (source: string, action: string, error: unknown) => void,
   getVariablesList?: () => any[],
+  getGroupsList?: () => any[],
+  getFormatTemplates?: () => Record<string, string>,
 ) => async () => {
   if (getVariablesList) {
     const variables = getVariablesList();
@@ -49,53 +51,58 @@ export const startSystem = (
       }
     }
 
-    // Check circular dependencies
-    const detectCycle = (
-      varsList: any[],
-      currentVarId: string,
-      currentVarName: string,
-      formula?: string
-    ): string[] | null => {
-      const adjList = new Map<string, string[]>();
-      for (const v of varsList) {
-        if (v.id === currentVarId) {
-          adjList.set(v.name, getDeps(formula));
-        } else {
-          adjList.set(v.name, getDeps(v.config?.formula));
-        }
-      }
-      const visited = new Set<string>();
-      const recStack = new Set<string>();
-      const path: string[] = [];
-      const dfs = (node: string): boolean => {
-        visited.add(node);
-        recStack.add(node);
-        path.push(node);
-        const neighbors = adjList.get(node) || [];
-        for (const neighbor of neighbors) {
-          if (!visited.has(neighbor)) {
-            if (dfs(neighbor)) return true;
-          } else if (recStack.has(neighbor)) {
-            path.push(neighbor);
-            return true;
-          }
-        }
-        recStack.delete(node);
-        path.pop();
-        return false;
-      };
-      if (dfs(currentVarName)) {
-        const idx = path.indexOf(path[path.length - 1]);
-        return path.slice(idx);
-      }
-      return null;
-    };
+    // Check flow template item references for non-FIXED_SUBSET list strategies
+    if (getGroupsList) {
+      const groups = getGroupsList();
+      const formatTemplates = getFormatTemplates ? getFormatTemplates() : {};
+      for (const group of groups || []) {
+        for (const flow of group.flows || []) {
+          const template = formatTemplates[flow.id] ?? flow.template ?? '';
+          if (!template) continue;
 
-    for (const v of variables) {
-      if (v.type === 'numeric' && v.config?.formula) {
-        const cycle = detectCycle(variables, v.id, v.name, v.config.formula);
-        if (cycle) {
-          errors.push(`Circular dependency detected: ${cycle.join(' → ')}`);
+          const regex = /\{\{([^}]+)\}\}/g;
+          let match;
+          while ((match = regex.exec(template)) !== null) {
+            const fullSpec = match[1].trim();
+            if (['uuid', 'ts', 'n'].includes(fullSpec)) continue;
+
+            let scope: string | null = null;
+            let name = fullSpec;
+            let isItemAccess = false;
+
+            if (fullSpec.includes('.')) {
+              const parts = fullSpec.split('.');
+              if (parts.length >= 3 && parts[parts.length - 1].toLowerCase().startsWith('item')) {
+                scope = parts[0].toLowerCase();
+                name = parts[1];
+                isItemAccess = true;
+              } else if (parts.length === 2 && parts[1].toLowerCase().startsWith('item')) {
+                scope = null;
+                name = parts[0];
+                isItemAccess = true;
+              }
+            }
+
+            if (isItemAccess) {
+              const targetVar = variables.find((v: any) => {
+                if (v.name !== name) return false;
+                if (scope && v.scope !== scope) return false;
+                if (v.scope === 'global') return true;
+                if (v.scope === 'group') return v.groupId === group.id;
+                if (v.scope === 'local') return v.flowId === flow.id;
+                return false;
+              });
+
+              if (targetVar && targetVar.type === 'list') {
+                const strategy = targetVar.config?.selectionStrategy;
+                if (strategy && strategy !== 'FIXED_SUBSET') {
+                  errors.push(
+                    `Invalid item reference in flow '${flow.name}': Variable '${targetVar.name}' uses strategy '${strategy}' (not 'FIXED_SUBSET') and cannot be referenced with sub-item index (.itemX).`
+                  );
+                }
+              }
+            }
+          }
         }
       }
     }

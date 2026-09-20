@@ -163,10 +163,7 @@ public class PluginCommandHandler implements CommandHandler {
             server.persistState();
             broadcastRestartRequired();
 
-            ctx.getScheduler().schedule(() -> {
-                logger.info("Restarting Gen-Synth Core after plugin removal...");
-                com.gensynth.core.util.RestartUtil.restart();
-            }, 3, TimeUnit.SECONDS);
+            ctx.getScheduler().schedule(this::restartAfterPluginInstall, 3, TimeUnit.SECONDS);
         } else {
             server.logToBackend("error", "PLUGINS", "Plugin uninstall failed: " + result.getMessage(), commandId);
         }

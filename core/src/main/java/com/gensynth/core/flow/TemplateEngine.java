@@ -56,17 +56,52 @@ public class TemplateEngine {
                 // User variable resolution with scope enforcement
                 String scopePart = null;
                 String namePart = fullVarSpec;
+                Integer itemIndex = null;
+                String propertyPart = null;
 
                 if (fullVarSpec.contains(".")) {
-                    int lastDot = fullVarSpec.lastIndexOf('.');
-                    scopePart = fullVarSpec.substring(0, lastDot).toLowerCase();
-                    namePart = fullVarSpec.substring(lastDot + 1);
+                    String[] parts = fullVarSpec.split("\\.");
+                    Set<String> knownScopes = Set.of("local", "group", "global");
+
+                    if (knownScopes.contains(parts[0].toLowerCase())) {
+                        scopePart = parts[0].toLowerCase();
+                        namePart = parts[1];
+                        if (parts.length >= 3) {
+                            String sub = parts[2];
+                            if (sub.toLowerCase().startsWith("item")) {
+                                try {
+                                    itemIndex = Integer.parseInt(sub.substring(4));
+                                } catch (NumberFormatException ignored) {}
+                                if (parts.length >= 4) {
+                                    propertyPart = parts[3];
+                                }
+                            } else {
+                                propertyPart = sub;
+                            }
+                        }
+                    } else {
+                        scopePart = null;
+                        namePart = parts[0];
+                        if (parts.length >= 2) {
+                            String sub = parts[1];
+                            if (sub.toLowerCase().startsWith("item")) {
+                                try {
+                                    itemIndex = Integer.parseInt(sub.substring(4));
+                                } catch (NumberFormatException ignored) {}
+                                if (parts.length >= 3) {
+                                    propertyPart = parts[2];
+                                }
+                            } else {
+                                propertyPart = sub;
+                            }
+                        }
+                    }
                 }
 
                 Variable variable = findAccessibleVariable(variables, namePart, scopePart, flowId, groupId);
 
                 if (variable != null) {
-                    ensureConditionalDependenciesAvailable(
+                    ensureDependenciesAvailable(
                         variable,
                         variables,
                         flowId,
@@ -91,7 +126,62 @@ public class TemplateEngine {
                         }
                     }
 
-                    if (isConstantPattern && generatedValue instanceof Double) {
+                    if (itemIndex != null && "list".equalsIgnoreCase(variable.getType())) {
+                        Object stratObj = varConfig != null ? varConfig.get("selectionStrategy") : null;
+                        if (stratObj != null && !"FIXED_SUBSET".equalsIgnoreCase(stratObj.toString())) {
+                            throw new IllegalStateException("Invalid item reference: Variable '" + variable.getName() + "' uses selection strategy '" + stratObj + "' (not 'FIXED_SUBSET') and cannot be referenced with sub-item index (.itemX).");
+                        }
+                    }
+
+                    Object targetObj = generatedValue;
+                    if (itemIndex != null && targetObj instanceof java.util.List<?>) {
+                        java.util.List<?> list = (java.util.List<?>) targetObj;
+                        if (itemIndex >= 0 && itemIndex < list.size()) {
+                            targetObj = list.get(itemIndex);
+                        } else {
+                            targetObj = null;
+                        }
+                    }
+
+                    if (propertyPart != null && targetObj instanceof Map<?, ?>) {
+                        Map<?, ?> map = (Map<?, ?>) targetObj;
+                        Object propVal = null;
+                        if (map.containsKey(propertyPart)) {
+                            propVal = map.get(propertyPart);
+                        } else {
+                            for (Map.Entry<?, ?> entry : map.entrySet()) {
+                                String key = String.valueOf(entry.getKey());
+                                if (key.equalsIgnoreCase(propertyPart)) {
+                                    propVal = entry.getValue();
+                                    break;
+                                }
+                            }
+                            if (propVal == null) {
+                                String lowerProp = propertyPart.toLowerCase();
+                                if (lowerProp.equals("node") || lowerProp.equals("nodename") || lowerProp.equals("node_name")) {
+                                    propVal = map.get("nodeName");
+                                    if (propVal == null) propVal = map.get("node_name");
+                                    if (propVal == null) propVal = map.get("node");
+                                } else if (lowerProp.equals("nodeid") || lowerProp.equals("node_id")) {
+                                    propVal = map.get("nodeId");
+                                    if (propVal == null) propVal = map.get("node_id");
+                                } else if (lowerProp.equals("targetnode") || lowerProp.equals("targetnodename") || lowerProp.equals("target_node_name")) {
+                                    propVal = map.get("targetNodeName");
+                                    if (propVal == null) propVal = map.get("target_node_name");
+                                } else if (lowerProp.equals("targetnodeid") || lowerProp.equals("target_node_id")) {
+                                    propVal = map.get("targetNodeId");
+                                    if (propVal == null) propVal = map.get("target_node_id");
+                                }
+                            }
+                        }
+                        replacement = propVal != null ? String.valueOf(propVal) : "";
+                    } else if (itemIndex != null && propertyPart == null) {
+                        replacement = targetObj != null ? targetObj.toString() : "";
+                    } else if (generatedValue instanceof java.util.List<?>) {
+                        replacement = formatListToJson((java.util.List<?>) generatedValue);
+                    } else if (generatedValue instanceof Map<?, ?>) {
+                        replacement = formatMapToJson((Map<?, ?>) generatedValue);
+                    } else if (isConstantPattern && generatedValue instanceof Double) {
                         double d = (Double) generatedValue;
                         if (d % 1.0 == 0.0) {
                             replacement = String.format(java.util.Locale.US, "%.0f", d);
@@ -122,15 +212,17 @@ public class TemplateEngine {
         return result.toString();
     }
 
-    private Variable findAccessibleVariable(
+    public Variable findAccessibleVariable(
         Map<String, Variable> variables,
-        String variableName,
+        String variableNameOrId,
         String scopeFilter,
         String flowId,
         String groupId
     ) {
         for (Variable v : variables.values()) {
-            if (!v.getName().equals(variableName)) {
+            boolean matchesName = v.getName() != null && v.getName().equals(variableNameOrId);
+            boolean matchesId = v.getId() != null && v.getId().equals(variableNameOrId);
+            if (!matchesName && !matchesId) {
                 continue;
             }
 
@@ -152,7 +244,7 @@ public class TemplateEngine {
         return null;
     }
 
-    private void ensureConditionalDependenciesAvailable(
+    private void ensureDependenciesAvailable(
         Variable variable,
         Map<String, Variable> variables,
         String flowId,
@@ -170,33 +262,41 @@ public class TemplateEngine {
         }
 
         try {
-            Object rulesObj = variable.getConfig().get("conditionalRules");
-            if (!(rulesObj instanceof java.util.List<?>)) {
-                return;
+            com.gensynth.core.flow.variables.VariableConfiguration varConfig = null;
+            try {
+                varConfig = com.gensynth.core.flow.variables.VariableFactory.createFromMap(
+                    variable.getName(), variable.getType(), variable.getConfig()
+                );
+            } catch (Exception ignored) {}
+
+            Set<String> deps = new HashSet<>();
+            if (varConfig != null) {
+                deps.addAll(varConfig.getDependencies());
+            } else {
+                Object rulesObj = variable.getConfig().get("conditionalRules");
+                if (rulesObj instanceof java.util.List<?>) {
+                    for (Object ruleObj : (java.util.List<?>) rulesObj) {
+                        if (ruleObj instanceof Map<?, ?> map) {
+                            Object targetObj = map.get("targetVariable");
+                            if (targetObj instanceof String s && !s.trim().isEmpty()) {
+                                deps.add(s.trim());
+                            }
+                        }
+                    }
+                }
             }
 
-            for (Object ruleObj : (java.util.List<?>) rulesObj) {
-                if (!(ruleObj instanceof Map<?, ?>)) {
+            for (String depNameOrId : deps) {
+                if (depNameOrId.equals(variable.getName()) || depNameOrId.equals(variable.getId())) {
                     continue;
                 }
-
-                Object targetObj = ((Map<?, ?>) ruleObj).get("targetVariable");
-                if (!(targetObj instanceof String)) {
-                    continue;
-                }
-
-                String targetVariableName = ((String) targetObj).trim();
-                if (targetVariableName.isEmpty()) {
-                    continue;
-                }
-
-                if (targetVariableName.equals(variable.getName()) || context.containsKey(targetVariableName)) {
+                if (context.containsKey(depNameOrId) || context.containsKey(depNameOrId + "_config")) {
                     continue;
                 }
 
                 Variable dependencyVariable = findAccessibleVariable(
                     variables,
-                    targetVariableName,
+                    depNameOrId,
                     null,
                     flowId,
                     groupId
@@ -205,11 +305,11 @@ public class TemplateEngine {
                     continue;
                 }
 
-                if (dependencyVariable.getId() != null && context.containsKey(dependencyVariable.getId())) {
+                if (dependencyVariable.getId() != null && (context.containsKey(dependencyVariable.getId()) || context.containsKey(dependencyVariable.getId() + "_config"))) {
                     continue;
                 }
 
-                ensureConditionalDependenciesAvailable(
+                ensureDependenciesAvailable(
                     dependencyVariable,
                     variables,
                     flowId,
@@ -241,5 +341,44 @@ public class TemplateEngine {
         if (variableId != null) {
             this.dataGenerator.removeCachedVariable(variableId);
         }
+    }
+
+    private String formatListToJson(java.util.List<?> list) {
+        StringBuilder sb = new StringBuilder("[");
+        for (int i = 0; i < list.size(); i++) {
+            if (i > 0) sb.append(", ");
+            Object item = list.get(i);
+            if (item == null) {
+                sb.append("null");
+            } else if (item instanceof Number || item instanceof Boolean) {
+                sb.append(item.toString());
+            } else {
+                String str = item.toString().replace("\"", "\\\"");
+                sb.append("\"").append(str).append("\"");
+            }
+        }
+        sb.append("]");
+        return sb.toString();
+    }
+
+    private String formatMapToJson(Map<?, ?> map) {
+        StringBuilder sb = new StringBuilder("{");
+        boolean first = true;
+        for (Map.Entry<?, ?> entry : map.entrySet()) {
+            if (!first) sb.append(", ");
+            first = false;
+            sb.append("\"").append(entry.getKey()).append("\": ");
+            Object val = entry.getValue();
+            if (val == null) {
+                sb.append("null");
+            } else if (val instanceof Number || val instanceof Boolean) {
+                sb.append(val.toString());
+            } else {
+                String str = val.toString().replace("\"", "\\\"");
+                sb.append("\"").append(str).append("\"");
+            }
+        }
+        sb.append("}");
+        return sb.toString();
     }
 }

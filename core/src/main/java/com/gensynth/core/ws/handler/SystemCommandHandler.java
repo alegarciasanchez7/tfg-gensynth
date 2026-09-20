@@ -174,6 +174,7 @@ public class SystemCommandHandler implements CommandHandler {
                 }
             }
         } catch (Exception ex) {
+            logger.error("Error emitting metrics tick", ex);
             ctx.getTotalErrors().incrementAndGet();
         }
     }

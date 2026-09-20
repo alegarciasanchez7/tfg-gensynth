@@ -27,6 +27,12 @@ public class DataGenerator {
                 return VariableFactory.createFromConfig(varConfig);
             });
             if (context != null) {
+                if (variable.getId() != null) {
+                    context.put(variable.getId() + "_config", cv);
+                }
+                if (variable.getName() != null) {
+                    context.put(variable.getName() + "_config", cv);
+                }
                 cv.setContext(context);
             }
             return cv.getValue();

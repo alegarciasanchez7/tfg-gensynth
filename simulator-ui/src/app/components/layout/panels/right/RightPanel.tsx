@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Plus, ChevronDown, Binary, ListChecks, ALargeSmall, CalendarClock, MapPin, ToggleLeft } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Plus, ChevronDown, Binary, ListChecks, ALargeSmall, CalendarClock, MapPin, ToggleLeft, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { toast } from 'sonner';
 import { useApp } from '../../../../context';
 import type { Variable, VariableScope, VariableType, Selection } from '../../../../types';
@@ -30,6 +30,12 @@ const scopeLabels: Record<VariableScope, string> = {
   global: 'GLOBAL',
 };
 
+const scopeTabColors: Record<VariableScope, string> = {
+  local: 'text-sky-400 border-sky-400 bg-sky-500/10',
+  group: 'text-violet-400 border-violet-400 bg-violet-500/10',
+  global: 'text-amber-400 border-amber-400 bg-amber-500/10',
+};
+
 const typeInfo: Record<VariableType, { icon: any; color: string }> = {
   numeric: { icon: Binary, color: 'text-cyan-500' },
   list: { icon: ListChecks, color: 'text-violet-500' },
@@ -41,10 +47,46 @@ const typeInfo: Record<VariableType, { icon: any; color: string }> = {
 
 export function RightPanel({ variables, selection, onSelectVariable, onInsertVariable }: RightPanelProps) {
   const { state, actions } = useApp();
+  const [width, setWidth] = useState(264);
+  const [collapsed, setCollapsed] = useState(false);
+  const [isResizing, setIsResizing] = useState(false);
   const [activeScope, setActiveScope] = useState<VariableScope>('global');
   const [showAdd, setShowAdd] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+
+  const startX = useRef(0);
+  const startW = useRef(0);
+
+  const handleMouseDownResizer = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    startX.current = e.clientX;
+    startW.current = width;
+    setIsResizing(true);
+  };
+
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const delta = startX.current - e.clientX;
+      const newWidth = Math.max(180, Math.min(500, startW.current + delta));
+      setWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing]);
+
   const [createState, setCreateState] = useState<CreateState>({
     name: '',
     type: 'numeric',
@@ -59,14 +101,37 @@ export function RightPanel({ variables, selection, onSelectVariable, onInsertVar
   const isFlowSelected = selection.type === 'flow';
   const isGroupSelected = selection.type === 'group';
 
+  const selectedVariable = selection.variableId
+    ? variables.find(v => v.id === selection.variableId)
+    : undefined;
+
+  // Determine active flowId & groupId context from selection or selected variable
+  const activeFlowId = isFlowSelected
+    ? selection.flowId
+    : selectedVariable?.scope === 'local'
+    ? selectedVariable.flowId
+    : undefined;
+
+  const activeGroupId = isGroupSelected
+    ? selection.groupId
+    : isFlowSelected
+    ? selection.groupId || (activeFlowId ? state.groups.find(g => g.flows.some(f => f.id === activeFlowId))?.id : undefined)
+    : selectedVariable?.scope === 'group'
+    ? selectedVariable.groupId
+    : selectedVariable?.scope === 'local' && selectedVariable.flowId
+    ? state.groups.find(g => g.flows.some(f => f.id === selectedVariable.flowId))?.id
+    : selection.groupId;
+
   // Auto-switch scope based on selection
   useEffect(() => {
     if (isFlowSelected) {
       setActiveScope('local');
     } else if (isGroupSelected) {
       setActiveScope('group');
+    } else if (selection.type === 'variable' && selectedVariable) {
+      setActiveScope(selectedVariable.scope);
     }
-  }, [selection.type, isFlowSelected, isGroupSelected]);
+  }, [selection.type, selection.variableId, isFlowSelected, isGroupSelected, selectedVariable?.scope]);
 
   // Update createState scope when activeScope changes
   useEffect(() => {
@@ -136,28 +201,75 @@ export function RightPanel({ variables, selection, onSelectVariable, onInsertVar
     if (v.scope !== activeScope) return false;
     
     if (activeScope === 'local') {
-      if (isFlowSelected) return v.flowId === selection.flowId;
-      if (selection.groupId) {
-        const groupFlowIds = state.groups.find(g => g.id === selection.groupId)?.flows.map(f => f.id) || [];
+      if (activeFlowId) return v.flowId === activeFlowId;
+      if (activeGroupId) {
+        const groupFlowIds = state.groups.find(g => g.id === activeGroupId)?.flows.map(f => f.id) || [];
         return v.flowId && groupFlowIds.includes(v.flowId);
       }
     }
     
-    if (activeScope === 'group' && selection.groupId) {
-      return v.groupId === selection.groupId;
+    if (activeScope === 'group' && activeGroupId) {
+      return v.groupId === activeGroupId;
     }
     
     return true;
   });
 
+  const getContextName = (v: Variable): string | undefined => {
+    // When inside a flow or group in the workspace, all variables listed are already scoped to that flow/group.
+    // Hiding redundant flow/group text gives full width to variable names.
+    if (selection.type !== 'none' && (activeFlowId || activeGroupId)) {
+      return undefined;
+    }
+
+    if (v.scope === 'local' && v.flowId) {
+      for (const g of state.groups) {
+        const flow = g.flows.find(f => f.id === v.flowId);
+        if (flow) return flow.name;
+      }
+    } else if (v.scope === 'group' && v.groupId) {
+      const g = state.groups.find(group => group.id === v.groupId);
+      if (g) return g.name;
+    }
+    return undefined;
+  };
+
+  if (collapsed) {
+    return (
+      <div className="flex flex-col border-l border-[var(--c-br2)] bg-[var(--c-bg8)] shrink-0 z-20">
+        <button
+          onClick={() => setCollapsed(false)}
+          title="Expand Variables"
+          className="flex items-center gap-2 px-2 py-3 text-[10px] font-bold text-[var(--c-tx3)] hover:text-cyan-400 hover:bg-[var(--c-bg5)] transition-all tracking-widest uppercase border-b border-[var(--c-br2)]"
+          style={{ writingMode: 'vertical-rl', fontFamily: 'JetBrains Mono, monospace' }}
+        >
+          <PanelRightOpen size={13} className="rotate-90" />
+          <span>VARIABLES</span>
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex flex-col h-full bg-[var(--c-bg8)] border-l border-[var(--c-br2)] w-64 shadow-2xl z-20">
+    <div
+      className="flex flex-col h-full bg-[var(--c-bg8)] border-l border-[var(--c-br2)] shadow-2xl z-20 shrink-0 relative"
+      style={{ width }}
+    >
       {/* Header */}
-      <div className="p-3 border-b border-[var(--c-br2)] bg-[var(--c-bg2)]/50">
-        <div className="flex items-center justify-between">
-          <h2 className="text-[11px] font-bold uppercase tracking-[0.2em] text-[var(--c-tx3)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-            Variable Engine
-          </h2>
+        <div className="p-3 border-b border-[var(--c-br2)] bg-[var(--c-bg2)]/50">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5 min-w-0 truncate">
+              <h2 className="text-[11px] font-bold uppercase tracking-[0.2em] text-[var(--c-tx3)] truncate" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+                VARIABLES
+              </h2>
+              <button
+                onClick={() => setCollapsed(true)}
+                title="Collapse Variables"
+                className="p-1 rounded text-[var(--c-tx4)] hover:text-[var(--c-tx1)] hover:bg-[var(--c-bg5)] transition-all shrink-0"
+              >
+                <PanelRightClose size={13} />
+              </button>
+            </div>
           <div className="relative">
             <button
               onClick={() => setShowAdd(!showAdd)}
@@ -202,7 +314,7 @@ export function RightPanel({ variables, selection, onSelectVariable, onInsertVar
             onClick={() => setActiveScope(scope)}
             className={`flex-1 py-2 text-[10px] tracking-widest border-b-2 transition-all ${
               scope === activeScope
-                ? 'text-cyan-500 border-cyan-500 bg-cyan-500/5'
+                ? scopeTabColors[scope]
                 : 'text-[var(--c-tx4)] border-transparent hover:text-[var(--c-tx2)]'
             }`}
             style={{ fontFamily: 'JetBrains Mono, monospace' }}
@@ -230,6 +342,7 @@ export function RightPanel({ variables, selection, onSelectVariable, onInsertVar
               variable={v}
               isSelected={selection.variableId === v.id}
               isFlowSelected={isFlowSelected}
+              contextName={getContextName(v)}
               onSelect={() => onSelectVariable(v.id)}
               onDelete={() => {
                 setDeleteVariable(v);
@@ -259,6 +372,22 @@ export function RightPanel({ variables, selection, onSelectVariable, onInsertVar
         variable={deleteVariable}
         onDelete={handleDeleteVariable}
       />
+      {/* Ultrafine Resizer Handle on Left Edge */}
+      <div
+        onMouseDown={handleMouseDownResizer}
+        className="absolute top-0 bottom-0 -left-1 w-2 cursor-col-resize z-40 group flex justify-center"
+        title="Drag to resize width"
+      >
+        <div
+          className={`w-[2px] h-full transition-colors ${
+            isResizing ? 'bg-cyan-500' : 'bg-transparent group-hover:bg-cyan-500/60'
+          }`}
+        />
+      </div>
+
+      {isResizing && (
+        <div className="fixed inset-0 z-[9999] cursor-col-resize select-none" />
+      )}
     </div>
   );
 }

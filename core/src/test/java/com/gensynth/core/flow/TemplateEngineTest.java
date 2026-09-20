@@ -130,4 +130,151 @@ public class TemplateEngineTest {
 
         assertEquals("{\"product\":\"Macarrones\"}", result);
     }
+
+    @Test
+    public void testListVariableFormatting_FixedSubset_returnsJsonArray() {
+        Variable listVar = new Variable(
+                "vl1",
+                "vegetables_7",
+                "LOCAL",
+                "list",
+                List.of(),
+                Map.of(
+                        "selectionStrategy", "FIXED_SUBSET",
+                        "items", List.of(
+                                Map.of("id", "i1", "value", "Carrot", "weight", 1.0),
+                                Map.of("id", "i2", "value", "Onion", "weight", 1.0)
+                        )
+                ),
+                "flow-1",
+                "group-1"
+        );
+        variables.put("vl1", listVar);
+
+        String template = "{\"veggies\": {{local.vegetables_7}} }";
+        String result = engine.evaluate(template, 1, variables, "flow-1", "group-1");
+
+        assertEquals("{\"veggies\": [\"Carrot\", \"Onion\"] }", result);
+    }
+
+    @Test
+    public void testListVariableFormatting_ItemIndex_returnsIndexedItem() {
+        Variable listVar = new Variable(
+                "vl1",
+                "vegetables_7",
+                "LOCAL",
+                "list",
+                List.of(),
+                Map.of(
+                        "selectionStrategy", "FIXED_SUBSET",
+                        "items", List.of(
+                                Map.of("id", "i1", "value", "Carrot", "weight", 1.0),
+                                Map.of("id", "i2", "value", "Onion", "weight", 1.0)
+                        )
+                ),
+                "flow-1",
+                "group-1"
+        );
+        variables.put("vl1", listVar);
+
+        String template = "{\"first\": \"{{local.vegetables_7.item0}}\", \"second\": \"{{local.vegetables_7.item1}}\"}";
+        String result = engine.evaluate(template, 1, variables, "flow-1", "group-1");
+
+        assertEquals("{\"first\": \"Carrot\", \"second\": \"Onion\"}", result);
+    }
+
+    @Test
+    public void testListVariableFormatting_InheritedSourceList() {
+        Variable parentListVar = new Variable(
+                "v0000002-0000-4000-8000-000000000099",
+                "available_vegetables",
+                "GROUP",
+                "list",
+                List.of(),
+                Map.of(
+                        "selectionStrategy", "WEIGHTED_RANDOM",
+                        "items", List.of(
+                                Map.of("id", "veg-1", "value", "Tomato", "weight", 1.0),
+                                Map.of("id", "veg-2", "value", "Lettuce", "weight", 1.0),
+                                Map.of("id", "veg-3", "value", "Carrot", "weight", 1.0)
+                        )
+                ),
+                null,
+                "group-1"
+        );
+
+        Variable childListVar = new Variable(
+                "v_child",
+                "vegetables_1",
+                "LOCAL",
+                "list",
+                List.of(),
+                Map.of(
+                        "selectionStrategy", "FIXED_SUBSET",
+                        "sourceListVariableId", "v0000002-0000-4000-8000-000000000099",
+                        "sourceListSelectionMode", "SUBSET_SPECIFIC",
+                        "selectedListItemIds", List.of("veg-1", "veg-3"),
+                        "items", List.of()
+                ),
+                "flow-1",
+                "group-1"
+        );
+
+        variables.put(parentListVar.getId(), parentListVar);
+        variables.put(childListVar.getId(), childListVar);
+
+        String template = "{\"veggies\": {{local.vegetables_1}} }";
+        String result = engine.evaluate(template, 1, variables, "flow-1", "group-1");
+
+        assertEquals("{\"veggies\": [\"Tomato\", \"Carrot\"] }", result);
+    }
+
+    @Test
+    public void testListVariableFormatting_ItemOrderPreserved() {
+        Variable parentListVar = new Variable(
+                "v_parent",
+                "available_vegetables",
+                "GROUP",
+                "list",
+                List.of(),
+                Map.of(
+                        "selectionStrategy", "WEIGHTED_RANDOM",
+                        "items", List.of(
+                                Map.of("id", "veg-3", "value", "Carrot", "weight", 1.0),
+                                Map.of("id", "veg-5", "value", "Onion", "weight", 1.0),
+                                Map.of("id", "veg-7", "value", "Spinach", "weight", 1.0)
+                        )
+                ),
+                null,
+                "group-1"
+        );
+
+        Variable childListVar = new Variable(
+                "v_child7",
+                "vegetables_7",
+                "LOCAL",
+                "list",
+                List.of(),
+                Map.of(
+                        "selectionStrategy", "FIXED_SUBSET",
+                        "sourceListVariableId", "v_parent",
+                        "sourceListSelectionMode", "SUBSET_SPECIFIC",
+                        "selectedListItemIds", List.of("veg-3", "veg-5", "veg-7"),
+                        "items", List.of(
+                                Map.of("id", "item_1", "value", "Paco", "weight", 1.0)
+                        ),
+                        "itemOrder", List.of("veg-3", "item_1", "veg-5", "veg-7")
+                ),
+                "flow-1",
+                "group-1"
+        );
+
+        variables.put(parentListVar.getId(), parentListVar);
+        variables.put(childListVar.getId(), childListVar);
+
+        String template = "{\"veggies\": {{local.vegetables_7}} }";
+        String result = engine.evaluate(template, 1, variables, "flow-1", "group-1");
+
+        assertEquals("{\"veggies\": [\"Carrot\", \"Paco\", \"Onion\", \"Spinach\"] }", result);
+    }
 }

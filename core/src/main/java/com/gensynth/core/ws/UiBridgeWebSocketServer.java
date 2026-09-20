@@ -1,7 +1,6 @@
 package com.gensynth.core.ws;
 
 import com.fasterxml.jackson.core.StreamReadConstraints;
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gensynth.core.api.IPluginInstaller;
@@ -105,7 +104,6 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
     final Set<WebSocket> metricSubscribers = ConcurrentHashMap.newKeySet();
 
     final ScheduledExecutorService scheduler;
-    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
     final AtomicLong totalMessages = new AtomicLong(0);
     final AtomicLong totalErrors = new AtomicLong(0);

@@ -21,7 +21,7 @@ export function SettingsPanel({ isDark, onThemeToggle, onClose }: SettingsPanelP
   return (
     <div
       ref={ref}
-      className="absolute right-0 top-full mt-1 z-50 bg-[var(--c-bg2)] border border-[var(--c-br1)] rounded shadow-xl shadow-black/20 min-w-52 py-2"
+      className="absolute right-0 top-full mt-1 z-[100] bg-[var(--c-bg2)] border border-[var(--c-br1)] rounded shadow-2xl shadow-black/40 min-w-52 py-2"
       style={{ fontFamily: 'JetBrains Mono, monospace' }}
     >
       {/* Header */}

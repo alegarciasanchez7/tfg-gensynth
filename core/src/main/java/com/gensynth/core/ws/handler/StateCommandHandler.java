@@ -269,13 +269,20 @@ public class StateCommandHandler implements CommandHandler {
         try {
             Path reportPath = Paths.get("plugins", ".rollback_report.json");
             if (java.nio.file.Files.exists(reportPath)) {
-                String content = java.nio.file.Files.readString(reportPath);
+                String content = java.nio.file.Files.readString(reportPath, java.nio.charset.StandardCharsets.UTF_8);
+                // Strip UTF-8 BOM if present
+                if (content.startsWith("\uFEFF")) {
+                    content = content.substring(1);
+                }
                 payload.put("rollbackReport", ctx.getObjectMapper().readTree(content));
                 java.nio.file.Files.delete(reportPath);
                 logger.info("[PLUGINS] Rollback report embedded in INITIAL_STATE and cleared.");
             }
         } catch (Exception e) {
             logger.error("Failed to include rollback report in initial state", e);
+            try {
+                java.nio.file.Files.deleteIfExists(Paths.get("plugins", ".rollback_report.json"));
+            } catch (Exception ignored) {}
         }
 
         return payload;

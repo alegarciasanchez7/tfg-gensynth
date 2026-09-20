@@ -26,12 +26,5 @@ export const registerTemplateEditor = (activeEditorRef: React.MutableRefObject<(
 export const insertVariable = (activeEditorRef: React.MutableRefObject<((name: string, scope?: string) => void) | null>) => (name: string, scope?: string) => {
   if (activeEditorRef.current) {
     activeEditorRef.current(name, scope);
-  } else {
-    // Fallback for when no editor is registered or for older implementation compatibility
-    const varRef = `{{${scope ? scope + '.' : ''}${name}}}`;
-    const insertFn = (window as unknown as Record<string, unknown>).__insertIntoFlow;
-    if (typeof insertFn === 'function') {
-      (insertFn as (ref: string) => void)(varRef);
-    }
   }
 };

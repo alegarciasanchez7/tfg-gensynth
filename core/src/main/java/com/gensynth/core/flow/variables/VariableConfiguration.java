@@ -72,6 +72,34 @@ public abstract class VariableConfiguration {
     protected Map<String, Object> currentContext = new java.util.HashMap<>();
     protected java.util.List<ConditionalRule> conditionalRules = new java.util.ArrayList<>();
 
+    protected String sourceListVariableId;
+    protected String sourceListSelectionMode = "RANDOM_ITEM";
+    protected String selectedListItemId;
+    protected java.util.List<String> selectedListItemIds = new java.util.ArrayList<>();
+    protected int randomSubsetCount = 1;
+
+    public String getSourceListVariableId() { return sourceListVariableId; }
+    public void setSourceListVariableId(String sourceListVariableId) { this.sourceListVariableId = sourceListVariableId; }
+    public VariableConfiguration sourceListVariableId(String id) { this.sourceListVariableId = id; return this; }
+
+    public String getSourceListSelectionMode() { return sourceListSelectionMode; }
+    public void setSourceListSelectionMode(String sourceListSelectionMode) { this.sourceListSelectionMode = sourceListSelectionMode; }
+    public VariableConfiguration sourceListSelectionMode(String mode) { this.sourceListSelectionMode = mode; return this; }
+
+    public String getSelectedListItemId() { return selectedListItemId; }
+    public void setSelectedListItemId(String selectedListItemId) { this.selectedListItemId = selectedListItemId; }
+    public VariableConfiguration selectedListItemId(String id) { this.selectedListItemId = id; return this; }
+
+    public java.util.List<String> getSelectedListItemIds() { return selectedListItemIds; }
+    public void setSelectedListItemIds(java.util.List<String> selectedListItemIds) { 
+        this.selectedListItemIds = selectedListItemIds != null ? new java.util.ArrayList<>(selectedListItemIds) : new java.util.ArrayList<>(); 
+    }
+    public VariableConfiguration selectedListItemIds(java.util.List<String> ids) { setSelectedListItemIds(ids); return this; }
+
+    public int getRandomSubsetCount() { return randomSubsetCount; }
+    public void setRandomSubsetCount(int randomSubsetCount) { this.randomSubsetCount = randomSubsetCount; }
+    public VariableConfiguration randomSubsetCount(int count) { this.randomSubsetCount = count; return this; }
+
     /**
      * Validates this configuration for logical consistency before simulation starts.
      * @return list of validation error messages; empty if valid
@@ -85,7 +113,47 @@ public abstract class VariableConfiguration {
                 deps.add(rule.targetVariable);
             }
         }
+        if (sourceListVariableId != null && !sourceListVariableId.trim().isEmpty()) {
+            deps.add(sourceListVariableId.trim());
+        }
         return deps;
+    }
+
+    public Object resolveListReferenceValue() {
+        if (sourceListVariableId == null || sourceListVariableId.trim().isEmpty() || currentContext == null) {
+            return null;
+        }
+
+        String refId = sourceListVariableId.trim();
+        Object varObj = currentContext.get(refId + "_config");
+        if (varObj == null) {
+            varObj = currentContext.get(refId);
+        }
+
+        com.gensynth.core.flow.variables.config.ListVariableConfig sourceListConfig = null;
+        if (varObj instanceof com.gensynth.core.flow.variables.ConfigurableVariable) {
+            VariableConfiguration cfg = ((com.gensynth.core.flow.variables.ConfigurableVariable) varObj).getConfiguration();
+            if (cfg instanceof com.gensynth.core.flow.variables.config.ListVariableConfig) {
+                sourceListConfig = (com.gensynth.core.flow.variables.config.ListVariableConfig) cfg;
+            }
+        } else if (varObj instanceof com.gensynth.core.flow.variables.config.ListVariableConfig) {
+            sourceListConfig = (com.gensynth.core.flow.variables.config.ListVariableConfig) varObj;
+        }
+
+        if (sourceListConfig != null && !sourceListConfig.getEffectiveItems().isEmpty()) {
+            java.util.List<com.gensynth.core.flow.variables.config.ListVariableConfig.ListItem> items = sourceListConfig.getEffectiveItems();
+            if ("FIXED_ITEM".equalsIgnoreCase(sourceListSelectionMode) && selectedListItemId != null) {
+                for (com.gensynth.core.flow.variables.config.ListVariableConfig.ListItem item : items) {
+                    if (selectedListItemId.equals(item.getId())) {
+                        return item.generateValue();
+                    }
+                }
+            }
+            int idx = java.util.concurrent.ThreadLocalRandom.current().nextInt(items.size());
+            return items.get(idx).generateValue();
+        }
+
+        return currentContext.get(refId);
     }
 
     protected boolean hasActiveOverride = false;

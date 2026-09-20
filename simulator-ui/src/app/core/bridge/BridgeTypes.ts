@@ -79,4 +79,5 @@ export interface EventMap {
   'plugin-install-result': PluginInstallResultPayload;
   'restart-required': RestartRequiredPayload;
   'rollback-report': RollbackReportPayload;
+  'NATIVE_FILE_DROPPED': { filename: string; base64: string };
 }

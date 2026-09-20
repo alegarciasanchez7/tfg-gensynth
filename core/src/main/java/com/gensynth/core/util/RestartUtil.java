@@ -75,10 +75,28 @@ public class RestartUtil {
                 builder = new ProcessBuilder(winCommand);
             }
             
-            builder.inheritIO();
-            builder.start();
+            // 1. Release WebSocket server and port 8765
+            if (com.gensynth.core.App.getWsServer() != null) {
+                try {
+                    com.gensynth.core.App.getWsServer().shutdown();
+                } catch (Exception ignored) {}
+            }
+
+            // 2. Mark restarting flag and close desktop frame
+            com.gensynth.core.desktop.MainFrame.setRestarting(true);
+            com.gensynth.core.desktop.MainFrame.closeActiveFrame();
+
+            // 3. Dispose native JCEF/Chromium resources in parent process
+            com.gensynth.core.desktop.NativeLoader.dispose();
+
+            // Give the OS 1 second to clean up socket bindings and C++ process handles
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException ignored) {}
+
+            Process child = builder.start();
+            logger.info("New process started (PID {}). Terminating parent process...", child.pid());
             
-            logger.info("New process started. Terminating current process...");
             System.exit(0);
             
         } catch (IOException e) {
