@@ -74,7 +74,8 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         "CLONE_GROUP",
         "CLONE_FLOW",
         "PAUSE_GROUP",
-        "UI_LOG"
+        "UI_LOG",
+        "CONVERT_MESSAGE_FORMAT"
     );
 
     private final ObjectMapper objectMapper = createConfiguredMapper();
@@ -319,6 +320,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                 case "UNINSTALL_PLUGIN" -> pluginCommandHandler.handleUninstallPlugin(conn, payload, commandId);
                 case "EXPORT_STATE" -> stateCommandHandler.handleExportState(conn, commandId, payload);
                 case "IMPORT_STATE" -> stateCommandHandler.handleImportState(conn, commandId, payload);
+                case "CONVERT_MESSAGE_FORMAT" -> handleConvertMessageFormat(conn, payload, commandId);
                 default -> sendError(conn, commandId, "UNSUPPORTED_COMMAND", "Unsupported command: " + type, Map.of(
                     "command", type
                 ));
@@ -336,6 +338,32 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         } finally {
             MDC.remove("commandId");
         }
+    }
+
+    public void handleConvertMessageFormat(WebSocket conn, JsonNode payload, String commandId) {
+        if (payload == null || !payload.isObject()) {
+            sendError(conn, commandId, "INVALID_PAYLOAD", "CONVERT_MESSAGE_FORMAT requires a JSON object payload", null);
+            return;
+        }
+
+        String content = payload.path("content").asText("");
+        String sourceFormat = payload.path("sourceFormat").asText("json");
+        String targetFormat = payload.path("targetFormat").asText("xml");
+        String clientRequestId = payload.path("clientRequestId").asText(null);
+
+        String converted = com.gensynth.core.flow.MessageFormatConverter.convert(content, sourceFormat, targetFormat);
+
+        Map<String, Object> respPayload = new LinkedHashMap<>();
+        respPayload.put("status", "ok");
+        respPayload.put("result", "format_converted");
+        respPayload.put("sourceFormat", sourceFormat);
+        respPayload.put("targetFormat", targetFormat);
+        respPayload.put("convertedContent", converted);
+        if (clientRequestId != null) {
+            respPayload.put("clientRequestId", clientRequestId);
+        }
+
+        sendMessage(conn, "CONNECTION_STATUS", commandId, respPayload);
     }
 
     public String requireTextField(WebSocket conn, String commandId, JsonNode payload, String fieldName, String code, String commandName) {

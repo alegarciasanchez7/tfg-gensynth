@@ -143,38 +143,9 @@ public class TemplateEngine {
                         }
                     }
 
-                    if (propertyPart != null && targetObj instanceof Map<?, ?>) {
-                        Map<?, ?> map = (Map<?, ?>) targetObj;
-                        Object propVal = null;
-                        if (map.containsKey(propertyPart)) {
-                            propVal = map.get(propertyPart);
-                        } else {
-                            for (Map.Entry<?, ?> entry : map.entrySet()) {
-                                String key = String.valueOf(entry.getKey());
-                                if (key.equalsIgnoreCase(propertyPart)) {
-                                    propVal = entry.getValue();
-                                    break;
-                                }
-                            }
-                            if (propVal == null) {
-                                String lowerProp = propertyPart.toLowerCase();
-                                if (lowerProp.equals("node") || lowerProp.equals("nodename") || lowerProp.equals("node_name")) {
-                                    propVal = map.get("nodeName");
-                                    if (propVal == null) propVal = map.get("node_name");
-                                    if (propVal == null) propVal = map.get("node");
-                                } else if (lowerProp.equals("nodeid") || lowerProp.equals("node_id")) {
-                                    propVal = map.get("nodeId");
-                                    if (propVal == null) propVal = map.get("node_id");
-                                } else if (lowerProp.equals("targetnode") || lowerProp.equals("targetnodename") || lowerProp.equals("target_node_name")) {
-                                    propVal = map.get("targetNodeName");
-                                    if (propVal == null) propVal = map.get("target_node_name");
-                                } else if (lowerProp.equals("targetnodeid") || lowerProp.equals("target_node_id")) {
-                                    propVal = map.get("targetNodeId");
-                                    if (propVal == null) propVal = map.get("target_node_id");
-                                }
-                            }
-                        }
-                        replacement = propVal != null ? String.valueOf(propVal) : "";
+                    if (propertyPart != null) {
+                        String propResolved = resolveVariableProperty(targetObj, propertyPart, variable);
+                        replacement = propResolved != null ? propResolved : "";
                     } else if (itemIndex != null && propertyPart == null) {
                         replacement = targetObj != null ? targetObj.toString() : "";
                     } else if (generatedValue instanceof java.util.List<?>) {
@@ -210,6 +181,253 @@ public class TemplateEngine {
         matcher.appendTail(result);
 
         return result.toString();
+    }
+
+    private String resolveVariableProperty(Object targetObj, String propertyPart, Variable variable) {
+        if (propertyPart == null) return null;
+        String prop = propertyPart.toLowerCase(java.util.Locale.ROOT);
+        String varType = variable != null && variable.getType() != null ? variable.getType().toLowerCase(java.util.Locale.ROOT) : "";
+
+        // 1. Map target object (Point, Graph route node, custom map)
+        if (targetObj instanceof Map<?, ?> map) {
+            if (map.containsKey(propertyPart)) {
+                Object v = map.get(propertyPart);
+                return v != null ? String.valueOf(v) : "";
+            }
+            for (Map.Entry<?, ?> entry : map.entrySet()) {
+                if (String.valueOf(entry.getKey()).equalsIgnoreCase(propertyPart)) {
+                    Object v = entry.getValue();
+                    return v != null ? String.valueOf(v) : "";
+                }
+            }
+            if (prop.equals("node") || prop.equals("nodename") || prop.equals("node_name")) {
+                Object v = map.get("nodeName");
+                if (v == null) v = map.get("node_name");
+                if (v == null) v = map.get("node");
+                return v != null ? String.valueOf(v) : "";
+            }
+            if (prop.equals("nodeid") || prop.equals("node_id")) {
+                Object v = map.get("nodeId");
+                if (v == null) v = map.get("node_id");
+                return v != null ? String.valueOf(v) : "";
+            }
+            if (prop.equals("targetnode") || prop.equals("targetnodename") || prop.equals("target_node_name")) {
+                Object v = map.get("targetNodeName");
+                if (v == null) v = map.get("target_node_name");
+                return v != null ? String.valueOf(v) : "";
+            }
+            if (prop.equals("targetnodeid") || prop.equals("target_node_id")) {
+                Object v = map.get("targetNodeId");
+                if (v == null) v = map.get("target_node_id");
+                return v != null ? String.valueOf(v) : "";
+            }
+        }
+
+        // 2. TEMPORAL Variable Attributes
+        if ("temporal".equals(varType) || targetObj instanceof java.time.Instant || targetObj instanceof java.util.Date) {
+            java.time.Instant instant = null;
+            if (targetObj instanceof java.time.Instant ins) {
+                instant = ins;
+            } else if (targetObj instanceof java.lang.Number num) {
+                instant = java.time.Instant.ofEpochMilli(num.longValue());
+            } else if (targetObj instanceof String str) {
+                try {
+                    instant = java.time.Instant.parse(str);
+                } catch (Exception ignored) {
+                    try {
+                        instant = java.time.Instant.ofEpochMilli(Long.parseLong(str));
+                    } catch (Exception ignored2) {}
+                }
+            }
+
+            if (instant == null) {
+                instant = java.time.Instant.now();
+            }
+
+            java.time.ZoneId zone = java.time.ZoneId.of("UTC");
+            if (variable != null && variable.getConfig() != null && variable.getConfig().get("timeZone") != null) {
+                try {
+                    zone = java.time.ZoneId.of(variable.getConfig().get("timeZone").toString());
+                } catch (Exception ignored) {}
+            }
+
+            java.time.ZonedDateTime zdt = instant.atZone(zone);
+
+            switch (prop) {
+                case "month":
+                case "monthtext":
+                case "month_text":
+                case "monthname":
+                case "month_name":
+                    return zdt.getMonth().getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.ENGLISH);
+                case "monthshort":
+                case "month_short":
+                    return zdt.getMonth().getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.ENGLISH);
+                case "monthnumber":
+                case "monthvalue":
+                case "month_number":
+                case "month_val":
+                    return String.valueOf(zdt.getMonthValue());
+                case "year":
+                    return String.valueOf(zdt.getYear());
+                case "day":
+                case "dayofmonth":
+                case "day_of_month":
+                    return String.valueOf(zdt.getDayOfMonth());
+                case "dayofweek":
+                case "day_of_week":
+                case "dayofweekname":
+                    return zdt.getDayOfWeek().getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.ENGLISH);
+                case "dayofweeknumber":
+                case "dayofweekvalue":
+                    return String.valueOf(zdt.getDayOfWeek().getValue());
+                case "hour":
+                case "hours":
+                    return String.valueOf(zdt.getHour());
+                case "minute":
+                case "minutes":
+                    return String.valueOf(zdt.getMinute());
+                case "second":
+                case "seconds":
+                    return String.valueOf(zdt.getSecond());
+                case "millisecond":
+                case "millis":
+                case "timestamp":
+                case "epochmilli":
+                case "epoch_milli":
+                    return String.valueOf(instant.toEpochMilli());
+                case "timezone":
+                case "time_zone":
+                case "tz":
+                    return zone.getId();
+                default:
+                    break;
+            }
+        }
+
+        // 3. NUMERIC Variable Attributes
+        if ("numeric".equals(varType) || targetObj instanceof Number) {
+            double val = 0.0;
+            if (targetObj instanceof Number num) {
+                val = num.doubleValue();
+            } else if (targetObj != null) {
+                try {
+                    val = Double.parseDouble(targetObj.toString());
+                } catch (NumberFormatException ignored) {}
+            }
+
+            switch (prop) {
+                case "integerpart":
+                case "int":
+                case "integer":
+                case "integer_part":
+                    return String.valueOf((long) val);
+                case "fractionalpart":
+                case "decimalpart":
+                case "fraction":
+                case "decimal":
+                case "fractional_part":
+                    String s = String.format(java.util.Locale.US, "%f", val);
+                    int idx = s.indexOf('.');
+                    if (idx != -1) {
+                        String sub = s.substring(idx + 1).replaceAll("0+$", "");
+                        return sub.isEmpty() ? "0" : sub;
+                    }
+                    return "0";
+                case "abs":
+                case "absolute":
+                    return val % 1 == 0 ? String.valueOf((long) Math.abs(val)) : String.valueOf(Math.abs(val));
+                case "round":
+                    return String.valueOf(Math.round(val));
+                case "floor":
+                    return String.valueOf((long) Math.floor(val));
+                case "ceil":
+                case "ceiling":
+                    return String.valueOf((long) Math.ceil(val));
+                case "sign":
+                case "signum":
+                    return String.valueOf((int) Math.signum(val));
+                default:
+                    break;
+            }
+        }
+
+        // 4. STRING Variable Attributes
+        if ("string".equals(varType) || targetObj instanceof String) {
+            String str = targetObj != null ? targetObj.toString() : "";
+            switch (prop) {
+                case "length":
+                case "size":
+                    return String.valueOf(str.length());
+                case "upper":
+                case "uppercase":
+                    return str.toUpperCase(java.util.Locale.ROOT);
+                case "lower":
+                case "lowercase":
+                    return str.toLowerCase(java.util.Locale.ROOT);
+                case "trim":
+                    return str.trim();
+                case "firstchar":
+                case "first_char":
+                    return str.isEmpty() ? "" : String.valueOf(str.charAt(0));
+                case "lastchar":
+                case "last_char":
+                    return str.isEmpty() ? "" : String.valueOf(str.charAt(str.length() - 1));
+                default:
+                    break;
+            }
+        }
+
+        // 5. BOOLEAN Variable Attributes
+        if ("boolean".equals(varType) || targetObj instanceof Boolean) {
+            boolean bool = false;
+            if (targetObj instanceof Boolean b) {
+                bool = b;
+            } else if (targetObj != null) {
+                bool = Boolean.parseBoolean(targetObj.toString());
+            }
+
+            switch (prop) {
+                case "inverse":
+                case "negation":
+                case "not":
+                    return String.valueOf(!bool);
+                case "asnumber":
+                case "binary":
+                case "int":
+                    return bool ? "1" : "0";
+                case "asstring":
+                case "text":
+                    return String.valueOf(bool);
+                case "asupper":
+                case "upper":
+                    return bool ? "TRUE" : "FALSE";
+                default:
+                    break;
+            }
+        }
+
+        // 6. LIST Variable Attributes
+        if ("list".equals(varType) || targetObj instanceof java.util.List<?>) {
+            if (targetObj instanceof java.util.List<?> list) {
+                switch (prop) {
+                    case "size":
+                    case "length":
+                    case "count":
+                        return String.valueOf(list.size());
+                    case "first":
+                    case "firstitem":
+                        return !list.isEmpty() && list.get(0) != null ? list.get(0).toString() : "";
+                    case "last":
+                    case "lastitem":
+                        return !list.isEmpty() && list.get(list.size() - 1) != null ? list.get(list.size() - 1).toString() : "";
+                    default:
+                        break;
+                }
+            }
+        }
+
+        return targetObj != null ? targetObj.toString() : "";
     }
 
     public Variable findAccessibleVariable(
