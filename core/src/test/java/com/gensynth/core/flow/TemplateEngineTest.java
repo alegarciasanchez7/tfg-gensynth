@@ -277,4 +277,122 @@ public class TemplateEngineTest {
 
         assertEquals("{\"veggies\": [\"Carrot\", \"Paco\", \"Onion\", \"Spinach\"] }", result);
     }
+
+    @Test
+    public void testTemporalVariableAttributeExtraction() {
+        Variable dateVar = new Variable(
+                "v_date",
+                "creation_date",
+                "LOCAL",
+                "temporal",
+                "2026-08-20T15:30:00Z",
+                Map.of(
+                        "pattern", "FIXED_TEMPORAL",
+                        "timeAdvanceMode", "FIXED",
+                        "fixedDate", "2026-08-20T15:30:00Z",
+                        "timeZone", "UTC"
+                ),
+                "flow-1",
+                "group-1"
+        );
+        variables.put(dateVar.getId(), dateVar);
+
+        String template = "Month: {{local.creation_date.monthText}}, Year: {{local.creation_date.year}}, Day: {{local.creation_date.day}}";
+        String result = engine.evaluate(template, 1, variables, "flow-1", "group-1");
+
+        assertEquals("Month: August, Year: 2026, Day: 20", result);
+    }
+
+    @Test
+    public void testNumericVariableAttributeExtraction() {
+        Variable numVar = new Variable(
+                "v_num",
+                "price",
+                "LOCAL",
+                "numeric",
+                123.456,
+                Map.of(
+                        "pattern", "CONSTANT",
+                        "constantValue", 123.456,
+                        "decimalPlaces", 3
+                ),
+                "flow-1",
+                "group-1"
+        );
+        variables.put(numVar.getId(), numVar);
+
+        String template = "Int: {{local.price.integerPart}}, Decimal: {{local.price.decimalPart}}, Abs: {{local.price.abs}}, Round: {{local.price.round}}";
+        String result = engine.evaluate(template, 1, variables, "flow-1", "group-1");
+
+        assertEquals("Int: 123, Decimal: 456, Abs: 123.456, Round: 123", result);
+    }
+
+    @Test
+    public void testStringVariableAttributeExtraction() {
+        Variable strVar = new Variable(
+                "v_str",
+                "username",
+                "LOCAL",
+                "string",
+                "Hello World",
+                Map.of(
+                        "pattern", "CONSTANT",
+                        "constantValue", "Hello World"
+                ),
+                "flow-1",
+                "group-1"
+        );
+        variables.put(strVar.getId(), strVar);
+
+        String template = "Length: {{local.username.length}}, Upper: {{local.username.upper}}, Lower: {{local.username.lower}}, First: {{local.username.firstChar}}";
+        String result = engine.evaluate(template, 1, variables, "flow-1", "group-1");
+
+        assertEquals("Length: 11, Upper: HELLO WORLD, Lower: hello world, First: H", result);
+    }
+
+    @Test
+    public void testBooleanVariableAttributeExtraction() {
+        Variable boolVar = new Variable(
+                "v_bool",
+                "is_active",
+                "LOCAL",
+                "boolean",
+                true,
+                Map.of(
+                        "pattern", "CONSTANT_BOOLEAN",
+                        "currentValue", true
+                ),
+                "flow-1",
+                "group-1"
+        );
+        variables.put(boolVar.getId(), boolVar);
+
+        String template = "Inverse: {{local.is_active.inverse}}, Binary: {{local.is_active.binary}}, AsUpper: {{local.is_active.asUpper}}";
+        String result = engine.evaluate(template, 1, variables, "flow-1", "group-1");
+
+        assertEquals("Inverse: false, Binary: 1, AsUpper: TRUE", result);
+    }
+
+    @Test
+    public void testListVariableSizeAttributeExtraction() {
+        Variable listVar = new Variable(
+                "v_list",
+                "colors",
+                "LOCAL",
+                "list",
+                List.of("Red", "Green", "Blue"),
+                Map.of(
+                        "selectionStrategy", "FIXED_SUBSET",
+                        "items", List.of("Red", "Green", "Blue")
+                ),
+                "flow-1",
+                "group-1"
+        );
+        variables.put(listVar.getId(), listVar);
+
+        String template = "Count: {{local.colors.size}}, First: {{local.colors.first}}, Last: {{local.colors.last}}";
+        String result = engine.evaluate(template, 1, variables, "flow-1", "group-1");
+
+        assertEquals("Count: 3, First: Red, Last: Blue", result);
+    }
 }

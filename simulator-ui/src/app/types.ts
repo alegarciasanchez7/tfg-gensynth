@@ -341,3 +341,11 @@ export interface StartGroupErrorPayload {
   errors?: string[];
   cycle?: string[];
 }
+
+export interface FormatConversionPayload {
+  content: string;
+  sourceFormat: 'json' | 'xml' | 'csv' | 'plain';
+  targetFormat: 'json' | 'xml' | 'csv' | 'plain';
+  clientRequestId?: string;
+}
+
