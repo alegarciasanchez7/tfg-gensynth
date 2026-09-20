@@ -13,8 +13,8 @@ import java.util.concurrent.ThreadLocalRandom;
 public class NumericVariableConfig extends VariableConfiguration {
 
     // Range and format
-    private double fromValue;
-    private double toValue;
+    private double fromValue = 0.0;
+    private double toValue = 100.0;
     private Double initialValue;
     private int steps;
     private String format;
