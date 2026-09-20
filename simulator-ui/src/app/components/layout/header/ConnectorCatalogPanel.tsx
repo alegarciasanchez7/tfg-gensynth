@@ -60,7 +60,7 @@ export function ConnectorCatalogPanel({
   return (
     <div
       ref={ref}
-      className="absolute left-0 top-full mt-1 z-50 bg-[var(--c-bg2)] border border-[var(--c-br1)] rounded shadow-xl shadow-black/20 max-w-md max-h-96 overflow-y-auto py-2"
+      className="absolute left-0 top-full mt-1 z-[100] bg-[var(--c-bg2)] border border-[var(--c-br1)] rounded shadow-2xl shadow-black/40 max-w-md max-h-96 overflow-y-auto py-2"
       style={{ fontFamily: 'JetBrains Mono, monospace' }}
     >
       {/* Header */}

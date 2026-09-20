@@ -172,6 +172,8 @@ function ConnectorConfigEditor({
 interface TechnicalConfigPanelProps {
   flow: Flow;
   activeTab: 'technical' | 'format';
+  draftName: string;
+  setDraftName: (val: string) => void;
   draftHost: string;
   setDraftHost: (val: string) => void;
   draftPort: number;
@@ -197,6 +199,8 @@ interface TechnicalConfigPanelProps {
 export function TechnicalConfigPanel({
   flow,
   activeTab,
+  draftName,
+  setDraftName,
   draftHost,
   setDraftHost,
   draftPort,
@@ -235,6 +239,27 @@ export function TechnicalConfigPanel({
       </div>
 
       <div className="p-4 flex flex-col gap-3">
+        {/* Flow details */}
+        <div className="flex flex-col gap-2">
+          <span
+            className="text-[9px] text-[var(--c-tx5)] tracking-widest uppercase"
+            style={{ fontFamily: 'JetBrains Mono, monospace' }}
+          >
+            FLOW INFORMATION
+          </span>
+          <FieldRow label="Flow Name">
+            <input
+              value={draftName}
+              onChange={(event) => setDraftName(event.target.value)}
+              placeholder="Flow name"
+              className="bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded px-2.5 py-1.5 text-[11px] text-[var(--c-tx1)] outline-none focus:border-cyan-500/50 transition-all w-full"
+              style={{ fontFamily: 'JetBrains Mono, monospace' }}
+            />
+          </FieldRow>
+        </div>
+
+        <div className="h-px bg-[var(--c-br2)]" />
+
         {/* Connector selection */}
         <div className="flex flex-col gap-2">
           <span

@@ -189,4 +189,36 @@ describe('NumericConfigPanel', () => {
     expect(within(badgeContainer).queryByText('pi')).not.toBeInTheDocument();
     expect(within(badgeContainer).queryByText('e')).not.toBeInTheDocument();
   });
+
+  it('renders Sinusoidal inputs when pattern is SINUSOIDAL', () => {
+    render(<NumericConfigPanel config={{ ...defaultConfig, pattern: 'SINUSOIDAL', sineFrequency: 2.0 }} onChange={vi.fn()} />);
+    expect(screen.getByText(/Sinusoidal \/ Periodic Wave/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Frequency \(Hz\)/i)).toBeInTheDocument();
+  });
+
+  it('renders Drift inputs when pattern is DRIFT', () => {
+    render(<NumericConfigPanel config={{ ...defaultConfig, pattern: 'DRIFT', driftRate: 0.5 }} onChange={vi.fn()} />);
+    expect(screen.getAllByText(/Linear Drift/i).length).toBeGreaterThan(0);
+    expect(screen.getByLabelText(/Drift Rate \(units\/s\)/i)).toBeInTheDocument();
+  });
+
+  it('toggles noise modifier layer when noise button is clicked', async () => {
+    const handleChange = vi.fn();
+    render(<NumericConfigPanel config={{ ...defaultConfig, noiseEnabled: false }} onChange={handleChange} />);
+    
+    expect(screen.getByText(/Noise Injection \(Jitter \/ Gaussian\)/i)).toBeInTheDocument();
+    const noiseButton = screen.getAllByRole('button', { name: /Disabled/i })[0];
+    fireEvent.click(noiseButton);
+    expect(handleChange).toHaveBeenCalledWith({ noiseEnabled: true });
+  });
+
+  it('toggles spike anomaly modifier layer when spike button is clicked', async () => {
+    const handleChange = vi.fn();
+    render(<NumericConfigPanel config={{ ...defaultConfig, spikeEnabled: false }} onChange={handleChange} />);
+    
+    expect(screen.getByText(/Anomaly Injection \/ Spikes/i)).toBeInTheDocument();
+    const spikeButton = screen.getAllByRole('button', { name: /Disabled/i })[1] || screen.getAllByRole('button', { name: /Disabled/i })[0];
+    fireEvent.click(spikeButton);
+    expect(handleChange).toHaveBeenCalledWith({ spikeEnabled: true });
+  });
 });

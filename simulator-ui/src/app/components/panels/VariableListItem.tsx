@@ -20,6 +20,7 @@ interface VariableListItemProps {
   variable: Variable;
   isSelected: boolean;
   isFlowSelected: boolean;
+  contextName?: string;
   onSelect: () => void;
   onDelete: () => void;
   onInsert: () => void;
@@ -29,6 +30,7 @@ export function VariableListItem({
   variable,
   isSelected,
   isFlowSelected,
+  contextName,
   onSelect,
   onDelete,
   onInsert,
@@ -48,19 +50,28 @@ export function VariableListItem({
         onClick={onSelect}
         className="flex-1 flex flex-col gap-0.5 px-3 py-2 text-left min-w-0"
       >
-        <div className="flex items-center gap-2">
-          <div className={`flex items-center justify-center h-5 w-5 rounded-sm ${tc.bg} ${tc.color}`}>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <div className={`flex items-center justify-center h-5 w-5 rounded-sm shrink-0 ${tc.bg} ${tc.color}`}>
             <Icon size={11} />
           </div>
-          <span className="text-[11px] font-semibold text-[var(--c-tx1)] truncate" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+          <span className="text-[11px] font-semibold text-[var(--c-tx1)] truncate min-w-0 flex-1" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
             {variable.name}
           </span>
           <span
-            className={`text-[8px] rounded px-1.5 py-0.5 tracking-tighter uppercase font-bold border ${sc}`}
+            className={`text-[8px] rounded px-1.5 py-0.5 tracking-tighter uppercase font-bold border shrink-0 ${sc}`}
             style={{ fontFamily: 'JetBrains Mono, monospace' }}
           >
             {variable.scope}
           </span>
+          {contextName && (
+            <span
+              className="text-[8px] text-[var(--c-tx4)] truncate max-w-[55px] shrink-0 opacity-70 border border-[var(--c-br1)] rounded px-1"
+              style={{ fontFamily: 'JetBrains Mono, monospace' }}
+              title={contextName}
+            >
+              {contextName}
+            </span>
+          )}
         </div>
         {description && (
           <span className="text-[10px] text-[var(--c-tx4)] truncate pl-7" style={{ fontFamily: 'JetBrains Mono, monospace' }}>

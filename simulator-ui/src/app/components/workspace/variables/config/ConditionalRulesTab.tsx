@@ -25,6 +25,8 @@ interface ConditionalRulesTabProps {
   rules: ConditionalRule[];
   onChange: (rules: ConditionalRule[]) => void;
   variableType: Variable['type'];
+  variableScope?: Variable['scope'];
+  currentVariableName?: string;
   flowId?: string;
   groupId?: string;
 }
@@ -33,6 +35,8 @@ export const ConditionalRulesTab: React.FC<ConditionalRulesTabProps> = ({
   rules, 
   onChange,
   variableType,
+  variableScope,
+  currentVariableName,
   flowId,
   groupId
 }) => {
@@ -41,12 +45,45 @@ export const ConditionalRulesTab: React.FC<ConditionalRulesTabProps> = ({
   const [filter, setFilter] = useState('');
   const suggestionsRef = useRef<HTMLDivElement>(null);
 
-  // Get all unique variable names from state
+  // Get allowed target variable names based on scope rules
   const allVariables = React.useMemo(() => {
-    // For now, let's assume we have a list of variables in state
-    // In a real scenario, we'd pull from state.variables if it existed or aggregate from flows
-    return state.variables?.map(v => v.name) || [];
-  }, [state.variables]);
+    if (!state.variables) return [];
+
+    const srcGroup = state.groups?.find(g => 
+      (groupId && g.id === groupId) || 
+      (flowId && g.flows.some(f => f.id === flowId))
+    );
+    const effectiveGroupId = groupId || srcGroup?.id;
+    const groupFlowIds = srcGroup?.flows.map(f => f.id) || [];
+
+    return state.variables
+      .filter(v => {
+        if (currentVariableName && v.name === currentVariableName) {
+          return false;
+        }
+
+        if (variableScope === 'local') {
+          if (v.scope === 'local' && flowId && v.flowId === flowId) return true;
+          if (v.scope === 'group' && effectiveGroupId && v.groupId === effectiveGroupId) return true;
+          if (v.scope === 'global') return true;
+          return false;
+        }
+
+        if (variableScope === 'group') {
+          if (v.scope === 'local' && v.flowId && groupFlowIds.includes(v.flowId)) return true;
+          if (v.scope === 'group' && effectiveGroupId && v.groupId === effectiveGroupId) return true;
+          if (v.scope === 'global') return true;
+          return false;
+        }
+
+        if (variableScope === 'global') {
+          return true;
+        }
+
+        return true;
+      })
+      .map(v => v.name);
+  }, [state.variables, state.groups, variableScope, flowId, groupId, currentVariableName]);
 
   const filteredVars = allVariables.filter(v => v.toLowerCase().includes(filter.toLowerCase()));
 

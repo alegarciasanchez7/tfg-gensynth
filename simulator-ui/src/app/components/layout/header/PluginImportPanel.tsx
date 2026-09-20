@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Upload, X, Check, AlertTriangle, Loader2, FileArchive, ArrowRight, ShieldCheck } from 'lucide-react';
-import { CoreCommands } from '../../../core/bridge';
+import { CoreCommands, bridge } from '../../../core/bridge';
 import type { PluginValidationResultPayload } from '../../../core/types';
 
 type ValidationState = 'idle' | 'validating' | 'success' | 'error';
@@ -107,10 +107,61 @@ export function PluginImportPanel({ onClose }: PluginImportPanelProps) {
     }
   }, [jarBase64, pluginName, pluginVersion, validationResult]);
 
+  // Handle file coming from native Desktop App bridge (JCEF drop fix)
+  useEffect(() => {
+    const handleNativeDrop = async (payload: any) => {
+      if (payload.filename && payload.base64) {
+        if (!payload.filename.endsWith('.jar')) {
+          setValidationState('error');
+          setValidationResult({
+            status: 'error',
+            valid: false,
+            logs: [{ level: 'ERROR', message: 'Only .jar files are accepted.', context: 'Validation' }],
+          });
+          return;
+        }
+
+        setFileName(payload.filename);
+        setValidationState('validating');
+        setValidationResult(null);
+        setJarBase64(payload.base64);
+
+        try {
+          const name = pluginName.trim() || payload.filename.replace('.jar', '');
+          const version = pluginVersion.trim() || '1.0.0';
+
+          const response = await CoreCommands.validatePlugin(payload.base64, name, version);
+
+          setValidationResult(response);
+          setValidationState(response.valid ? 'success' : 'error');
+
+          if (response.displayName && !pluginName.trim()) {
+            setPluginName(response.displayName);
+          }
+          if (response.pluginVersion && !pluginVersion.trim()) {
+            setPluginVersion(response.pluginVersion);
+          }
+        } catch (err) {
+          setValidationState('error');
+          setValidationResult({
+            status: 'error',
+            valid: false,
+            logs: [{ level: 'ERROR', message: 'Validation request failed. Is the backend running?' }],
+          });
+        }
+      }
+    };
+
+    bridge.on('NATIVE_FILE_DROPPED', handleNativeDrop);
+    return () => {
+      bridge.off('NATIVE_FILE_DROPPED', handleNativeDrop);
+    };
+  }, [pluginName, pluginVersion]);
+
   return (
     <div
         ref={ref}
-        className="absolute left-0 top-full mt-2 z-50 bg-[var(--c-bg2)] border border-[var(--c-br1)] rounded-lg shadow-2xl shadow-black/40 py-4 px-5 animate-in fade-in slide-in-from-top-2 duration-200"
+        className="absolute left-0 top-full mt-2 z-[100] bg-[var(--c-bg2)] border border-[var(--c-br1)] rounded-lg shadow-2xl shadow-black/50 py-4 px-5 animate-in fade-in slide-in-from-top-2 duration-200"
         style={{ fontFamily: 'JetBrains Mono, monospace', width: 420 }}
       >
         {/* Header */}
