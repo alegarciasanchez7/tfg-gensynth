@@ -34,7 +34,7 @@ export const CustomDropdown: React.FC<CustomDropdownProps> = ({ value, onChange,
   const selectedOption = options.find(opt => opt.value === value) || options[0];
 
   return (
-    <div ref={containerRef} className={`relative w-full ${className}`}>
+    <div ref={containerRef} className={`relative w-full ${isOpen ? 'z-[9999]' : ''} ${className}`}>
       <button
         id={id}
         type="button"
@@ -55,7 +55,7 @@ export const CustomDropdown: React.FC<CustomDropdownProps> = ({ value, onChange,
       </button>
 
       {isOpen && (
-        <div className="absolute left-0 right-0 mt-1 z-50 bg-[var(--c-bg2)] border border-[var(--c-br1)] rounded shadow-2xl max-h-[200px] overflow-y-auto scrollbar-thin scrollbar-thumb-[var(--c-br3)]">
+        <div className="absolute left-0 right-0 mt-1 z-[9999] bg-[var(--c-bg2)] border border-[var(--c-br1)] rounded shadow-2xl max-h-[200px] overflow-y-auto scrollbar-thin scrollbar-thumb-[var(--c-br3)]">
           <div className="p-1 space-y-0.5">
             {options.map((opt) => (
               <button

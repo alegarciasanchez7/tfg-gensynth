@@ -112,29 +112,30 @@ export function TemplateEditor({
       } else {
         let scope: string | null = null;
         let name = fullSpec;
+        let subProperty: string | null = null;
         let isItemAccess = false;
 
         if (fullSpec.includes('.')) {
           const parts = fullSpec.split('.');
-          if (parts.length >= 3 && parts[parts.length - 1].toLowerCase().startsWith('item')) {
+          const knownScopes = ['local', 'group', 'global'];
+          if (knownScopes.includes(parts[0].toLowerCase())) {
             scope = parts[0].toLowerCase();
             name = parts[1];
-            isItemAccess = true;
-          } else if (parts.length === 2) {
-            if (parts[1].toLowerCase().startsWith('item')) {
-              scope = null;
-              name = parts[0];
-              isItemAccess = true;
-            } else if (parts[1] === '') {
-              scope = null;
-              name = parts[0];
-            } else {
-              scope = parts[0].toLowerCase();
-              name = parts[1];
+            if (parts.length >= 3) {
+              subProperty = parts[2];
+              if (subProperty.toLowerCase().startsWith('item')) {
+                isItemAccess = true;
+              }
             }
-          } else if (parts.length === 3 && parts[2] === '') {
-            scope = parts[0].toLowerCase();
-            name = parts[1];
+          } else {
+            scope = null;
+            name = parts[0];
+            if (parts.length >= 2) {
+              subProperty = parts[1];
+              if (subProperty.toLowerCase().startsWith('item')) {
+                isItemAccess = true;
+              }
+            }
           }
         }
 
@@ -157,6 +158,16 @@ export function TemplateEditor({
             } else {
               isValid = true;
             }
+          } else if (subProperty && variable.type === 'point') {
+            const lowerProp = subProperty.toLowerCase();
+            const validPointProps = [
+              'latitude', 'longitude', 'altitude',
+              'latitudedecimal', 'longitudedecimal',
+              'altitudeunit', 'altitudereference',
+              'x', 'y', 'z',
+              'nodename', 'node_name', 'node', 'nodeid', 'node_id'
+            ];
+            isValid = validPointProps.includes(lowerProp);
           } else {
             isValid = true;
           }
@@ -221,6 +232,27 @@ export function TemplateEditor({
               detail: `item${index} (${item.label})`,
             });
           });
+        }
+      } else if (v.type === 'point') {
+        options.push({ name: v.name, scope: v.scope, detail: 'Full Point Object' });
+
+        const coordSys = v.config?.coordinateSystem || 'CARTESIAN_2D';
+        if (coordSys === 'GEOSPATIAL') {
+          options.push({ name: `${v.name}.latitude`, scope: v.scope, detail: 'Latitude (Degrees / DMS)' });
+          options.push({ name: `${v.name}.longitude`, scope: v.scope, detail: 'Longitude (Degrees / DMS)' });
+          options.push({ name: `${v.name}.altitude`, scope: v.scope, detail: 'Altitude' });
+        } else if (coordSys === 'CARTESIAN_3D') {
+          options.push({ name: `${v.name}.x`, scope: v.scope, detail: 'X Coordinate' });
+          options.push({ name: `${v.name}.y`, scope: v.scope, detail: 'Y Coordinate' });
+          options.push({ name: `${v.name}.z`, scope: v.scope, detail: 'Z Coordinate' });
+        } else {
+          options.push({ name: `${v.name}.x`, scope: v.scope, detail: 'X Coordinate' });
+          options.push({ name: `${v.name}.y`, scope: v.scope, detail: 'Y Coordinate' });
+        }
+
+        if (v.config?.pattern === 'GRAPH_ROUTE' || (v.config?.graphNodes && v.config.graphNodes.length > 0)) {
+          options.push({ name: `${v.name}.nodeName`, scope: v.scope, detail: 'Graph Node Display Name' });
+          options.push({ name: `${v.name}.nodeId`, scope: v.scope, detail: 'Graph Node ID' });
         }
       } else {
         options.push({ name: v.name, scope: v.scope });

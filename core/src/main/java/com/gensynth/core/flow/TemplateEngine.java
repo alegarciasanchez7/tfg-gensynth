@@ -57,25 +57,43 @@ public class TemplateEngine {
                 String scopePart = null;
                 String namePart = fullVarSpec;
                 Integer itemIndex = null;
+                String propertyPart = null;
 
                 if (fullVarSpec.contains(".")) {
                     String[] parts = fullVarSpec.split("\\.");
-                    if (parts.length >= 3 && parts[parts.length - 1].toLowerCase().startsWith("item")) {
+                    Set<String> knownScopes = Set.of("local", "group", "global");
+
+                    if (knownScopes.contains(parts[0].toLowerCase())) {
                         scopePart = parts[0].toLowerCase();
                         namePart = parts[1];
-                        try {
-                            itemIndex = Integer.parseInt(parts[parts.length - 1].substring(4));
-                        } catch (NumberFormatException ignored) {}
-                    } else if (parts.length == 2) {
-                        if (parts[1].toLowerCase().startsWith("item")) {
-                            scopePart = null;
-                            namePart = parts[0];
-                            try {
-                                itemIndex = Integer.parseInt(parts[1].substring(4));
-                            } catch (NumberFormatException ignored) {}
-                        } else {
-                            scopePart = parts[0].toLowerCase();
-                            namePart = parts[1];
+                        if (parts.length >= 3) {
+                            String sub = parts[2];
+                            if (sub.toLowerCase().startsWith("item")) {
+                                try {
+                                    itemIndex = Integer.parseInt(sub.substring(4));
+                                } catch (NumberFormatException ignored) {}
+                                if (parts.length >= 4) {
+                                    propertyPart = parts[3];
+                                }
+                            } else {
+                                propertyPart = sub;
+                            }
+                        }
+                    } else {
+                        scopePart = null;
+                        namePart = parts[0];
+                        if (parts.length >= 2) {
+                            String sub = parts[1];
+                            if (sub.toLowerCase().startsWith("item")) {
+                                try {
+                                    itemIndex = Integer.parseInt(sub.substring(4));
+                                } catch (NumberFormatException ignored) {}
+                                if (parts.length >= 3) {
+                                    propertyPart = parts[2];
+                                }
+                            } else {
+                                propertyPart = sub;
+                            }
                         }
                     }
                 }
@@ -115,16 +133,54 @@ public class TemplateEngine {
                         }
                     }
 
-                    if (itemIndex != null && generatedValue instanceof java.util.List<?>) {
-                        java.util.List<?> list = (java.util.List<?>) generatedValue;
+                    Object targetObj = generatedValue;
+                    if (itemIndex != null && targetObj instanceof java.util.List<?>) {
+                        java.util.List<?> list = (java.util.List<?>) targetObj;
                         if (itemIndex >= 0 && itemIndex < list.size()) {
-                            Object element = list.get(itemIndex);
-                            replacement = element != null ? element.toString() : "";
+                            targetObj = list.get(itemIndex);
                         } else {
-                            replacement = "";
+                            targetObj = null;
                         }
+                    }
+
+                    if (propertyPart != null && targetObj instanceof Map<?, ?>) {
+                        Map<?, ?> map = (Map<?, ?>) targetObj;
+                        Object propVal = null;
+                        if (map.containsKey(propertyPart)) {
+                            propVal = map.get(propertyPart);
+                        } else {
+                            for (Map.Entry<?, ?> entry : map.entrySet()) {
+                                String key = String.valueOf(entry.getKey());
+                                if (key.equalsIgnoreCase(propertyPart)) {
+                                    propVal = entry.getValue();
+                                    break;
+                                }
+                            }
+                            if (propVal == null) {
+                                String lowerProp = propertyPart.toLowerCase();
+                                if (lowerProp.equals("node") || lowerProp.equals("nodename") || lowerProp.equals("node_name")) {
+                                    propVal = map.get("nodeName");
+                                    if (propVal == null) propVal = map.get("node_name");
+                                    if (propVal == null) propVal = map.get("node");
+                                } else if (lowerProp.equals("nodeid") || lowerProp.equals("node_id")) {
+                                    propVal = map.get("nodeId");
+                                    if (propVal == null) propVal = map.get("node_id");
+                                } else if (lowerProp.equals("targetnode") || lowerProp.equals("targetnodename") || lowerProp.equals("target_node_name")) {
+                                    propVal = map.get("targetNodeName");
+                                    if (propVal == null) propVal = map.get("target_node_name");
+                                } else if (lowerProp.equals("targetnodeid") || lowerProp.equals("target_node_id")) {
+                                    propVal = map.get("targetNodeId");
+                                    if (propVal == null) propVal = map.get("target_node_id");
+                                }
+                            }
+                        }
+                        replacement = propVal != null ? String.valueOf(propVal) : "";
+                    } else if (itemIndex != null && propertyPart == null) {
+                        replacement = targetObj != null ? targetObj.toString() : "";
                     } else if (generatedValue instanceof java.util.List<?>) {
                         replacement = formatListToJson((java.util.List<?>) generatedValue);
+                    } else if (generatedValue instanceof Map<?, ?>) {
+                        replacement = formatMapToJson((Map<?, ?>) generatedValue);
                     } else if (isConstantPattern && generatedValue instanceof Double) {
                         double d = (Double) generatedValue;
                         if (d % 1.0 == 0.0) {
@@ -302,6 +358,27 @@ public class TemplateEngine {
             }
         }
         sb.append("]");
+        return sb.toString();
+    }
+
+    private String formatMapToJson(Map<?, ?> map) {
+        StringBuilder sb = new StringBuilder("{");
+        boolean first = true;
+        for (Map.Entry<?, ?> entry : map.entrySet()) {
+            if (!first) sb.append(", ");
+            first = false;
+            sb.append("\"").append(entry.getKey()).append("\": ");
+            Object val = entry.getValue();
+            if (val == null) {
+                sb.append("null");
+            } else if (val instanceof Number || val instanceof Boolean) {
+                sb.append(val.toString());
+            } else {
+                String str = val.toString().replace("\"", "\\\"");
+                sb.append("\"").append(str).append("\"");
+            }
+        }
+        sb.append("}");
         return sb.toString();
     }
 }

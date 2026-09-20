@@ -83,6 +83,29 @@ public class PointVariableConfig extends VariableConfiguration {
         SPHERE
     }
 
+    public enum GraphNavigationMode {
+        SEQUENCE,
+        RANDOM_NEIGHBOR
+    }
+
+    private List<GraphNode> graphNodes = new ArrayList<>();
+    private List<GraphEdge> graphEdges = new ArrayList<>();
+    private GraphNavigationMode graphNavigationMode = GraphNavigationMode.RANDOM_NEIGHBOR;
+    private List<String> graphSequence = new ArrayList<>();
+    private boolean graphLoopSequence = true;
+    private double graphStopProbability = 0.0;
+    private int graphStopTicks = 0;
+    private boolean graphPreventCycles = true;
+    private int graphInterpolationSteps = 1;
+
+    // Graph route runtime state
+    private String currentGraphNodeId = null;
+    private String targetGraphNodeId = null;
+    private int graphStepInEdge = 0;
+    private int remainingStopTicks = 0;
+    private transient boolean hasPausedAtCurrentNode = false;
+    private List<String> visitedNodeHistory = new ArrayList<>();
+
     private AltitudeUnit altitudeUnit = AltitudeUnit.METERS;
     private AltitudeReference altitudeReference = AltitudeReference.MSL;
     private AltitudePattern altitudePattern = AltitudePattern.FOLLOW_XY;
@@ -320,22 +343,20 @@ public class PointVariableConfig extends VariableConfiguration {
         return inside;
     }
 
+    private static double ccwCross(double ax, double ay, double bx, double by, double cx, double cy) {
+        return (cy - ay) * (bx - ax) - (by - ay) * (cx - ax);
+    }
+
     public boolean doLineSegmentsIntersect(double p0_x, double p0_y, double p1_x, double p1_y,
                                           double p2_x, double p2_y, double p3_x, double p3_y) {
-        double s1_x = p1_x - p0_x;
-        double s1_y = p1_y - p0_y;
-        double s2_x = p3_x - p2_x;
-        double s2_y = p3_y - p2_y;
+        double ccw1 = ccwCross(p0_x, p0_y, p1_x, p1_y, p2_x, p2_y);
+        double ccw2 = ccwCross(p0_x, p0_y, p1_x, p1_y, p3_x, p3_y);
+        double ccw3 = ccwCross(p2_x, p2_y, p3_x, p3_y, p0_x, p0_y);
+        double ccw4 = ccwCross(p2_x, p2_y, p3_x, p3_y, p1_x, p1_y);
 
-        double denom = (-s2_x * s1_y + s1_x * s2_y);
-        if (Math.abs(denom) < 1e-9) {
-            return false;
-        }
-
-        double s = (-s1_y * (p0_x - p2_x) + s1_x * (p0_y - p2_y)) / denom;
-        double t = ( s2_x * (p0_y - p2_y) - s2_y * (p0_x - p2_x)) / denom;
-
-        return (s >= 0.0 && s <= 1.0 && t >= 0.0 && t <= 1.0);
+        return ((ccw1 * ccw2 <= 0.0) && (ccw3 * ccw4 <= 0.0)) &&
+               (Math.max(p0_x, p1_x) >= Math.min(p2_x, p3_x) && Math.max(p2_x, p3_x) >= Math.min(p0_x, p1_x)) &&
+               (Math.max(p0_y, p1_y) >= Math.min(p2_y, p3_y) && Math.max(p2_y, p3_y) >= Math.min(p0_y, p1_y));
     }
 
     public boolean doesSegmentIntersectAnyWall(double x1, double y1, double x2, double y2) {
@@ -543,6 +564,15 @@ public class PointVariableConfig extends VariableConfiguration {
         if (jitterRadius < 0) {
             errors.add("Jitter radius cannot be negative");
         }
+        if (graphStopProbability < 0.0 || graphStopProbability > 1.0) {
+            errors.add("Graph stop probability must be between 0.0 and 1.0");
+        }
+        if (graphStopTicks < 0) {
+            errors.add("Graph stop ticks cannot be negative");
+        }
+        if (graphInterpolationSteps < 1) {
+            errors.add("Graph interpolation steps must be at least 1");
+        }
         return errors;
     }
 
@@ -591,6 +621,9 @@ public class PointVariableConfig extends VariableConfiguration {
                 break;
             case CIRCULAR_ORBIT:
                 point = generateCircularOrbitPoint();
+                break;
+            case GRAPH_ROUTE:
+                point = generateGraphRoutePoint();
                 break;
             default:
                 point = fixedPoint;
@@ -702,9 +735,13 @@ public class PointVariableConfig extends VariableConfiguration {
         double targetX = lastPoint.x + vx;
         double targetY = lastPoint.y + vy;
         double targetZ = lastPoint.z + vz;
+        Point3D bounded = applyBoundaries(targetX, targetY, targetZ, vx, vy, vz);
 
         // Check if movement segment hits a wall barrier or steps inside an obstacle zone
-        if (doesSegmentIntersectAnyWall(lastPoint.x, lastPoint.y, targetX, targetY) || isPointInAnyObstacle(targetX, targetY)) {
+        if (doesSegmentIntersectAnyWall(lastPoint.x, lastPoint.y, targetX, targetY)
+         || doesSegmentIntersectAnyWall(lastPoint.x, lastPoint.y, bounded.x, bounded.y)
+         || isPointInAnyObstacle(targetX, targetY)
+         || isPointInAnyObstacle(bounded.x, bounded.y)) {
             if (boundaryBehavior == BoundaryBehavior.BOUNCE) {
                 lastVelocity = new Point3D(-vx, -vy, vz);
             } else {
@@ -713,7 +750,6 @@ public class PointVariableConfig extends VariableConfiguration {
             return lastPoint;
         }
 
-        Point3D bounded = applyBoundaries(targetX, targetY, targetZ, vx, vy, vz);
         lastPoint = bounded;
         return lastPoint;
     }
@@ -986,6 +1022,25 @@ public class PointVariableConfig extends VariableConfiguration {
                 }
                 break;
         }
+
+        if (pattern == GenerationPattern.GRAPH_ROUTE && currentGraphNodeId != null) {
+            GraphNode currentNode = findGraphNodeById(currentGraphNodeId);
+            if (currentNode != null) {
+                map.put("nodeId", currentNode.getId());
+                map.put("nodeName", (currentNode.getName() != null && !currentNode.getName().trim().isEmpty()) ? currentNode.getName() : currentNode.getId());
+            }
+            if (targetGraphNodeId != null) {
+                GraphNode targetNode = findGraphNodeById(targetGraphNodeId);
+                if (targetNode != null) {
+                    map.put("targetNodeId", targetNode.getId());
+                    map.put("targetNodeName", (targetNode.getName() != null && !targetNode.getName().trim().isEmpty()) ? targetNode.getName() : targetNode.getId());
+                }
+            }
+            map.put("stepInEdge", graphStepInEdge);
+            map.put("totalEdgeSteps", graphInterpolationSteps);
+            map.put("isPaused", remainingStopTicks > 0);
+        }
+
         return map;
     }
 
@@ -1034,11 +1089,18 @@ public class PointVariableConfig extends VariableConfiguration {
         isAnomalous = false;
         anomalyStartTick = 0;
         cachedWhenTicks = -1;
+        currentGraphNodeId = null;
+        targetGraphNodeId = null;
+        graphStepInEdge = 0;
+        remainingStopTicks = 0;
+        if (visitedNodeHistory != null) {
+            visitedNodeHistory.clear();
+        }
     }
 
     @Override
     public Map<String, Object> toMap() {
-        Map<String, Object> map = new HashMap<>(22);
+        Map<String, Object> map = new HashMap<>(32);
         map.put("identifier", identifier);
         map.put("type", type.toString());
         map.put("pattern", pattern.toString());
@@ -1064,6 +1126,16 @@ public class PointVariableConfig extends VariableConfiguration {
         }
         map.put("maxVerticalStep", maxVerticalStep);
         map.put("altitudeOscillationSpeed", altitudeOscillationSpeed);
+
+        map.put("graphNodesSize", graphNodes.size());
+        map.put("graphEdgesSize", graphEdges.size());
+        map.put("graphNavigationMode", graphNavigationMode.toString());
+        map.put("graphLoopSequence", graphLoopSequence);
+        map.put("graphStopProbability", graphStopProbability);
+        map.put("graphStopTicks", graphStopTicks);
+        map.put("graphPreventCycles", graphPreventCycles);
+        map.put("graphInterpolationSteps", graphInterpolationSteps);
+
         return map;
     }
 
@@ -1192,6 +1264,253 @@ public class PointVariableConfig extends VariableConfiguration {
 
     public List<Point3D> getPath() {
         return path;
+    }
+
+    // --- Graph Route Configuration Getters & Setters ---
+
+    public List<GraphNode> getGraphNodes() {
+        return graphNodes;
+    }
+
+    public PointVariableConfig graphNodes(List<GraphNode> nodes) {
+        if (nodes != null) {
+            this.graphNodes = new ArrayList<>(nodes);
+        }
+        return this;
+    }
+
+    public PointVariableConfig addGraphNode(GraphNode node) {
+        if (node != null) {
+            this.graphNodes.add(node);
+        }
+        return this;
+    }
+
+    public List<GraphEdge> getGraphEdges() {
+        return graphEdges;
+    }
+
+    public PointVariableConfig graphEdges(List<GraphEdge> edges) {
+        if (edges != null) {
+            this.graphEdges = new ArrayList<>(edges);
+        }
+        return this;
+    }
+
+    public PointVariableConfig addGraphEdge(GraphEdge edge) {
+        if (edge != null) {
+            this.graphEdges.add(edge);
+        }
+        return this;
+    }
+
+    public GraphNavigationMode getGraphNavigationMode() {
+        return graphNavigationMode;
+    }
+
+    public PointVariableConfig graphNavigationMode(GraphNavigationMode mode) {
+        if (mode != null) {
+            this.graphNavigationMode = mode;
+        }
+        return this;
+    }
+
+    public List<String> getGraphSequence() {
+        return graphSequence;
+    }
+
+    public PointVariableConfig graphSequence(List<String> sequence) {
+        if (sequence != null) {
+            this.graphSequence = new ArrayList<>(sequence);
+        }
+        return this;
+    }
+
+    public boolean isGraphLoopSequence() {
+        return graphLoopSequence;
+    }
+
+    public PointVariableConfig graphLoopSequence(boolean loop) {
+        this.graphLoopSequence = loop;
+        return this;
+    }
+
+    public double getGraphStopProbability() {
+        return graphStopProbability;
+    }
+
+    public PointVariableConfig graphStopProbability(double probability) {
+        this.graphStopProbability = probability;
+        return this;
+    }
+
+    public int getGraphStopTicks() {
+        return graphStopTicks;
+    }
+
+    public PointVariableConfig graphStopTicks(int ticks) {
+        this.graphStopTicks = ticks;
+        return this;
+    }
+
+    public boolean isGraphPreventCycles() {
+        return graphPreventCycles;
+    }
+
+    public PointVariableConfig graphPreventCycles(boolean prevent) {
+        this.graphPreventCycles = prevent;
+        return this;
+    }
+
+    public int getGraphInterpolationSteps() {
+        return graphInterpolationSteps;
+    }
+
+    public PointVariableConfig graphInterpolationSteps(int steps) {
+        this.graphInterpolationSteps = steps;
+        return this;
+    }
+
+    // --- Graph Route Movement Runtime Logic ---
+
+    private Point3D generateGraphRoutePoint() {
+        if (graphNodes == null || graphNodes.isEmpty()) {
+            return fixedPoint != null ? fixedPoint : getCenterPoint();
+        }
+
+        GraphNode currentNode = findGraphNodeById(currentGraphNodeId);
+        if (currentNode == null) {
+            if (graphNavigationMode == GraphNavigationMode.SEQUENCE && graphSequence != null && !graphSequence.isEmpty()) {
+                currentGraphNodeId = graphSequence.get(0);
+                currentNode = findGraphNodeById(currentGraphNodeId);
+            }
+            if (currentNode == null) {
+                currentNode = graphNodes.get(0);
+                currentGraphNodeId = currentNode.getId();
+            }
+            targetGraphNodeId = currentGraphNodeId;
+            graphStepInEdge = 0;
+            remainingStopTicks = 0;
+            hasPausedAtCurrentNode = false;
+            visitedNodeHistory.clear();
+            visitedNodeHistory.add(currentGraphNodeId);
+            return currentNode.toPoint3D();
+        }
+
+        if (remainingStopTicks > 0) {
+            remainingStopTicks--;
+            return currentNode.toPoint3D();
+        }
+
+        if (currentGraphNodeId.equals(targetGraphNodeId) && graphStepInEdge == 0 && !hasPausedAtCurrentNode) {
+            hasPausedAtCurrentNode = true;
+            if (graphStopProbability > 0 && graphStopTicks > 0 && ThreadLocalRandom.current().nextDouble() < graphStopProbability) {
+                remainingStopTicks = graphStopTicks - 1;
+                return currentNode.toPoint3D();
+            }
+        }
+
+        if (currentGraphNodeId.equals(targetGraphNodeId)) {
+            if (graphNavigationMode == GraphNavigationMode.SEQUENCE) {
+                if (graphSequence != null && !graphSequence.isEmpty()) {
+                    int idx = graphSequence.indexOf(currentGraphNodeId);
+                    int nextIdx = idx + 1;
+                    if (nextIdx >= graphSequence.size()) {
+                        if (graphLoopSequence) {
+                            nextIdx = 0;
+                        } else {
+                            nextIdx = graphSequence.size() - 1;
+                        }
+                    }
+                    targetGraphNodeId = graphSequence.get(nextIdx);
+                }
+            } else {
+                List<String> neighbors = getDirectNeighbors(currentGraphNodeId);
+                if (!neighbors.isEmpty()) {
+                    if (graphPreventCycles && neighbors.size() > 1) {
+                        List<String> filtered = new ArrayList<>();
+                        for (String nId : neighbors) {
+                            if (!visitedNodeHistory.contains(nId)) {
+                                filtered.add(nId);
+                            }
+                        }
+                        if (!filtered.isEmpty()) {
+                            neighbors = filtered;
+                        }
+                    }
+                    int choice = ThreadLocalRandom.current().nextInt(neighbors.size());
+                    targetGraphNodeId = neighbors.get(choice);
+                }
+            }
+            graphStepInEdge = 0;
+        }
+
+        GraphNode targetNode = findGraphNodeById(targetGraphNodeId);
+        if (targetNode == null || targetGraphNodeId.equals(currentGraphNodeId)) {
+            targetGraphNodeId = currentGraphNodeId;
+            return currentNode.toPoint3D();
+        }
+
+        if (graphInterpolationSteps <= 1) {
+            currentGraphNodeId = targetGraphNodeId;
+            graphStepInEdge = 0;
+            hasPausedAtCurrentNode = false;
+            addToVisitedHistory(currentGraphNodeId);
+            return targetNode.toPoint3D();
+        }
+
+        graphStepInEdge++;
+        double fraction = (double) graphStepInEdge / graphInterpolationSteps;
+        Point3D pFrom = currentNode.toPoint3D();
+        Point3D pTo = targetNode.toPoint3D();
+        Point3D interpolated = new Point3D(
+            lerp(pFrom.x, pTo.x, fraction),
+            lerp(pFrom.y, pTo.y, fraction),
+            lerp(pFrom.z, pTo.z, fraction)
+        );
+
+        if (graphStepInEdge >= graphInterpolationSteps) {
+            currentGraphNodeId = targetGraphNodeId;
+            graphStepInEdge = 0;
+            hasPausedAtCurrentNode = false;
+            addToVisitedHistory(currentGraphNodeId);
+        }
+
+        return interpolated;
+    }
+
+    private GraphNode findGraphNodeById(String id) {
+        if (id == null || graphNodes == null) return null;
+        for (GraphNode node : graphNodes) {
+            if (id.equals(node.getId())) {
+                return node;
+            }
+        }
+        return null;
+    }
+
+    private List<String> getDirectNeighbors(String nodeId) {
+        List<String> neighbors = new ArrayList<>();
+        if (graphEdges == null || nodeId == null) return neighbors;
+        for (GraphEdge edge : graphEdges) {
+            if (edge != null && edge.connectsNode(nodeId)) {
+                String neighborId = edge.getNeighborId(nodeId);
+                if (neighborId != null && !neighborId.equals(nodeId) && findGraphNodeById(neighborId) != null) {
+                    if (!neighbors.contains(neighborId)) {
+                        neighbors.add(neighborId);
+                    }
+                }
+            }
+        }
+        return neighbors;
+    }
+
+    private void addToVisitedHistory(String nodeId) {
+        if (nodeId == null) return;
+        visitedNodeHistory.add(nodeId);
+        if (visitedNodeHistory.size() > 5) {
+            visitedNodeHistory.remove(0);
+        }
     }
 
     public static class Point3D {

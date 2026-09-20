@@ -360,6 +360,14 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
 
   const confirmStartDrawMode = () => {
     setShowConfirmDrawModal(false);
+    setActivePolygon([]);
+    onChange({
+      minLat,
+      maxLat,
+      minLon,
+      maxLon,
+      polygon: [],
+    });
     setIsDrawMode(true);
   };
 

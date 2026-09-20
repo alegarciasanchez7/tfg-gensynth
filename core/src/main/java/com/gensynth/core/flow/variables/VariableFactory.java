@@ -575,11 +575,129 @@ public class VariableFactory {
                         }
                     }
                 }
+
+                // Deserialization of Graph Route Nodes (only coordinates strictly required; auto-assign id/name if omitted)
+                Object nodesObj = configMap.containsKey("graphNodes") ? configMap.get("graphNodes") : configMap.get("nodes");
+                if (nodesObj instanceof List<?> gNodesList) {
+                    int nodeIdx = 1;
+                    for (Object item : gNodesList) {
+                        if (item instanceof Map<?, ?> nMap) {
+                            String nId = nMap.containsKey("id") && nMap.get("id") != null ? nMap.get("id").toString() : "node-" + nodeIdx;
+                            String nName = nMap.containsKey("name") && nMap.get("name") != null ? nMap.get("name").toString() : nId;
+                            
+                            double nx = nMap.containsKey("x") ? ((Number) nMap.get("x")).doubleValue() : (nMap.containsKey("lat") ? ((Number) nMap.get("lat")).doubleValue() : (nMap.containsKey("latitude") ? ((Number) nMap.get("latitude")).doubleValue() : 0.0));
+                            double ny = nMap.containsKey("y") ? ((Number) nMap.get("y")).doubleValue() : (nMap.containsKey("lon") ? ((Number) nMap.get("lon")).doubleValue() : (nMap.containsKey("lng") ? ((Number) nMap.get("lng")).doubleValue() : (nMap.containsKey("longitude") ? ((Number) nMap.get("longitude")).doubleValue() : 0.0)));
+                            double nz = nMap.containsKey("z") ? ((Number) nMap.get("z")).doubleValue() : (nMap.containsKey("alt") ? ((Number) nMap.get("alt")).doubleValue() : (nMap.containsKey("altitude") ? ((Number) nMap.get("altitude")).doubleValue() : 0.0));
+
+                            pointConfig.addGraphNode(new com.gensynth.core.flow.variables.config.GraphNode(nId, nName, nx, ny, nz));
+                            nodeIdx++;
+                        }
+                    }
+                }
+
+                // Deserialization of Graph Route Edges
+                Object edgesObj = configMap.containsKey("graphEdges") ? configMap.get("graphEdges") : configMap.get("edges");
+                if (edgesObj instanceof List<?> gEdgesList) {
+                    int edgeIdx = 1;
+                    for (Object item : gEdgesList) {
+                        if (item instanceof Map<?, ?> eMap) {
+                            String eId = eMap.containsKey("id") && eMap.get("id") != null ? eMap.get("id").toString() : "edge-" + edgeIdx;
+                            String fromId = eMap.containsKey("fromNodeId") && eMap.get("fromNodeId") != null ? eMap.get("fromNodeId").toString() : (eMap.containsKey("sourceId") && eMap.get("sourceId") != null ? eMap.get("sourceId").toString() : (eMap.containsKey("from") && eMap.get("from") != null ? eMap.get("from").toString() : ""));
+                            String toId = eMap.containsKey("toNodeId") && eMap.get("toNodeId") != null ? eMap.get("toNodeId").toString() : (eMap.containsKey("targetId") && eMap.get("targetId") != null ? eMap.get("targetId").toString() : (eMap.containsKey("to") && eMap.get("to") != null ? eMap.get("to").toString() : ""));
+                            boolean bi = !eMap.containsKey("bidirectional") || Boolean.TRUE.equals(eMap.get("bidirectional"));
+
+                            pointConfig.addGraphEdge(new com.gensynth.core.flow.variables.config.GraphEdge(eId, fromId, toId, bi));
+                            edgeIdx++;
+                        }
+                    }
+                }
+
+                // Deserialization of Graph Route Navigation & Parameters
+                if (configMap.containsKey("graphNavigationMode") && configMap.get("graphNavigationMode") != null) {
+                    try {
+                        pointConfig.graphNavigationMode(PointVariableConfig.GraphNavigationMode.valueOf(configMap.get("graphNavigationMode").toString().toUpperCase()));
+                    } catch (Exception ignored) {}
+                } else if (configMap.containsKey("navigationMode") && configMap.get("navigationMode") != null) {
+                    try {
+                        pointConfig.graphNavigationMode(PointVariableConfig.GraphNavigationMode.valueOf(configMap.get("navigationMode").toString().toUpperCase()));
+                    } catch (Exception ignored) {}
+                }
+
+                Object seqObj = configMap.containsKey("graphSequence") ? configMap.get("graphSequence") : configMap.get("sequence");
+                if (seqObj instanceof List<?> seqList) {
+                    List<String> sequence = new ArrayList<>();
+                    for (Object item : seqList) {
+                        if (item != null) sequence.add(item.toString());
+                    }
+                    pointConfig.graphSequence(sequence);
+                }
+
+                Object loopObj = configMap.containsKey("graphLoopSequence") ? configMap.get("graphLoopSequence") : configMap.get("loopSequence");
+                if (loopObj != null) {
+                    pointConfig.graphLoopSequence(parseBooleanHelper(loopObj, false));
+                }
+
+                Object stopProbObj = configMap.containsKey("graphStopProbability") ? configMap.get("graphStopProbability") : configMap.get("stopProbability");
+                if (stopProbObj == null) stopProbObj = configMap.get("pauseProbability");
+                if (stopProbObj != null) {
+                    pointConfig.graphStopProbability(parseDoubleHelper(stopProbObj, 0.0));
+                }
+
+                Object stopTicksObj = configMap.containsKey("graphStopTicks") ? configMap.get("graphStopTicks") : configMap.get("stopTicks");
+                if (stopTicksObj == null) stopTicksObj = configMap.get("pauseTicks");
+                if (stopTicksObj == null) stopTicksObj = configMap.get("pauseDurationTicks");
+                if (stopTicksObj != null) {
+                    pointConfig.graphStopTicks(parseIntHelper(stopTicksObj, 0));
+                }
+
+                Object preventCyclesObj = configMap.containsKey("graphPreventCycles") ? configMap.get("graphPreventCycles") : configMap.get("preventCycles");
+                if (preventCyclesObj == null) preventCyclesObj = configMap.get("antiBacktracking");
+                if (preventCyclesObj != null) {
+                    pointConfig.graphPreventCycles(parseBooleanHelper(preventCyclesObj, true));
+                }
+
+                Object stepsObj = configMap.containsKey("graphInterpolationSteps") ? configMap.get("graphInterpolationSteps") : configMap.get("stepsPerEdge");
+                if (stepsObj == null) stepsObj = configMap.get("interpolationSteps");
+                if (stepsObj != null) {
+                    pointConfig.graphInterpolationSteps(parseIntHelper(stepsObj, 1));
+                }
+
                 return pointConfig;
 
             default:
                 throw new IllegalArgumentException("Unknown variable type: " + type);
         }
+    }
+
+    private static double parseDoubleHelper(Object val, double defaultValue) {
+        if (val == null) return defaultValue;
+        if (val instanceof Number n) return n.doubleValue();
+        try {
+            String s = val.toString().trim().replace(',', '.');
+            return Double.parseDouble(s);
+        } catch (Exception e) {
+            return defaultValue;
+        }
+    }
+
+    private static int parseIntHelper(Object val, int defaultValue) {
+        if (val == null) return defaultValue;
+        if (val instanceof Number n) return n.intValue();
+        try {
+            String s = val.toString().trim();
+            return Integer.parseInt(s);
+        } catch (Exception e) {
+            return defaultValue;
+        }
+    }
+
+    private static boolean parseBooleanHelper(Object val, boolean defaultValue) {
+        if (val == null) return defaultValue;
+        if (val instanceof Boolean b) return b;
+        String s = val.toString().trim().toLowerCase();
+        if ("true".equals(s) || "1".equals(s)) return true;
+        if ("false".equals(s) || "0".equals(s)) return false;
+        return defaultValue;
     }
 
     /**
