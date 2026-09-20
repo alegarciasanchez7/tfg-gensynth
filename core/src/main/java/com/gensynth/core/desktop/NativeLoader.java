@@ -37,9 +37,17 @@ public class NativeLoader {
             logger.info("JCEF bundle not found. Downloading native binaries for current platform...");
         }
 
-        try {
+            try {
             CefAppBuilder builder = new CefAppBuilder();
-            
+
+            // Isolate JCEF cache & profile directory so it never shares state with the system Chromium browser
+            File cacheDir = new File(installDir, "cache");
+            if (!cacheDir.exists()) {
+                cacheDir.mkdirs();
+            }
+            builder.getCefSettings().root_cache_path = cacheDir.getAbsolutePath();
+            builder.getCefSettings().cache_path = cacheDir.getAbsolutePath();
+
             // Disable native Chromium log spam (Mojo deserialization errors, console noise, etc.)
             builder.getCefSettings().log_severity = org.cef.CefSettings.LogSeverity.LOGSEVERITY_DISABLE;
             
@@ -49,8 +57,15 @@ public class NativeLoader {
             boolean isLinux = System.getProperty("os.name").toLowerCase().contains("linux");
             builder.getCefSettings().windowless_rendering_enabled = false;
             
-            // Optimize for stability:
-            builder.addJcefArgs("--disable-gpu", "--disable-gpu-compositing", "--disable-software-rasterizer");
+            // Optimize for stability & isolate as standalone desktop app:
+            builder.addJcefArgs(
+                "--disable-gpu", 
+                "--disable-gpu-compositing", 
+                "--disable-software-rasterizer",
+                "--hide-crash-restore-bubble",
+                "--no-first-run",
+                "--no-default-browser-check"
+            );
             if (isLinux) {
                 builder.addJcefArgs("--ozone-platform=x11", "--disable-features=UseOzonePlatform");
             }

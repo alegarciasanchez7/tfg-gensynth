@@ -17,9 +17,16 @@ export interface ConditionalRule {
   overrides: Record<string, any>;
 }
 
+export type ListReferenceSelectionMode = 'RANDOM_ITEM' | 'FIXED_ITEM' | 'SUBSET_SPECIFIC' | 'SUBSET_RANDOM';
+
 export interface BaseVariableConfig {
   pattern?: string;
   conditionalRules?: ConditionalRule[];
+  sourceListVariableId?: string;
+  sourceListSelectionMode?: ListReferenceSelectionMode;
+  selectedListItemId?: string;
+  selectedListItemIds?: string[];
+  randomSubsetCount?: number;
   [key: string]: any;
 }
 
@@ -40,30 +47,205 @@ export interface NumericVariableConfig extends BaseVariableConfig {
   distributionType?: 'UNIFORM' | 'NORMAL' | 'EXPONENTIAL' | 'CUSTOM';
   customDistributionGraph?: Array<{ value?: number; from?: number; to?: number; weight: number }>;
   boundaryMode?: 'LEFT' | 'RIGHT' | 'SPLIT';
+
+  // Sinusoidal / Periodic Wave Pattern
+  sineFrequency?: number;
+  sineAmplitude?: number;
+  sinePhase?: number;
+  sineOffset?: number;
+
+  // Drift Pattern
+  driftRate?: number;
+  driftInitialValue?: number;
+  driftLimitMode?: 'CLAMP' | 'WRAP' | 'RESET' | 'BOUNCE';
+
+  // Virtual Simulation Clock
+  simulationTimeStep?: number;
+
+  // Noise Modifier Layer
+  noiseEnabled?: boolean;
+  noiseType?: 'GAUSSIAN' | 'UNIFORM';
+  noiseAmplitude?: number;
+  noiseStdDev?: number;
+
+  // Spike Anomaly Modifier Layer
+  spikeEnabled?: boolean;
+  spikeProbability?: number;
+  spikeMode?: 'FIXED_OFFSET' | 'RANGE_SPIKE' | 'MULTIPLIER';
+  spikeMagnitude?: number;
+  spikeMin?: number;
+  spikeMax?: number;
+  spikeMultiplier?: number;
 }
+
+export type StringFormattedMaskType = 'MAC_ADDRESS' | 'IPV4' | 'IPV6' | 'UUID_V4' | 'CUSTOM_MASK' | 'ALPHANUMERIC';
+export type StringCorruptionMode = 'TRUNCATE' | 'INJECT_ANOMALOUS' | 'REPLACE_CHAR' | 'NULL_BYTE' | 'MIXED';
 
 export interface StringVariableConfig extends BaseVariableConfig {
   fixedLength?: number;
   regexPattern?: string;
   constantValue?: string;
+  
+  template?: string;
+  formattedMaskType?: StringFormattedMaskType;
+  customMask?: string;
+  alphanumericCase?: 'UPPER' | 'LOWER' | 'MIXED';
+  
+  corruptionEnabled?: boolean;
+  corruptionProbability?: number;
+  corruptionMode?: StringCorruptionMode;
+  corruptionMagnitude?: number;
+}
+
+export type ListSelectionStrategy = 'WEIGHTED_RANDOM' | 'SEQUENTIAL' | 'SHUFFLE' | 'MARKOV_CHAIN' | 'FIXED_SUBSET';
+
+export interface ListItemConfig {
+  id: string;
+  value?: any;
+  weight?: number;
+  isEmbedded?: boolean;
+  embeddedType?: VariableType;
+  embeddedConfig?: VariableConfig;
 }
 
 export interface ListVariableConfig extends BaseVariableConfig {
-  items?: Array<any | { value: any; weight: number }>;
+  selectionStrategy?: ListSelectionStrategy;
+  items?: ListItemConfig[];
+  transitionMatrix?: Record<string, Record<string, number>>;
+  shuffle?: boolean;
+  itemOrder?: string[];
 }
+
+export type BooleanGenerationPattern =
+  | 'CONSTANT_BOOLEAN'
+  | 'DUTY_CYCLE'
+  | 'ALTERNATING_BOOLEAN'
+  | 'PROBABILITY'
+  | 'FLIP_INTERVAL'
+  | 'BURST_MODE'
+  | 'MARKOV';
 
 export interface BooleanVariableConfig extends BaseVariableConfig {
+  pattern?: BooleanGenerationPattern;
   currentValue?: boolean;
+  onDurationTicks?: number;
+  offDurationTicks?: number;
+  alternationInterval?: number;
+  trueProbability?: number;
+  flipInterval?: number;
+  burstDurationTicks?: number;
+  burstIdleTicks?: number;
+  pTrueToTrue?: number;
+  pFalseToTrue?: number;
 }
+
+export type TemporalType = 'DATE' | 'TIMESTAMP' | 'TIME';
+export type TimeAdvanceMode = 'WALL_CLOCK' | 'SIMULATED_STEP' | 'BACKFILL_HISTORICAL' | 'FIXED';
+export type ClockDriftType = 'RANDOM_JITTER' | 'CONSTANT_OFFSET' | 'PROGRESSIVE_DRIFT';
+export type BackfillStrategy = 'SEQUENTIAL_STEP' | 'RANDOM_IN_RANGE';
 
 export interface TemporalVariableConfig extends BaseVariableConfig {
-  temporalType?: 'DATE' | 'TIMESTAMP' | 'TIME';
+  temporalType?: TemporalType;
+  timeAdvanceMode?: TimeAdvanceMode;
   dateFormat?: string;
   timeZone?: string;
+  startDate?: string;
+  incrementMs?: number;
+  fixedDate?: string;
+  rangeStart?: string;
+  rangeEnd?: string;
+  backfillStrategy?: BackfillStrategy;
+  clockDriftEnabled?: boolean;
+  maxDriftMs?: number;
+  driftType?: ClockDriftType;
+  driftRateMsPerTick?: number;
 }
 
+export type CoordinateSystem = 'CARTESIAN_2D' | 'CARTESIAN_3D' | 'GEOSPATIAL';
+export type GeospatialFormat = 'DECIMAL_DEGREES' | 'DEGREES_MINUTES_SECONDS';
+export type BoundaryBehavior = 'BOUNCE' | 'CLAMP' | 'WRAP';
+
+export interface Point3DCoord {
+  x?: number;
+  y?: number;
+  z?: number;
+}
+
+export type AltitudeUnit = 'METERS' | 'FEET' | 'KILOMETERS' | 'MILES';
+export type AltitudeReference = 'MSL' | 'AGL' | 'ELLIPSOID';
+export type AltitudePattern = 'FOLLOW_XY' | 'FIXED_ALTITUDE' | 'RANDOM_UNIFORM' | 'RANDOM_WALK' | 'SINE_OSCILLATION';
+
+export type Shape3DType = 'cube' | 'pyramid' | 'cone' | 'sphere';
+export type SelectionMode3D = 'vertices' | 'edges' | 'faces';
+
+export type ObstacleType = 'WALL_SEGMENT' | 'OBSTACLE_POLYGON';
+
+export interface BoundaryObstacle {
+  id: string;
+  type: ObstacleType;
+  name?: string;
+  points: Point3DCoord[];
+  enabled?: boolean;
+}
+
+export interface GraphNode {
+  id: string;
+  name?: string;
+  x: number;
+  y: number;
+  z?: number;
+}
+
+export interface GraphEdge {
+  id: string;
+  fromNodeId: string;
+  toNodeId: string;
+  bidirectional?: boolean;
+}
+
+export type GraphNavigationMode = 'SEQUENCE' | 'RANDOM_NEIGHBOR';
+
 export interface PointVariableConfig extends BaseVariableConfig {
+  coordinateSystem?: CoordinateSystem;
+  geospatialFormat?: GeospatialFormat;
+  boundaryBehavior?: BoundaryBehavior;
+  shape3DType?: Shape3DType;
+  shape3DWidth?: number;
+  shape3DLength?: number;
+  shape3DRadius?: number;
+  shape3DHeight?: number;
+  minPoint?: Point3DCoord;
+  maxPoint?: Point3DCoord;
+  fixedPoint?: Point3DCoord;
   maxStepDistance?: number;
+  inertia?: number;
+  waypoints?: Point3DCoord[];
+  interpolationSteps?: number;
+  navigationSpeed?: number;
+  loopPath?: boolean;
+  orbitCenter?: Point3DCoord;
+  orbitRadius?: number;
+  angularSpeed?: number;
+  spiralRate?: number;
+  gpsNoiseEnabled?: boolean;
+  jitterRadius?: number;
+  boundaryPolygon?: Point3DCoord[];
+  obstacles?: BoundaryObstacle[];
+  altitudeUnit?: AltitudeUnit;
+  altitudeReference?: AltitudeReference;
+  altitudePattern?: AltitudePattern;
+  initialAltitude?: number;
+  maxVerticalStep?: number;
+  altitudeOscillationSpeed?: number;
+  graphNodes?: GraphNode[];
+  graphEdges?: GraphEdge[];
+  graphNavigationMode?: GraphNavigationMode;
+  graphSequence?: string[];
+  graphLoopSequence?: boolean;
+  graphStopProbability?: number;
+  graphStopTicks?: number;
+  graphPreventCycles?: boolean;
+  graphInterpolationSteps?: number;
 }
 
 export type VariableConfig = 
