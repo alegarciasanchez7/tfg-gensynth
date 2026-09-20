@@ -2,14 +2,14 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Radio, Globe, Wifi, Zap, Cpu, Layers, AlertTriangle,
   CheckCircle, Code2, Hash,
-  AlignLeft, Copy, RotateCcw, Save, Trash2, Braces, TableProperties, FileCode, FileText
+  AlignLeft, RotateCcw, Save, Trash2, Braces, TableProperties, FileCode, FileText
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Flow, Group, ConnectionStatus } from '../../types';
-import { defaultTemplates } from '../../data/mockData';
 import { useApp } from '../../context';
 import { TemplateEditor } from './flows/TemplateEditor';
 import { TechnicalConfigPanel, compareVersions } from './flows/TechnicalConfigPanel';
+import { FormatConverterModal } from './flows/FormatConverterModal';
 import type { ConnectorPluginDescriptor } from '../../core/types';
 
 const connCfg: Record<ConnectionStatus, { color: string; bg: string; dot: string; label: string }> = {
@@ -90,6 +90,8 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
   const [draftBurst, setDraftBurst] = useState(flow.burst);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeletingFlow, setIsDeletingFlow] = useState(false);
+  const [isConverterOpen, setIsConverterOpen] = useState(false);
+  const [selectedTargetFormat, setSelectedTargetFormat] = useState<'json' | 'xml' | 'csv' | 'plain'>('xml');
 
   const hasChanges = useMemo(() => {
     const nameChanged = draftName.trim() !== flow.name;
@@ -123,13 +125,9 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
     setFormatMode(flow.format || (flow.technology === 'file' ? 'plain' : 'json'));
   }, [flow.name, flow.host, flow.port, flow.topic, flow.interval, flow.burst, flow.format, flow.technology, flow.id]);
 
-  const handleFormatModeChange = (mode: 'json' | 'xml' | 'csv' | 'plain') => {
-    setFormatMode(mode);
-    if (mode === flow.format) {
-      onTemplateChange(flow.template || '');
-    } else {
-      onTemplateChange('');
-    }
+  const handleFormatBadgeClick = (mode: 'json' | 'xml' | 'csv' | 'plain') => {
+    setSelectedTargetFormat(mode);
+    setIsConverterOpen(true);
   };
 
   const handleConnectorChange = (pluginId: string) => {
@@ -350,10 +348,10 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
                 return (
                   <button
                     key={mode}
-                    onClick={() => handleFormatModeChange(mode)}
+                    onClick={() => handleFormatBadgeClick(mode)}
                     className={`flex items-center gap-1.5 px-2 py-1 rounded text-[10px] tracking-wider transition-all border ${
                       formatMode === mode
-                        ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-500'
+                        ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-500 font-bold'
                         : 'text-[var(--c-tx4)] border-transparent hover:text-[var(--c-tx2)] hover:bg-[var(--c-bg5)]'
                     }`}
                     style={{ fontFamily: 'JetBrains Mono, monospace' }}
@@ -363,17 +361,6 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
                   </button>
                 );
               })}
-            </div>
-            <div className="flex gap-1">
-              <button className="p-1.5 rounded border border-[var(--c-br1)] text-[var(--c-tx4)] hover:text-[var(--c-tx2)] hover:bg-[var(--c-bg6)] transition-all">
-                <Copy size={10} />
-              </button>
-              <button
-                onClick={() => onTemplateChange(defaultTemplates[formatMode])}
-                className="p-1.5 rounded border border-[var(--c-br1)] text-[var(--c-tx4)] hover:text-[var(--c-tx2)] hover:bg-[var(--c-bg6)] transition-all"
-              >
-                <RotateCcw size={10} />
-              </button>
             </div>
           </div>
 
@@ -410,6 +397,19 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
           </div>
         </div>
       </div>
+
+      <FormatConverterModal
+        isOpen={isConverterOpen}
+        onOpenChange={setIsConverterOpen}
+        currentContent={currentTemplate}
+        currentFormat={formatMode}
+        initialTargetFormat={selectedTargetFormat}
+        onApplyConversion={(convertedContent, newFormat) => {
+          setFormatMode(newFormat);
+          onTemplateChange(convertedContent);
+          toast.success(`Converted format to ${newFormat.toUpperCase()}`);
+        }}
+      />
     </div>
   );
 }

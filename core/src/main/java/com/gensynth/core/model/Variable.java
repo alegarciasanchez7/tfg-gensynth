@@ -72,8 +72,8 @@ public class Variable {
     }
 
     private void validateType() {
-        if (!type.matches("numeric|string|boolean|date|point|list")) {
-            throw new IllegalArgumentException("Invalid type: " + type + ". Must be one of: numeric, string, boolean, date, point, list");
+        if (!type.matches("numeric|string|boolean|date|temporal|point|list")) {
+            throw new IllegalArgumentException("Invalid type: " + type + ". Must be one of: numeric, string, boolean, date, temporal, point, list");
         }
     }
 

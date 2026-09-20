@@ -158,16 +158,48 @@ export function TemplateEditor({
             } else {
               isValid = true;
             }
-          } else if (subProperty && variable.type === 'point') {
+          } else if (subProperty) {
             const lowerProp = subProperty.toLowerCase();
-            const validPointProps = [
-              'latitude', 'longitude', 'altitude',
-              'latitudedecimal', 'longitudedecimal',
-              'altitudeunit', 'altitudereference',
-              'x', 'y', 'z',
-              'nodename', 'node_name', 'node', 'nodeid', 'node_id'
-            ];
-            isValid = validPointProps.includes(lowerProp);
+            if (variable.type === 'point') {
+              const validPointProps = [
+                'latitude', 'longitude', 'altitude',
+                'latitudedecimal', 'longitudedecimal',
+                'altitudeunit', 'altitudereference',
+                'x', 'y', 'z',
+                'nodename', 'node_name', 'node', 'nodeid', 'node_id'
+              ];
+              isValid = validPointProps.includes(lowerProp);
+            } else if (variable.type === 'temporal') {
+              const validTemporalProps = [
+                'month', 'monthtext', 'month_text', 'monthname', 'month_name',
+                'monthshort', 'month_short', 'monthnumber', 'monthvalue', 'month_number',
+                'year', 'day', 'dayofmonth', 'day_of_month', 'dayofweek', 'day_of_week',
+                'hour', 'hours', 'minute', 'minutes', 'second', 'seconds',
+                'millisecond', 'millis', 'timestamp', 'epochmilli', 'timezone', 'time_zone', 'tz'
+              ];
+              isValid = validTemporalProps.includes(lowerProp);
+            } else if (variable.type === 'numeric') {
+              const validNumericProps = [
+                'integerpart', 'int', 'integer', 'fractionalpart', 'decimalpart',
+                'fraction', 'decimal', 'abs', 'absolute', 'round', 'floor', 'ceil', 'ceiling', 'sign'
+              ];
+              isValid = validNumericProps.includes(lowerProp);
+            } else if (variable.type === 'string') {
+              const validStringProps = [
+                'length', 'size', 'upper', 'uppercase', 'lower', 'lowercase', 'trim', 'firstchar', 'lastchar'
+              ];
+              isValid = validStringProps.includes(lowerProp);
+            } else if (variable.type === 'boolean') {
+              const validBooleanProps = [
+                'inverse', 'negation', 'not', 'asnumber', 'binary', 'int', 'asstring', 'asupper', 'upper'
+              ];
+              isValid = validBooleanProps.includes(lowerProp);
+            } else if (variable.type === 'list') {
+              const validListProps = ['size', 'length', 'count', 'first', 'firstitem', 'last', 'lastitem'];
+              isValid = validListProps.includes(lowerProp) || lowerProp.startsWith('item');
+            } else {
+              isValid = true;
+            }
           } else {
             isValid = true;
           }
@@ -223,6 +255,10 @@ export function TemplateEditor({
           detail: isFixedSubset ? 'Fixed Subset / Entire List' : 'Single Item Selection' 
         });
 
+        options.push({ name: `${v.name}.size`, scope: v.scope, detail: 'List Item Count' });
+        options.push({ name: `${v.name}.first`, scope: v.scope, detail: 'First List Item' });
+        options.push({ name: `${v.name}.last`, scope: v.scope, detail: 'Last List Item' });
+
         if (isFixedSubset) {
           const effectiveItems = getEffectiveListItems(v, variables);
           effectiveItems.forEach((item, index) => {
@@ -254,6 +290,29 @@ export function TemplateEditor({
           options.push({ name: `${v.name}.nodeName`, scope: v.scope, detail: 'Graph Node Display Name' });
           options.push({ name: `${v.name}.nodeId`, scope: v.scope, detail: 'Graph Node ID' });
         }
+      } else if (v.type === 'temporal') {
+        options.push({ name: v.name, scope: v.scope, detail: 'Formatted Date/Time' });
+        options.push({ name: `${v.name}.monthText`, scope: v.scope, detail: 'Month Name (August, January...)' });
+        options.push({ name: `${v.name}.monthNumber`, scope: v.scope, detail: 'Month Number (1-12)' });
+        options.push({ name: `${v.name}.year`, scope: v.scope, detail: 'Year (e.g. 2026)' });
+        options.push({ name: `${v.name}.day`, scope: v.scope, detail: 'Day of Month (1-31)' });
+        options.push({ name: `${v.name}.dayOfWeek`, scope: v.scope, detail: 'Day of Week (Monday...)' });
+        options.push({ name: `${v.name}.timestamp`, scope: v.scope, detail: 'Epoch Milliseconds' });
+      } else if (v.type === 'numeric') {
+        options.push({ name: v.name, scope: v.scope, detail: 'Numeric Value' });
+        options.push({ name: `${v.name}.integerPart`, scope: v.scope, detail: 'Integer Part' });
+        options.push({ name: `${v.name}.decimalPart`, scope: v.scope, detail: 'Fractional Decimal Part' });
+        options.push({ name: `${v.name}.abs`, scope: v.scope, detail: 'Absolute Value' });
+        options.push({ name: `${v.name}.round`, scope: v.scope, detail: 'Rounded Value' });
+      } else if (v.type === 'string') {
+        options.push({ name: v.name, scope: v.scope, detail: 'String Value' });
+        options.push({ name: `${v.name}.length`, scope: v.scope, detail: 'String Length' });
+        options.push({ name: `${v.name}.upper`, scope: v.scope, detail: 'Uppercase String' });
+        options.push({ name: `${v.name}.lower`, scope: v.scope, detail: 'Lowercase String' });
+      } else if (v.type === 'boolean') {
+        options.push({ name: v.name, scope: v.scope, detail: 'Boolean Value (true/false)' });
+        options.push({ name: `${v.name}.inverse`, scope: v.scope, detail: 'Inverse Boolean (false/true)' });
+        options.push({ name: `${v.name}.asNumber`, scope: v.scope, detail: 'Binary Number (1 or 0)' });
       } else {
         options.push({ name: v.name, scope: v.scope });
       }
