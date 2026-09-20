@@ -42,6 +42,7 @@ public enum GenerationPattern {
     RANDOM_WALK("Random Walk - Smooth random walk with momentum"),
     WAYPOINT_NAVIGATION("Waypoint Navigation - Follow waypoint sequence at set speed"),
     CIRCULAR_ORBIT("Circular Orbit - Orbit or spiral around central point"),
+    GRAPH_ROUTE("Graph Route - Move along connected graph nodes and edges"),
 
     // Boolean patterns
     CONSTANT_BOOLEAN("Constant Boolean - Fixed TRUE/FALSE"),

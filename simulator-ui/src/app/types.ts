@@ -188,6 +188,23 @@ export interface BoundaryObstacle {
   enabled?: boolean;
 }
 
+export interface GraphNode {
+  id: string;
+  name?: string;
+  x: number;
+  y: number;
+  z?: number;
+}
+
+export interface GraphEdge {
+  id: string;
+  fromNodeId: string;
+  toNodeId: string;
+  bidirectional?: boolean;
+}
+
+export type GraphNavigationMode = 'SEQUENCE' | 'RANDOM_NEIGHBOR';
+
 export interface PointVariableConfig extends BaseVariableConfig {
   coordinateSystem?: CoordinateSystem;
   geospatialFormat?: GeospatialFormat;
@@ -220,6 +237,15 @@ export interface PointVariableConfig extends BaseVariableConfig {
   initialAltitude?: number;
   maxVerticalStep?: number;
   altitudeOscillationSpeed?: number;
+  graphNodes?: GraphNode[];
+  graphEdges?: GraphEdge[];
+  graphNavigationMode?: GraphNavigationMode;
+  graphSequence?: string[];
+  graphLoopSequence?: boolean;
+  graphStopProbability?: number;
+  graphStopTicks?: number;
+  graphPreventCycles?: boolean;
+  graphInterpolationSteps?: number;
 }
 
 export type VariableConfig = 
