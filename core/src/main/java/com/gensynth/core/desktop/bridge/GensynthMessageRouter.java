@@ -1,9 +1,8 @@
 package com.gensynth.core.desktop.bridge;
 
+import com.gensynth.core.persistence.ProjectFileFormat;
 import com.gensynth.core.ws.*;
 import org.java_websocket.WebSocket;
-import java.nio.file.Files;
-import java.nio.charset.StandardCharsets;
 import org.cef.browser.CefBrowser;
 import org.cef.browser.CefFrame;
 import org.cef.callback.CefQueryCallback;
@@ -39,17 +38,15 @@ public class GensynthMessageRouter extends CefMessageRouterHandlerAdapter {
                 javax.swing.SwingUtilities.invokeLater(() -> {
                     java.awt.FileDialog fileDialog = new java.awt.FileDialog(parentFrame,
                             "Save Gen-Synth Configuration", java.awt.FileDialog.SAVE);
-                    fileDialog.setFile("*.json");
+                    applyProjectFileFilter(fileDialog);
                     fileDialog.setVisible(true);
 
                     String directory = fileDialog.getDirectory();
                     String file = fileDialog.getFile();
 
                     if (directory != null && file != null) {
-                        String path = new java.io.File(directory, file).getAbsolutePath();
-                        if (!path.toLowerCase().endsWith(".json")) {
-                            path += ".json";
-                        }
+                        String path = ProjectFileFormat.ensureExtension(
+                                new java.io.File(directory, file).getAbsolutePath());
 
                         // Extract original commandId if present to keep UI synchronized
                         String originalCommandId = extractCommandId(request);
@@ -120,7 +117,7 @@ public class GensynthMessageRouter extends CefMessageRouterHandlerAdapter {
                 javax.swing.SwingUtilities.invokeLater(() -> {
                     java.awt.FileDialog fileDialog = new java.awt.FileDialog(parentFrame,
                             "Load Gen-Synth Project", java.awt.FileDialog.LOAD);
-                    fileDialog.setFile("*.json");
+                    applyProjectFileFilter(fileDialog);
                     fileDialog.setVisible(true);
 
                     String directory = fileDialog.getDirectory();
@@ -130,13 +127,12 @@ public class GensynthMessageRouter extends CefMessageRouterHandlerAdapter {
                     if (directory != null && file != null) {
                         try {
                             java.io.File selectedFile = new java.io.File(directory, file);
-                            String content = Files.readString(selectedFile.toPath(), StandardCharsets.UTF_8);
-                            // Validate JSON content and attach the source path so the UI knows which file is open
-                            com.fasterxml.jackson.databind.JsonNode root = server.getObjectMapper().readTree(content);
-                            if (root instanceof com.fasterxml.jackson.databind.node.ObjectNode objectRoot) {
-                                objectRoot.put("sourceFilePath", selectedFile.getAbsolutePath());
-                                content = server.getObjectMapper().writeValueAsString(objectRoot);
-                            }
+                            // Reject anything that is not a GenSynth project before touching the Core state
+                            com.fasterxml.jackson.databind.node.ObjectNode project =
+                                    ProjectFileFormat.read(selectedFile.toPath(), server.getObjectMapper());
+                            // Attach the source path so the UI knows which file is open
+                            project.put("sourceFilePath", selectedFile.getAbsolutePath());
+                            String content = server.getObjectMapper().writeValueAsString(project);
 
                             String fullImportCommand = String.format(
                                     "{\"type\":\"IMPORT_STATE\",\"commandId\":\"%s\",\"protocolVersion\":\"1.0.0\",\"payload\":%s}",
@@ -146,6 +142,12 @@ public class GensynthMessageRouter extends CefMessageRouterHandlerAdapter {
 
                         } catch (Exception e) {
                             logger.error("[BRIDGE] Error loading file", e);
+                            // The UI only listens to the desktop socket, so report the error there too
+                            WebSocket desktopSocket = server.getDesktopSocket();
+                            if (desktopSocket != null) {
+                                String code = e instanceof IllegalArgumentException ? "INVALID_PROJECT_FILE" : "LOAD_FAILED";
+                                server.sendError(desktopSocket, commandId, code, e.getMessage(), null);
+                            }
                             callback.failure(500, "Error loading file: " + e.getMessage());
                         }
                     } else {
@@ -173,6 +175,15 @@ public class GensynthMessageRouter extends CefMessageRouterHandlerAdapter {
             callback.failure(500, e.getMessage());
             return true;
         }
+    }
+
+    /**
+     * Restricts a native file dialog to GenSynth project files. AWT honours the wildcard
+     * file name on Windows and the filename filter on Linux/macOS, so both are set.
+     */
+    private static void applyProjectFileFilter(java.awt.FileDialog fileDialog) {
+        fileDialog.setFile("*" + ProjectFileFormat.EXTENSION);
+        fileDialog.setFilenameFilter(ProjectFileFormat.FILENAME_FILTER);
     }
 
     private String extractCommandId(String request) {

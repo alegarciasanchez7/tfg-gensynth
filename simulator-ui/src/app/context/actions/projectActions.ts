@@ -13,6 +13,7 @@ import {
   writeProjectSnapshot,
   hasWritePermission,
   supportsFileSystemAccess,
+  PROJECT_FILE_EXTENSION,
   type PickedProjectFile,
 } from '../../core/fileStorage';
 
@@ -57,7 +58,7 @@ function fileNameFromPath(path: string): string {
 }
 
 function defaultFileName(): string {
-  return `gen-synth-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5)}.json`;
+  return `gen-synth-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5)}${PROJECT_FILE_EXTENSION}`;
 }
 
 function errorMessage(error: unknown, fallback: string): string {
