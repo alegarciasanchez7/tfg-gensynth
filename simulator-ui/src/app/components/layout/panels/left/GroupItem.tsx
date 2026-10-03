@@ -15,6 +15,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useApp } from '../../../../context';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -87,6 +88,8 @@ export function GroupItem({
   onDeleteFlow,
   latestConnectors,
 }: GroupItemProps) {
+  const { state } = useApp();
+  const isDirty = state?.dirtyItems?.groupIds?.has(group.id) ?? false;
   const gCfg = groupStatusCfg[group.status];
   const selectedGroup = selection.type === 'group' && selection.groupId === group.id;
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
@@ -145,6 +148,7 @@ export function GroupItem({
                 >
                   {group.name}
                 </span>
+                {isDirty && <span className="text-amber-400 font-bold text-xs" title="Unsaved changes">*</span>}
 
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>

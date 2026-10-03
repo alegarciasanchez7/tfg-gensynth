@@ -13,6 +13,43 @@ export interface ProjectSnapshot {
 }
 
 /**
+ * A configuration file picked by the user. `handle` is only available when the browser
+ * supports the File System Access API and allows writing back to the same file.
+ */
+export interface PickedProjectFile {
+  file: File;
+  handle: FileSystemFileHandle | null;
+}
+
+/** Minimal typings for the File System Access API pickers (not part of lib.dom yet). */
+interface FilePickerOptions {
+  suggestedName?: string;
+  multiple?: boolean;
+  types?: { description: string; accept: Record<string, string[]> }[];
+}
+
+interface FileSystemAccessWindow {
+  showOpenFilePicker?: (options?: FilePickerOptions) => Promise<FileSystemFileHandle[]>;
+  showSaveFilePicker?: (options?: FilePickerOptions) => Promise<FileSystemFileHandle>;
+}
+
+interface PermissionAwareFileHandle {
+  queryPermission?: (descriptor: { mode: 'read' | 'readwrite' }) => Promise<PermissionState>;
+}
+
+const PROJECT_FILE_TYPES: FilePickerOptions['types'] = [
+  { description: 'GenSynth configuration', accept: { 'application/json': ['.json'] } },
+];
+
+function getFilePickers(): FileSystemAccessWindow {
+  return typeof window === 'undefined' ? {} : (window as unknown as FileSystemAccessWindow);
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'AbortError';
+}
+
+/**
  * Normalize a Flow to ensure all required fields have valid values
  */
 export function normalizeFlowFromSnapshot(flow: Partial<Flow>): Flow {
@@ -173,4 +210,75 @@ export function triggerFileSelection(): Promise<File | null> {
 
     input.click();
   });
+}
+
+/**
+ * Whether the browser can write directly to a user-selected file (File System Access API).
+ * Without it, saving falls back to downloading a copy of the configuration.
+ */
+export function supportsFileSystemAccess(): boolean {
+  const pickers = getFilePickers();
+  return typeof pickers.showOpenFilePicker === 'function' && typeof pickers.showSaveFilePicker === 'function';
+}
+
+/**
+ * Asks the user for a configuration file to open.
+ * Returns a writable handle when supported so later saves overwrite the same file.
+ */
+export async function pickProjectFile(): Promise<PickedProjectFile | null> {
+  const { showOpenFilePicker } = getFilePickers();
+  if (supportsFileSystemAccess() && showOpenFilePicker) {
+    try {
+      const [handle] = await showOpenFilePicker({ multiple: false, types: PROJECT_FILE_TYPES });
+      return { file: await handle.getFile(), handle };
+    } catch (error) {
+      if (isAbortError(error)) return null;
+      throw error;
+    }
+  }
+
+  const file = await triggerFileSelection();
+  return file ? { file, handle: null } : null;
+}
+
+/**
+ * Asks the user where to save the configuration. Returns null if the dialog was cancelled.
+ * Only call when {@link supportsFileSystemAccess} is true.
+ */
+export async function pickSaveTarget(suggestedName: string): Promise<FileSystemFileHandle | null> {
+  const { showSaveFilePicker } = getFilePickers();
+  if (!showSaveFilePicker) {
+    throw new Error('Saving to a file is not supported by this browser');
+  }
+  try {
+    return await showSaveFilePicker({ suggestedName, types: PROJECT_FILE_TYPES });
+  } catch (error) {
+    if (isAbortError(error)) return null;
+    throw error;
+  }
+}
+
+/**
+ * Checks, without prompting, whether the handle can be written. Writing to a file opened
+ * for reading requires a user gesture the first time, so background saves must skip it.
+ */
+export async function hasWritePermission(handle: FileSystemFileHandle): Promise<boolean> {
+  const { queryPermission } = handle as FileSystemFileHandle & PermissionAwareFileHandle;
+  if (typeof queryPermission !== 'function') return true;
+  return (await queryPermission.call(handle, { mode: 'readwrite' })) === 'granted';
+}
+
+/**
+ * Overwrites the file behind the handle with the given snapshot.
+ */
+export async function writeProjectSnapshot(handle: FileSystemFileHandle, snapshot: ProjectSnapshot): Promise<void> {
+  const writable = await handle.createWritable();
+  try {
+    await writable.write(JSON.stringify(snapshot, null, 2));
+    await writable.close();
+  } catch (error) {
+    // Abort so a failed write never replaces the previous file contents
+    await writable.abort().catch(() => undefined);
+    throw error;
+  }
 }

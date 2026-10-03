@@ -623,7 +623,7 @@ export const ListConfigPanel: React.FC<ListConfigPanelProps> = ({
                   className="h-8 text-xs bg-violet-600 hover:bg-violet-500 text-white font-mono flex items-center gap-1.5 px-4"
                 >
                   <Check className="w-3.5 h-3.5" />
-                  <span>Apply Changes</span>
+                  <span>Done</span>
                 </Button>
               </DialogFooter>
             </>

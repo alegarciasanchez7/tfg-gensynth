@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
   Layers, ChevronRight,
   Clock, Cpu, AlertCircle, CheckCircle, Wifi, WifiOff,
-  Save, Trash2, RotateCcw,
+  Trash2, RotateCcw,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Group, Flow, ConnectionStatus } from '../../types';
@@ -14,7 +14,6 @@ const connBadge: Record<ConnectionStatus, { color: string; bg: string; label: st
   error:        { color: 'text-red-500',     bg: 'bg-red-500/10 border-red-500/30',        label: 'ERROR' },
   warning:      { color: 'text-amber-500',   bg: 'bg-amber-500/10 border-amber-500/30',    label: 'WARNING' },
 };
-
 
 function EditableField({
   label,
@@ -136,24 +135,9 @@ interface GroupWorkspaceProps {
 }
 
 export function GroupWorkspace({ group }: GroupWorkspaceProps) {
-  const { actions } = useApp();
-  const [draft, setDraft] = useState({
-    name: group.name,
-    description: group.description,
-    threads: group.threads,
-    outputMode: group.outputMode,
-  });
-  const [isSaving, setIsSaving] = useState(false);
+  const { state, actions } = useApp();
   const [isDeleting, setIsDeleting] = useState(false);
-
-  useEffect(() => {
-    setDraft({
-      name: group.name,
-      description: group.description,
-      threads: group.threads,
-      outputMode: group.outputMode,
-    });
-  }, [group.description, group.id, group.name, group.outputMode, group.threads]);
+  const isDirty = state.dirtyItems.groupIds.has(group.id);
 
   const statusCfg = {
     running: { color: 'text-emerald-500', bg: 'bg-emerald-500/10 border-emerald-500/40', label: 'RUNNING' },
@@ -161,61 +145,25 @@ export function GroupWorkspace({ group }: GroupWorkspaceProps) {
     paused:  { color: 'text-amber-500',   bg: 'bg-amber-500/10 border-amber-500/40',    label: 'PAUSED' },
   }[group.status];
 
-  const hasChanges =
-    draft.name !== group.name ||
-    draft.description !== group.description ||
-    draft.threads !== group.threads ||
-    draft.outputMode !== group.outputMode;
-
-  const handleSave = async () => {
-    if (!hasChanges || isSaving || isDeleting) {
-      return;
-    }
-
-    setIsSaving(true);
-    try {
-      await actions.updateGroupConfig(group.id, {
-        name: draft.name.trim(),
-        description: draft.description,
-        threads: draft.threads,
-        outputMode: draft.outputMode,
-      });
-      toast.success('Group changes saved');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to save group changes';
-      toast.error(message);
-    } finally {
-      setIsSaving(false);
-    }
+  const handleUpdate = (updates: Partial<Omit<Group, 'id' | 'flows'>>) => {
+    actions.updateGroupConfig(group.id, updates, group.name);
   };
 
   const handleDiscard = () => {
-    if (isSaving || isDeleting) {
-      return;
-    }
-
-    setDraft({
-      name: group.name,
-      description: group.description,
-      threads: group.threads,
-      outputMode: group.outputMode,
-    });
+    actions.discardItemChanges('group', group.id);
+    toast.info(`Changes discarded for group "${group.name}"`);
   };
 
   const handleDelete = async () => {
-    if (isSaving || isDeleting) {
-      return;
-    }
+    if (isDeleting) return;
 
-    const confirmed = window.confirm(`Delete group \"${group.name}\"? This action cannot be undone.`);
-    if (!confirmed) {
-      return;
-    }
+    const confirmed = window.confirm(`Delete group "${group.name}"? This action cannot be undone.`);
+    if (!confirmed) return;
 
     setIsDeleting(true);
     try {
       await actions.deleteGroup(group.id);
-      toast.success('Group deleted');
+      toast.success(`Group "${group.name}" deleted`);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to delete group';
       toast.error(message);
@@ -230,8 +178,9 @@ export function GroupWorkspace({ group }: GroupWorkspaceProps) {
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-2">
             <Layers size={14} className="text-cyan-500" />
-            <h2 className="text-sm text-[var(--c-tx1)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+            <h2 className="text-sm text-[var(--c-tx1)] flex items-center gap-1" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
               {group.name}
+              {isDirty && <span className="text-amber-400 font-bold text-xs" title="Unsaved changes">*</span>}
             </h2>
             <span className={`text-[10px] px-2 py-0.5 rounded border ${statusCfg.bg} ${statusCfg.color} tracking-widest`}
               style={{ fontFamily: 'JetBrains Mono, monospace' }}>
@@ -244,28 +193,17 @@ export function GroupWorkspace({ group }: GroupWorkspaceProps) {
         </div>
         <div className="flex gap-1.5 shrink-0">
           <button
-            onClick={handleSave}
-            disabled={!hasChanges || isSaving || isDeleting}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-xs transition-all disabled:opacity-30 disabled:cursor-not-allowed ${
-              hasChanges 
-                ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20' 
-                : 'border-[var(--c-br1)] text-[var(--c-tx4)]'
-            }`}
-            style={{ fontFamily: 'JetBrains Mono, monospace' }}
-          >
-            <Save size={11} /> {isSaving ? 'Saving...' : 'Save Changes'}
-          </button>
-          <button
             onClick={handleDiscard}
-            disabled={!hasChanges || isSaving || isDeleting}
+            disabled={!isDirty || isDeleting}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-[var(--c-br1)] bg-[var(--c-bg1)] text-[var(--c-tx4)] text-xs hover:text-[var(--c-tx1)] hover:bg-[var(--c-bg5)] transition-all disabled:opacity-30 disabled:cursor-not-allowed"
             style={{ fontFamily: 'JetBrains Mono, monospace' }}
+            title="Revert group configuration to last saved state"
           >
             <RotateCcw size={11} /> Discard
           </button>
           <button
             onClick={handleDelete}
-            disabled={isSaving || isDeleting}
+            disabled={isDeleting}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-red-500/40 bg-red-500/10 text-red-500 text-xs hover:bg-red-500/20 transition-all disabled:opacity-50"
             style={{ fontFamily: 'JetBrains Mono, monospace' }}
           >
@@ -302,26 +240,26 @@ export function GroupWorkspace({ group }: GroupWorkspaceProps) {
         <div className="grid grid-cols-2 gap-3">
           <EditableField
             label="Group Name"
-            value={draft.name}
-            onChange={name => setDraft(current => ({ ...current, name }))}
+            value={group.name}
+            onChange={name => handleUpdate({ name })}
           />
           <SelectField
             label="Output Mode"
             options={['parallel', 'sequential', 'round-robin']}
-            value={draft.outputMode}
-            onChange={outputMode => setDraft(current => ({ ...current, outputMode }))}
+            value={group.outputMode}
+            onChange={outputMode => handleUpdate({ outputMode })}
           />
           <NumberField
             label="Threads"
-            value={draft.threads}
+            value={group.threads}
             unit="threads"
-            onChange={threads => setDraft(current => ({ ...current, threads }))}
+            onChange={threads => handleUpdate({ threads })}
           />
           <NumberField label="Global Rate Limit" value={5000} unit="msg/s" onChange={() => {}} />
           <EditableField
             label="Description"
-            value={draft.description}
-            onChange={description => setDraft(current => ({ ...current, description }))}
+            value={group.description}
+            onChange={description => handleUpdate({ description })}
             wide
           />
         </div>
@@ -350,8 +288,6 @@ export function GroupWorkspace({ group }: GroupWorkspaceProps) {
           {group.flows.map(f => <FlowSummaryRow key={f.id} flow={f} />)}
         </div>
       </div>
-
-
     </div>
   );
 }

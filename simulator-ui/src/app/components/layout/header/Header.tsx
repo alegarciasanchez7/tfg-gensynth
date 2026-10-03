@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Power, Square, FolderOpen, Save, Settings, Package, Plus } from 'lucide-react';
+import { Power, Square, FolderOpen, Save, Settings, Package, Plus, FilePlus } from 'lucide-react';
 import type { SystemStatus, ConnectorHealthSummary, Variable } from '../../../types';
 import type { ConnectorPluginDescriptor } from '../../../core/types';
 import { PluginImportPanel } from './PluginImportPanel';
@@ -10,9 +10,12 @@ import { ResourceBar } from '../resource-bar/ResourceBar';
 interface HeaderProps {
   systemStatus: SystemStatus;
   onStatusToggle: () => void;
-  onLoadProject: () => Promise<void>;
-  onSaveProject: () => Promise<void>;
-  projectName: string;
+  onNewProject: () => void;
+  onLoadProject: () => Promise<unknown>;
+  onSaveProject: () => Promise<unknown>;
+  onSaveAsProject: () => Promise<unknown>;
+  currentFileName: string | null;
+  isDirty: boolean;
   isDark: boolean;
   onThemeToggle: () => void;
   latestConnectors: ConnectorPluginDescriptor[];
@@ -45,9 +48,12 @@ const StatusBadge = ({ status }: { status: SystemStatus }) => {
 export function Header({
   systemStatus,
   onStatusToggle,
+  onNewProject,
   onLoadProject,
   onSaveProject,
-  projectName,
+  onSaveAsProject,
+  currentFileName,
+  isDirty,
   isDark,
   onThemeToggle,
   latestConnectors,
@@ -60,7 +66,9 @@ export function Header({
   const [loadingState, setLoadingState] = useState(false);
   const isRunning = systemStatus === 'running';
 
-  // Perform a pre-start check to highlight interlock/cycle/broken-references errors by turning the start button yellow/orange
+  const displayName = currentFileName || 'Untitled';
+
+  // Perform a pre-start check to highlight interlock/cycle/broken-references errors
   const hasPreStartErrors = useMemo(() => {
     if (variables.length === 0) return false;
     const varNames = new Set(variables.map(v => v.name));
@@ -148,17 +156,27 @@ export function Header({
       style={{ height: 50 }}
     >
       {/* ── Left: Main Project Controls ── */}
-      {/* Logo + Name */}
+      {/* Logo + Name + Dirty indicator */}
       <div className="flex items-center gap-2.5 mr-1 shrink-0">
         <div className="flex items-center justify-center w-7 h-7 overflow-hidden">
           <img src="/logo_azul.png" alt="GenSynth Logo" className="w-full h-full object-contain" />
         </div>
-        <span
-          className="text-sm font-bold text-[var(--c-tx1)] tracking-tight"
-          style={{ fontFamily: 'JetBrains Mono, monospace' }}
-        >
-          {projectName}
-        </span>
+        <div className="flex items-center gap-1">
+          <span
+            className="text-sm font-bold text-[var(--c-tx1)] tracking-tight"
+            style={{ fontFamily: 'JetBrains Mono, monospace' }}
+          >
+            {displayName}
+          </span>
+          {isDirty && (
+            <span
+              className="text-amber-400 font-bold text-sm"
+              title="Unsaved changes in project"
+            >
+              *
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Separator */}
@@ -193,8 +211,16 @@ export function Header({
       {/* Separator */}
       <div className="w-px h-6 bg-[var(--c-br1)] shrink-0" />
 
-      {/* File actions */}
+      {/* File actions: New, Load, Save, Save as */}
       <div className="flex items-center gap-1 shrink-0">
+        <button
+          onClick={onNewProject}
+          disabled={loadingState}
+          title="Create a new configuration from scratch"
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-[var(--c-br1)] text-xs text-[var(--c-tx3)] hover:text-[var(--c-tx1)] hover:border-[var(--c-br3)] hover:bg-[var(--c-bg5)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <FilePlus size={12} /> New
+        </button>
         <button
           onClick={async () => {
             setLoadingState(true);
@@ -207,6 +233,7 @@ export function Header({
             }
           }}
           disabled={loadingState}
+          title="Load configuration from file"
           className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-[var(--c-br1)] text-xs text-[var(--c-tx3)] hover:text-[var(--c-tx1)] hover:border-[var(--c-br3)] hover:bg-[var(--c-bg5)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <FolderOpen size={12} /> Load
@@ -223,9 +250,27 @@ export function Header({
             }
           }}
           disabled={loadingState}
+          title="Save changes to configuration file"
           className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-[var(--c-br1)] text-xs text-[var(--c-tx3)] hover:text-[var(--c-tx1)] hover:border-[var(--c-br3)] hover:bg-[var(--c-bg5)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Save size={12} /> Save
+        </button>
+        <button
+          onClick={async () => {
+            setLoadingState(true);
+            try {
+              await onSaveAsProject();
+            } catch (error) {
+              console.error('[Header] Save As project error:', error);
+            } finally {
+              setLoadingState(false);
+            }
+          }}
+          disabled={loadingState}
+          title="Save configuration as a new file"
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-[var(--c-br1)] text-xs text-[var(--c-tx3)] hover:text-[var(--c-tx1)] hover:border-[var(--c-br3)] hover:bg-[var(--c-bg5)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <Save size={12} /> Save as
         </button>
       </div>
 

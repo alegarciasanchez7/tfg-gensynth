@@ -1,5 +1,5 @@
 import type { Dispatch, SetStateAction } from 'react';
-import type { LucideIcon } from 'lucide-react';
+import { RotateCcw, type LucideIcon } from 'lucide-react';
 import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../components/ui/select';
@@ -41,9 +41,10 @@ interface VariableEditorHeaderProps {
   variable: Variable;
   theme: VariableEditorTheme;
   scopeBadgeClass: string;
+  isDirty?: boolean;
 }
 
-export function VariableEditorHeader({ variable, theme, scopeBadgeClass }: VariableEditorHeaderProps) {
+export function VariableEditorHeader({ variable, theme, scopeBadgeClass, isDirty }: VariableEditorHeaderProps) {
   const Icon = theme.icon;
 
   return (
@@ -55,8 +56,9 @@ export function VariableEditorHeader({ variable, theme, scopeBadgeClass }: Varia
       </div>
       <div className="flex min-w-0 flex-col gap-1">
         <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-sm text-[var(--c-tx1)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+          <h2 className="text-sm text-[var(--c-tx1)] flex items-center gap-1" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
             {variable.name}
+            {isDirty && <span className="text-amber-400 font-bold text-xs" title="Unsaved changes">*</span>}
           </h2>
           <span
             className={`text-[9px] rounded border px-2 py-0.5 tracking-wider uppercase ${scopeBadgeClass}`}
@@ -311,39 +313,32 @@ export function VariableEditorConfigCard({ typeLabel, theme, draft, setDraft }: 
 }
 
 interface VariableEditorActionsProps {
-  isSaving: boolean;
+  isSaving?: boolean;
   isDeleting: boolean;
-  onSave: () => void;
+  isDirty?: boolean;
+  onSave?: () => void;
   onDiscard: () => void;
   onDelete: () => void;
   saveButtonTitle?: string;
 }
 
-export function VariableEditorActions({ isSaving, isDeleting, onSave, onDiscard, onDelete, saveButtonTitle }: VariableEditorActionsProps) {
+export function VariableEditorActions({ isDeleting, isDirty, onDiscard, onDelete }: VariableEditorActionsProps) {
   return (
     <div className="flex items-center gap-2">
       <Button
-        onClick={onSave}
-        disabled={isSaving}
-        title={saveButtonTitle}
-        className="rounded border border-cyan-500/40 bg-cyan-500/10 px-3 py-1.5 text-xs text-cyan-500 transition-all hover:bg-cyan-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
-        variant="ghost"
-      >
-        Save changes
-      </Button>
-      <Button
         variant="ghost"
         onClick={onDiscard}
-        disabled={isSaving}
-        className="rounded border border-[var(--c-br1)] px-3 py-1.5 text-xs text-[var(--c-tx3)] transition-all hover:bg-[var(--c-bg6)]"
+        disabled={!isDirty}
+        className="flex items-center gap-1.5 rounded border border-[var(--c-br1)] px-3 py-1.5 text-xs text-[var(--c-tx3)] transition-all hover:bg-[var(--c-bg6)] disabled:opacity-30 disabled:cursor-not-allowed"
+        title="Revert variable configuration to last saved state"
       >
-        Discard
+        <RotateCcw size={11} /> Discard
       </Button>
       <div className="flex-1" />
       <Button
         variant="destructive"
         onClick={onDelete}
-        disabled={isSaving || isDeleting}
+        disabled={isDeleting}
         aria-label="Delete variable"
         className="flex items-center gap-1.5 rounded border border-red-500/30 px-3 py-1.5 text-xs text-red-500 transition-all hover:bg-red-500/10"
       >
