@@ -1,6 +1,5 @@
-import type { Dispatch, SetStateAction } from 'react';
-import { RotateCcw, type LucideIcon } from 'lucide-react';
-import { Button } from '../../../components/ui/button';
+import type { Dispatch, ReactNode, SetStateAction } from 'react';
+import { RotateCcw, Trash2, type LucideIcon } from 'lucide-react';
 import { Input } from '../../../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../components/ui/tabs';
@@ -42,9 +41,11 @@ interface VariableEditorHeaderProps {
   theme: VariableEditorTheme;
   scopeBadgeClass: string;
   isDirty?: boolean;
+  /** Actions rendered on the right side of the header (e.g. Discard / Delete), like groups and flows */
+  actions?: ReactNode;
 }
 
-export function VariableEditorHeader({ variable, theme, scopeBadgeClass, isDirty }: VariableEditorHeaderProps) {
+export function VariableEditorHeader({ variable, theme, scopeBadgeClass, isDirty, actions }: VariableEditorHeaderProps) {
   const Icon = theme.icon;
 
   return (
@@ -77,6 +78,7 @@ export function VariableEditorHeader({ variable, theme, scopeBadgeClass, isDirty
           {theme.description}
         </p>
       </div>
+      {actions && <div className="ml-auto shrink-0">{actions}</div>}
     </div>
   );
 }
@@ -324,26 +326,25 @@ interface VariableEditorActionsProps {
 
 export function VariableEditorActions({ isDeleting, isDirty, onDiscard, onDelete }: VariableEditorActionsProps) {
   return (
-    <div className="flex items-center gap-2">
-      <Button
-        variant="ghost"
+    <div className="flex gap-1.5">
+      <button
         onClick={onDiscard}
-        disabled={!isDirty}
-        className="flex items-center gap-1.5 rounded border border-[var(--c-br1)] px-3 py-1.5 text-xs text-[var(--c-tx3)] transition-all hover:bg-[var(--c-bg6)] disabled:opacity-30 disabled:cursor-not-allowed"
+        disabled={!isDirty || isDeleting}
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-[var(--c-br1)] bg-[var(--c-bg1)] text-[var(--c-tx4)] text-xs hover:text-[var(--c-tx1)] hover:bg-[var(--c-bg5)] transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+        style={{ fontFamily: 'JetBrains Mono, monospace' }}
         title="Revert variable configuration to last saved state"
       >
         <RotateCcw size={11} /> Discard
-      </Button>
-      <div className="flex-1" />
-      <Button
-        variant="destructive"
+      </button>
+      <button
         onClick={onDelete}
         disabled={isDeleting}
         aria-label="Delete variable"
-        className="flex items-center gap-1.5 rounded border border-red-500/30 px-3 py-1.5 text-xs text-red-500 transition-all hover:bg-red-500/10"
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-red-500/40 bg-red-500/10 text-red-500 text-xs hover:bg-red-500/20 transition-all disabled:opacity-50"
+        style={{ fontFamily: 'JetBrains Mono, monospace' }}
       >
-        Delete
-      </Button>
+        <Trash2 size={11} /> {isDeleting ? 'Deleting...' : 'Delete'}
+      </button>
     </div>
   );
 }

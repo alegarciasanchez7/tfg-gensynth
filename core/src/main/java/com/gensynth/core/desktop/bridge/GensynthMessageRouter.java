@@ -1,5 +1,6 @@
 package com.gensynth.core.desktop.bridge;
 
+import com.gensynth.core.desktop.DesktopFileChooser;
 import com.gensynth.core.persistence.ProjectFileFormat;
 import com.gensynth.core.ws.*;
 import org.java_websocket.WebSocket;
@@ -15,6 +16,10 @@ import org.slf4j.LoggerFactory;
  */
 public class GensynthMessageRouter extends CefMessageRouterHandlerAdapter {
     private static final Logger logger = LoggerFactory.getLogger(GensynthMessageRouter.class);
+    private static final javax.swing.filechooser.FileNameExtensionFilter PROJECT_FILE_FILTER =
+            new javax.swing.filechooser.FileNameExtensionFilter(
+                    "GenSynth project (*" + ProjectFileFormat.EXTENSION + ")", ProjectFileFormat.EXTENSION.substring(1));
+    private static final String DEFAULT_PROJECT_FILE_NAME = "gen-synth-project" + ProjectFileFormat.EXTENSION;
     private final javax.swing.JFrame parentFrame;
 
     public GensynthMessageRouter(javax.swing.JFrame parentFrame) {
@@ -33,20 +38,14 @@ public class GensynthMessageRouter extends CefMessageRouterHandlerAdapter {
                 return true;
             }
 
-            // Intercept SAVE_STATE to show native file dialog in desktop mode
+            // Intercept SAVE_STATE to show a file dialog in desktop mode
             if (request.contains("SAVE_STATE")) {
                 javax.swing.SwingUtilities.invokeLater(() -> {
-                    java.awt.FileDialog fileDialog = new java.awt.FileDialog(parentFrame,
-                            "Save Gen-Synth Configuration", java.awt.FileDialog.SAVE);
-                    applyProjectFileFilter(fileDialog);
-                    fileDialog.setVisible(true);
+                    java.util.Optional<java.io.File> selected = DesktopFileChooser.saveFile(parentFrame,
+                            "Save Gen-Synth Configuration", PROJECT_FILE_FILTER, new java.io.File(DEFAULT_PROJECT_FILE_NAME));
 
-                    String directory = fileDialog.getDirectory();
-                    String file = fileDialog.getFile();
-
-                    if (directory != null && file != null) {
-                        String path = ProjectFileFormat.ensureExtension(
-                                new java.io.File(directory, file).getAbsolutePath());
+                    if (selected.isPresent()) {
+                        String path = ProjectFileFormat.ensureExtension(selected.get().getAbsolutePath());
 
                         // Extract original commandId if present to keep UI synchronized
                         String originalCommandId = extractCommandId(request);
@@ -76,18 +75,16 @@ public class GensynthMessageRouter extends CefMessageRouterHandlerAdapter {
                 return true;
             }
 
-            // Intercept PICK_DIRECTORY to show native folder picker
+            // Intercept PICK_DIRECTORY to show a folder picker
             if (request.contains("PICK_DIRECTORY")) {
                 String commandId = extractCommandId(request);
                 javax.swing.SwingUtilities.invokeLater(() -> {
-                    javax.swing.JFileChooser fileChooser = new javax.swing.JFileChooser();
-                    fileChooser.setFileSelectionMode(javax.swing.JFileChooser.DIRECTORIES_ONLY);
-                    fileChooser.setDialogTitle("Select Output Directory");
-                    int result = fileChooser.showOpenDialog(parentFrame);
+                    java.util.Optional<java.io.File> selected =
+                            DesktopFileChooser.chooseDirectory(parentFrame, "Select Output Directory");
 
                     java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
-                    if (result == javax.swing.JFileChooser.APPROVE_OPTION && fileChooser.getSelectedFile() != null) {
-                        String path = fileChooser.getSelectedFile().getAbsolutePath();
+                    if (selected.isPresent()) {
+                        String path = selected.get().getAbsolutePath();
                         payload.put("status", "success");
                         payload.put("path", path);
                         server.broadcastMessage("PICK_DIRECTORY_RESULT", commandId, payload);
@@ -112,21 +109,16 @@ public class GensynthMessageRouter extends CefMessageRouterHandlerAdapter {
                 return true;
             }
 
-            // Intercept LOAD_STATE to show native file dialog in desktop mode
+            // Intercept LOAD_STATE to show a file dialog in desktop mode
             if (request.contains("LOAD_STATE")) {
                 javax.swing.SwingUtilities.invokeLater(() -> {
-                    java.awt.FileDialog fileDialog = new java.awt.FileDialog(parentFrame,
-                            "Load Gen-Synth Project", java.awt.FileDialog.LOAD);
-                    applyProjectFileFilter(fileDialog);
-                    fileDialog.setVisible(true);
-
-                    String directory = fileDialog.getDirectory();
-                    String file = fileDialog.getFile();
+                    java.util.Optional<java.io.File> selected =
+                            DesktopFileChooser.openFile(parentFrame, "Load Gen-Synth Project", PROJECT_FILE_FILTER);
                     String commandId = extractCommandId(request);
 
-                    if (directory != null && file != null) {
+                    if (selected.isPresent()) {
                         try {
-                            java.io.File selectedFile = new java.io.File(directory, file);
+                            java.io.File selectedFile = selected.get();
                             // Reject anything that is not a GenSynth project before touching the Core state
                             com.fasterxml.jackson.databind.node.ObjectNode project =
                                     ProjectFileFormat.read(selectedFile.toPath(), server.getObjectMapper());
@@ -175,15 +167,6 @@ public class GensynthMessageRouter extends CefMessageRouterHandlerAdapter {
             callback.failure(500, e.getMessage());
             return true;
         }
-    }
-
-    /**
-     * Restricts a native file dialog to GenSynth project files. AWT honours the wildcard
-     * file name on Windows and the filename filter on Linux/macOS, so both are set.
-     */
-    private static void applyProjectFileFilter(java.awt.FileDialog fileDialog) {
-        fileDialog.setFile("*" + ProjectFileFormat.EXTENSION);
-        fileDialog.setFilenameFilter(ProjectFileFormat.FILENAME_FILTER);
     }
 
     private String extractCommandId(String request) {

@@ -21,7 +21,10 @@ export interface DirtyStateResult {
 }
 
 /**
- * Normalizes a flow for deep comparison by stripping non-persisted runtime state if any.
+ * Normalizes a flow for deep comparison by keeping only its configuration.
+ * Runtime metrics reported by the Core while simulating (connectionStatus, throughput,
+ * latency, hasError, errorMessage) are left out, so running a simulation never marks
+ * the project as modified.
  */
 export function getFlowComparable(flow: Flow) {
   return {
@@ -33,7 +36,6 @@ export function getFlowComparable(flow: Flow) {
     topic: flow.topic,
     host: flow.host,
     port: flow.port,
-    latency: flow.latency,
     enabled: flow.enabled,
     template: flow.template,
     format: flow.format,

@@ -117,6 +117,36 @@ describe('rootReducer save state tracking', () => {
     expect(state.isDirty).toBe(true);
   });
 
+  it('ignores runtime metrics reported by the Core while a simulation is running', () => {
+    const runningGroup: Group = {
+      ...coreGroup,
+      status: 'running',
+      throughput: '1 msg/s',
+      flows: [
+        {
+          ...coreGroup.flows[0],
+          connectionStatus: 'connected',
+          throughput: '1 msg/s',
+          latency: 3,
+          hasError: true,
+          errorMessage: 'No connector found for rabbitmq',
+        },
+      ],
+    };
+    const state = run(
+      loadFile(),
+      { type: 'SET_BASELINE_SYNC', payload: true },
+      { type: 'SET_GROUPS', payload: [coreGroup] },
+      { type: 'SET_BASELINE_SYNC', payload: false },
+      { type: 'SET_GROUPS', payload: [runningGroup] },
+      { type: 'LOAD_INITIAL_STATE', payload: { groups: [runningGroup], variables: [fileVariable] } },
+    );
+
+    expect(state.isDirty).toBe(false);
+    expect(state.dirtyItems.groupIds.size).toBe(0);
+    expect(state.dirtyItems.flowIds.size).toBe(0);
+  });
+
   it('ignores UI-only group changes such as expanding a group', () => {
     const state = run(loadFile(), { type: 'TOGGLE_GROUP_EXPANDED', payload: 'g1' });
     expect(state.isDirty).toBe(false);

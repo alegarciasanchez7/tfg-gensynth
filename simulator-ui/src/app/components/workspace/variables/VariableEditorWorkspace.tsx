@@ -41,7 +41,20 @@ export function VariableEditorWorkspace({ variable, onBack }: VariableEditorWork
           <ChevronLeft size={10} /> back to selection
         </button>
 
-        <VariableEditorHeader variable={variable} theme={typeTheme} scopeBadgeClass={scopeBadgeClass} isDirty={isDirty} />
+        <VariableEditorHeader
+          variable={variable}
+          theme={typeTheme}
+          scopeBadgeClass={scopeBadgeClass}
+          isDirty={isDirty}
+          actions={
+            <VariableEditorActions
+              isDeleting={isDeleting}
+              isDirty={isDirty}
+              onDiscard={handleDiscard}
+              onDelete={handleDelete}
+            />
+          }
+        />
         <VariableEditorIdentityCard 
           draft={draft} 
           setDraft={setDraft} 
@@ -72,13 +85,6 @@ export function VariableEditorWorkspace({ variable, onBack }: VariableEditorWork
             </div>
           </div>
         )}
-
-        <VariableEditorActions
-          isDeleting={isDeleting}
-          isDirty={isDirty}
-          onDiscard={handleDiscard}
-          onDelete={handleDelete}
-        />
       </div>
     </div>
   );
