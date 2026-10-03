@@ -1,13 +1,13 @@
 import { bridge } from '../bridge';
-import type { PluginValidationResultPayload, PluginInstallResultPayload } from '../types';
+import type { PluginValidationResultPayload, PluginInstallResultPayload, StateFileResponsePayload } from '../types';
 
 export const CoreCommands = {
   // System
   startSystem: () => bridge.send('START_SYSTEM'),
   stopSystem: () => bridge.send('STOP_SYSTEM'),
   getInitialState: () => bridge.send('GET_INITIAL_STATE'),
-  loadState: () => bridge.send('LOAD_STATE'),
-  saveState: () => bridge.send('SAVE_STATE'),
+  loadState: () => bridge.send<'LOAD_STATE', StateFileResponsePayload>('LOAD_STATE'),
+  saveState: () => bridge.send<'SAVE_STATE', StateFileResponsePayload>('SAVE_STATE'),
 
   // Groups
   startGroup: (groupId: string) => bridge.send('START_GROUP', { groupId }),
@@ -51,6 +51,8 @@ export const CoreCommands = {
 
   // State management
   importState: (groups: any[], variables: any[]) => bridge.send('IMPORT_STATE', { groups, variables }),
+  exportState: (filePath: string) =>
+    bridge.send<'EXPORT_STATE', StateFileResponsePayload>('EXPORT_STATE', { filePath }),
 
   // Desktop specific
   pickDirectory: () => bridge.send('PICK_DIRECTORY'),

@@ -19,16 +19,14 @@ export function VariableEditorWorkspace({ variable, onBack }: VariableEditorWork
   const {
     draft,
     setDraft,
-    isSaving,
     isDeleting,
+    isDirty,
     typeTheme,
     scopeBadgeClass,
-    handleSave,
     handleDiscard,
     handleDelete,
     scopeOptions,
     hasValidationError,
-    saveButtonTitle,
     validationResult,
   } = useVariableEditor(variable);
 
@@ -43,7 +41,20 @@ export function VariableEditorWorkspace({ variable, onBack }: VariableEditorWork
           <ChevronLeft size={10} /> back to selection
         </button>
 
-        <VariableEditorHeader variable={variable} theme={typeTheme} scopeBadgeClass={scopeBadgeClass} />
+        <VariableEditorHeader
+          variable={variable}
+          theme={typeTheme}
+          scopeBadgeClass={scopeBadgeClass}
+          isDirty={isDirty}
+          actions={
+            <VariableEditorActions
+              isDeleting={isDeleting}
+              isDirty={isDirty}
+              onDiscard={handleDiscard}
+              onDelete={handleDelete}
+            />
+          }
+        />
         <VariableEditorIdentityCard 
           draft={draft} 
           setDraft={setDraft} 
@@ -74,15 +85,6 @@ export function VariableEditorWorkspace({ variable, onBack }: VariableEditorWork
             </div>
           </div>
         )}
-
-        <VariableEditorActions
-          isSaving={isSaving}
-          isDeleting={isDeleting}
-          onSave={handleSave}
-          onDiscard={handleDiscard}
-          onDelete={handleDelete}
-          saveButtonTitle={saveButtonTitle}
-        />
       </div>
     </div>
   );

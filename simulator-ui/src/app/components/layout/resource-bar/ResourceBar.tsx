@@ -106,9 +106,13 @@ export function ResourceBar() {
   ];
 
   return (
-    <div className="flex items-center gap-2.5 shrink-0">
+    <div
+      className="flex items-center gap-2.5 px-4 border-b border-[var(--c-br2)] bg-[var(--c-bg2)] shrink-0 overflow-x-auto select-none"
+      style={{ height: 28 }}
+      data-testid="resource-bar"
+    >
       {uiMetrics.map((m, i) => (
-        <div key={i} className="flex items-center gap-2 pr-2.5 mr-0.5 border-r border-[var(--c-br2)] last:border-r-0">
+        <div key={i} className="flex shrink-0 items-center gap-2 pr-2.5 mr-0.5 border-r border-[var(--c-br2)] last:border-r-0">
           <div className="flex items-center gap-1">
             <span className={`${m.color} opacity-70`}>{m.icon}</span>
             <span className="text-[10px] text-[var(--c-tx4)] tracking-wider" style={{ fontFamily: 'JetBrains Mono, monospace' }}>

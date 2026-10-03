@@ -242,4 +242,59 @@ public class UiBridgeWebSocketServerTest {
         assertEquals(12, ((Number) legacyVar.getConfig().get("min")).intValue());
         assertEquals(99, ((Number) legacyVar.getConfig().get("max")).intValue());
     }
+
+    @Test
+    public void importAndExportStateAcksIncludeFilePath() throws Exception {
+        Path tempDir = Files.createTempDirectory("gensynth-ws-test-file-path-");
+        StateRepository repository = new JsonStateRepositoryImpl(tempDir.toString());
+        UiBridgeWebSocketServer server = new UiBridgeWebSocketServer(
+                new InetSocketAddress("localhost", 0),
+                new ConnectorCatalogService(),
+                repository,
+                new PluginInstallerImpl(tempDir));
+        WebSocket mockConn = mock(WebSocket.class);
+        when(mockConn.isOpen()).thenReturn(true);
+
+        String importCommand = """
+                {
+                  "type": "IMPORT_STATE",
+                  "commandId": "cmd-import",
+                  "protocolVersion": "1.0.0",
+                  "payload": { "groups": [], "variables": [], "sourceFilePath": "/tmp/project.gsynth" }
+                }
+                """;
+        server.onMessage(mockConn, importCommand);
+
+        Path exportPath = tempDir.resolve("exported.gsynth");
+        String exportCommand = "{\"type\":\"EXPORT_STATE\",\"commandId\":\"cmd-export\",\"protocolVersion\":\"1.0.0\","
+                + "\"payload\":{\"filePath\":\"" + exportPath.toString().replace("\\", "\\\\") + "\"}}";
+        server.onMessage(mockConn, exportCommand);
+
+        ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
+        verify(mockConn, atLeastOnce()).send(captor.capture());
+
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode importAck = null;
+        JsonNode exportAck = null;
+        for (String msg : captor.getAllValues()) {
+            JsonNode root = mapper.readTree(msg);
+            if (!"CONNECTION_STATUS".equals(root.path("type").asText())) continue;
+            if ("cmd-import".equals(root.path("commandId").asText())) importAck = root.path("payload");
+            if ("cmd-export".equals(root.path("commandId").asText())) exportAck = root.path("payload");
+        }
+
+        assertNotNull("IMPORT_STATE should be acknowledged", importAck);
+        assertEquals("state_imported", importAck.path("result").asText());
+        assertEquals("/tmp/project.gsynth", importAck.path("filePath").asText());
+
+        assertNotNull("EXPORT_STATE should be acknowledged", exportAck);
+        assertEquals("state_exported", exportAck.path("result").asText());
+        assertEquals(exportPath.toString(), exportAck.path("filePath").asText());
+        assertTrue("Exported file should exist", Files.exists(exportPath));
+
+        // The exported file must be a valid GenSynth project that can be loaded back
+        JsonNode exported = com.gensynth.core.persistence.ProjectFileFormat.read(exportPath, mapper);
+        assertEquals(com.gensynth.core.persistence.ProjectFileFormat.FORMAT_ID, exported.path("format").asText());
+        assertEquals(com.gensynth.core.persistence.ProjectFileFormat.VERSION, exported.path("version").asText());
+    }
 }
