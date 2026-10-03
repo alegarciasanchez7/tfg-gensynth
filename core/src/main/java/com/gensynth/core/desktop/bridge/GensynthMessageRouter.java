@@ -131,8 +131,12 @@ public class GensynthMessageRouter extends CefMessageRouterHandlerAdapter {
                         try {
                             java.io.File selectedFile = new java.io.File(directory, file);
                             String content = Files.readString(selectedFile.toPath(), StandardCharsets.UTF_8);
-                            // Validate JSON content before sending
-                            server.getObjectMapper().readTree(content);
+                            // Validate JSON content and attach the source path so the UI knows which file is open
+                            com.fasterxml.jackson.databind.JsonNode root = server.getObjectMapper().readTree(content);
+                            if (root instanceof com.fasterxml.jackson.databind.node.ObjectNode objectRoot) {
+                                objectRoot.put("sourceFilePath", selectedFile.getAbsolutePath());
+                                content = server.getObjectMapper().writeValueAsString(objectRoot);
+                            }
 
                             String fullImportCommand = String.format(
                                     "{\"type\":\"IMPORT_STATE\",\"commandId\":\"%s\",\"protocolVersion\":\"1.0.0\",\"payload\":%s}",

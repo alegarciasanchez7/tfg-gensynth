@@ -479,6 +479,24 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
     }
 
     public void sendAck(WebSocket conn, String commandId, String clientRequestId, String result) {
+        sendAck(conn, commandId, clientRequestId, result, Map.of());
+    }
+
+    /**
+     * Sends a successful acknowledgement including additional result fields
+     * (e.g. the file path written by EXPORT_STATE).
+     *
+     * @param conn the WebSocket connection
+     * @param commandId the command identifier
+     * @param result the result code
+     * @param extraFields additional fields merged into the ack payload
+     */
+    public void sendAck(WebSocket conn, String commandId, String result, Map<String, Object> extraFields) {
+        sendAck(conn, commandId, null, result, extraFields);
+    }
+
+    private void sendAck(WebSocket conn, String commandId, String clientRequestId, String result,
+            Map<String, Object> extraFields) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("commandId", commandId);
         if (clientRequestId != null) {
@@ -486,6 +504,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         }
         payload.put("status", "ok");
         payload.put("result", result);
+        payload.putAll(extraFields);
         sendMessage(conn, "CONNECTION_STATUS", commandId, payload);
     }
 

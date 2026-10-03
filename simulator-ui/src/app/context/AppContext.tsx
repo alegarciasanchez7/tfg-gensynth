@@ -24,6 +24,7 @@ import type {
 
 import { toast } from 'sonner';
 import { OptimisticManager } from './optimisticManager';
+import type { PickedProjectFile } from '../core/fileStorage';
 
 // Slices and actions
 import { rootReducer, initialState, type AppState, type AppAction } from './reducer';
@@ -31,10 +32,12 @@ import * as selectionActions from './actions/selectionActions';
 import * as systemActions from './actions/systemActions';
 import * as projectActions from './actions/projectActions';
 import * as templateActions from './actions/templateActions';
+import * as discardActions from './actions/discardActions';
 
 // Hooks
 import { useCrudActions } from './hooks/useCrudActions';
 import { useBridgeSubscriptions } from './hooks/useBridgeSubscriptions';
+import { useAutoSave } from './hooks/useAutoSave';
 
 // ─────────────────────────────────────────────────────────────
 // Context Value Interface
@@ -48,8 +51,14 @@ interface AppContextValue {
     startSystem: () => Promise<void>;
     stopSystem: () => Promise<void>;
     toggleSystem: () => Promise<void>;
-    loadProjectState: () => Promise<void>;
-    saveProjectState: () => Promise<void>;
+    newProjectState: () => Promise<void>;
+    loadProjectState: (file?: PickedProjectFile | null) => Promise<boolean>;
+    saveProjectState: (isAutoSave?: boolean) => Promise<boolean>;
+    saveProjectStateAs: () => Promise<boolean>;
+    discardItemChanges: (type: 'group' | 'flow' | 'variable', id: string) => Promise<void>;
+    discardAllChanges: () => void;
+    setAutoSave: (enabled: boolean) => void;
+    setAutoSaveInterval: (seconds: number) => void;
     
     // Selection
     selectGroup: (groupId: string) => void;
@@ -133,7 +142,6 @@ interface AppProviderProps {
 
 export function AppProvider({ children, useMockData = false }: AppProviderProps) {
   const [state, dispatch] = useReducer(rootReducer, initialState);
-  const preserveLocalSnapshotRef = useRef(false);
   const optimisticManager = useRef<OptimisticManager | null>(null);
   const stateRef = useRef(state);
   const activeEditorRef = useRef<((name: string, scope?: string) => void) | null>(null);
@@ -331,16 +339,85 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
     []
   );
 
-  // Project snapshots
-  const loadProjectState = useCallback(
-    projectActions.loadProjectState(dispatch, state.connectionMode, state.connectorCatalog, state.selection, preserveLocalSnapshotRef),
-    [state.connectionMode, state.connectorCatalog, state.selection]
+  // Project files & save state management.
+  // These read the latest state through stateRef so they stay stable across renders.
+  const newProjectState = useCallback(
+    () => projectActions.newProjectState({ dispatch, isConnected: stateRef.current.isConnected }),
+    []
   );
 
+  const loadProjectState = useCallback((file?: PickedProjectFile | null) => {
+    const current = stateRef.current;
+    return projectActions.loadProjectState(
+      {
+        dispatch,
+        connectionMode: current.connectionMode,
+        isConnected: current.isConnected,
+        connectorCatalog: current.connectorCatalog,
+        selection: current.selection,
+      },
+      file,
+    );
+  }, []);
+
+  const getSaveContext = useCallback((): projectActions.ProjectSaveContext => {
+    const current = stateRef.current;
+    return {
+      dispatch,
+      connectionMode: current.connectionMode,
+      groups: current.groups,
+      variables: current.variables,
+      file: {
+        fileName: current.currentFileName,
+        filePath: current.currentFilePath,
+        fileHandle: current.currentFileHandle,
+      },
+    };
+  }, []);
+
   const saveProjectState = useCallback(
-    projectActions.saveProjectState(dispatch, state.connectionMode, state.groups, state.variables),
-    [state.connectionMode, state.groups, state.variables]
+    (isAutoSave = false) => projectActions.saveProjectState(getSaveContext(), isAutoSave),
+    [getSaveContext]
   );
+
+  const saveProjectStateAs = useCallback(
+    () => projectActions.saveProjectStateAs(getSaveContext()),
+    [getSaveContext]
+  );
+
+  useAutoSave({
+    enabled: state.autoSaveEnabled,
+    intervalSeconds: state.autoSaveIntervalSeconds,
+    isDirty: state.isDirty,
+    save: saveProjectState,
+  });
+
+  const discardItemChanges = useCallback((type: 'group' | 'flow' | 'variable', id: string) => {
+    const current = stateRef.current;
+    return discardActions.discardItemChanges(
+      {
+        dispatch,
+        isConnected: current.isConnected,
+        savedState: current.savedState,
+        groups: current.groups,
+        variables: current.variables,
+      },
+      type,
+      id,
+    );
+  }, []);
+
+  const discardAllChanges = useCallback(() => {
+    dispatch({ type: 'DISCARD_ALL_CHANGES' });
+  }, []);
+
+  const setAutoSave = useCallback((enabled: boolean) => {
+    dispatch({ type: 'SET_AUTO_SAVE', payload: enabled });
+  }, []);
+
+  const setAutoSaveInterval = useCallback((seconds: number) => {
+    dispatch({ type: 'SET_AUTO_SAVE_INTERVAL', payload: seconds });
+  }, []);
 
   // UI / Logs
   const setBottomTab = useCallback((tab: 'logs' | 'stats' | 'preview') => {
@@ -372,8 +449,14 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
     startSystem,
     stopSystem,
     toggleSystem,
+    newProjectState,
     loadProjectState,
     saveProjectState,
+    saveProjectStateAs,
+    discardItemChanges,
+    discardAllChanges,
+    setAutoSave,
+    setAutoSaveInterval,
     selectGroup,
     selectFlow,
     selectVariable,

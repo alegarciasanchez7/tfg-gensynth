@@ -8,6 +8,7 @@ const { mockUseApp, mockToast } = vi.hoisted(() => ({
   mockToast: {
     success: vi.fn(),
     error: vi.fn(),
+    info: vi.fn(),
     message: vi.fn(),
   },
 }));
@@ -41,6 +42,7 @@ describe('VariableEditorWorkspace', () => {
   const actions = {
     updateVariable: vi.fn().mockResolvedValue(undefined),
     deleteVariable: vi.fn().mockResolvedValue(undefined),
+    discardItemChanges: vi.fn(),
     clearVariableSelection: vi.fn(),
     getVariables: vi.fn().mockReturnValue([]),
   };
@@ -48,20 +50,22 @@ describe('VariableEditorWorkspace', () => {
   beforeEach(() => {
     cleanup();
     mockUseApp.mockReturnValue({ 
-      state: { groups: [] },
+      state: { groups: [], dirtyItems: { groupIds: new Set(), flowIds: new Set(), variableIds: new Set(['v1']) } },
       actions 
     });
     onBack.mockClear();
     actions.updateVariable.mockClear();
     actions.deleteVariable.mockClear();
+    actions.discardItemChanges.mockClear();
     actions.clearVariableSelection.mockClear();
     actions.getVariables.mockClear();
     mockToast.success.mockClear();
     mockToast.error.mockClear();
+    mockToast.info.mockClear();
     mockToast.message.mockClear();
   });
 
-  it('saves changes to the selected variable', async () => {
+  it('automatically updates the selected variable when fields change', async () => {
     const user = userEvent.setup();
     render(<VariableEditorWorkspace variable={variable} onBack={onBack} />);
 
@@ -69,29 +73,21 @@ describe('VariableEditorWorkspace', () => {
     await user.clear(nameInput);
     await user.type(nameInput, 'temperature_2');
 
-    const descInput = screen.getByTestId('variable-description-input');
-    await user.clear(descInput);
-    await user.type(descInput, 'Updated description');
-
-    const minInput = screen.getByTestId('numeric-min-input');
-    fireEvent.change(minInput, { target: { value: '10' } });
-
-    const maxInput = screen.getByTestId('numeric-max-input');
-    fireEvent.change(maxInput, { target: { value: '120' } });
-
-    fireEvent.click(screen.getByRole('button', { name: /save changes/i }));
-
     await waitFor(() => expect(actions.updateVariable).toHaveBeenCalledWith(
       'v1',
       expect.objectContaining({
         name: 'temperature_2',
-        scope: 'local',
-        type: 'numeric',
-        description: 'Updated description',
-        config: expect.objectContaining({ min: 10, max: 120 }),
       }),
     ));
-    await waitFor(() => expect(mockToast.success).toHaveBeenCalledWith('Variable updated'));
+  });
+
+  it('triggers discardItemChanges when Discard button is clicked', () => {
+    render(<VariableEditorWorkspace variable={variable} onBack={onBack} />);
+
+    const discardBtn = screen.getByRole('button', { name: /discard/i });
+    fireEvent.click(discardBtn);
+
+    expect(actions.discardItemChanges).toHaveBeenCalledWith('variable', 'v1');
   });
 
   it('deletes the selected variable and clears the selection', async () => {

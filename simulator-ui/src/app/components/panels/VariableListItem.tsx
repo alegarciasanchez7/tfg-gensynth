@@ -1,5 +1,6 @@
 import { Trash2, Binary, ListChecks, ALargeSmall, CalendarClock, MapPin, ToggleLeft, ArrowUpRight } from 'lucide-react';
 import type { Variable } from '../../types';
+import { useApp } from '../../context';
 
 const typeConfig: Record<string, { icon: any; color: string; bg: string }> = {
   numeric: { icon: Binary, color: 'text-cyan-500', bg: 'bg-cyan-500/10' },
@@ -35,6 +36,8 @@ export function VariableListItem({
   onDelete,
   onInsert,
 }: VariableListItemProps) {
+  const { state } = useApp();
+  const isDirty = state?.dirtyItems?.variableIds?.has(variable.id) ?? false;
   const tc = typeConfig[variable.type] || typeConfig.string;
   const sc = scopeColors[variable.scope];
   const Icon = tc.icon;
@@ -54,9 +57,10 @@ export function VariableListItem({
           <div className={`flex items-center justify-center h-5 w-5 rounded-sm shrink-0 ${tc.bg} ${tc.color}`}>
             <Icon size={11} />
           </div>
-          <span className="text-[11px] font-semibold text-[var(--c-tx1)] truncate min-w-0 flex-1" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+          <span className="text-[11px] font-semibold text-[var(--c-tx1)] truncate min-w-0" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
             {variable.name}
           </span>
+          {isDirty && <span className="text-amber-400 font-bold text-xs" title="Unsaved changes">*</span>}
           <span
             className={`text-[8px] rounded px-1.5 py-0.5 tracking-tighter uppercase font-bold border shrink-0 ${sc}`}
             style={{ fontFamily: 'JetBrains Mono, monospace' }}

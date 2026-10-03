@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Radio, Globe, Wifi, Zap, Cpu, Layers, AlertTriangle,
   CheckCircle, Code2, Hash,
-  AlignLeft, RotateCcw, Save, Trash2, Braces, TableProperties, FileCode, FileText
+  AlignLeft, RotateCcw, Trash2, Braces, TableProperties, FileCode, FileText
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Flow, Group, ConnectionStatus } from '../../types';
@@ -36,6 +36,7 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
   const [formatMode, setFormatMode] = useState<'json' | 'xml' | 'csv' | 'plain'>(flow.format || (flow.technology === 'file' ? 'plain' : 'json'));
   const [activeTab, setActiveTab] = useState<'technical' | 'format'>('technical');
   const { state, actions } = useApp();
+  const isDirty = state?.dirtyItems?.flowIds?.has(flow.id) ?? false;
 
   const connectorSelection = state.flowConnectorSelections[flow.id] ?? null;
   const connectorConfig = state.flowConnectorConfigs[flow.id] ?? {};
@@ -88,32 +89,9 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
   const [draftTopic, setDraftTopic] = useState(flow.topic);
   const [draftInterval, setDraftInterval] = useState(flow.interval);
   const [draftBurst, setDraftBurst] = useState(flow.burst);
-  const [isSaving, setIsSaving] = useState(false);
   const [isDeletingFlow, setIsDeletingFlow] = useState(false);
   const [isConverterOpen, setIsConverterOpen] = useState(false);
   const [selectedTargetFormat, setSelectedTargetFormat] = useState<'json' | 'xml' | 'csv' | 'plain'>('xml');
-
-  const hasChanges = useMemo(() => {
-    const nameChanged = draftName.trim() !== flow.name;
-    const templateChanged = currentTemplate !== flow.template;
-    const formatChanged = formatMode !== (flow.format || 'json');
-    const configChanged = 
-      draftName.trim() !== flow.name ||
-      draftHost !== flow.host ||
-      draftPort !== flow.port ||
-      draftTopic !== flow.topic ||
-      draftInterval !== flow.interval ||
-      draftBurst !== flow.burst;
-    
-    const connectorChanged = 
-      (connectorSelection !== null && (
-        connectorSelection.pluginId !== flow.technology || 
-        connectorSelection.pluginVersion !== (flow.connectorVersion ?? '')
-      )) ||
-      JSON.stringify(connectorConfig) !== JSON.stringify(flow.connectorConfig ?? {});
-
-    return nameChanged || templateChanged || formatChanged || configChanged || connectorChanged;
-  }, [draftName, currentTemplate, flow, formatMode, draftHost, draftPort, draftTopic, draftInterval, draftBurst, connectorSelection, connectorConfig]);
 
   useEffect(() => {
     setDraftName(flow.name);
@@ -125,6 +103,10 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
     setFormatMode(flow.format || (flow.technology === 'file' ? 'plain' : 'json'));
   }, [flow.name, flow.host, flow.port, flow.topic, flow.interval, flow.burst, flow.format, flow.technology, flow.id]);
 
+  const handleUpdateConfig = (updates: Partial<Omit<Flow, 'id'>>) => {
+    actions.updateFlowConfig(group.id, flow.id, updates);
+  };
+
   const handleFormatBadgeClick = (mode: 'json' | 'xml' | 'csv' | 'plain') => {
     setSelectedTargetFormat(mode);
     setIsConverterOpen(true);
@@ -135,80 +117,35 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
       .filter((entry) => entry.pluginId === pluginId)
       .sort((left, right) => compareVersions(right.pluginVersion, left.pluginVersion))[0];
 
-    if (!descriptor) {
-      return;
-    }
+    if (!descriptor) return;
 
     actions.setFlowConnectorSelection(flow.id, descriptor.pluginId, descriptor.pluginVersion);
+    handleUpdateConfig({ technology: descriptor.pluginId });
   };
 
   const handleConnectorVersionChange = (pluginVersion: string) => {
-    if (!latestConnectorForFlow) {
-      return;
-    }
+    if (!latestConnectorForFlow) return;
 
     const descriptor = connectorVersions.find((entry) => entry.pluginVersion === pluginVersion);
-    if (!descriptor) {
-      return;
-    }
+    if (!descriptor) return;
 
     actions.setFlowConnectorSelection(flow.id, descriptor.pluginId, descriptor.pluginVersion);
+    handleUpdateConfig({ connectorVersion: pluginVersion });
   };
 
   const handleConnectorConfigChange = (nextConfig: Record<string, unknown>) => {
     actions.setFlowConnectorConfig(flow.id, nextConfig);
+    handleUpdateConfig({ connectorConfig: nextConfig });
   };
 
   const handleDiscard = () => {
-    setDraftName(flow.name);
-    setDraftHost(flow.host);
-    setDraftPort(flow.port);
-    setDraftTopic(flow.topic);
-    setDraftInterval(flow.interval);
-    setDraftBurst(flow.burst);
-    onTemplateChange(flow.template || '');
-    setFormatMode(flow.format || (flow.technology === 'file' ? 'plain' : 'json'));
-  };
-
-  const handleSaveChanges = async () => {
-    if (!draftName.trim()) {
-      toast.error('Flow name is required');
-      return;
-    }
-
-    if (!draftHost.trim()) {
-      toast.error('Host is required');
-      return;
-    }
-
-    try {
-      setIsSaving(true);
-      await actions.updateFlowConfig(group.id, flow.id, {
-        name: draftName.trim(),
-        template: currentTemplate,
-        format: formatMode,
-        technology: connectorSelection?.pluginId ?? latestConnectorForFlow?.pluginId ?? flow.technology,
-        host: draftHost.trim(),
-        port: draftPort,
-        topic: draftTopic.trim(),
-        interval: draftInterval,
-        burst: draftBurst,
-        connectorConfig: connectorConfig,
-      });
-      toast.success('Flow changes saved');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to save flow changes';
-      toast.error(message);
-    } finally {
-      setIsSaving(false);
-    }
+    actions.discardItemChanges('flow', flow.id);
+    toast.info(`Changes discarded for flow "${flow.name}"`);
   };
 
   const handleDeleteFlow = async () => {
     const confirmed = window.confirm(`Delete flow "${flow.name}"? This action cannot be undone.`);
-    if (!confirmed) {
-      return;
-    }
+    if (!confirmed) return;
 
     try {
       setIsDeletingFlow(true);
@@ -229,8 +166,9 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
       <div className="px-4 py-3 border-b border-[var(--c-br2)] flex items-center gap-3 shrink-0 bg-[var(--c-bg2)]">
         <div className="flex items-center gap-2">
           <span className="text-cyan-500">{techIcon[flow.technology] ?? <Layers size={12} />}</span>
-          <span className="text-sm text-[var(--c-tx1)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-            {draftName || flow.name}
+          <span className="text-sm text-[var(--c-tx1)] flex items-center gap-1" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+            {flow.name}
+            {isDirty && <span className="text-amber-400 font-bold text-xs" title="Unsaved changes">*</span>}
           </span>
         </div>
         <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded border text-[10px] ${conn.bg} ${conn.color}`}
@@ -249,28 +187,17 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
         )}
         <div className="ml-auto flex items-center gap-1.5">
           <button
-            onClick={handleSaveChanges}
-            disabled={!hasChanges || isSaving}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[10px] tracking-wider transition-all disabled:opacity-30 disabled:cursor-not-allowed ${
-              hasChanges 
-                ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20' 
-                : 'border-[var(--c-br1)] text-[var(--c-tx4)]'
-            }`}
-            style={{ fontFamily: 'JetBrains Mono, monospace' }}
-          >
-            <Save size={11} /> {isSaving ? 'Saving...' : 'Save Changes'}
-          </button>
-          <button
             onClick={handleDiscard}
-            disabled={!hasChanges || isSaving}
+            disabled={!isDirty}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-[var(--c-br1)] bg-[var(--c-bg1)] text-[var(--c-tx4)] text-[10px] tracking-wider hover:text-[var(--c-tx1)] hover:bg-[var(--c-bg5)] transition-all disabled:opacity-30 disabled:cursor-not-allowed"
             style={{ fontFamily: 'JetBrains Mono, monospace' }}
+            title="Revert flow configuration to last saved state"
           >
             <RotateCcw size={11} /> Discard
           </button>
           <button
             onClick={handleDeleteFlow}
-            disabled={isSaving || isDeletingFlow}
+            disabled={isDeletingFlow}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-red-500/40 bg-red-500/10 text-red-500 text-[10px] tracking-wider hover:bg-red-500/20 transition-all disabled:opacity-50"
             style={{ fontFamily: 'JetBrains Mono, monospace' }}
           >
@@ -307,17 +234,17 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
           flow={flow}
           activeTab={activeTab}
           draftName={draftName}
-          setDraftName={setDraftName}
+          setDraftName={(val) => { setDraftName(val); handleUpdateConfig({ name: val }); }}
           draftHost={draftHost}
-          setDraftHost={setDraftHost}
+          setDraftHost={(val) => { setDraftHost(val); handleUpdateConfig({ host: val }); }}
           draftPort={draftPort}
-          setDraftPort={setDraftPort}
+          setDraftPort={(val) => { setDraftPort(val); handleUpdateConfig({ port: val }); }}
           draftTopic={draftTopic}
-          setDraftTopic={setDraftTopic}
+          setDraftTopic={(val) => { setDraftTopic(val); handleUpdateConfig({ topic: val }); }}
           draftInterval={draftInterval}
-          setDraftInterval={setDraftInterval}
+          setDraftInterval={(val) => { setDraftInterval(val); handleUpdateConfig({ interval: val }); }}
           draftBurst={draftBurst}
-          setDraftBurst={setDraftBurst}
+          setDraftBurst={(val) => { setDraftBurst(val); handleUpdateConfig({ burst: val }); }}
           connectorSelection={connectorSelection}
           latestConnectorForFlow={latestConnectorForFlow}
           connectorVersions={connectorVersions}
@@ -381,7 +308,10 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
           <div className="flex-1 overflow-hidden relative">
             <TemplateEditor
               value={currentTemplate}
-              onChange={onTemplateChange}
+              onChange={(val) => {
+                onTemplateChange(val);
+                handleUpdateConfig({ template: val });
+              }}
               variables={state.variables}
               flowId={flow.id}
               groupId={group.id}
@@ -407,6 +337,7 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
         onApplyConversion={(convertedContent, newFormat) => {
           setFormatMode(newFormat);
           onTemplateChange(convertedContent);
+          handleUpdateConfig({ template: convertedContent, format: newFormat });
           toast.success(`Converted format to ${newFormat.toUpperCase()}`);
         }}
       />
