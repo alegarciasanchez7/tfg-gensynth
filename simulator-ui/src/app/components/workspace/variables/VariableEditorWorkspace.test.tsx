@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Variable } from '../../../types';
@@ -79,6 +79,21 @@ describe('VariableEditorWorkspace', () => {
         name: 'temperature_2',
       }),
     ));
+  });
+
+  it('shows Discard and Delete in the header, next to the variable name, before the identity card', () => {
+    render(<VariableEditorWorkspace variable={variable} onBack={onBack} />);
+
+    const heading = screen.getByRole('heading', { name: /temperature/i });
+    const header = heading.closest('div.flex.items-start') as HTMLElement;
+    expect(header).not.toBeNull();
+    expect(within(header).getByRole('button', { name: /discard/i })).toBeTruthy();
+    expect(within(header).getByRole('button', { name: /delete variable/i })).toBeTruthy();
+
+    const deleteButton = screen.getByRole('button', { name: /delete variable/i });
+    const nameInput = screen.getByTestId('variable-name-input');
+    // The actions must be rendered above the identity fields
+    expect(deleteButton.compareDocumentPosition(nameInput) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('triggers discardItemChanges when Discard button is clicked', () => {

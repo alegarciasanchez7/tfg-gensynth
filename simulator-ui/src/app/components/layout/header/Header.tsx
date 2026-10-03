@@ -5,7 +5,7 @@ import type { ConnectorPluginDescriptor } from '../../../core/types';
 import { PluginImportPanel } from './PluginImportPanel';
 import { ConnectorCatalogPanel } from './ConnectorCatalogPanel';
 import { SettingsPanel } from './SettingsPanel';
-import { ResourceBar } from '../resource-bar/ResourceBar';
+import { PROJECT_FILE_EXTENSION } from '../../../core/fileStorage';
 
 interface HeaderProps {
   systemStatus: SystemStatus;
@@ -67,6 +67,10 @@ export function Header({
   const isRunning = systemStatus === 'running';
 
   const displayName = currentFileName || 'Untitled';
+  // Every project is a .gsynth file, so the extension is hidden to save header width
+  const shortName = displayName.toLowerCase().endsWith(PROJECT_FILE_EXTENSION)
+    ? displayName.slice(0, -PROJECT_FILE_EXTENSION.length)
+    : displayName;
 
   // Perform a pre-start check to highlight interlock/cycle/broken-references errors
   const hasPreStartErrors = useMemo(() => {
@@ -161,12 +165,14 @@ export function Header({
         <div className="flex items-center justify-center w-7 h-7 overflow-hidden">
           <img src="/logo_azul.png" alt="GenSynth Logo" className="w-full h-full object-contain" />
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 min-w-0">
           <span
-            className="text-sm font-bold text-[var(--c-tx1)] tracking-tight"
+            className="max-w-[160px] truncate text-sm font-bold text-[var(--c-tx1)] tracking-tight"
             style={{ fontFamily: 'JetBrains Mono, monospace' }}
+            title={displayName}
+            data-testid="project-file-name"
           >
-            {displayName}
+            {shortName}
           </span>
           {isDirty && (
             <span
@@ -315,14 +321,6 @@ export function Header({
           <PluginImportPanel onClose={() => setShowPluginImport(false)} />
         )}
       </div>
-
-      {/* ── Prominent Section Divider ── */}
-      <div className="flex items-center shrink-0 mx-1.5">
-        <div className="w-0.5 h-6 bg-[var(--c-br3)]/60 rounded-full" />
-      </div>
-
-      {/* ── Telemetry / Resource Monitor ── */}
-      <ResourceBar />
 
       {/* Spacer */}
       <div className="flex-1 min-w-[12px]" />
