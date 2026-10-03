@@ -5,7 +5,15 @@
 
 import { Group, Variable, Flow } from '../types';
 
+/** Extension of GenSynth project files. Must match ProjectFileFormat.EXTENSION in the Core. */
+export const PROJECT_FILE_EXTENSION = '.gsynth';
+/** Marker stored in every project file. Must match ProjectFileFormat.FORMAT_ID in the Core. */
+export const PROJECT_FORMAT_ID = 'gensynth-project';
+/** Current project file format version. Must match ProjectFileFormat.VERSION in the Core. */
+export const PROJECT_FORMAT_VERSION = '1.0.0';
+
 export interface ProjectSnapshot {
+  format: typeof PROJECT_FORMAT_ID;
   version: string;
   exportedAt: string;
   groups: Group[];
@@ -25,6 +33,7 @@ export interface PickedProjectFile {
 interface FilePickerOptions {
   suggestedName?: string;
   multiple?: boolean;
+  excludeAcceptAllOption?: boolean;
   types?: { description: string; accept: Record<string, string[]> }[];
 }
 
@@ -38,8 +47,12 @@ interface PermissionAwareFileHandle {
 }
 
 const PROJECT_FILE_TYPES: FilePickerOptions['types'] = [
-  { description: 'GenSynth configuration', accept: { 'application/json': ['.json'] } },
+  { description: 'GenSynth configuration', accept: { 'application/json': [PROJECT_FILE_EXTENSION] } },
 ];
+
+export function hasProjectFileExtension(fileName: string): boolean {
+  return fileName.toLowerCase().endsWith(PROJECT_FILE_EXTENSION);
+}
 
 function getFilePickers(): FileSystemAccessWindow {
   return typeof window === 'undefined' ? {} : (window as unknown as FileSystemAccessWindow);
@@ -57,7 +70,7 @@ export function normalizeFlowFromSnapshot(flow: Partial<Flow>): Flow {
     id: flow.id ?? crypto.randomUUID(),
     name: flow.name ?? 'Unnamed Flow',
     technology: flow.technology ?? 'unknown',
-    connectionStatus: (flow.connectionStatus ?? 'disconnected') as any,
+    connectionStatus: flow.connectionStatus ?? 'disconnected',
     throughput: flow.throughput ?? '0 msg/s',
     hasError: flow.hasError ?? false,
     errorMessage: flow.errorMessage,
@@ -82,7 +95,7 @@ export function normalizeGroupFromSnapshot(group: Partial<Group>): Group {
   return {
     id: group.id ?? crypto.randomUUID(),
     name: group.name ?? 'Unnamed Group',
-    status: (group.status ?? 'stopped') as any,
+    status: group.status ?? 'stopped',
     throughput: group.throughput ?? '0 msg/s',
     description: group.description ?? '',
     threads: typeof group.threads === 'number' ? group.threads : 1,
@@ -101,8 +114,8 @@ export function normalizeVariableFromSnapshot(variable: Partial<Variable>): Vari
   return {
     id: variable.id ?? crypto.randomUUID(),
     name: variable.name ?? 'Unnamed Variable',
-    type: (variable.type ?? 'string') as any,
-    scope: (variable.scope ?? 'local') as any,
+    type: variable.type ?? 'string',
+    scope: variable.scope ?? 'local',
     flowId: variable.flowId,
     groupId: variable.groupId,
     config: variable.config ?? {},
@@ -115,7 +128,8 @@ export function normalizeVariableFromSnapshot(variable: Partial<Variable>): Vari
  */
 export function createProjectSnapshot(groups: Group[], variables: Variable[]): ProjectSnapshot {
   return {
-    version: '1.0.0',
+    format: PROJECT_FORMAT_ID,
+    version: PROJECT_FORMAT_VERSION,
     exportedAt: new Date().toISOString(),
     groups,
     variables,
@@ -123,9 +137,12 @@ export function createProjectSnapshot(groups: Group[], variables: Variable[]): P
 }
 
 /**
- * Download snapshot as JSON file to user's computer
+ * Download snapshot as a project file to user's computer
  */
-export function downloadProjectSnapshot(snapshot: ProjectSnapshot, filename: string = 'gen-synth-project.json'): void {
+export function downloadProjectSnapshot(
+  snapshot: ProjectSnapshot,
+  filename: string = `gen-synth-project${PROJECT_FILE_EXTENSION}`,
+): void {
   const json = JSON.stringify(snapshot, null, 2);
   const blob = new Blob([json], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -144,9 +161,14 @@ export function downloadProjectSnapshot(snapshot: ProjectSnapshot, filename: str
 }
 
 /**
- * Load and parse a project snapshot from a File object
+ * Load and parse a project snapshot from a File object.
+ * Rejects files that are not GenSynth project files (wrong extension or missing format marker).
  */
 export async function loadProjectSnapshotFromFile(file: File): Promise<ProjectSnapshot> {
+  if (!hasProjectFileExtension(file.name)) {
+    throw new Error(`Not a GenSynth project file: expected a ${PROJECT_FILE_EXTENSION} file`);
+  }
+
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
 
@@ -157,7 +179,16 @@ export async function loadProjectSnapshotFromFile(file: File): Promise<ProjectSn
           throw new Error('File content is not text');
         }
 
-        const snapshot = JSON.parse(content) as ProjectSnapshot;
+        let snapshot: ProjectSnapshot;
+        try {
+          snapshot = JSON.parse(content) as ProjectSnapshot;
+        } catch {
+          throw new Error('Not a GenSynth project file: invalid JSON content');
+        }
+
+        if (!snapshot || typeof snapshot !== 'object' || snapshot.format !== PROJECT_FORMAT_ID) {
+          throw new Error("Not a GenSynth project file: missing or unknown 'format' marker");
+        }
 
         // Validate snapshot structure
         if (!snapshot.version || !snapshot.groups || !snapshot.variables) {
@@ -170,6 +201,7 @@ export async function loadProjectSnapshotFromFile(file: File): Promise<ProjectSn
 
         // Normalize groups and variables to ensure all fields are present and valid
         const normalizedSnapshot: ProjectSnapshot = {
+          format: PROJECT_FORMAT_ID,
           version: snapshot.version,
           exportedAt: snapshot.exportedAt,
           groups: snapshot.groups.map(normalizeGroupFromSnapshot),
@@ -197,7 +229,7 @@ export function triggerFileSelection(): Promise<File | null> {
   return new Promise((resolve) => {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.json';
+    input.accept = PROJECT_FILE_EXTENSION;
 
     input.onchange = () => {
       const file = input.files?.[0];
@@ -229,7 +261,7 @@ export async function pickProjectFile(): Promise<PickedProjectFile | null> {
   const { showOpenFilePicker } = getFilePickers();
   if (supportsFileSystemAccess() && showOpenFilePicker) {
     try {
-      const [handle] = await showOpenFilePicker({ multiple: false, types: PROJECT_FILE_TYPES });
+      const [handle] = await showOpenFilePicker({ multiple: false, excludeAcceptAllOption: true, types: PROJECT_FILE_TYPES });
       return { file: await handle.getFile(), handle };
     } catch (error) {
       if (isAbortError(error)) return null;
@@ -251,7 +283,7 @@ export async function pickSaveTarget(suggestedName: string): Promise<FileSystemF
     throw new Error('Saving to a file is not supported by this browser');
   }
   try {
-    return await showSaveFilePicker({ suggestedName, types: PROJECT_FILE_TYPES });
+    return await showSaveFilePicker({ suggestedName, excludeAcceptAllOption: true, types: PROJECT_FILE_TYPES });
   } catch (error) {
     if (isAbortError(error)) return null;
     throw error;

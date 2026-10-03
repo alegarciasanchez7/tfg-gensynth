@@ -260,12 +260,12 @@ public class UiBridgeWebSocketServerTest {
                   "type": "IMPORT_STATE",
                   "commandId": "cmd-import",
                   "protocolVersion": "1.0.0",
-                  "payload": { "groups": [], "variables": [], "sourceFilePath": "/tmp/project.json" }
+                  "payload": { "groups": [], "variables": [], "sourceFilePath": "/tmp/project.gsynth" }
                 }
                 """;
         server.onMessage(mockConn, importCommand);
 
-        Path exportPath = tempDir.resolve("exported.json");
+        Path exportPath = tempDir.resolve("exported.gsynth");
         String exportCommand = "{\"type\":\"EXPORT_STATE\",\"commandId\":\"cmd-export\",\"protocolVersion\":\"1.0.0\","
                 + "\"payload\":{\"filePath\":\"" + exportPath.toString().replace("\\", "\\\\") + "\"}}";
         server.onMessage(mockConn, exportCommand);
@@ -285,11 +285,16 @@ public class UiBridgeWebSocketServerTest {
 
         assertNotNull("IMPORT_STATE should be acknowledged", importAck);
         assertEquals("state_imported", importAck.path("result").asText());
-        assertEquals("/tmp/project.json", importAck.path("filePath").asText());
+        assertEquals("/tmp/project.gsynth", importAck.path("filePath").asText());
 
         assertNotNull("EXPORT_STATE should be acknowledged", exportAck);
         assertEquals("state_exported", exportAck.path("result").asText());
         assertEquals(exportPath.toString(), exportAck.path("filePath").asText());
         assertTrue("Exported file should exist", Files.exists(exportPath));
+
+        // The exported file must be a valid GenSynth project that can be loaded back
+        JsonNode exported = com.gensynth.core.persistence.ProjectFileFormat.read(exportPath, mapper);
+        assertEquals(com.gensynth.core.persistence.ProjectFileFormat.FORMAT_ID, exported.path("format").asText());
+        assertEquals(com.gensynth.core.persistence.ProjectFileFormat.VERSION, exported.path("version").asText());
     }
 }

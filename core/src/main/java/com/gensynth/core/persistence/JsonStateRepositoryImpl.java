@@ -185,10 +185,11 @@ public class JsonStateRepositoryImpl implements StateRepository {
                 variablesData.add(variable.toPayload());
             }
             
+            exportData.put("format", ProjectFileFormat.FORMAT_ID);
+            exportData.put("version", ProjectFileFormat.VERSION);
+            exportData.put("exportedAt", java.time.Instant.now().toString());
             exportData.put("groups", groupsData);
             exportData.put("variables", variablesData);
-            exportData.put("exportedAt", java.time.Instant.now().toString());
-            exportData.put("version", "1.0");
 
             objectMapper.writeValue(targetFile.toFile(), exportData);
         } catch (IOException e) {
