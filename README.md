@@ -107,6 +107,19 @@ To build and run the application as a standalone desktop app with embedded Chrom
 
 *Note: The first run will download the native Chromium binaries (~150MB) for your platform into the `core/jcef-bundle` directory.*
 
+## 💾 Project Files (`.gsynth`)
+
+Projects are saved and loaded as `.gsynth` files. They are JSON documents with a format marker:
+
+```json
+{ "format": "gensynth-project", "version": "1.0.0", "exportedAt": "...", "groups": [], "variables": [] }
+```
+
+- The save/load dialogs (browser and desktop) only show `.gsynth` files, and saving always uses that extension.
+- Loading rejects any file without the `.gsynth` extension or without `"format": "gensynth-project"`.
+- Plain `.json` files are no longer accepted. To migrate an old configuration, rename it to `.gsynth` and add the `"format": "gensynth-project"` field.
+- The format is defined in `core/.../persistence/ProjectFileFormat.java` and mirrored in `simulator-ui/src/app/core/fileStorage.ts`.
+
 ## 🔧 Tech Stack
 
 ### Backend

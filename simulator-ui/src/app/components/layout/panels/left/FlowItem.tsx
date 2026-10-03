@@ -14,6 +14,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useApp } from '../../../../context';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -84,6 +85,8 @@ export function FlowItem({
   onDelete,
   formatTemplate,
 }: FlowItemProps) {
+  const { state } = useApp();
+  const isDirty = state?.dirtyItems?.flowIds?.has(flow.id) ?? false;
   const [isCloneOpen, setIsCloneOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   
@@ -141,6 +144,7 @@ export function FlowItem({
         >
           {flow.name.split('·')[1]?.trim() || flow.name}
         </span>
+        {isDirty && <span className="text-amber-400 font-bold text-xs" title="Unsaved changes">*</span>}
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

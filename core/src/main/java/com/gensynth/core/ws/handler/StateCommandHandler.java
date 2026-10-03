@@ -83,7 +83,8 @@ public class StateCommandHandler implements CommandHandler {
      *
      * @param conn the WebSocket connection
      * @param commandId the command identifier
-     * @param payload the JSON payload containing the complete project state
+     * @param payload the JSON payload containing the complete project state and, optionally,
+     *                the {@code sourceFilePath} it was read from (echoed back in the ack)
      */
     public void handleImportState(WebSocket conn, String commandId, JsonNode payload) {
         UiBridgeWebSocketServer server = ctx.getServer();
@@ -140,7 +141,13 @@ public class StateCommandHandler implements CommandHandler {
                 persistState();
             }
 
-            server.sendAck(conn, commandId, "state_imported");
+            // Echo the source file path (set by the desktop LOAD_STATE dialog) so the UI can track the open file
+            String sourceFilePath = payload.path("sourceFilePath").asText(null);
+            if (sourceFilePath != null && !sourceFilePath.isBlank()) {
+                server.sendAck(conn, commandId, "state_imported", Map.of("filePath", sourceFilePath));
+            } else {
+                server.sendAck(conn, commandId, "state_imported");
+            }
             server.logToBackend("info", "SYSTEM", "State imported from UI (" + newGroups.size() + " groups)", commandId);
             server.broadcastGroupsUpdate();
             server.broadcastSystemStatus();
@@ -176,7 +183,7 @@ public class StateCommandHandler implements CommandHandler {
                 new ArrayList<>(ctx.getVariablesById().values())
             );
 
-            server.sendAck(conn, commandId, "state_exported");
+            server.sendAck(conn, commandId, "state_exported", Map.of("filePath", filePath));
             server.sendLog(conn, "info", "SYSTEM", "State exported to: " + filePath);
         } catch (Exception e) {
             server.sendError(conn, commandId, "EXPORT_FAILED", "Failed to export state: " + e.getMessage(), Map.of("path", filePath));

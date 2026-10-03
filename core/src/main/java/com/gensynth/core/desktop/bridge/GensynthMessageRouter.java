@@ -1,9 +1,9 @@
 package com.gensynth.core.desktop.bridge;
 
+import com.gensynth.core.desktop.DesktopFileChooser;
+import com.gensynth.core.persistence.ProjectFileFormat;
 import com.gensynth.core.ws.*;
 import org.java_websocket.WebSocket;
-import java.nio.file.Files;
-import java.nio.charset.StandardCharsets;
 import org.cef.browser.CefBrowser;
 import org.cef.browser.CefFrame;
 import org.cef.callback.CefQueryCallback;
@@ -16,6 +16,10 @@ import org.slf4j.LoggerFactory;
  */
 public class GensynthMessageRouter extends CefMessageRouterHandlerAdapter {
     private static final Logger logger = LoggerFactory.getLogger(GensynthMessageRouter.class);
+    private static final javax.swing.filechooser.FileNameExtensionFilter PROJECT_FILE_FILTER =
+            new javax.swing.filechooser.FileNameExtensionFilter(
+                    "GenSynth project (*" + ProjectFileFormat.EXTENSION + ")", ProjectFileFormat.EXTENSION.substring(1));
+    private static final String DEFAULT_PROJECT_FILE_NAME = "gen-synth-project" + ProjectFileFormat.EXTENSION;
     private final javax.swing.JFrame parentFrame;
 
     public GensynthMessageRouter(javax.swing.JFrame parentFrame) {
@@ -34,22 +38,14 @@ public class GensynthMessageRouter extends CefMessageRouterHandlerAdapter {
                 return true;
             }
 
-            // Intercept SAVE_STATE to show native file dialog in desktop mode
+            // Intercept SAVE_STATE to show a file dialog in desktop mode
             if (request.contains("SAVE_STATE")) {
                 javax.swing.SwingUtilities.invokeLater(() -> {
-                    java.awt.FileDialog fileDialog = new java.awt.FileDialog(parentFrame,
-                            "Save Gen-Synth Configuration", java.awt.FileDialog.SAVE);
-                    fileDialog.setFile("*.json");
-                    fileDialog.setVisible(true);
+                    java.util.Optional<java.io.File> selected = DesktopFileChooser.saveFile(parentFrame,
+                            "Save Gen-Synth Configuration", PROJECT_FILE_FILTER, new java.io.File(DEFAULT_PROJECT_FILE_NAME));
 
-                    String directory = fileDialog.getDirectory();
-                    String file = fileDialog.getFile();
-
-                    if (directory != null && file != null) {
-                        String path = new java.io.File(directory, file).getAbsolutePath();
-                        if (!path.toLowerCase().endsWith(".json")) {
-                            path += ".json";
-                        }
+                    if (selected.isPresent()) {
+                        String path = ProjectFileFormat.ensureExtension(selected.get().getAbsolutePath());
 
                         // Extract original commandId if present to keep UI synchronized
                         String originalCommandId = extractCommandId(request);
@@ -79,18 +75,16 @@ public class GensynthMessageRouter extends CefMessageRouterHandlerAdapter {
                 return true;
             }
 
-            // Intercept PICK_DIRECTORY to show native folder picker
+            // Intercept PICK_DIRECTORY to show a folder picker
             if (request.contains("PICK_DIRECTORY")) {
                 String commandId = extractCommandId(request);
                 javax.swing.SwingUtilities.invokeLater(() -> {
-                    javax.swing.JFileChooser fileChooser = new javax.swing.JFileChooser();
-                    fileChooser.setFileSelectionMode(javax.swing.JFileChooser.DIRECTORIES_ONLY);
-                    fileChooser.setDialogTitle("Select Output Directory");
-                    int result = fileChooser.showOpenDialog(parentFrame);
+                    java.util.Optional<java.io.File> selected =
+                            DesktopFileChooser.chooseDirectory(parentFrame, "Select Output Directory");
 
                     java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
-                    if (result == javax.swing.JFileChooser.APPROVE_OPTION && fileChooser.getSelectedFile() != null) {
-                        String path = fileChooser.getSelectedFile().getAbsolutePath();
+                    if (selected.isPresent()) {
+                        String path = selected.get().getAbsolutePath();
                         payload.put("status", "success");
                         payload.put("path", path);
                         server.broadcastMessage("PICK_DIRECTORY_RESULT", commandId, payload);
@@ -115,24 +109,22 @@ public class GensynthMessageRouter extends CefMessageRouterHandlerAdapter {
                 return true;
             }
 
-            // Intercept LOAD_STATE to show native file dialog in desktop mode
+            // Intercept LOAD_STATE to show a file dialog in desktop mode
             if (request.contains("LOAD_STATE")) {
                 javax.swing.SwingUtilities.invokeLater(() -> {
-                    java.awt.FileDialog fileDialog = new java.awt.FileDialog(parentFrame,
-                            "Load Gen-Synth Project", java.awt.FileDialog.LOAD);
-                    fileDialog.setFile("*.json");
-                    fileDialog.setVisible(true);
-
-                    String directory = fileDialog.getDirectory();
-                    String file = fileDialog.getFile();
+                    java.util.Optional<java.io.File> selected =
+                            DesktopFileChooser.openFile(parentFrame, "Load Gen-Synth Project", PROJECT_FILE_FILTER);
                     String commandId = extractCommandId(request);
 
-                    if (directory != null && file != null) {
+                    if (selected.isPresent()) {
                         try {
-                            java.io.File selectedFile = new java.io.File(directory, file);
-                            String content = Files.readString(selectedFile.toPath(), StandardCharsets.UTF_8);
-                            // Validate JSON content before sending
-                            server.getObjectMapper().readTree(content);
+                            java.io.File selectedFile = selected.get();
+                            // Reject anything that is not a GenSynth project before touching the Core state
+                            com.fasterxml.jackson.databind.node.ObjectNode project =
+                                    ProjectFileFormat.read(selectedFile.toPath(), server.getObjectMapper());
+                            // Attach the source path so the UI knows which file is open
+                            project.put("sourceFilePath", selectedFile.getAbsolutePath());
+                            String content = server.getObjectMapper().writeValueAsString(project);
 
                             String fullImportCommand = String.format(
                                     "{\"type\":\"IMPORT_STATE\",\"commandId\":\"%s\",\"protocolVersion\":\"1.0.0\",\"payload\":%s}",
@@ -142,6 +134,12 @@ public class GensynthMessageRouter extends CefMessageRouterHandlerAdapter {
 
                         } catch (Exception e) {
                             logger.error("[BRIDGE] Error loading file", e);
+                            // The UI only listens to the desktop socket, so report the error there too
+                            WebSocket desktopSocket = server.getDesktopSocket();
+                            if (desktopSocket != null) {
+                                String code = e instanceof IllegalArgumentException ? "INVALID_PROJECT_FILE" : "LOAD_FAILED";
+                                server.sendError(desktopSocket, commandId, code, e.getMessage(), null);
+                            }
                             callback.failure(500, "Error loading file: " + e.getMessage());
                         }
                     } else {

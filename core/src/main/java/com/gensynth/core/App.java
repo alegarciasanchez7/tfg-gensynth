@@ -2,6 +2,7 @@ package com.gensynth.core;
 
 import com.gensynth.core.config.AppConfig;
 import com.gensynth.core.ws.UiBridgeWebSocketServer;
+import com.gensynth.core.desktop.DesktopFileChooser;
 import com.gensynth.core.desktop.MainFrame;
 import com.gensynth.core.desktop.NativeLoader;
 import org.slf4j.Logger;
@@ -201,6 +202,7 @@ public class App {
 
             if (isDesktop) {
                 logger.info("[DESKTOP] Starting Gen-Synth in Desktop Mode...");
+                DesktopFileChooser.installNativeLookAndFeel();
                 org.cef.CefApp cefApp = NativeLoader.initialize();
 
                 // Load standard http protocol on gensynth.local domain, fully compatible across all Linux and Windows platforms

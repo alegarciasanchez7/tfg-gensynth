@@ -93,14 +93,37 @@ function parseConfig(text: string) {
 }
 
 export function useVariableEditor(variable: Variable) {
-  const { actions } = useApp();
-  const [draft, setDraft] = useState<VariableDraft>(() => createDraft(variable));
-  const [isSaving, setIsSaving] = useState(false);
+  const { state, actions } = useApp();
+  const [draft, setDraftState] = useState<VariableDraft>(() => createDraft(variable));
   const [isDeleting, setIsDeleting] = useState(false);
+  const isDirty = state?.dirtyItems?.variableIds?.has(variable.id) ?? false;
 
   useEffect(() => {
-    setDraft(createDraft(variable));
+    setDraftState(createDraft(variable));
   }, [variable]);
+
+  const setDraft: Dispatch<SetStateAction<VariableDraft>> = (valueOrFn) => {
+    setDraftState((prev) => {
+      const next = typeof valueOrFn === 'function' ? valueOrFn(prev) : valueOrFn;
+      // Auto-update context state
+      let parsed: Variable['config'] = variable.config;
+      try {
+        parsed = parseConfig(next.configText);
+      } catch {
+        // Keep previous config if invalid json while typing
+      }
+      actions.updateVariable(variable.id, {
+        name: next.name.trim(),
+        type: next.type,
+        scope: next.scope,
+        description: next.description.trim(),
+        config: parsed,
+        flowId: next.flowId,
+        groupId: next.groupId,
+      });
+      return next;
+    });
+  };
 
   const typeTheme = useMemo(() => VARIABLE_TYPES[draft.type], [draft.type]);
 
@@ -116,76 +139,10 @@ export function useVariableEditor(variable: Variable) {
     }
   }, [draft.scope]);
 
-  const handleSave = async () => {
-    let parsedConfig: Variable['config'];
-    try {
-      parsedConfig = parseConfig(draft.configText);
-    } catch {
-      toast.error('Config JSON is invalid');
-      return;
-    }
-
-    const { validateConfig, detectCycle } = useVariableValidation();
-    const variablesList = actions.getVariables?.() || [];
-    const configErrors = validateConfig(draft.type, parsedConfig, variablesList);
-    if (Object.keys(configErrors).length > 0) {
-      toast.error(`Validation error: ${Object.values(configErrors)[0]}`);
-      return;
-    }
-
-    if (draft.type === 'numeric' && parsedConfig.formula) {
-      const cycle = detectCycle(variablesList, variable.id, draft.name, parsedConfig.formula);
-      if (cycle) {
-        toast.error(`Circular dependency detected: ${cycle.join(' → ')}`);
-        return;
-      }
-    }
-
-    setIsSaving(true);
-    try {
-      await actions.updateVariable(variable.id, {
-        name: draft.name.trim(),
-        type: draft.type,
-        scope: draft.scope,
-        description: draft.description.trim(),
-        config: parsedConfig,
-        flowId: draft.flowId,
-        groupId: draft.groupId,
-      });
-      toast.success('Variable updated');
-    } catch (error) {
-      const errorCode = typeof error === 'object' && error !== null && 'code' in error
-        ? String((error as { code?: string }).code ?? '')
-        : '';
-
-      if (errorCode === 'NOT_FOUND') {
-        try {
-          await actions.createVariable(
-            draft.name.trim(),
-            draft.type,
-            draft.scope,
-            {
-              ...parsedConfig,
-              ...(draft.description.trim() ? { description: draft.description.trim() } : {}),
-            },
-            variable.id,
-          );
-          toast.success('Variable restored and updated');
-          return;
-        } catch {
-          // fall through to the generic error below
-        }
-      }
-
-      toast.error('Unable to update variable');
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
   const handleDiscard = () => {
-    setDraft(createDraft(variable));
-    toast.message('Changes discarded');
+    actions.discardItemChanges('variable', variable.id);
+    setDraftState(createDraft(variable));
+    toast.info(`Changes discarded for variable "${variable.name}"`);
   };
 
   const handleDelete = async () => {
@@ -219,35 +176,27 @@ export function useVariableEditor(variable: Variable) {
         cycle = detectCycle(variablesList, variable.id, draft.name, parsedConfig.formula);
       }
       return { errors, cycle, isJsonValid: true };
-    } catch (e) {
+    } catch {
       return { errors: {}, cycle: null, isJsonValid: false };
     }
   }, [draft.configText, draft.type, draft.name, variable.id, actions]);
 
   const hasValidationError = !validationResult.isJsonValid || Object.keys(validationResult.errors).length > 0 || validationResult.cycle !== null;
 
-  const saveButtonTitle = useMemo(() => {
-    if (!validationResult.isJsonValid) return 'Cannot save: Invalid JSON structure';
-    if (validationResult.cycle) return `Cannot save: Cycle detected (${validationResult.cycle.join(' → ')})`;
-    const firstErrKey = Object.keys(validationResult.errors)[0];
-    if (firstErrKey) return `Cannot save: ${validationResult.errors[firstErrKey]}`;
-    return 'Save changes';
-  }, [validationResult]);
-
   return {
     draft,
-    setDraft: setDraft as Dispatch<SetStateAction<VariableDraft>>,
-    isSaving,
+    setDraft,
+    isSaving: false,
     isDeleting,
+    isDirty,
     typeTheme,
     scopeBadgeClass,
     TypeIcon: typeTheme.icon,
-    handleSave,
+    handleSave: handleDiscard,
     handleDiscard,
     handleDelete,
     scopeOptions: VARIABLE_SCOPES,
     hasValidationError,
-    saveButtonTitle,
     validationResult,
   };
 }
