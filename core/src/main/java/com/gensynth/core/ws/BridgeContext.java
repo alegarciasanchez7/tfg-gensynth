@@ -40,7 +40,10 @@ public class BridgeContext {
         return server.variablesById;
     }
 
-    public Map<String, com.gensynth.core.connectors.spi.ConnectorPlugin> getConnectorByFlowId() {
+    /**
+     * @return open connector sessions by flow id (only for flows of running groups)
+     */
+    public Map<String, com.gensynth.plugin.api.ConnectorSession> getConnectorByFlowId() {
         return server.connectorByFlowId;
     }
 

@@ -2,132 +2,9 @@ import { Settings2 } from 'lucide-react';
 import type { Flow, ConnectorHealthSummary } from '../../../types';
 import type { ConnectorPluginDescriptor } from '../../../core/types';
 import { FieldRow } from '../../common/FieldRow';
-import { ConnectorSchemaField } from '../../common/ConnectorSchemaField';
+import { ConnectorConfigForm } from '../../common/ConnectorConfigForm';
 
-export function compareVersions(leftVersion: string, rightVersion: string): number {
-  const leftParts = leftVersion.split('.').map((part) => Number(part) || 0);
-  const rightParts = rightVersion.split('.').map((part) => Number(part) || 0);
-  const length = Math.max(leftParts.length, rightParts.length);
-
-  for (let index = 0; index < length; index += 1) {
-    const comparison = (leftParts[index] ?? 0) - (rightParts[index] ?? 0);
-    if (comparison !== 0) {
-      return comparison;
-    }
-  }
-
-  return leftVersion.localeCompare(rightVersion);
-}
-
-type ConnectorSchemaProperty = {
-  type?: string;
-  title?: string;
-  description?: string;
-  default?: unknown;
-  enum?: Array<string | number | boolean>;
-  items?: ConnectorSchemaProperty;
-  properties?: Record<string, ConnectorSchemaProperty>;
-};
-
-function getConnectorProperties(schema: Record<string, unknown>): Record<string, ConnectorSchemaProperty> {
-  return (schema.properties as Record<string, ConnectorSchemaProperty> | undefined) ?? {};
-}
-
-function getDefaultValue(definition: ConnectorSchemaProperty): unknown {
-  if (Object.prototype.hasOwnProperty.call(definition, 'default')) {
-    return definition.default;
-  }
-
-  if (definition.enum?.length) {
-    return definition.enum[0];
-  }
-
-  switch (definition.type) {
-    case 'number':
-    case 'integer':
-      return 0;
-    case 'boolean':
-      return false;
-    case 'array':
-      return [];
-    case 'object':
-      return {};
-    default:
-      return '';
-  }
-}
-
-function ConnectorConfigEditor({
-  flowId,
-  connector,
-  config,
-  fallbackFlow,
-  onChange,
-}: {
-  flowId: string;
-  connector: ConnectorPluginDescriptor | null;
-  config: Record<string, unknown>;
-  fallbackFlow: Flow;
-  onChange: (nextConfig: Record<string, unknown>) => void;
-}) {
-  if (!connector) {
-    return (
-      <div
-        className="flex flex-col gap-2 rounded border border-dashed border-[var(--c-br2)] bg-[var(--c-bg1)] px-3 py-4 text-[10px] text-[var(--c-tx4)]"
-        style={{ fontFamily: 'JetBrains Mono, monospace' }}
-      >
-        <span className="text-[var(--c-tx2)]">No connectors available yet.</span>
-        <span>The flow will keep its legacy connection data visible until the catalog is loaded.</span>
-        <div className="grid grid-cols-2 gap-2 pt-2 text-[9px]">
-          <div className="rounded border border-[var(--c-br1)] px-2 py-1">
-            <div className="text-[var(--c-tx5)] uppercase">Host</div>
-            <div className="text-[var(--c-tx2)]">{fallbackFlow.host}</div>
-          </div>
-          <div className="rounded border border-[var(--c-br1)] px-2 py-1">
-            <div className="text-[var(--c-tx5)] uppercase">Port</div>
-            <div className="text-[var(--c-tx2)]">{fallbackFlow.port}</div>
-          </div>
-          <div className="rounded border border-[var(--c-br1)] px-2 py-1 col-span-2">
-            <div className="text-[var(--c-tx5)] uppercase">Endpoint / Topic</div>
-            <div className="text-[var(--c-tx2)]">{fallbackFlow.topic}</div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const properties = getConnectorProperties(connector.configSchema);
-
-  if (Object.keys(properties).length === 0) {
-    return (
-      <div
-        className="rounded border border-dashed border-[var(--c-br2)] bg-[var(--c-bg1)] px-3 py-4 text-[10px] text-[var(--c-tx4)]"
-        style={{ fontFamily: 'JetBrains Mono, monospace' }}
-      >
-        El schema de {connector.displayName} no expone propiedades editables.
-      </div>
-    );
-  }
-
-  return (
-    <div className="grid grid-cols-1 gap-3">
-      {Object.entries(properties).map(([fieldName, fieldDefinition]) => (
-        <ConnectorSchemaField
-          key={`${flowId}:${fieldName}`}
-          name={fieldName}
-          definition={fieldDefinition}
-          value={config[fieldName] ?? getDefaultValue(fieldDefinition)}
-          onChange={(_fieldName, nextValue) => {
-            onChange({
-              ...config,
-              [_fieldName]: nextValue,
-            });
-          }}
-        />
-      ))}
-    </div>
-  );
-}
+export { compareVersions } from '../../../context/helpers/connectorHelpers';
 
 interface TechnicalConfigPanelProps {
   flow: Flow;
@@ -267,9 +144,9 @@ export function TechnicalConfigPanel({
               className="flex flex-wrap items-center gap-2 rounded border border-[var(--c-br1)] bg-[var(--c-bg1)] px-2.5 py-2 text-[10px] text-[var(--c-tx4)]"
               style={{ fontFamily: 'JetBrains Mono, monospace' }}
             >
-              <span className="text-[var(--c-tx2)]">{latestConnectorForFlow.displayName}</span>
-              <span>pluginId: {latestConnectorForFlow.pluginId}</span>
-              <span>core API: {latestConnectorForFlow.coreApiVersion}</span>
+              <span className="text-[var(--c-tx2)]">{latestConnectorForFlow.pluginId}@{latestConnectorForFlow.pluginVersion}</span>
+              <span>plugin API {latestConnectorForFlow.apiVersion}</span>
+              {latestConnectorForFlow.external && <span>installed plugin</span>}
               {selectedHealth && (
                 <span
                   className={`rounded border px-1.5 py-0.5 uppercase ${
@@ -285,22 +162,23 @@ export function TechnicalConfigPanel({
               )}
             </div>
           )}
-          {connectorCatalog.length > 0 ? (
-            <ConnectorConfigEditor
-              flowId={flow.id}
+          {latestConnectorForFlow ? (
+            <ConnectorConfigForm
+              key={`${flow.id}:${latestConnectorForFlow.pluginId}@${latestConnectorForFlow.pluginVersion}`}
               connector={latestConnectorForFlow}
               config={connectorConfig}
-              fallbackFlow={flow}
               onChange={onConnectorConfigChange}
+              showAllErrors
             />
           ) : (
-            <ConnectorConfigEditor
-              flowId={flow.id}
-              connector={null}
-              config={connectorConfig}
-              fallbackFlow={flow}
-              onChange={onConnectorConfigChange}
-            />
+            <div
+              className="rounded border border-dashed border-[var(--c-br2)] bg-[var(--c-bg1)] px-3 py-3 text-[10px] text-[var(--c-tx4)]"
+              style={{ fontFamily: 'JetBrains Mono, monospace' }}
+            >
+              {connectorCatalog.length === 0
+                ? 'No connectors loaded yet.'
+                : `No connector "${flow.technology}" is installed. Import its plugin from Connectors → Import plugin.`}
+            </div>
           )}
         </div>
 

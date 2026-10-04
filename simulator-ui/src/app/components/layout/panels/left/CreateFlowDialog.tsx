@@ -12,10 +12,10 @@ import {
 import { Input } from '../../../ui/input';
 import type { Group, Flow } from '../../../../types';
 import type { ConnectorPluginDescriptor } from '../../../../core/types';
-import { ConnectorSchemaField, getDefaultValue } from '../../../common/ConnectorSchemaField';
+import { ConnectorConfigForm } from '../../../common/ConnectorConfigForm';
 import { NamingPatternFields } from '../../../common/NamingPatternFields';
 import { buildPatternNames } from '../../../../core/namingPattern';
-import { deriveConnectionFields } from '../../../../core/connectionFields';
+import { defaultConnectorConfig, validateConnectorConfig } from '../../../../core/connectorFields';
 
 const DEFAULT_REPEAT_COUNT = '2';
 const DEFAULT_REPEAT_PATTERN = '${name} ${index}';
@@ -62,9 +62,6 @@ export function CreateFlowDialog({
   const [selectedGroupId, setSelectedGroupId] = useState(groupId || '');
   const [flowName, setFlowName] = useState('');
   const [flowTechnology, setFlowTechnology] = useState('');
-  const [flowHost, setFlowHost] = useState('localhost');
-  const [flowPort, setFlowPort] = useState('8080');
-  const [flowTopic, setFlowTopic] = useState('');
   const [flowEveryTicks, setFlowEveryTicks] = useState('1');
   const [repeatCount, setRepeatCount] = useState(DEFAULT_REPEAT_COUNT);
   const [repeatPattern, setRepeatPattern] = useState(DEFAULT_REPEAT_PATTERN);
@@ -85,9 +82,6 @@ export function CreateFlowDialog({
       setFlowName('');
       setFlowTechnology('');
       setConnectorConfig({});
-      setFlowHost('localhost');
-      setFlowPort('8080');
-      setFlowTopic('');
       setFlowEveryTicks('1');
       setRepeatCount(DEFAULT_REPEAT_COUNT);
       setRepeatPattern(DEFAULT_REPEAT_PATTERN);
@@ -104,42 +98,23 @@ export function CreateFlowDialog({
       return;
     }
     const descriptor = latestConnectors.find((c) => c.pluginId === flowTechnology);
-    if (descriptor) {
-      const defaults = getDefaultConfigFromSchema(descriptor.configSchema);
-      setConnectorConfig(defaults);
-    } else {
-      setConnectorConfig({});
-    }
+    setConnectorConfig(descriptor ? defaultConnectorConfig(descriptor.fields) : {});
   }, [flowTechnology, latestConnectors]);
-
-  // Helper to extract properties and construct defaults
-  function getDefaultConfigFromSchema(schema: Record<string, unknown> | undefined): Record<string, unknown> {
-    if (!schema) return {};
-    const properties = (schema.properties as Record<string, any> | undefined) ?? {};
-    const defaults: Record<string, unknown> = {};
-
-    for (const [name, definition] of Object.entries(properties)) {
-      defaults[name] = getDefaultValue(definition);
-    }
-    return defaults;
-  }
 
   const everyTicksValid = isPositiveInteger(flowEveryTicks);
   const repeatValid = !repeat || (isPositiveInteger(repeatCount) && repeatPattern.trim() !== '');
+  const connectorValid = Boolean(selectedConnector)
+    && Object.keys(validateConnectorConfig(selectedConnector?.fields ?? [], connectorConfig)).length === 0;
 
   const handleCreateFlow = async (event?: FormEvent<HTMLFormElement>) => {
     event?.preventDefault();
-    if (isSubmitting || !everyTicksValid || !repeatValid) return;
+    if (isSubmitting || !everyTicksValid || !repeatValid || !connectorValid || !selectedConnector) return;
     const targetGroupId = groupId || selectedGroupId;
     if (!targetGroupId) {
       toast.error('Please select a group first');
       return;
     }
 
-    const derived = selectedConnector ? deriveConnectionFields(connectorConfig) : {};
-    const host = selectedConnector ? derived.host ?? 'localhost' : flowHost.trim();
-    const port = selectedConnector ? derived.port ?? 8080 : Number(flowPort);
-    const topic = selectedConnector ? derived.topic ?? '' : flowTopic.trim();
     const everyTicks = Number(flowEveryTicks);
     const names = repeat
       ? buildPatternNames(repeatPattern, flowName.trim(), Number(repeatCount))
@@ -154,13 +129,13 @@ export function CreateFlowDialog({
           targetGroupId,
           name,
           flowTechnology.trim(),
-          host,
-          port,
-          topic || undefined,
+          '', // Legacy host/port/topic: the destination is part of the connector configuration
+          0,
+          undefined,
           undefined, // Legacy interval: generation is paced by the global tick clock
           undefined, // Legacy burst: one message every N ticks
           '{}',
-          selectedConnector ? connectorConfig : undefined,
+          connectorConfig,
           everyTicks,
         ));
       }
@@ -233,99 +208,6 @@ export function CreateFlowDialog({
               </div>
 
               <div className="space-y-2 sm:col-span-2">
-                <label className="text-xs text-[var(--c-tx3)]" htmlFor="flow-connector">
-                  Connector
-                </label>
-                {latestConnectors.length > 0 ? (
-                  <select
-                    id="flow-connector"
-                    value={flowTechnology}
-                    onChange={(event) => setFlowTechnology(event.target.value)}
-                    className="flex h-9 w-full rounded-md border border-[var(--c-br1)] bg-[var(--c-bg1)] px-3 py-2 text-sm text-[var(--c-tx1)] shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-500"
-                    required
-                  >
-                    <option value="">Select a connector...</option>
-                    {latestConnectors.map((connector) => (
-                      <option key={connector.pluginId} value={connector.pluginId}>
-                        {connector.displayName} ({connector.pluginId}@{connector.pluginVersion})
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <Input
-                    id="flow-connector"
-                    value={flowTechnology}
-                    onChange={(event) => setFlowTechnology(event.target.value)}
-                    placeholder="HTTP"
-                    className="bg-[var(--c-bg1)] border-[var(--c-br1)] text-[var(--c-tx1)] placeholder-[var(--c-tx4)]"
-                    required
-                  />
-                )}
-              </div>
-
-              {selectedConnector ? (
-                Object.entries(
-                  (selectedConnector.configSchema?.properties as Record<string, any> | undefined) ?? {}
-                ).map(([key, def]) => (
-                  <ConnectorSchemaField
-                    key={key}
-                    name={key}
-                    definition={def}
-                    value={connectorConfig[key]}
-                    onChange={(name, nextValue) =>
-                      setConnectorConfig((prev) => ({ ...prev, [name]: nextValue }))
-                    }
-                  />
-                ))
-              ) : flowTechnology ? (
-                <>
-                  <div className="space-y-2">
-                    <label className="text-xs text-[var(--c-tx3)]" htmlFor="flow-host">
-                      Host
-                    </label>
-                    <Input
-                      id="flow-host"
-                      value={flowHost}
-                      onChange={(event) => setFlowHost(event.target.value)}
-                      placeholder="localhost"
-                      className="bg-[var(--c-bg1)] border-[var(--c-br1)] text-[var(--c-tx1)] placeholder-[var(--c-tx4)]"
-                      required
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-xs text-[var(--c-tx3)]" htmlFor="flow-port">
-                      Port
-                    </label>
-                    <Input
-                      id="flow-port"
-                      type="number"
-                      min={1}
-                      max={65535}
-                      value={flowPort}
-                      onChange={(event) => setFlowPort(event.target.value)}
-                      placeholder="8080"
-                      className="bg-[var(--c-bg1)] border-[var(--c-br1)] text-[var(--c-tx1)] placeholder-[var(--c-tx4)]"
-                      required
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-xs text-[var(--c-tx3)]" htmlFor="flow-topic">
-                      Topic
-                    </label>
-                    <Input
-                      id="flow-topic"
-                      value={flowTopic}
-                      onChange={(event) => setFlowTopic(event.target.value)}
-                      placeholder="orders.events"
-                      className="bg-[var(--c-bg1)] border-[var(--c-br1)] text-[var(--c-tx1)] placeholder-[var(--c-tx4)]"
-                    />
-                  </div>
-                </>
-              ) : null}
-
-              <div className="space-y-2">
                 <label className="text-xs text-[var(--c-tx3)]" htmlFor="flow-every-ticks">
                   Every N ticks
                 </label>
@@ -342,6 +224,38 @@ export function CreateFlowDialog({
                 />
                 <p className="text-[10px] text-[var(--c-tx4)]">1 message every N ticks (whole number ≥ 1)</p>
               </div>
+
+              <div className="space-y-2 sm:col-span-2">
+                <label className="text-xs text-[var(--c-tx3)]" htmlFor="flow-connector">
+                  Connector
+                </label>
+                <select
+                  id="flow-connector"
+                  value={flowTechnology}
+                  onChange={(event) => setFlowTechnology(event.target.value)}
+                  className="flex h-9 w-full rounded-md border border-[var(--c-br1)] bg-[var(--c-bg1)] px-3 py-2 text-sm text-[var(--c-tx1)] shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-500"
+                  required
+                  disabled={latestConnectors.length === 0}
+                >
+                  <option value="">{latestConnectors.length > 0 ? 'Select a connector...' : 'No connectors installed'}</option>
+                  {latestConnectors.map((connector) => (
+                    <option key={connector.pluginId} value={connector.pluginId}>
+                      {connector.displayName} ({connector.pluginId}@{connector.pluginVersion})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {selectedConnector && (
+                <div className="sm:col-span-2 pt-1">
+                  <ConnectorConfigForm
+                    key={selectedConnector.pluginId}
+                    connector={selectedConnector}
+                    config={connectorConfig}
+                    onChange={setConnectorConfig}
+                  />
+                </div>
+              )}
             </div>
 
             {repeat && (
@@ -378,6 +292,7 @@ export function CreateFlowDialog({
                 || !flowTechnology.trim()
                 || !everyTicksValid
                 || !repeatValid
+                || !connectorValid
               }
               className="bg-cyan-600 hover:bg-cyan-700 text-white"
             >

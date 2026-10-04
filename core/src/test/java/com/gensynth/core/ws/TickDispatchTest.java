@@ -2,7 +2,7 @@ package com.gensynth.core.ws;
 
 import com.gensynth.core.connectors.plugin.PluginInstallerImpl;
 import com.gensynth.core.connectors.runtime.ConnectorCatalogService;
-import com.gensynth.core.connectors.spi.ConnectorPlugin;
+import com.gensynth.plugin.api.ConnectorSession;
 import com.gensynth.core.persistence.JsonStateRepositoryImpl;
 import com.gensynth.core.ws.runtime.FlowRuntime;
 import com.gensynth.core.ws.runtime.GroupRuntime;
@@ -36,7 +36,7 @@ public class TickDispatchTest {
     private UiBridgeWebSocketServer server;
     private GroupRuntime group;
     private FlowRuntime flow;
-    private ConnectorPlugin connector;
+    private ConnectorSession connector;
 
     private static FlowRuntime newFlow(String id, String topic, String template) {
         return new FlowRuntime(id, "Flow " + id, "file", "connected", 0, 0, false, null,
@@ -59,13 +59,13 @@ public class TickDispatchTest {
         group.flows.add(flow);
         server.groupsById.put(group.id, group);
 
-        connector = mock(ConnectorPlugin.class);
+        connector = mock(ConnectorSession.class);
         server.connectorByFlowId.put(flow.id, connector);
         group.dispatcher = server.flowCommandHandler.createDispatcher(group);
     }
 
     @After
-    public void tearDown() {
+    public void tearDown() throws Exception {
         if (group.dispatcher != null) {
             group.dispatcher.shutdown();
         }
@@ -88,7 +88,7 @@ public class TickDispatchTest {
         assertTrue(server.flowCommandHandler.onTick(2));
         awaitSent(flow, 2);
 
-        verify(connector, times(2)).publish(eq("topic"), any(byte[].class), anyMap());
+        verify(connector, times(2)).send(any(byte[].class), anyMap());
         assertEquals(2, flow.generated.get());
         assertEquals(0, flow.failed.get());
         assertEquals(2, server.totalMessages.get());
@@ -114,21 +114,21 @@ public class TickDispatchTest {
     }
 
     @Test
-    public void pausedGroupIsSkipped() {
+    public void pausedGroupIsSkipped() throws Exception {
         group.status = "paused";
         assertFalse(server.flowCommandHandler.onTick(1));
-        verify(connector, never()).publish(anyString(), any(byte[].class), anyMap());
+        verify(connector, never()).send(any(byte[].class), anyMap());
     }
 
     @Test
-    public void disabledFlowIsSkipped() {
+    public void disabledFlowIsSkipped() throws Exception {
         flow.enabled = false;
         assertFalse(server.flowCommandHandler.onTick(1));
-        verify(connector, never()).publish(anyString(), any(byte[].class), anyMap());
+        verify(connector, never()).send(any(byte[].class), anyMap());
     }
 
     @Test
-    public void groupWithoutDispatcherIsSkipped() {
+    public void groupWithoutDispatcherIsSkipped() throws Exception {
         group.dispatcher.shutdown();
         group.dispatcher = null;
         assertFalse(server.flowCommandHandler.onTick(1));
@@ -138,7 +138,7 @@ public class TickDispatchTest {
     public void sequenceNumbersAreUniqueAcrossParallelFlows() throws Exception {
         FlowRuntime other = newFlow("f2", "topic2", "{\"value\":{{n}}}");
         group.flows.add(other);
-        ConnectorPlugin otherConnector = mock(ConnectorPlugin.class);
+        ConnectorSession otherConnector = mock(ConnectorSession.class);
         server.connectorByFlowId.put(other.id, otherConnector);
         group.dispatcher.shutdown();
         group.dispatcher = server.flowCommandHandler.createDispatcher(group);
@@ -152,8 +152,8 @@ public class TickDispatchTest {
 
         ArgumentCaptor<byte[]> first = ArgumentCaptor.forClass(byte[].class);
         ArgumentCaptor<byte[]> second = ArgumentCaptor.forClass(byte[].class);
-        verify(connector, times(5)).publish(anyString(), first.capture(), anyMap());
-        verify(otherConnector, times(5)).publish(anyString(), second.capture(), anyMap());
+        verify(connector, times(5)).send(first.capture(), anyMap());
+        verify(otherConnector, times(5)).send(second.capture(), anyMap());
         Set<String> payloads = new HashSet<>();
         for (List<byte[]> captured : List.of(first.getAllValues(), second.getAllValues())) {
             for (byte[] bytes : captured) {
@@ -165,7 +165,7 @@ public class TickDispatchTest {
 
     @Test
     public void publishErrorCountsAsFailed() throws Exception {
-        doThrow(new IllegalStateException("broker down")).when(connector).publish(anyString(), any(byte[].class), anyMap());
+        doThrow(new IllegalStateException("broker down")).when(connector).send(any(byte[].class), anyMap());
 
         server.flowCommandHandler.onTick(1);
 
@@ -205,7 +205,7 @@ public class TickDispatchTest {
     }
 
     @Test
-    public void countersResetOnStartButNotOnResume() {
+    public void countersResetOnStartButNotOnResume() throws Exception {
         flow.sent.set(7);
         flow.generated.set(9);
 
@@ -224,7 +224,7 @@ public class TickDispatchTest {
     }
 
     @Test
-    public void pauseStopsSendingAndDropsTheDispatcher() {
+    public void pauseStopsSendingAndDropsTheDispatcher() throws Exception {
         synchronized (server.stateLock) {
             server.flowCommandHandler.pauseGroupInternal(group);
         }
@@ -238,5 +238,21 @@ public class TickDispatchTest {
         List<Map<String, Object>> flows = (List<Map<String, Object>>) payload.get("flows");
         assertEquals(1, flows.size());
         return flows.get(0);
+    }
+
+    @Test
+    public void invalidConnectorConfigurationMarksTheFlowAsFailedWithoutConnecting() {
+        flow.connectorConfig = Map.of("format", "pdf");
+        server.connectorByFlowId.clear();
+        group.status = "stopped";
+
+        synchronized (server.stateLock) {
+            server.flowCommandHandler.startGroupInternal(group);
+        }
+
+        assertTrue(flow.hasError);
+        assertEquals("error", flow.connectionStatus);
+        assertTrue(flow.errorMessage, flow.errorMessage.startsWith("Invalid connector configuration: File format must be one of"));
+        assertFalse(server.connectorByFlowId.containsKey(flow.id));
     }
 }

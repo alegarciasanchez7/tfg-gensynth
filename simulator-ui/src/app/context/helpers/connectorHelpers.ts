@@ -1,5 +1,6 @@
 import type { ConnectorPluginDescriptor } from '../../core/types';
 import type { Group, Flow, ConnectorHealthSummary, ConnectorHealthStatus } from '../../types';
+import { mergeWithDefaults } from '../../core/connectorFields';
 
 export function compareVersions(leftVersion: string, rightVersion: string): number {
   const leftParts = leftVersion.split('.').map((part) => Number(part) || 0);
@@ -30,48 +31,6 @@ export function latestConnectorsFromCatalog(catalog: ConnectorPluginDescriptor[]
     left.displayName.localeCompare(right.displayName) ||
     left.pluginId.localeCompare(right.pluginId)
   );
-}
-
-export function getConnectorProperties(schema: Record<string, unknown>): Record<string, Record<string, unknown>> {
-  return ((schema.properties as Record<string, Record<string, unknown>> | undefined) ?? {});
-}
-
-export function getDefaultConfigFromSchema(schema: Record<string, unknown>): Record<string, unknown> {
-  const properties = getConnectorProperties(schema);
-  const defaults: Record<string, unknown> = {};
-
-  for (const [name, definition] of Object.entries(properties)) {
-    if (Object.prototype.hasOwnProperty.call(definition, 'default')) {
-      defaults[name] = definition.default;
-      continue;
-    }
-
-    if (Array.isArray(definition.enum) && definition.enum.length > 0) {
-      defaults[name] = definition.enum[0];
-      continue;
-    }
-
-    switch (definition.type) {
-      case 'number':
-      case 'integer':
-        defaults[name] = 0;
-        break;
-      case 'boolean':
-        defaults[name] = false;
-        break;
-      case 'array':
-        defaults[name] = [];
-        break;
-      case 'object':
-        defaults[name] = {};
-        break;
-      default:
-        defaults[name] = '';
-        break;
-    }
-  }
-
-  return defaults;
 }
 
 export function findDescriptor(
@@ -182,7 +141,8 @@ export function normalizeConnectorState(
         pluginVersion: selectedDescriptor.pluginVersion,
       };
 
-      configs[flow.id] = previousConfigs[flow.id] ?? getDefaultConfigFromSchema(selectedDescriptor.configSchema);
+      // The editor keeps its own copy; seed it from the flow's saved configuration (not only defaults)
+      configs[flow.id] = previousConfigs[flow.id] ?? mergeWithDefaults(selectedDescriptor.fields, flow.connectorConfig);
     }
   }
 

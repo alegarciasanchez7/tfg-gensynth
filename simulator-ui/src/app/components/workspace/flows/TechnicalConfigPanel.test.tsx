@@ -25,9 +25,12 @@ const connector: ConnectorPluginDescriptor = {
   pluginId: 'file',
   displayName: 'File Output',
   pluginVersion: '1.0.0',
-  coreApiVersion: '1.0.0',
+  description: 'Writes to a file',
+  apiVersion: '1.0',
   external: false,
-  configSchema: { type: 'object', properties: { outputDir: { type: 'string', title: 'Output directory' } } },
+  fields: [
+    { key: 'outputDir', type: 'TEXT', label: 'Output directory', tooltip: '', required: true, defaultValue: null, placeholder: '', options: [] },
+  ],
 };
 
 function renderPanel(overrides: Partial<Parameters<typeof TechnicalConfigPanel>[0]> = {}) {

@@ -22,6 +22,13 @@
     </properties>
 
     <dependencies>
+        <!-- Contract implemented by connector plugins (shared with external plugin JARs) -->
+        <dependency>
+            <groupId>com.gensynth</groupId>
+            <artifactId>gensynth-plugin-api</artifactId>
+            <version>1.0.0</version>
+        </dependency>
+
         <!-- JUnit for testing -->
         <dependency>
             <groupId>junit</groupId>

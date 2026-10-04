@@ -1,7 +1,7 @@
 package com.gensynth.core.ws.dispatch;
 
 import com.gensynth.core.api.IFlowMessageHandler;
-import com.gensynth.core.connectors.spi.ConnectorPlugin;
+import com.gensynth.plugin.api.ConnectorSession;
 import com.gensynth.core.ws.BridgeContext;
 import com.gensynth.core.ws.runtime.FlowRuntime;
 import com.gensynth.core.ws.runtime.GroupRuntime;
@@ -18,7 +18,7 @@ import java.util.concurrent.TimeUnit;
  * through the flow's connector, updating the flow counters and the global metrics.
  *
  * Counters: {@code generated} after a successful generation, {@code sent} when
- * {@link ConnectorPlugin#publish} returns without error, {@code failed} when the template
+ * {@link ConnectorSession#send} returns (the technology accepted or confirmed it), {@code failed} when the template
  * cannot be evaluated or the publish throws.
  */
 public class FlowMessagePublisher implements IFlowMessageHandler {
@@ -62,7 +62,7 @@ public class FlowMessagePublisher implements IFlowMessageHandler {
 
     @Override
     public void publish(GroupRuntime group, FlowRuntime flow, String payload) {
-        ConnectorPlugin connector = ctx.getConnectorByFlowId().get(flow.id);
+        ConnectorSession connector = ctx.getConnectorByFlowId().get(flow.id);
         if (connector == null) {
             // The group was stopped: the message stays as generated but not sent
             return;
@@ -71,7 +71,8 @@ public class FlowMessagePublisher implements IFlowMessageHandler {
         byte[] bytes = payload.getBytes(StandardCharsets.UTF_8);
         long startedAt = System.nanoTime();
         try {
-            connector.publish(flow.topic, bytes, HEADERS);
+            // The destination (routing key, topic, queue...) is part of the connector configuration
+            connector.send(bytes, HEADERS);
         } catch (Exception ex) {
             if (ctx.getConnectorByFlowId().get(flow.id) != connector) {
                 // The group was stopped while publishing; not a real error

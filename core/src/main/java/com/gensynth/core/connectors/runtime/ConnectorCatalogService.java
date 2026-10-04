@@ -1,9 +1,9 @@
 package com.gensynth.core.connectors.runtime;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.gensynth.core.connectors.spi.ConnectorPlugin;
-import com.gensynth.core.connectors.spi.ConnectorPluginDescriptor;
+import com.gensynth.plugin.api.ConnectorConfig;
+import com.gensynth.plugin.api.ConnectorContext;
+import com.gensynth.plugin.api.ConnectorPlugin;
+import com.gensynth.plugin.api.ConnectorSession;
 
 import java.nio.file.Path;
 import java.util.List;
@@ -11,78 +11,77 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * Minimal API surface for UI/backend integration.
- *
- * Provides:
- * - plugin catalog (id/version/schema)
- * - runtime plugin creation from selected id/version
+ * Connector catalog used by the bridge: lists the loaded plugins and opens sessions for flows.
  */
 public class ConnectorCatalogService {
 
     private final ConnectorPluginManager pluginManager;
-    private final String catalogJson;
 
+    /**
+     * Uses the plugins of the classpath only.
+     */
     public ConnectorCatalogService() {
-        this(new ConnectorPluginManager(), new ObjectMapper());
+        this(new ConnectorPluginManager());
     }
 
     /**
-     * Constructor with external plugins directory support.
+     * Uses the plugins of the classpath and of the external plugins directory.
      *
-     * @param pluginsDirectory path to the directory containing external plugin JARs
+     * @param pluginsDirectory directory containing external plugin JARs
      */
     public ConnectorCatalogService(Path pluginsDirectory) {
-        this(new ConnectorPluginManager(pluginsDirectory), new ObjectMapper());
-    }
-
-    public ConnectorCatalogService(ConnectorPluginManager pluginManager, ObjectMapper objectMapper) {
-        this.pluginManager = pluginManager;
-        this.catalogJson = serializeCatalog(pluginManager.listDescriptors(), objectMapper);
+        this(new ConnectorPluginManager(pluginsDirectory));
     }
 
     /**
-     * Exposes the plugin manager for external plugin checks.
-     *
-     * @return the underlying ConnectorPluginManager
+     * @param pluginManager the plugin manager to use
+     */
+    public ConnectorCatalogService(ConnectorPluginManager pluginManager) {
+        this.pluginManager = pluginManager;
+    }
+
+    /**
+     * @return the underlying plugin manager
      */
     public ConnectorPluginManager getPluginManager() {
         return pluginManager;
     }
 
-    public List<ConnectorPluginDescriptor> listAvailableConnectors() {
+    /**
+     * @return every loaded connector, sorted by id and version
+     */
+    public List<ConnectorDescriptor> listAvailableConnectors() {
         return pluginManager.listDescriptors();
     }
 
-    public Optional<ConnectorPluginDescriptor> findConnector(String pluginId, String pluginVersion) {
-        return pluginManager.findDescriptor(pluginId, pluginVersion);
-    }
-
-    public Optional<ConnectorPluginDescriptor> findLatestConnector(String pluginId) {
+    /**
+     * @param pluginId plugin identifier (the flow technology)
+     * @return the highest loaded version of the connector
+     */
+    public Optional<ConnectorDescriptor> findLatestConnector(String pluginId) {
         return pluginManager.findLatestDescriptor(pluginId);
     }
 
-    public ConnectorPlugin createAndInitialize(
-        String pluginId,
-        String pluginVersion,
-        Map<String, Object> config
-    ) {
-        ConnectorPlugin plugin = pluginManager.createPlugin(pluginId, pluginVersion);
-        plugin.initialize(config);
-        return plugin;
-    }
-
     /**
-     * JSON-ready catalog payload for UI rendering.
+     * Opens a session of the latest version of a connector for one flow.
+     *
+     * @param pluginId  plugin identifier (the flow technology)
+     * @param rawConfig connector configuration of the flow; validated against the plugin fields
+     * @param context   runtime information about the flow
+     * @return the open session
+     * @throws com.gensynth.plugin.api.ConnectorConfigException if the configuration is invalid
+     * @throws Exception if the plugin is not found or cannot connect
      */
-    public String getCatalogAsJson() {
-        return catalogJson;
-    }
-
-    private static String serializeCatalog(List<ConnectorPluginDescriptor> descriptors, ObjectMapper objectMapper) {
-        try {
-            return objectMapper.writeValueAsString(descriptors);
-        } catch (JsonProcessingException e) {
-            throw new IllegalStateException("Unable to serialize connector catalog", e);
+    public ConnectorSession openSession(String pluginId, Map<String, ?> rawConfig, ConnectorContext context) throws Exception {
+        ConnectorDescriptor descriptor = findLatestConnector(pluginId)
+            .orElseThrow(() -> new IllegalStateException("No connector found for " + pluginId));
+        ConnectorPlugin plugin = pluginManager.findPlugin(descriptor)
+            .orElseThrow(() -> new IllegalStateException("No connector found for " + pluginId));
+        ConnectorConfig config = ConnectorConfig.resolve(descriptor.fieldDefinitions(), rawConfig);
+        ConnectorSession session = plugin.connect(config, context);
+        if (session == null) {
+            throw new IllegalStateException("Connector " + descriptor.key() + " returned no session");
         }
+        return session;
     }
 }

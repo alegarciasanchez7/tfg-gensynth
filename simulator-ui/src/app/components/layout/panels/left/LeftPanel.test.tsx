@@ -49,29 +49,28 @@ describe('LeftPanel', () => {
       pluginId: 'file',
       displayName: 'File Output (TXT/JSON)',
       pluginVersion: '1.0.0',
-      coreApiVersion: '1.0.0',
+      description: '',
+      apiVersion: '1.0',
       external: false,
-      configSchema: {
-        type: 'object',
-        properties: {
-          outputDir: { type: 'string', default: './outputs' },
-          format: { type: 'string', default: 'json' },
-          fileName: { type: 'string' },
+      fields: [
+        { key: 'outputDir', type: 'TEXT', label: 'Output directory', tooltip: '', required: false, defaultValue: './outputs', placeholder: '', options: [] },
+        {
+          key: 'format', type: 'SELECT', label: 'Format', tooltip: '', required: false, defaultValue: 'json', placeholder: '',
+          options: [{ value: 'json', label: 'JSON' }, { value: 'txt', label: 'Text' }],
         },
-      },
+        { key: 'fileName', type: 'TEXT', label: 'File name', tooltip: '', required: false, defaultValue: null, placeholder: '', options: [] },
+      ],
     },
     {
       pluginId: 'http',
       displayName: 'HTTP Connector',
       pluginVersion: '1.0.0',
-      coreApiVersion: '1.0.0',
+      description: '',
+      apiVersion: '1.0',
       external: false,
-      configSchema: {
-        type: 'object',
-        properties: {
-          endpoint: { type: 'string' },
-        },
-      },
+      fields: [
+        { key: 'endpoint', type: 'TEXT', label: 'Endpoint', tooltip: '', required: true, defaultValue: null, placeholder: '', options: [] },
+      ],
     },
   ];
 
@@ -138,8 +137,8 @@ describe('LeftPanel', () => {
       'g1',
       'Output flow',
       'file',
-      'localhost',
-      8080,
+      '', // legacy host/port/topic: the destination is part of the connector configuration
+      0,
       undefined,
       undefined, // legacy interval: pacing comes from the global tick clock
       undefined, // legacy burst: one message every N ticks
@@ -147,7 +146,6 @@ describe('LeftPanel', () => {
       {
         outputDir: './outputs',
         format: 'json',
-        fileName: '',
       },
       1, // everyTicks
     );

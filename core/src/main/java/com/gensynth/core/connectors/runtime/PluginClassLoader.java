@@ -11,7 +11,7 @@ package com.gensynth.core.connectors.runtime;
   * Custom ClassLoader that implements a "Parent-Last" strategy for plugin isolation.
   *
   * It prefers classes from the plugin's own JAR and shared libraries over the
-  * core application's classpath, except for essential core API/SPI classes.
+  * core application's classpath, except for the plugin API, which must be shared with the core.
   */
  public class PluginClassLoader extends URLClassLoader {
  
@@ -20,9 +20,7 @@ package com.gensynth.core.connectors.runtime;
       * compatibility between the engine and the plugin.
       */
      private static final List<String> DELEGATE_TO_PARENT_PREFIXES = List.of(
-             "com.gensynth.core.api.",
-             "com.gensynth.core.spi.",
-             "com.gensynth.core.model.",
+             "com.gensynth.plugin.api.",
              "java.",
              "javax.",
              "org.slf4j." // Share logging bridge

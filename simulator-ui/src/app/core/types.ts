@@ -141,12 +141,35 @@ export interface TracePayload {
   status?: 'ok' | 'error';
 }
 
+/** Input type of a connector field. Mirrors FieldType in gensynth-plugin-api. */
+export type ConnectorFieldType = 'TEXT' | 'PASSWORD' | 'INTEGER' | 'DECIMAL' | 'BOOLEAN' | 'SELECT';
+
+/** One configuration field declared by a connector plugin (ConnectorField in gensynth-plugin-api). */
+export interface ConnectorFieldDescriptor {
+  key: string;
+  type: ConnectorFieldType;
+  label: string;
+  /** Help shown next to the label (empty if none). */
+  tooltip: string;
+  required: boolean;
+  /** String, number or boolean depending on the type; null if none. */
+  defaultValue: string | number | boolean | null;
+  placeholder: string;
+  min?: number;
+  max?: number;
+  /** Choices of a SELECT field (empty for other types). */
+  options: { value: string; label: string }[];
+}
+
+/** A loaded connector plugin, with its fields in display order. */
 export interface ConnectorPluginDescriptor {
   pluginId: string;
   displayName: string;
   pluginVersion: string;
-  coreApiVersion: string;
-  configSchema: Record<string, unknown>;
+  description: string;
+  /** Plugin API version provided by the Core. */
+  apiVersion: string;
+  fields: ConnectorFieldDescriptor[];
   external: boolean;
 }
 
@@ -504,7 +527,10 @@ export interface PluginValidationResultPayload {
   pluginId?: string;
   displayName?: string;
   pluginVersion?: string;
-  coreApiVersion?: string;
+  apiVersion?: string;
+  description?: string;
+  /** Number of configuration fields declared by the plugin. */
+  fieldCount?: number;
   logs: ValidationEntry[];
 }
 

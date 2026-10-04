@@ -13,9 +13,24 @@ const fileConnector: ConnectorPluginDescriptor = {
   pluginId: 'file',
   displayName: 'File Output',
   pluginVersion: '1.0.0',
-  coreApiVersion: '1.0.0',
+  description: 'Writes to a file',
+  apiVersion: '1.0',
   external: false,
-  configSchema: { type: 'object', properties: { outputDir: { type: 'string', default: './out' } } },
+  fields: [
+    { key: 'outputDir', type: 'TEXT', label: 'Output directory', tooltip: 'Where files go', required: false, defaultValue: './out', placeholder: '', options: [] },
+  ],
+};
+
+const brokerConnector: ConnectorPluginDescriptor = {
+  pluginId: 'broker',
+  displayName: 'Broker',
+  pluginVersion: '1.0.0',
+  description: '',
+  apiVersion: '1.0',
+  external: true,
+  fields: [
+    { key: 'address', type: 'TEXT', label: 'Address', tooltip: '', required: true, defaultValue: null, placeholder: '', options: [] },
+  ],
 };
 
 const createdFlow = (id: string, name: string): Flow => ({
@@ -56,7 +71,7 @@ describe('CreateFlowDialog', () => {
         open
         onOpenChange={onOpenChange}
         groupId="g1"
-        latestConnectors={[fileConnector]}
+        latestConnectors={[fileConnector, brokerConnector]}
         onCreateFlow={onCreateFlow}
         onSelectFlow={onSelectFlow}
         repeat={repeat}
@@ -133,5 +148,31 @@ describe('CreateFlowDialog', () => {
     await waitFor(() => expect(mockToast.error).toHaveBeenCalledWith('Created 1 of 3 flows: Core unavailable'));
     expect(onCreateFlow).toHaveBeenCalledTimes(2);
     expect(onSelectFlow).toHaveBeenCalledWith('g1', 'f1');
+  });
+
+  it('shows the connector fields and blocks creation until required ones are filled', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    await user.type(screen.getByLabelText(/name/i), 'Sensor');
+    await user.selectOptions(screen.getByRole('combobox', { name: /connector/i }), 'broker');
+
+    expect(screen.getByText('Connection · Broker')).toBeInTheDocument();
+    const create = screen.getByRole('button', { name: 'Create flow' });
+    expect(create).toBeDisabled();
+
+    await user.type(screen.getByLabelText(/^Address/), 'tcp://host:1');
+    expect(create).toBeEnabled();
+    await user.click(create);
+
+    expect(onCreateFlow).toHaveBeenCalledTimes(1);
+    expect(onCreateFlow.mock.calls[0][9]).toEqual({ address: 'tcp://host:1' });
+  });
+
+  it('fills the connector defaults when a connector is selected', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    await fillBasics(user, 'Sensor');
+
+    expect(screen.getByLabelText(/^Output directory/)).toHaveValue('./out');
   });
 });

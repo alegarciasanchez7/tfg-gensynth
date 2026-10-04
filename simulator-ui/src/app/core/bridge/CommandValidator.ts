@@ -53,10 +53,8 @@ export function validateCommand<T extends UICommandType>(
         && typeof readField('groupId') === 'string'
         && typeof readField('name') === 'string'
         && typeof readField('technology') === 'string'
-        && typeof readField('host') === 'string'
-        && typeof readField('port') === 'number'
         ? null
-        : new Error('El comando CREATE_FLOW requiere groupId, name, technology, host y port');
+        : new Error('El comando CREATE_FLOW requiere groupId, name y technology');
     case 'UPDATE_GROUP_CONFIG':
       return requireStringField('groupId', 'El comando UPDATE_GROUP_CONFIG requiere groupId');
     case 'UPDATE_FLOW_CONFIG':

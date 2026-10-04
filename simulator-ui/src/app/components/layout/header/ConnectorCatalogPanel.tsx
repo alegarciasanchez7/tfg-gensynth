@@ -99,6 +99,25 @@ export function ConnectorCatalogPanel({
                     {health ? health.status : 'unknown'}
                   </span>
                 </div>
+                {connector.description && (
+                  <span className="text-[9px] text-[var(--c-tx4)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+                    {connector.description}
+                  </span>
+                )}
+                {connector.fields.length > 0 && (
+                  <div className="flex flex-wrap gap-1" aria-label={`Fields of ${connector.displayName}`}>
+                    {connector.fields.map((field) => (
+                      <span
+                        key={field.key}
+                        title={field.tooltip || undefined}
+                        className="rounded border border-[var(--c-br2)] px-1 py-px text-[8px] text-[var(--c-tx3)]"
+                        style={{ fontFamily: 'JetBrains Mono, monospace' }}
+                      >
+                        {field.label}{field.required && <span className="text-red-500">*</span>}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 {health && (
                   <div className="text-[9px] text-[var(--c-tx4)] flex items-center gap-2">
                     <span>{health.connectedCount}/{health.flowCount} flows</span>
