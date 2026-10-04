@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { APP_VERSION } from '../../../core/appInfo';
 
 // The real dialog needs the app context; a stub is enough to check how the header opens it
 vi.mock('./settings/SettingsDialog', () => ({
@@ -62,5 +63,10 @@ describe('Header', () => {
 
     fireEvent.click(screen.getByText('close settings'));
     expect(screen.queryByTestId('settings-dialog')).toBeNull();
+  });
+
+  it('shows the application version', () => {
+    renderHeader(null);
+    expect(screen.getByText(`GenSynth ${APP_VERSION}`)).toBeInTheDocument();
   });
 });

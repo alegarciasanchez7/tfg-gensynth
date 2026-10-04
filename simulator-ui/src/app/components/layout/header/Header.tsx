@@ -6,6 +6,7 @@ import { PluginImportPanel } from './PluginImportPanel';
 import { ConnectorCatalogPanel } from './ConnectorCatalogPanel';
 import { SettingsDialog } from './settings/SettingsDialog';
 import { PROJECT_FILE_EXTENSION } from '../../../core/fileStorage';
+import { APP_VERSION } from '../../../core/appInfo';
 
 interface HeaderProps {
   systemStatus: SystemStatus;
@@ -323,7 +324,7 @@ export function Header({
 
       {/* Version badge */}
       <div className="text-[10px] text-[var(--c-tx5)] tracking-wider shrink-0 mr-1" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-        GenSynth 0.5.0-alpha
+        GenSynth {APP_VERSION}
       </div>
 
       {/* Settings */}

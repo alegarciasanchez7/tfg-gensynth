@@ -4,6 +4,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../../../
 import { AppearanceSettingsSection } from './AppearanceSettingsSection';
 import { StorageSettingsSection } from './StorageSettingsSection';
 import { TickSettingsSection } from './TickSettingsSection';
+import { APP_VERSION } from '../../../../core/appInfo';
 
 export type SettingsCategoryId = 'appearance' | 'storage' | 'simulation';
 
@@ -99,7 +100,7 @@ export function SettingsDialog({ open, onOpenChange, initialCategory = 'appearan
               );
             })}
           </div>
-          <div className="mt-auto px-4 py-3 text-[10px] text-[var(--c-tx5)]">GenSynth 0.5.0-alpha</div>
+          <div className="mt-auto px-4 py-3 text-[10px] text-[var(--c-tx5)]">GenSynth {APP_VERSION}</div>
         </nav>
 
         <section className="flex-1 min-w-0 flex flex-col">

@@ -50,9 +50,9 @@ public class FlowDefinition {
      * @param host Connection host
      * @param port Connection port
      * @param topic Topic/queue name
-     * @param interval Legacy publish interval in milliseconds; ignored by the engine since the
-     *                 global tick clock (project format 1.1.0), kept for file compatibility
-     * @param burst Legacy number of events per send; ignored by the engine since format 1.2.0
+     * @param interval Legacy publish interval in milliseconds; ignored by the engine (the global
+     *                 tick clock drives sending), kept for file compatibility
+     * @param burst Legacy number of events per send; ignored by the engine
      * @param template Event template with placeholders
      * @param connectorId Connector plugin ID
      * @param connectorConfig Connector-specific configuration
