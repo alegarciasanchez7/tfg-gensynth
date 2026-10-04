@@ -1,182 +1,228 @@
-# Gen-Synth
+# GenSynth
 
-Modular system for IoT simulation and synthesis with configurable flows.
+GenSynth is a **synthetic data generator** for IoT and messaging systems. You design **flows**
+that produce messages from a template filled with **variables** (numbers, texts, lists, dates,
+coordinates, booleans…), group them, and send them at a controlled pace to a destination: a file
+out of the box, or any other system (message brokers, sockets…) through connector plugins. It is
+useful to test consumers, dashboards and pipelines with realistic data without real devices.
 
-## 📋 Project Structure
+---
 
+## 🚀 Requirements
 
-```
-gen-synth/
-├── core/                    # Java Backend (Maven)
-│   ├── src/
-│   │   └── main/java/com/gensynth/core/
-│   │       ├── api/         # Interfaces and contracts
-│   │       ├── clock/       # Global simulation tick clock
-│   │       ├── engine/      # Execution engine
-│   │       ├── flows/       # Flow management
-│   │       ├── variables/   # Variable system
-│   │       ├── connectors/  # Connectors (MQTT, Kafka, RabbitMQ)
-│   │       ├── messaging/   # Internal communication
-│   │       ├── metrics/     # Metrics collection
-│   │       ├── common/      # Shared utilities
-│   │       ├── config/      # Central configuration
-│   │       └── App.java     # Entry point
-│   └── pom.xml
-│
-└── simulator-ui/            # React Frontend (Vite + TypeScript)
-    ├── src/
-    ├── package.json
-    ├── vite.config.ts
-    ├── tailwind.config.js
-    └── postcss.config.js
-```
+| Software | Version | Why |
+|---|---|---|
+| Java (JDK) | 21 | Runs GenSynth |
+| Maven | 3.8 or newer | Builds the application |
+| Node.js + npm | 18 or newer | Builds the user interface |
+| Internet connection | first run only | Downloads the embedded browser (~150 MB) used by the desktop app |
 
-## 🚀 Prerequisites
-
-- **Java 21 LTS**
-- **Maven 3.8+**
-- **Node.js 18+** (for the frontend)
-- **npm** or **pnpm**
+Check your Java version with `java -version`.
 
 ## 📦 Installation
 
-### Backend
+Run this once from the root folder of the project (and again after updating it):
+
+```bash
+mvn clean install -DskipTests
+```
+
+This builds the user interface and the application. It takes a couple of minutes the first time.
+
+## ▶️ Running GenSynth
+
+> Always start GenSynth **from the `core` folder**: your installed plugins and the automatic state
+> backups live there.
+
+### Desktop application (recommended)
 
 ```bash
 cd core
-mvn clean install
 ```
 
-### Frontend
+- **Linux / macOS**
+  ```bash
+  java -cp "target/classes:target/dependency/*" com.gensynth.core.App --desktop
+  ```
+- **Windows**
+  ```bash
+  java -cp "target/classes;target/dependency/*" com.gensynth.core.App --desktop
+  ```
 
-```bash
-cd simulator-ui
-npm install
-```
+A GenSynth window opens. The first start downloads the embedded browser into `core/jcef-bundle`,
+so it can take a moment.
 
-## 🏃 Development
+> [!IMPORTANT]
+> **Using a JetBrains Runtime (JBR) JDK?** It already contains its own embedded browser and the
+> start fails with `The build_meta.json file from the jcef-api artifact could not be read`.
+> Add the `--patch-module` option:
+> - **Linux / macOS**
+>   ```bash
+>   java --patch-module jcef=target/dependency/jcef-api-jcef-d3de827+cef-146.0.10+g8219561+chromium-146.0.7680.179.jar -cp "target/classes:target/dependency/*" com.gensynth.core.App --desktop
+>   ```
+> - **Windows**
+>   ```bash
+>   java --patch-module jcef=target/dependency/jcef-api-jcef-d3de827+cef-146.0.10+g8219561+chromium-146.0.7680.179.jar -cp "target/classes;target/dependency/*" com.gensynth.core.App --desktop
+>   ```
 
-### Running the Backend
+### In the web browser (alternative)
 
-```bash
-cd core
-mvn clean compile
-java -cp target/classes com.gensynth.core.App
-```
+Open two terminals:
 
-### Running the Frontend
+1. Start the engine (without `--desktop`):
+   ```bash
+   cd core
+   java -cp "target/classes:target/dependency/*" com.gensynth.core.App      # Windows: use ; instead of :
+   ```
+2. Start the interface:
+   ```bash
+   cd simulator-ui
+   npm install      # first time only
+   npm run dev
+   ```
+3. Open **http://localhost:5173** in your browser.
 
-```bash
-cd simulator-ui
-npm run dev
-```
+The interface talks to the engine on port **8765**, which must be free.
 
-The UI will be available at `http://localhost:5173`
+---
 
-### 🖥️ Desktop Mode (JCEF)
+## 🧭 Using GenSynth
 
-To build and run the application as a standalone desktop app with embedded Chromium:
+### The workspace
 
-1.  **Unified Build** (Compiles React + Java + Bundles Resources):
-    ```bash
-    cd core
-    mvn clean package -DskipTests
-    ```
+- **Left panel**: your **groups** and the **flows** inside them. Each flow shows its live
+  **msg/s**, **sent** (messages delivered) and **fails** (messages that could not be sent).
+- **Center**: the configuration of the selected group, flow or variable.
+- **Right panel**: the **variables** you can insert in the message format.
+- **Bottom panel**: logs, statistics and a preview of the generated messages.
+- **Top bar**: start/stop, file actions (New, Load, Save, Save as), connectors and settings.
+- **Resource bar** (just below): live CPU, RAM, network, msg/s, **TICK** (ticks per second and
+  total) and uptime.
 
-2.  **Run in Desktop Mode**:
-    - **Standard JDK (Linux/macOS)**:
-      ```bash
-      java -cp "target/classes:target/dependency/*" com.gensynth.core.App --desktop
-      ```
-    - **Standard JDK (Windows)**:
-      ```bash
-      java -cp "target/classes;target/dependency/*" com.gensynth.core.App --desktop
-      ```
-    
-    > [!IMPORTANT]
-    > **Running on JetBrains Runtime (JBR)?**
-    > If you are using a JetBrains Runtime JDK (which bundles JCEF as a system module), you will hit a `NullPointerException` with the error `The build_meta.json file from the jcef-api artifact could not be read`.
-    > To fix this, patch the built-in `jcef` module at runtime by adding the `--patch-module` JVM argument:
-    > - **Linux/macOS (JBR)**:
-    >   ```bash
-    >   java --patch-module jcef=target/dependency/jcef-api-jcef-d3de827+cef-146.0.10+g8219561+chromium-146.0.7680.179.jar -cp "target/classes:target/dependency/*" com.gensynth.core.App --desktop
-    >   ```
-    > - **Windows (JBR)**:
-    >   ```bash
-    >   java --patch-module jcef=target/dependency/jcef-api-jcef-d3de827+cef-146.0.10+g8219561+chromium-146.0.7680.179.jar -cp "target/classes;target/dependency/*" com.gensynth.core.App --desktop
-    >   ```
+### Typical workflow
 
-*Note: The first run will download the native Chromium binaries (~150MB) for your platform into the `core/jcef-bundle` directory.*
+1. **Create a group** (the **+** button in the left panel).
+2. **Add a flow** to the group: give it a name, choose how often it sends (*Every N ticks*) and a
+   **connector** (where messages go), then fill in the connector fields.
+3. **Write the message format** of the flow (JSON, XML, CSV or plain text) and insert variables
+   with `{{variable}}`. The built-in tags `{{uuid}}`, `{{ts}}` (timestamp) and `{{n}}` (message
+   number) are always available.
+4. **Create variables** in the right panel (global, for one group or for one flow).
+5. **Start** the system (or a single group) and watch the messages and metrics.
+6. **Save** the project as a `.gsynth` file.
 
-## 💾 Project Files (`.gsynth`)
+### Groups
 
-Projects are saved and loaded as `.gsynth` files. They are JSON documents with a format marker:
+- **Output mode** (applied the next time the group starts):
+  - **Parallel**: every flow sends on its own, as soon as it generates a message.
+  - **Sequential**: the messages of all flows are sent one after another, in the order they were
+    generated.
+- **Group menu (⋮)**: lock/unlock, clone, **Repeater** (create several flows with the same
+  configuration and a naming pattern such as `Sensor ${index}`) and delete.
+- Clicking a flow in the group panel opens its configuration.
 
-```json
-{
-  "format": "gensynth-project",
-  "version": "1.2.0",
-  "exportedAt": "...",
-  "groups": [],
-  "variables": [],
-  "settings": { "tick": { "mode": "FIXED_RATE", "value": 1, "unit": "SECONDS" } }
-}
-```
+### Pace of the messages: ticks
 
-- The save/load dialogs (browser and desktop) only show `.gsynth` files, and saving always uses that extension.
-- Loading rejects any file without the `.gsynth` extension or without `"format": "gensynth-project"`.
-- Plain `.json` files are no longer accepted. To migrate an old configuration, rename it to `.gsynth` and add the `"format": "gensynth-project"` field.
-- The format is defined in `core/.../persistence/ProjectFileFormat.java` and mirrored in `simulator-ui/src/app/core/fileStorage.ts`.
-- Version `1.1.0` added the `settings` section (simulation clock). `1.0.0` files still load and get the default settings (1 tick per second).
-- Version `1.2.0` added the flow field `everyTicks` (default 1). Older files load with one message per tick, and legacy output modes (`serial`, `TEXT`, `round-robin`) load as `parallel`.
-- The Core also mirrors the current state in `core/state/` (`groups.json`, `variables.json`, `settings.json`) on every change.
+All flows follow one global clock, the **tick**, configured in **Settings → Simulation**:
 
-## ⌨️ Keyboard Shortcuts
+- **Fixed period**: one tick every N milliseconds, seconds or minutes (default: 1 second).
+- **As Fast As You Can**: no wait between ticks, to find out the maximum speed. It can keep a CPU
+  core busy while running.
+
+Each flow sends **one message every N ticks**. For example, with a tick of 1 second, a flow set to
+*Every 5 ticks* sends one message every 5 seconds. Changing the tick applies immediately, even while
+the simulation is running.
+
+---
+
+## 🔌 Connectors
+
+The connector of a flow decides where its messages go. Each connector shows its own fields; hover
+the **ⓘ** icon next to a field to see what it means. Fields marked with **\*** are required, and a
+flow cannot be created until they are filled in.
+
+A message only counts as **sent** when the connector confirms that it was delivered; otherwise it
+counts as a **fail**.
+
+### File Output (built in)
+
+GenSynth includes one connector, always available, that writes the messages of each flow to a file:
+
+| Field | What it does |
+|---|---|
+| **File format** | *JSON array*, *Text* (one message per line), *XML dataset* or *CSV* (one message per line). |
+| **Output directory** | Optional. When empty, files go to the folder of the current session, `core/OUTPUT_FILES_<date>/`. A sub-folder with the group name is always added. |
+| **File name** | Optional. When empty, the flow name is used. The extension is added automatically. |
+
+For example, with the Text format a flow *Sensor 1* in group *Plant A* writes to
+`core/OUTPUT_FILES_<date>/Plant_A/Sensor_1.txt` (characters other than letters, digits, `.`, `_`
+and `-` become `_`).
+
+### Other destinations: connector plugins
+
+Any other destination is added with a **connector plugin**: a single `.jar` file that teaches
+GenSynth to send messages to a technology such as a message broker (AMQP, MQTT, Kafka…), a
+TCP/UDP socket or an HTTP endpoint. Plugins are distributed separately from GenSynth and anyone can
+implement one by following the [Plugin Developer Guide](plugin-api/PLUGIN_DEVELOPER_GUIDE.md).
+
+To install a plugin, click **Connectors → Import plugin** in the top bar, drop the `.jar` file,
+check that the validation succeeds and click **Install**. GenSynth restarts and the new connector
+appears in the connector list of every flow, with its own fields.
+
+Click **Connectors** in the top bar to open the catalog: it lists every loaded connector with its
+description, its fields (help, default values and allowed ranges) and how many running flows use
+it. Plugins can be uninstalled from there, and **Import plugin** is also available in the catalog.
+
+---
+
+## 💾 Saving your work
+
+- Projects are saved as **`.gsynth`** files (**Save** / **Save as**), which contain the groups,
+  flows, variables and the tick settings. Open them with **Load**.
+- A `*` next to the project name means there are unsaved changes; GenSynth asks before closing
+  or opening another project.
+- **Auto-save** can be enabled in **Settings → Save & Storage**: it saves the open file every N
+  seconds while there are changes.
+- Projects from older GenSynth versions still open; settings they do not have get their defaults.
+
+## ⚙️ Settings
+
+Open them with the ⚙ icon in the top bar:
+
+- **Appearance**: light or dark theme.
+- **Save & Storage**: auto-save and its interval.
+- **Simulation**: the tick clock (see *Pace of the messages*).
+
+## ⌨️ Keyboard shortcuts
 
 | Shortcut | Action |
 |---|---|
-| `Ctrl/Cmd + S` | Save (same as the **Save** button; opens "Save as" if no file is open yet). |
-| `Ctrl/Cmd + Z` | Discard the unsaved changes of the selected group, flow or variable (same as its **Discard** button). With nothing selected, discards every unsaved change of the project after a confirmation. Inside text fields it keeps the normal text undo, and it does nothing while a dialog is open. |
+| `Ctrl + S` (`Cmd + S` on macOS) | Save the project. |
+| `Ctrl + Z` (`Cmd + Z` on macOS) | Discard the unsaved changes of the selected group, flow or variable. With nothing selected, discards all unsaved changes after asking for confirmation. Inside a text field it works as a normal text undo. |
 
-## ⏱️ Simulation Clock (Ticks)
+---
 
-Message generation is paced by a single global **tick clock**, configured in **Settings → Simulation**:
+## 🛠️ Troubleshooting
 
-- **Fixed period**: one tick every N milliseconds, seconds or minutes (whole number ≥ 1, at most 24 hours). Default: 1 second.
-- **As Fast As You Can**: the next tick starts as soon as the previous one finishes, with no wait. Useful to measure the maximum throughput; it may keep a CPU core busy while running.
+| Problem | Solution |
+|---|---|
+| `NoClassDefFoundError` or `ClassNotFoundException` when starting | The application is not fully built. Run `mvn clean install -DskipTests` from the root folder again. |
+| The browser version shows "disconnected" | Start the engine first (step 1) and check that port 8765 is free. |
+| The logs show *Invalid connector configuration…* when starting a group | A required connector field is empty or invalid; the message says which one. |
+| A plugin is rejected as "built for the legacy plugin API" | That plugin was made for an older GenSynth; it must be rebuilt by its author. |
+| *fails* keeps growing | Check the logs panel (bottom): it shows why the destination rejected the messages. |
 
-Each flow sends **one message every N ticks** (*Every N ticks*, minimum 1); paused groups are skipped. Changes to the tick apply live, without stopping the simulation, and are saved with the project. The resource bar shows the measured tick rate (`TICK`), and each flow in the left panel shows its measured **msg/s**, **sent** (publishes completed without error) and **fails** (messages that could not be generated or published).
+---
 
-Each group chooses how its flows send (**Output Mode**, applied the next time the group starts):
-- **Parallel**: every flow runs on its own thread and sends as soon as it generates, independently of the other flows. A flow that is still sending skips its next tick instead of building a backlog.
-- **Sequential**: the messages of all flows go into one FIFO queue (in generation order) and a single sender publishes them in that order. The queue is bounded (10 000 messages); if it is full, the tick is skipped.
+## 👩‍💻 For developers
 
-The group menu in the left panel has a **Repeater** option to create N flows with the same initial configuration and a naming pattern (e.g. `${name} ${index}`).
-
-Notes:
-- The clock runs only while the system is running. It lives in `core/.../clock/TickClockImpl.java` (interfaces `ITickClock` / `ITickListener` in `api/`); the per-group senders are in `core/.../ws/dispatch/` (`IGroupDispatcher` in `api/`).
-- The flow fields `interval` and `burst` and the group field `threads` are kept in project files for compatibility but are no longer used.
-- Variable "ticks" (e.g. anomaly `whenTicks`, boolean patterns) count value generations of that variable, not global clock ticks.
-
-## 🔧 Tech Stack
-
-### Backend
-- **Java 21 LTS**
-- **Maven** (Dependency management)
-- **Eclipse Paho** (MQTT)
-- **RabbitMQ AMQP Client** (RabbitMQ)
-- **Apache Kafka** (Kafka)
-- **Java-WebSocket** (Real-time communication)
-
-### Frontend
-- **React 18** + **TypeScript**
-- **Vite** (bundler)
-- **Tailwind CSS** (styling)
-- **Material-UI** (UI components)
+- Creating a connector plugin for another technology: [Plugin Developer Guide](plugin-api/PLUGIN_DEVELOPER_GUIDE.md).
+- The interface is in `simulator-ui/` (React + TypeScript) and the engine in `core/` (Java 21);
+  the root `pom.xml` builds the plugin API and the engine.
 
 ## 📝 License
 
-This project is licensed under the MIT License
+This project is licensed under the MIT License.
 
 ## 👨‍💻 Author
 
