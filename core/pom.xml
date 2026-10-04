@@ -294,6 +294,17 @@
                                     </pluginExecutionFilter>
                                     <action><ignore/></action>
                                 </pluginExecution>
+                                <!-- The IDE resolves plugin-api as a workspace project (no JAR), which copy-dependencies
+                                     cannot copy (MDEP-187). The copies are only needed by the command-line build. -->
+                                <pluginExecution>
+                                    <pluginExecutionFilter>
+                                        <groupId>org.apache.maven.plugins</groupId>
+                                        <artifactId>maven-dependency-plugin</artifactId>
+                                        <versionRange>[3.6.1,)</versionRange>
+                                        <goals><goal>copy-dependencies</goal></goals>
+                                    </pluginExecutionFilter>
+                                    <action><ignore/></action>
+                                </pluginExecution>
                             </pluginExecutions>
                         </lifecycleMappingMetadata>
                     </configuration>
