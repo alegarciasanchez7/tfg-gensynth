@@ -16,11 +16,14 @@ import java.util.Locale;
  *
  * A project file is a JSON document with the following shape:
  * <pre>
- * { "format": "gensynth-project", "version": "1.1.0", "exportedAt": "...", "groups": [...], "variables": [...],
+ * { "format": "gensynth-project", "version": "1.2.0", "exportedAt": "...", "groups": [...], "variables": [...],
  *   "settings": { "tick": { "mode": "FIXED_RATE", "value": 1, "unit": "SECONDS" } } }
  * </pre>
  * The {@code settings} section was added in version 1.1.0; files without it (1.0.0) are still
- * valid and load with the default settings.
+ * valid and load with the default settings. Version 1.2.0 added the flow field {@code everyTicks}
+ * (one message every N ticks, default 1); since then the flow fields {@code burst} and
+ * {@code interval} and the group field {@code threads} are legacy and ignored, and the group
+ * {@code outputMode} is "parallel" or "sequential" (other values load as "parallel").
  * The extension makes file dialogs show only project files, and the {@code format} marker
  * guarantees that a file renamed to ".gsynth" is still rejected when it is not a GenSynth project.
  */
@@ -33,7 +36,7 @@ public final class ProjectFileFormat {
     public static final String FORMAT_ID = "gensynth-project";
 
     /** Current version of the project file format. */
-    public static final String VERSION = "1.1.0";
+    public static final String VERSION = "1.2.0";
 
     private ProjectFileFormat() {
     }

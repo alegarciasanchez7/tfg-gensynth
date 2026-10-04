@@ -51,6 +51,7 @@ public class StateCommandHandler implements CommandHandler {
     public void handleGetInitialState(WebSocket conn, String commandId) {
         UiBridgeWebSocketServer server = ctx.getServer();
         server.sendMessage(conn, "INITIAL_STATE", commandId, buildInitialStatePayload(commandId));
+        server.systemCommandHandler.sendFlowsMetrics(conn);
     }
 
     /**
@@ -159,6 +160,7 @@ public class StateCommandHandler implements CommandHandler {
             server.broadcastSystemStatus();
             server.sendVariablesUpdate();
             server.settingsCommandHandler.broadcastSettingsUpdate();
+            server.broadcastFlowsMetrics();
 
         } catch (Exception e) {
             logger.error("Failed to import state", e);

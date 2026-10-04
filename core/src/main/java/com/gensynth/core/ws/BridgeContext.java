@@ -76,6 +76,13 @@ public class BridgeContext {
         return server.totalMessages;
     }
 
+    /**
+     * @return the global message sequence used by the {{n}} template tag
+     */
+    public AtomicLong getMessageSequence() {
+        return server.messageSequence;
+    }
+
     public AtomicLong getTotalErrors() {
         return server.totalErrors;
     }

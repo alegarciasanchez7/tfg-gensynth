@@ -13,7 +13,8 @@ import java.util.Objects;
  * - Name and description
  * - Technology connector type (rabbitmq, kafka, etc.)
  * - Connection parameters (host, port, topic)
- * - Generation parameters (burst per tick; interval is legacy and ignored)
+ * - Generation parameters (one message every {@code everyTicks} global ticks;
+ *   interval and burst are legacy and ignored by the engine)
  * - Template for payload generation
  * - Connector-specific configuration
  *
@@ -30,6 +31,7 @@ public class FlowDefinition {
     private String topic;
     private int interval;
     private int burst;
+    private int everyTicks = 1;
     private String template;
     private String format; // "json", "xml", "csv", "plain"
     private boolean enabled;
@@ -50,7 +52,7 @@ public class FlowDefinition {
      * @param topic Topic/queue name
      * @param interval Legacy publish interval in milliseconds; ignored by the engine since the
      *                 global tick clock (project format 1.1.0), kept for file compatibility
-     * @param burst Number of events published on every tick
+     * @param burst Legacy number of events per send; ignored by the engine since format 1.2.0
      * @param template Event template with placeholders
      * @param connectorId Connector plugin ID
      * @param connectorConfig Connector-specific configuration
@@ -128,6 +130,13 @@ public class FlowDefinition {
         return burst;
     }
 
+    /**
+     * @return number of global ticks between two messages of this flow (at least 1)
+     */
+    public int getEveryTicks() {
+        return everyTicks;
+    }
+
     public String getTemplate() {
         return template;
     }
@@ -195,6 +204,16 @@ public class FlowDefinition {
         this.updatedAt = Instant.now();
     }
 
+    /**
+     * Sets how many global ticks pass between two messages of this flow.
+     *
+     * @param everyTicks ticks between messages; values below 1 are clamped to 1
+     */
+    public void setEveryTicks(int everyTicks) {
+        this.everyTicks = Math.max(1, everyTicks);
+        this.updatedAt = Instant.now();
+    }
+
     public void setTemplate(String template) {
         this.template = Objects.requireNonNull(template, "template cannot be null");
         this.updatedAt = Instant.now();
@@ -243,6 +262,7 @@ public class FlowDefinition {
         payload.put("topic", topic);
         payload.put("interval", interval);
         payload.put("burst", burst);
+        payload.put("everyTicks", everyTicks);
         payload.put("template", template);
         payload.put("format", format);
         payload.put("enabled", enabled);
@@ -290,6 +310,9 @@ public class FlowDefinition {
         if (enabledObj instanceof Boolean) {
             flow.setEnabled((Boolean) enabledObj);
         }
+
+        Object everyTicksObj = payload.get("everyTicks");
+        flow.setEveryTicks(everyTicksObj instanceof Number ? ((Number) everyTicksObj).intValue() : 1);
         
         return flow;
     }
@@ -306,6 +329,7 @@ public class FlowDefinition {
             ", topic='" + topic + '\'' +
             ", interval=" + interval +
             ", burst=" + burst +
+            ", everyTicks=" + everyTicks +
             ", createdAt=" + createdAt +
             ", updatedAt=" + updatedAt +
             '}';

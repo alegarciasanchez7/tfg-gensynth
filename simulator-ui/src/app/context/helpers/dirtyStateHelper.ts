@@ -34,6 +34,7 @@ export function getFlowComparable(flow: Flow) {
     technology: flow.technology,
     interval: flow.interval,
     burst: flow.burst,
+    everyTicks: flow.everyTicks,
     topic: flow.topic,
     host: flow.host,
     port: flow.port,

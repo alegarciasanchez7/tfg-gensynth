@@ -8,7 +8,7 @@ import type {
   MetricsPayload,
   LogPayload,
   GroupState,
-  FlowMetricsPayload,
+  FlowsMetricsPayload,
   VariableState,
   TracePayload,
   PluginValidationResultPayload,
@@ -58,8 +58,8 @@ export class MessageHandler {
         case 'GROUPS_UPDATE':
           this.emit('groups-update', message.payload as GroupState[]);
           break;
-        case 'FLOW_UPDATE':
-          this.emit('flow-update', message.payload as FlowMetricsPayload);
+        case 'FLOWS_METRICS':
+          this.emit('flows-metrics', (message.payload as FlowsMetricsPayload)?.flows ?? []);
           break;
         case 'VARIABLE_UPDATE':
           this.emit('variables-update', message.payload as VariableState[]);

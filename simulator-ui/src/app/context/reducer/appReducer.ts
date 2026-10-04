@@ -140,7 +140,7 @@ export type AppAction =
   | { type: 'SET_FLOW_CONNECTOR_SELECTION'; payload: { flowId: string; pluginId: string; pluginVersion: string } }
   | { type: 'SET_FLOW_CONNECTOR_CONFIG'; payload: { flowId: string; config: Record<string, unknown> } }
   | { type: 'SET_METRICS'; payload: MetricsPayload }
-  | { type: 'SET_FLOW_METRICS'; payload: FlowMetricsPayload }
+  | { type: 'SET_FLOWS_METRICS'; payload: FlowMetricsPayload[] }
   | { type: 'SET_RESTARTING'; payload: boolean }
   | { type: 'NEW_PROJECT' }
   | { type: 'MARK_SAVED'; payload: { savedState: SavedStateSnapshot; file: ProjectFileInfo } }

@@ -9,7 +9,12 @@ import org.java_websocket.WebSocket;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.gensynth.core.model.TickSettings;
+import com.gensynth.core.ws.runtime.ThroughputMeter;
+
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -58,6 +63,8 @@ public class SystemCommandHandler implements CommandHandler {
         }
         server.sendAck(conn, commandId, "system_started");
         broadcastSystemStatus();
+        broadcastGroupsUpdate();
+        broadcastFlowsMetrics();
         server.sendLog(conn, "info", "SYSTEM", "System started");
     }
 
@@ -78,6 +85,7 @@ public class SystemCommandHandler implements CommandHandler {
         server.sendAck(conn, commandId, "system_stopped");
         broadcastGroupsUpdate();
         broadcastSystemStatus();
+        broadcastFlowsMetrics();
         server.sendLog(conn, "info", "SYSTEM", "System stopped");
     }
 
@@ -166,13 +174,9 @@ public class SystemCommandHandler implements CommandHandler {
             ctx.setMessagesPerSecond(ctx.getMessagesLastWindow().getAndSet(0));
             ctx.setNetworkUpPerSecond(ctx.getBytesSentLastWindow().getAndSet(0));
             ctx.setTicksPerSecond(ctx.getTickClock().sampleTicksPerSecond());
-            synchronized (ctx.getStateLock()) {
-                // Measured messages per second of each flow over the same 1s window
-                for (GroupRuntime group : ctx.getGroupsById().values()) {
-                    for (FlowRuntime flow : group.flows) {
-                        flow.throughput = (int) flow.sentInWindow.getAndSet(0);
-                    }
-                }
+            updateFlowRates();
+            if (ctx.isSystemRunning()) {
+                broadcastFlowsMetrics();
             }
             if (ctx.getMetricSubscribers().isEmpty()) {
                 return;
@@ -187,6 +191,77 @@ public class SystemCommandHandler implements CommandHandler {
             logger.error("Error emitting metrics tick", ex);
             ctx.getTotalErrors().incrementAndGet();
         }
+    }
+
+    /**
+     * Closes the one-second bucket of every flow meter and updates the measured send rate.
+     * Flows of groups that are not running report 0.
+     */
+    private void updateFlowRates() {
+        TickSettings tick = ctx.getTickClock().getSettings();
+        long now = System.nanoTime();
+        synchronized (ctx.getStateLock()) {
+            for (GroupRuntime group : ctx.getGroupsById().values()) {
+                boolean running = "running".equals(group.status);
+                for (FlowRuntime flow : group.flows) {
+                    flow.meter.rotate();
+                    flow.throughput = running
+                        ? flow.meter.rate(
+                            ThroughputMeter.windowFor(tick, flow.everyTicks),
+                            ThroughputMeter.periodSeconds(tick, flow.everyTicks),
+                            now)
+                        : 0.0;
+                }
+            }
+        }
+    }
+
+    /**
+     * Builds the FLOWS_METRICS payload: live counters and send rate of every flow.
+     *
+     * @return payload {@code { flows: [{ flowId, groupId, throughput, generated, sent, tries, latency, errorRate, connectionStatus, lastError? }] }}
+     */
+    public Map<String, Object> buildFlowsMetricsPayload() {
+        List<Map<String, Object>> flows = new ArrayList<>();
+        synchronized (ctx.getStateLock()) {
+            for (GroupRuntime group : ctx.getGroupsById().values()) {
+                for (FlowRuntime flow : group.flows) {
+                    Map<String, Object> entry = new LinkedHashMap<>();
+                    entry.put("flowId", flow.id);
+                    entry.put("groupId", group.id);
+                    entry.put("throughput", flow.throughput);
+                    entry.put("generated", flow.generated.get());
+                    entry.put("sent", flow.sent.get());
+                    entry.put("tries", flow.tries());
+                    entry.put("latency", flow.latency);
+                    entry.put("errorRate", flow.hasError ? 1.0 : 0.0);
+                    entry.put("connectionStatus", flow.connectionStatus);
+                    if (flow.errorMessage != null) {
+                        entry.put("lastError", flow.errorMessage);
+                    }
+                    flows.add(entry);
+                }
+            }
+        }
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("flows", flows);
+        return payload;
+    }
+
+    /**
+     * Broadcasts FLOWS_METRICS to every connection.
+     */
+    public void broadcastFlowsMetrics() {
+        ctx.getServer().broadcastMessage("FLOWS_METRICS", buildFlowsMetricsPayload());
+    }
+
+    /**
+     * Sends FLOWS_METRICS to one connection.
+     *
+     * @param conn the WebSocket connection
+     */
+    public void sendFlowsMetrics(WebSocket conn) {
+        ctx.getServer().sendMessage(conn, "FLOWS_METRICS", buildFlowsMetricsPayload());
     }
 
     /**

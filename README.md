@@ -115,7 +115,7 @@ Projects are saved and loaded as `.gsynth` files. They are JSON documents with a
 ```json
 {
   "format": "gensynth-project",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "exportedAt": "...",
   "groups": [],
   "variables": [],
@@ -128,6 +128,7 @@ Projects are saved and loaded as `.gsynth` files. They are JSON documents with a
 - Plain `.json` files are no longer accepted. To migrate an old configuration, rename it to `.gsynth` and add the `"format": "gensynth-project"` field.
 - The format is defined in `core/.../persistence/ProjectFileFormat.java` and mirrored in `simulator-ui/src/app/core/fileStorage.ts`.
 - Version `1.1.0` added the `settings` section (simulation clock). `1.0.0` files still load and get the default settings (1 tick per second).
+- Version `1.2.0` added the flow field `everyTicks` (default 1). Older files load with one message per tick, and legacy output modes (`serial`, `TEXT`, `round-robin`) load as `parallel`.
 - The Core also mirrors the current state in `core/state/` (`groups.json`, `variables.json`, `settings.json`) on every change.
 
 ## ⏱️ Simulation Clock (Ticks)
@@ -137,11 +138,17 @@ Message generation is paced by a single global **tick clock**, configured in **S
 - **Fixed period**: one tick every N milliseconds, seconds or minutes (whole number ≥ 1, at most 24 hours). Default: 1 second.
 - **As Fast As You Can**: the next tick starts as soon as the previous one finishes, with no wait. Useful to measure the maximum throughput; it may keep a CPU core busy while running.
 
-On every tick, each enabled flow of every running group publishes its **burst** (messages per tick); paused groups are skipped. Changes apply live, without stopping the simulation, and are saved with the project. The resource bar shows the measured rate (`TICK`, ticks/s and total ticks), and each flow's throughput is the measured messages per second.
+Each flow sends **one message every N ticks** (*Every N ticks*, minimum 1); paused groups are skipped. Changes to the tick apply live, without stopping the simulation, and are saved with the project. The resource bar shows the measured tick rate (`TICK`), and each flow in the left panel shows its measured **msg/s**, **sent** (publishes completed without error) and **tries** (generated but not sent: pending in a queue or failed).
+
+Each group chooses how its flows send (**Output Mode**, applied the next time the group starts):
+- **Parallel**: every flow runs on its own thread and sends as soon as it generates, independently of the other flows. A flow that is still sending skips its next tick instead of building a backlog.
+- **Sequential**: the messages of all flows go into one FIFO queue (in generation order) and a single sender publishes them in that order. The queue is bounded (10 000 messages); if it is full, the tick is skipped.
+
+The group menu in the left panel has a **Repeater** option to create N flows with the same initial configuration and a naming pattern (e.g. `${name} ${index}`).
 
 Notes:
-- The clock runs only while the system is running. It lives in `core/.../clock/TickClockImpl.java` (interfaces `ITickClock` / `ITickListener` in `api/`).
-- The flow `interval` field is kept in project files for compatibility but is no longer used.
+- The clock runs only while the system is running. It lives in `core/.../clock/TickClockImpl.java` (interfaces `ITickClock` / `ITickListener` in `api/`); the per-group senders are in `core/.../ws/dispatch/` (`IGroupDispatcher` in `api/`).
+- The flow fields `interval` and `burst` and the group field `threads` are kept in project files for compatibility but are no longer used.
 - Variable "ticks" (e.g. anomaly `whenTicks`, boolean patterns) count value generations of that variable, not global clock ticks.
 
 ## 🔧 Tech Stack

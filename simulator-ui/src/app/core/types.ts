@@ -18,7 +18,7 @@ export const CORE_PROTOCOL_VERSION = '1.0.0';
 export type CoreMessageType =
   | 'SYSTEM_STATUS'
   | 'GROUPS_UPDATE'
-  | 'FLOW_UPDATE'
+  | 'FLOWS_METRICS'
   | 'METRICS_UPDATE'
   | 'LOG_ENTRY'
   | 'VARIABLE_UPDATE'
@@ -100,13 +100,27 @@ export interface MetricsPayload {
   totalTicks?: number;
 }
 
+/** Live metrics of one flow (entry of FLOWS_METRICS). */
 export interface FlowMetricsPayload {
   flowId: string;
+  groupId: string;
+  /** Measured messages per second. */
   throughput: number;
+  /** Messages generated since the group started. */
+  generated: number;
+  /** Messages whose publish completed without error. */
+  sent: number;
+  /** Generated but not sent: pending in a queue or failed. */
+  tries: number;
   latency: number;
   errorRate: number;
   connectionStatus: 'connected' | 'disconnected' | 'error' | 'warning';
   lastError?: string;
+}
+
+/** FLOWS_METRICS event: sent every second while the system runs, and after start/stop/pause. */
+export interface FlowsMetricsPayload {
+  flows: FlowMetricsPayload[];
 }
 
 export interface LogPayload {
@@ -219,6 +233,7 @@ export interface CreateFlowCommandPayload {
   topic?: string;
   interval?: number;
   burst?: number;
+  everyTicks?: number;
   template?: string;
   format?: 'json' | 'xml' | 'csv' | 'plain';
   connectorConfig?: Record<string, unknown>;
@@ -236,6 +251,7 @@ export interface UpdateGroupCommandPayload {
   groupId: string;
   name?: string;
   threads?: number;
+  /** 'parallel' | 'sequential'; any other value is rejected with INVALID_PAYLOAD. */
   outputMode?: string;
   description?: string;
   enabled?: boolean;
@@ -251,6 +267,7 @@ export interface UpdateFlowCommandPayload {
   topic?: string;
   interval?: number;
   burst?: number;
+  everyTicks?: number;
   template?: string;
   format?: 'json' | 'xml' | 'csv' | 'plain';
   connectorConfig?: Record<string, unknown>;
@@ -430,6 +447,7 @@ export interface FlowState {
   errorMessage?: string;
   interval: number;
   burst: number;
+  everyTicks?: number;
   topic: string;
   host: string;
   port: number;

@@ -1,19 +1,11 @@
 import { useState } from 'react';
-import {
-  Layers, ChevronRight,
-  Clock, Cpu, AlertCircle, CheckCircle, Wifi, WifiOff,
-  Trash2, RotateCcw,
-} from 'lucide-react';
+import { Layers, ChevronRight, Cpu, AlertCircle, Trash2, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
-import type { Group, Flow, ConnectionStatus } from '../../types';
+import type { Group, Flow, OutputMode } from '../../types';
 import { useApp } from '../../context';
-
-const connBadge: Record<ConnectionStatus, { color: string; bg: string; label: string }> = {
-  connected:    { color: 'text-emerald-500', bg: 'bg-emerald-500/10 border-emerald-500/30', label: 'CONNECTED' },
-  disconnected: { color: 'text-slate-400',   bg: 'bg-slate-500/10 border-slate-400/30',    label: 'DISCONNECTED' },
-  error:        { color: 'text-red-500',     bg: 'bg-red-500/10 border-red-500/30',        label: 'ERROR' },
-  warning:      { color: 'text-amber-500',   bg: 'bg-amber-500/10 border-amber-500/30',    label: 'WARNING' },
-};
+import { StatusDot } from '../common/StatusDot';
+import { OUTPUT_MODE_OPTIONS } from '../../core/outputMode';
+import { formatRate, groupRate } from '../../core/metricsFormat';
 
 function EditableField({
   label,
@@ -42,91 +34,55 @@ function EditableField({
   );
 }
 
-function SelectField({
-  label,
-  options,
+function OutputModeField({
   value,
   onChange,
 }: {
-  label: string;
-  options: string[];
-  value: string;
-  onChange: (value: string) => void;
+  value: OutputMode;
+  onChange: (value: OutputMode) => void;
 }) {
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-[10px] text-[var(--c-tx4)] tracking-wider uppercase"
+      <label htmlFor="group-output-mode" className="text-[10px] text-[var(--c-tx4)] tracking-wider uppercase"
         style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-        {label}
+        Output Mode
       </label>
       <select
+        id="group-output-mode"
         value={value}
-        onChange={e => onChange(e.target.value)}
-        className="bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded px-2.5 py-1.5 text-xs text-[var(--c-tx1)] outline-none focus:border-cyan-500/50 transition-all appearance-none"
+        onChange={e => onChange(e.target.value as OutputMode)}
+        className="bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded px-2.5 py-1.5 text-xs text-[var(--c-tx1)] outline-none focus:border-cyan-500/50 transition-all"
         style={{ fontFamily: 'JetBrains Mono, monospace' }}
       >
-        {options.map(o => <option key={o}>{o}</option>)}
+        {OUTPUT_MODE_OPTIONS.map(option => (
+          <option key={option.value} value={option.value}>{option.label}</option>
+        ))}
       </select>
+      <span className="text-[9px] text-[var(--c-tx4)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+        {value === 'sequential'
+          ? 'One FIFO queue: messages are sent in generation order by a single sender.'
+          : 'Each flow runs on its own thread and sends as soon as it generates.'}
+        {' '}Applies on next start.
+      </span>
     </div>
   );
 }
 
-function NumberField({
-  label,
-  value,
-  unit,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  unit?: string;
-  onChange?: (value: number) => void;
-}) {
+function FlowSummaryRow({ flow, onSelect }: { flow: Flow; onSelect: () => void }) {
   return (
-    <div className="flex flex-col gap-1">
-      <label className="text-[10px] text-[var(--c-tx4)] tracking-wider uppercase"
-        style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-        {label}
-      </label>
-      <div className="flex items-center">
-        <input
-          type="number"
-          value={value}
-          readOnly={!onChange}
-          onChange={e => onChange?.(Number(e.target.value))}
-          className="bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded-l px-2.5 py-1.5 text-xs text-[var(--c-tx1)] outline-none focus:border-cyan-500/50 transition-all w-full"
-          style={{ fontFamily: 'JetBrains Mono, monospace' }}
-        />
-        {unit && (
-          <span className="px-2 py-1.5 bg-[var(--c-bg4)] border border-l-0 border-[var(--c-br1)] rounded-r text-[10px] text-[var(--c-tx4)] shrink-0"
-            style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-            {unit}
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function FlowSummaryRow({ flow }: { flow: Flow }) {
-  const badge = connBadge[flow.connectionStatus];
-  return (
-    <div className="flex items-center gap-2 px-3 py-2 border border-[var(--c-br1)] rounded bg-[var(--c-bg1)] hover:border-[var(--c-br3)] transition-colors">
-      <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded border text-[9px] ${badge.bg} ${badge.color}`}
-        style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-        {flow.connectionStatus === 'connected' ? <Wifi size={8} /> : <WifiOff size={8} />}
-        {badge.label}
-      </div>
-      <span className="text-xs text-[var(--c-tx2)] flex-1 truncate" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-        {flow.name}
-      </span>
-      <span className="text-[10px] text-[var(--c-tx4)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-        {flow.throughput}
-      </span>
-      {flow.hasError && <AlertCircle size={11} className="text-red-500" />}
-      {!flow.hasError && flow.connectionStatus === 'connected' && <CheckCircle size={11} className="text-emerald-500" />}
-      <ChevronRight size={11} className="text-[var(--c-tx5)]" />
-    </div>
+    <button
+      type="button"
+      onClick={onSelect}
+      title={`Open ${flow.name}`}
+      className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded text-left hover:bg-[var(--c-bg5)] transition-colors group"
+      style={{ fontFamily: 'JetBrains Mono, monospace' }}
+    >
+      <StatusDot status={flow.connectionStatus} />
+      <span className="text-[11px] text-[var(--c-tx2)] flex-1 truncate group-hover:text-[var(--c-tx1)]">{flow.name}</span>
+      {flow.hasError && <AlertCircle size={10} className="text-red-500 shrink-0" />}
+      <span className="text-[9px] text-[var(--c-tx4)] uppercase shrink-0">{flow.technology}</span>
+      <ChevronRight size={11} className="text-[var(--c-tx5)] group-hover:text-cyan-500 shrink-0" />
+    </button>
   );
 }
 
@@ -215,8 +171,7 @@ export function GroupWorkspace({ group }: GroupWorkspaceProps) {
       {/* Metrics bar */}
       <div className="flex gap-3">
         {[
-          { label: 'THROUGHPUT', value: group.throughput, color: 'text-cyan-500' },
-          { label: 'THREADS',    value: String(group.threads), color: 'text-violet-500' },
+          { label: 'THROUGHPUT', value: `${formatRate(groupRate(group, state.flowMetrics))} msg/s`, color: 'text-cyan-500' },
           { label: 'FLOWS',      value: String(group.flows.length), color: 'text-[var(--c-tx2)]' },
           { label: 'ERRORS',     value: String(group.flows.filter(f => f.hasError).length), color: group.flows.some(f => f.hasError) ? 'text-red-500' : 'text-slate-400' },
         ].map(m => (
@@ -243,19 +198,10 @@ export function GroupWorkspace({ group }: GroupWorkspaceProps) {
             value={group.name}
             onChange={name => handleUpdate({ name })}
           />
-          <SelectField
-            label="Output Mode"
-            options={['parallel', 'sequential', 'round-robin']}
+          <OutputModeField
             value={group.outputMode}
             onChange={outputMode => handleUpdate({ outputMode })}
           />
-          <NumberField
-            label="Threads"
-            value={group.threads}
-            unit="threads"
-            onChange={threads => handleUpdate({ threads })}
-          />
-          <NumberField label="Global Rate Limit" value={5000} unit="msg/s" onChange={() => {}} />
           <EditableField
             label="Description"
             value={group.description}
@@ -265,28 +211,23 @@ export function GroupWorkspace({ group }: GroupWorkspaceProps) {
         </div>
       </div>
 
-      {/* Timing */}
-      <div className="bg-[var(--c-bg4)] border border-[var(--c-br1)] rounded p-3 flex flex-col gap-3">
-        <span className="text-[10px] text-[var(--c-tx4)] tracking-widest uppercase flex items-center gap-1.5"
-          style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-          <Clock size={10} /> Timing &amp; Scheduling
-        </span>
-        <div className="grid grid-cols-3 gap-3">
-          <SelectField label="Schedule Mode" options={['continuous', 'interval', 'cron', 'burst']} value="continuous" onChange={() => {}} />
-          <NumberField label="Warmup Delay" value={0} unit="ms" onChange={() => {}} />
-          <NumberField label="Shutdown Grace" value={2000} unit="ms" onChange={() => {}} />
-        </div>
-      </div>
-
       {/* Flows summary */}
       <div className="bg-[var(--c-bg4)] border border-[var(--c-br1)] rounded p-3 flex flex-col gap-2">
         <span className="text-[10px] text-[var(--c-tx4)] tracking-widest uppercase"
           style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-          Flows in this group
+          Flows in this group ({group.flows.length})
         </span>
-        <div className="flex flex-col gap-1.5">
-          {group.flows.map(f => <FlowSummaryRow key={f.id} flow={f} />)}
-        </div>
+        {group.flows.length === 0 ? (
+          <span className="text-[10px] text-[var(--c-tx4)] italic px-1" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+            No flows yet
+          </span>
+        ) : (
+          <div className="flex flex-col">
+            {group.flows.map(f => (
+              <FlowSummaryRow key={f.id} flow={f} onSelect={() => actions.selectFlow(group.id, f.id)} />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

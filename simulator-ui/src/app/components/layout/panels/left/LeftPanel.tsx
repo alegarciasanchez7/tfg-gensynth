@@ -40,6 +40,7 @@ interface LeftPanelProps {
     burst?: number,
     template?: string,
     connectorConfig?: Record<string, unknown>,
+    everyTicks?: number,
   ) => Promise<Flow>;
   onUpdateGroupConfig: (groupId: string, config: any, name?: string) => Promise<void>;
   onUpdateFlowConfig: (groupId: string, flowId: string, config: any, name?: string) => Promise<void>;

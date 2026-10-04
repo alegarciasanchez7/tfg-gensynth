@@ -15,7 +15,7 @@ describe('WorkspaceBreadcrumb', () => {
       throughput: '0 msg/s',
       description: '',
       threads: 1,
-      outputMode: 'mqtt',
+      outputMode: 'parallel',
       enabled: true,
       expanded: true,
       flows: [
@@ -29,6 +29,7 @@ describe('WorkspaceBreadcrumb', () => {
           hasError: false,
           interval: 1000,
           burst: 1,
+          everyTicks: 1,
           topic: 'test',
           host: 'localhost',
           port: 1883,

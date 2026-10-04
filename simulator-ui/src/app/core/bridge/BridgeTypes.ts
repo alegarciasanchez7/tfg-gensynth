@@ -71,7 +71,7 @@ export interface EventMap {
   'metrics': MetricsPayload;
   'log': LogPayload;
   'groups-update': GroupState[];
-  'flow-update': FlowMetricsPayload;
+  'flows-metrics': FlowMetricsPayload[];
   'variables-update': VariableState[];
   'initial-state': InitialStatePayload;
   'connector-catalog': ConnectorPluginDescriptor[];

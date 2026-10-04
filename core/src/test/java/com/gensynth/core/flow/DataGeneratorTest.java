@@ -71,4 +71,35 @@ public class DataGeneratorTest {
         assertTrue(value instanceof String);
         assertTrue(List.of("A", "B").contains((String) value));
     }
+
+    @Test
+    public void sharedVariableIsSafeAcrossConcurrentFlows() throws Exception {
+        // A GLOBAL variable cached once and used by flows generating on different threads
+        Variable shared = new Variable("shared", "shared", "GLOBAL", "numeric", 0.0, Map.of("min", 0.0, "max", 100.0), null, null);
+        int threads = 8;
+        int perThread = 1000;
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(threads);
+        java.util.concurrent.CountDownLatch start = new java.util.concurrent.CountDownLatch(1);
+        List<java.util.concurrent.Future<?>> futures = new java.util.ArrayList<>();
+        for (int t = 0; t < threads; t++) {
+            futures.add(pool.submit(() -> {
+                start.await();
+                for (int i = 0; i < perThread; i++) {
+                    generator.generateValue(shared, new java.util.HashMap<>());
+                }
+                return null;
+            }));
+        }
+        start.countDown();
+        for (java.util.concurrent.Future<?> future : futures) {
+            future.get(30, java.util.concurrent.TimeUnit.SECONDS);
+        }
+        pool.shutdown();
+
+        java.util.Map<String, Object> context = new java.util.HashMap<>();
+        generator.generateValue(shared, context);
+        com.gensynth.core.flow.variables.ConfigurableVariable cv =
+            (com.gensynth.core.flow.variables.ConfigurableVariable) context.get("shared_config");
+        assertEquals("no generation may be lost", threads * perThread + 1L, cv.getConfiguration().getTickCounter());
+    }
 }

@@ -21,14 +21,18 @@ import java.util.concurrent.locks.LockSupport;
  * while the clock is being rescheduled. In {@link TickSettings.Mode#FIXED_RATE} mode the
  * thread runs a fixed-rate schedule; in {@link TickSettings.Mode#AS_FAST_AS_POSSIBLE} mode
  * it runs a loop that starts the next tick as soon as the previous one returns, pausing
- * briefly only when the listener reports that there was nothing to do.
+ * briefly only when the listener reports that there was nothing to do. That pause is
+ * adaptive: it starts very short and doubles while there is still nothing to do, so the
+ * clock reacts quickly when a busy flow frees up but does not spin when everything is idle.
  */
 public class TickClockImpl implements ITickClock {
 
     private static final Logger logger = LoggerFactory.getLogger(TickClockImpl.class);
 
-    /** Pause used in as-fast-as-possible mode when a tick had no work to dispatch. */
-    private static final long IDLE_BACKOFF_NANOS = TimeUnit.MILLISECONDS.toNanos(1);
+    /** First pause used in as-fast-as-possible mode after a tick with no work to dispatch. */
+    private static final long MIN_IDLE_BACKOFF_NANOS = TimeUnit.MICROSECONDS.toNanos(20);
+    /** Longest pause used in as-fast-as-possible mode while there is no work to dispatch. */
+    private static final long MAX_IDLE_BACKOFF_NANOS = TimeUnit.MILLISECONDS.toNanos(1);
 
     private final ITickListener listener;
     private final ScheduledExecutorService executor;
@@ -157,9 +161,13 @@ public class TickClockImpl implements ITickClock {
     }
 
     private void runAsFastAsPossible(long gen) {
+        long backoff = MIN_IDLE_BACKOFF_NANOS;
         while (generation == gen && !Thread.currentThread().isInterrupted()) {
-            if (!tickOnce()) {
-                LockSupport.parkNanos(IDLE_BACKOFF_NANOS);
+            if (tickOnce()) {
+                backoff = MIN_IDLE_BACKOFF_NANOS;
+            } else {
+                LockSupport.parkNanos(backoff);
+                backoff = Math.min(MAX_IDLE_BACKOFF_NANOS, backoff * 2);
             }
         }
     }

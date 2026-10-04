@@ -5,6 +5,7 @@
 
 import { Group, Variable, Flow, ProjectSettings } from '../types';
 import { normalizeProjectSettings } from './tickSettings';
+import { normalizeOutputMode } from './outputMode';
 
 /** Extension of GenSynth project files. Must match ProjectFileFormat.EXTENSION in the Core. */
 export const PROJECT_FILE_EXTENSION = '.gsynth';
@@ -13,8 +14,9 @@ export const PROJECT_FORMAT_ID = 'gensynth-project';
 /**
  * Current project file format version. Must match ProjectFileFormat.VERSION in the Core.
  * 1.1.0 added the `settings` section; 1.0.0 files load with the default settings.
+ * 1.2.0 added the flow field `everyTicks` (default 1); `burst`, `interval` and `threads` are legacy.
  */
-export const PROJECT_FORMAT_VERSION = '1.1.0';
+export const PROJECT_FORMAT_VERSION = '1.2.0';
 
 export interface ProjectSnapshot {
   format: typeof PROJECT_FORMAT_ID;
@@ -81,6 +83,7 @@ export function normalizeFlowFromSnapshot(flow: Partial<Flow>): Flow {
     errorMessage: flow.errorMessage,
     interval: typeof flow.interval === 'number' ? flow.interval : 1000,
     burst: typeof flow.burst === 'number' ? flow.burst : 1,
+    everyTicks: Number.isInteger(flow.everyTicks) && (flow.everyTicks as number) >= 1 ? (flow.everyTicks as number) : 1,
     topic: flow.topic ?? '',
     host: flow.host ?? 'localhost',
     port: typeof flow.port === 'number' ? flow.port : 5672,
@@ -104,7 +107,7 @@ export function normalizeGroupFromSnapshot(group: Partial<Group>): Group {
     throughput: group.throughput ?? '0 msg/s',
     description: group.description ?? '',
     threads: typeof group.threads === 'number' ? group.threads : 1,
-    outputMode: group.outputMode ?? 'TEXT',
+    outputMode: normalizeOutputMode(group.outputMode),
     expanded: group.expanded ?? false,
     enabled: group.enabled ?? true,
     // Ensure flows is an array and normalize each flow

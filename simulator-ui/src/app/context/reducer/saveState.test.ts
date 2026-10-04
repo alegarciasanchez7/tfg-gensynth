@@ -13,7 +13,7 @@ const fileGroup: Group = {
   throughput: '0 msg/s',
   description: '',
   threads: 1,
-  outputMode: 'TEXT',
+  outputMode: 'parallel',
   expanded: false,
   enabled: true,
   flows: [
@@ -26,6 +26,7 @@ const fileGroup: Group = {
       hasError: false,
       interval: 1000,
       burst: 1,
+      everyTicks: 1,
       topic: 'demo',
       host: 'localhost',
       port: 5672,
@@ -40,7 +41,7 @@ const fileGroup: Group = {
 // Same group as echoed back by the Core (mapGroupFromCore): different defaults, no connectorVersion
 const coreGroup: Group = {
   ...fileGroup,
-  outputMode: 'serial',
+  outputMode: 'parallel',
   expanded: true,
   flows: [
     {

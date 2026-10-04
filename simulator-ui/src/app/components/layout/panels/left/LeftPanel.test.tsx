@@ -105,6 +105,7 @@ describe('LeftPanel', () => {
       hasError: false,
       interval: 1000,
       burst: 1,
+      everyTicks: 1,
       topic: '',
       host: 'localhost',
       port: 8080,
@@ -141,13 +142,28 @@ describe('LeftPanel', () => {
       8080,
       undefined,
       undefined, // legacy interval: pacing comes from the global tick clock
-      1,
+      undefined, // legacy burst: one message every N ticks
       '{}',
       {
         outputDir: './outputs',
         format: 'json',
         fileName: '',
       },
+      1, // everyTicks
     );
+  });
+
+  it('opens the Repeater from the group menu even when the group is collapsed', async () => {
+    const user = userEvent.setup();
+
+    render(<LeftPanel {...baseProps} groups={[{ ...group, expanded: false }]} />);
+
+    expect(screen.queryByRole('button', { name: /add flow/i })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Actions for group Orders' }));
+    await user.click(await screen.findByRole('menuitem', { name: /repeater/i }));
+
+    expect(await screen.findByRole('dialog', { name: 'Repeater' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Number of flows')).toHaveValue(2);
+    expect(screen.getByRole('button', { name: 'Create 2 flows' })).toBeDisabled();
   });
 });

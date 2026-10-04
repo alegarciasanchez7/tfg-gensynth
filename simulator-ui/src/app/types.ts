@@ -261,6 +261,7 @@ export interface Flow {
   name: string;
   technology: string;
   connectionStatus: ConnectionStatus;
+  /** @deprecated Live rate comes from `state.flowMetrics` (FLOWS_METRICS). */
   throughput: string;
   latency: number;
   hasError: boolean;
@@ -270,8 +271,10 @@ export interface Flow {
    * is driven by the global tick clock; kept so existing project files round-trip.
    */
   interval: number;
-  /** Messages published on every tick. */
+  /** @deprecated Legacy messages per send; ignored by the engine (one message per send). */
   burst: number;
+  /** Number of global ticks between two messages of this flow (integer >= 1). */
+  everyTicks: number;
   topic: string;
   host: string;
   port: number;
@@ -300,14 +303,19 @@ export interface ProjectSettings {
   tick: TickSettings;
 }
 
+/** How the flows of a group send: one FIFO queue + one sender, or one thread per flow. Mirrors OutputMode in the Core. */
+export type OutputMode = 'parallel' | 'sequential';
+
 export interface Group {
   id: string;
   name: string;
   status: GroupStatus;
+  /** @deprecated Live rate is the sum of the flows' `state.flowMetrics`. */
   throughput: string;
   description: string;
+  /** @deprecated Legacy; ignored by the engine. */
   threads: number;
-  outputMode: string;
+  outputMode: OutputMode;
   flows: Flow[];
   expanded: boolean;
   enabled: boolean;

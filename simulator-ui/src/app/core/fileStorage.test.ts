@@ -31,7 +31,7 @@ describe('fileStorage project format', () => {
     const settings = { tick: { mode: 'AS_FAST_AS_POSSIBLE', value: 1, unit: 'SECONDS' } } as const;
     const snapshot = createProjectSnapshot([], [], settings);
     expect(snapshot.format).toBe(PROJECT_FORMAT_ID);
-    expect(snapshot.version).toBe('1.1.0');
+    expect(snapshot.version).toBe('1.2.0');
     expect(snapshot.version).toBe(PROJECT_FORMAT_VERSION);
     expect(snapshot.settings).toEqual(settings);
   });
