@@ -7,6 +7,7 @@ import {
   loadProjectSnapshotFromFile,
   triggerFileSelection,
 } from './fileStorage';
+import { DEFAULT_PROJECT_SETTINGS } from './tickSettings';
 
 function projectFile(content: unknown, name = `project${PROJECT_FILE_EXTENSION}`): File {
   const text = typeof content === 'string' ? content : JSON.stringify(content);
@@ -26,10 +27,29 @@ describe('fileStorage project format', () => {
     vi.restoreAllMocks();
   });
 
-  it('createProjectSnapshot writes the format marker and version', () => {
-    const snapshot = createProjectSnapshot([], []);
+  it('createProjectSnapshot writes the format marker, version and settings', () => {
+    const settings = { tick: { mode: 'AS_FAST_AS_POSSIBLE', value: 1, unit: 'SECONDS' } } as const;
+    const snapshot = createProjectSnapshot([], [], settings);
     expect(snapshot.format).toBe(PROJECT_FORMAT_ID);
+    expect(snapshot.version).toBe('1.1.0');
     expect(snapshot.version).toBe(PROJECT_FORMAT_VERSION);
+    expect(snapshot.settings).toEqual(settings);
+  });
+
+  it('loads 1.0.0 project files without settings using the default settings', async () => {
+    const snapshot = await loadProjectSnapshotFromFile(projectFile({ ...validProject, version: '1.0.0' }));
+    expect(snapshot.settings).toEqual(DEFAULT_PROJECT_SETTINGS);
+  });
+
+  it('keeps valid settings and replaces invalid ones with the defaults', async () => {
+    const tick = { mode: 'FIXED_RATE', value: 250, unit: 'MILLISECONDS' };
+    const valid = await loadProjectSnapshotFromFile(projectFile({ ...validProject, settings: { tick } }));
+    expect(valid.settings).toEqual({ tick });
+
+    const invalid = await loadProjectSnapshotFromFile(
+      projectFile({ ...validProject, settings: { tick: { mode: 'FIXED_RATE', value: 0, unit: 'SECONDS' } } }),
+    );
+    expect(invalid.settings).toEqual(DEFAULT_PROJECT_SETTINGS);
   });
 
   it('loads a valid project file and normalizes its content', async () => {

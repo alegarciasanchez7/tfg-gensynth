@@ -1,3 +1,5 @@
+import type { ProjectSettings, TickSettings } from '../types';
+
 /**
  * Tipos para la comunicación con el Core Java
  * Estos tipos definen la estructura de los mensajes entre la UI y el núcleo
@@ -30,7 +32,8 @@ export type CoreMessageType =
   | 'PLUGIN_VALIDATION_RESULT'
   | 'PLUGIN_INSTALL_RESULT'
   | 'RESTART_REQUIRED'
-  | 'ROLLBACK_REPORT';
+  | 'ROLLBACK_REPORT'
+  | 'SETTINGS_UPDATE';
 
 export interface CoreMessage<T = unknown> {
   type: CoreMessageType;
@@ -91,6 +94,10 @@ export interface MetricsPayload {
   uptime: number;
   activeConnections: number;
   errorCount: number;
+  /** Measured global ticks per second (optional for older cores). */
+  ticksPerSecond?: number;
+  /** Ticks emitted since the system was started (optional for older cores). */
+  totalTicks?: number;
 }
 
 export interface FlowMetricsPayload {
@@ -163,7 +170,8 @@ export type UICommandType =
   | 'IMPORT_STATE'
   | 'PICK_DIRECTORY'
   | 'EXPORT_STATE'
-  | 'UI_LOG';
+  | 'UI_LOG'
+  | 'UPDATE_SETTINGS';
 
 export interface StartGroupCommandPayload {
   groupId: string;
@@ -282,6 +290,12 @@ export interface GetLatestConnectorCommandPayload {
 export interface ImportStateCommandPayload {
   groups: any[];
   variables: any[];
+  /** Project settings; the Core falls back to the defaults when omitted. */
+  settings?: ProjectSettings;
+}
+
+export interface UpdateSettingsCommandPayload {
+  tick: TickSettings;
 }
 
 
@@ -336,6 +350,7 @@ export interface UICommandPayloadMap {
   PICK_DIRECTORY: undefined;
   EXPORT_STATE: ExportStateCommandPayload;
   UI_LOG: UILogCommandPayload;
+  UPDATE_SETTINGS: UpdateSettingsCommandPayload;
 }
 
 export interface UICommand<T extends UICommandType = UICommandType> {
@@ -388,6 +403,8 @@ export interface InitialStatePayload {
   metrics: MetricsPayload;
   connectorCatalog: ConnectorPluginDescriptor[];
   rollbackReport?: RollbackReportPayload;
+  /** Current project settings (optional for older cores). */
+  settings?: ProjectSettings;
 }
 
 export interface GroupState {

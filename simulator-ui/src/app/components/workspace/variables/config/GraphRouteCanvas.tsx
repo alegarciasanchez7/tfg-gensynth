@@ -814,8 +814,8 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
       <div
         className={
           isFullScreen
-            ? 'fixed inset-0 z-[9999] bg-slate-950 p-4 md:p-6 flex flex-col h-screen w-screen space-y-3 overflow-hidden shadow-2xl animate-in fade-in duration-200'
-            : 'space-y-3 bg-black/20 p-3 rounded-lg border border-[var(--c-br1)]'
+            ? 'fixed inset-0 z-[9999] bg-[var(--c-bg1)] p-4 md:p-6 flex flex-col h-screen w-screen space-y-3 overflow-hidden shadow-2xl animate-in fade-in duration-200'
+            : 'space-y-3 bg-[var(--c-bg1)] p-3 rounded-lg border border-[var(--c-br1)]'
         }
       >
         {/* Header & Tool Bar */}
@@ -979,7 +979,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
                     type="button"
                     variant="ghost"
                     size="sm"
-                    className="h-7 px-2 text-xs text-rose-400 hover:text-rose-300"
+                    className="h-7 px-2 text-xs text-rose-400 hover:text-rose-600 dark:hover:text-rose-300"
                     onClick={clearGraph}
                   >
                     <RotateCcw size={12} />
@@ -993,7 +993,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
 
         {/* Forbidden Zone / Obstacle Warning Banner */}
         {warningMsg && (
-          <div className="flex items-center justify-between bg-rose-950/90 border border-rose-500/80 text-rose-200 px-3 py-1.5 rounded text-xs animate-in fade-in slide-in-from-top-1">
+          <div className="flex items-center justify-between bg-rose-100 dark:bg-rose-950/90 border border-rose-500/80 text-rose-700 dark:text-rose-200 px-3 py-1.5 rounded text-xs animate-in fade-in slide-in-from-top-1">
             <div className="flex items-center gap-2 font-medium">
               <AlertTriangle size={14} className="text-rose-400 shrink-0" />
               <span>{warningMsg}</span>
@@ -1001,7 +1001,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
             <button
               type="button"
               onClick={() => setWarningMsg(null)}
-              className="text-rose-400 hover:text-rose-200 text-xs font-bold px-1"
+              className="text-rose-400 hover:text-rose-700 dark:hover:text-rose-200 text-xs font-bold px-1"
             >
               <X size={14} />
             </button>
@@ -1012,7 +1012,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
         <div
           ref={containerRef}
           style={isFullScreen ? { height: 'calc(100vh - 140px)', width: '100%' } : { height: '340px', width: '100%' }}
-          className={`relative w-full border border-slate-800 rounded-md overflow-hidden select-none flex-1 min-h-0 ${
+          className={`relative w-full border border-[var(--c-br2)] rounded-md overflow-hidden select-none flex-1 min-h-0 ${
             activeTool === 'ADD_EXTEND' ? 'cursor-crosshair' : 'cursor-default'
           }`}
         >
@@ -1057,7 +1057,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
 
               {/* Offline Warning Banner Overlay */}
               {isOffline && (
-                <div className="absolute top-2 left-2 z-[1000] bg-amber-950/90 border border-amber-500/50 text-amber-200 text-[10px] font-mono px-2.5 py-1 rounded shadow-md flex items-center gap-2">
+                <div className="absolute top-2 left-2 z-[1000] bg-amber-100 dark:bg-amber-950/90 border border-amber-500/50 text-amber-700 dark:text-amber-200 text-[10px] font-mono px-2.5 py-1 rounded shadow-md flex items-center gap-2">
                   <WifiOff size={11} className="text-amber-400 shrink-0" />
                   <span>OFFLINE MODE - Technical Grid Active</span>
                 </div>
@@ -1159,7 +1159,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
                         permanent
                         direction="top"
                         offset={[0, -8]}
-                        className="bg-slate-950/90 border border-cyan-400/80 text-cyan-300 font-mono text-[10px] font-bold px-1.5 py-0.5 rounded shadow-xl"
+                        className="bg-[var(--c-bg1)]/90 border border-cyan-400/80 text-cyan-600 dark:text-cyan-300 font-mono text-[10px] font-bold px-1.5 py-0.5 rounded shadow-xl"
                       >
                         <span>(Lat: {node.x.toFixed(4)}°, Lon: {node.y.toFixed(4)}°)</span>
                       </LeafletTooltip>
@@ -1218,7 +1218,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
                   <React.Fragment key={node.id}>
                     {showCoordinateLabels && (
                       <div
-                        className="absolute -translate-x-1/2 -translate-y-full px-1.5 py-0.5 rounded bg-slate-950/95 border border-cyan-400/80 text-[10px] font-mono font-bold text-cyan-300 shadow-xl whitespace-nowrap pointer-events-none z-30"
+                        className="absolute -translate-x-1/2 -translate-y-full px-1.5 py-0.5 rounded bg-[var(--c-bg1)]/95 border border-cyan-400/80 text-[10px] font-mono font-bold text-cyan-600 dark:text-cyan-300 shadow-xl whitespace-nowrap pointer-events-none z-30"
                         style={{ left: `${cx}px`, top: `${cy - 8}px` }}
                       >
                         (X: {node.x.toFixed(1)}, Y: {node.y.toFixed(1)})
@@ -1232,7 +1232,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
                           ? 'bg-cyan-400 ring-2 ring-cyan-400/80 shadow-md scale-125'
                           : isConnectOrigin
                           ? 'bg-amber-400 ring-2 ring-amber-400/80 animate-bounce scale-125'
-                          : 'bg-slate-900 text-cyan-300 border-2 border-cyan-400 hover:bg-cyan-950 hover:scale-110'
+                          : 'bg-[var(--c-bg2)] text-cyan-600 dark:text-cyan-300 border-2 border-cyan-400 hover:bg-cyan-100 dark:hover:bg-cyan-950 hover:scale-110'
                       }`}
                       style={{ left: `${cx}px`, top: `${cy}px` }}
                     >
@@ -1248,12 +1248,12 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
           {nodes.length === 0 && (
             <div className="absolute inset-0 flex flex-col items-center justify-center text-[var(--c-tx4)] pointer-events-none space-y-1 z-20">
               <Plus size={24} className="text-cyan-400/80 animate-pulse" />
-              <p className="text-xs font-semibold text-cyan-300">
+              <p className="text-xs font-semibold text-cyan-600 dark:text-cyan-300">
                 {isGeo
                   ? 'Click anywhere on the map to set the initial geospatial route point'
                   : 'Click anywhere on the boundary plane to set the first route point'}
               </p>
-              <p className="text-[10px] text-slate-400">{"Subsequent clicks will add connected destination steps"}</p>
+              <p className="text-[10px] text-[var(--c-tx4)]">{"Subsequent clicks will add connected destination steps"}</p>
             </div>
           )}
         </div>
@@ -1264,7 +1264,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
           if (!targetNode) return null;
 
           return (
-            <div className="flex items-center justify-between bg-slate-900/80 p-2 px-3 rounded border border-slate-800 text-xs">
+            <div className="flex items-center justify-between bg-[var(--c-bg2)]/80 p-2 px-3 rounded border border-[var(--c-br2)] text-xs">
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-1.5">
                   <MapPin size={14} className="text-cyan-400" />
@@ -1277,7 +1277,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
                       const updated = nodes.map((n) => (n.id === selectedNodeId ? { ...n, name: newName } : n));
                       onChange({ graphNodes: updated });
                     }}
-                    className="h-6 w-24 px-1.5 bg-black/50 border border-slate-700 rounded text-cyan-300 text-xs"
+                    className="h-6 w-24 px-1.5 bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded text-cyan-600 dark:text-cyan-300 text-xs"
                   />
                 </div>
 
@@ -1298,7 +1298,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
                       const updated = nodes.map((n) => (n.id === selectedNodeId ? { ...n, x: val } : n));
                       onChange({ graphNodes: updated });
                     }}
-                    className="h-6 w-20 px-1.5 bg-black/50 border border-slate-700 rounded text-cyan-300 text-xs font-mono"
+                    className="h-6 w-20 px-1.5 bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded text-cyan-600 dark:text-cyan-300 text-xs font-mono"
                   />
                 </div>
 
@@ -1319,16 +1319,16 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
                       const updated = nodes.map((n) => (n.id === selectedNodeId ? { ...n, y: val } : n));
                       onChange({ graphNodes: updated });
                     }}
-                    className="h-6 w-20 px-1.5 bg-black/50 border border-slate-700 rounded text-cyan-300 text-xs font-mono"
+                    className="h-6 w-20 px-1.5 bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded text-cyan-600 dark:text-cyan-300 text-xs font-mono"
                   />
                 </div>
               </div>
 
               <div className="text-[10px] text-[var(--c-tx4)] font-mono">
                 {"Graph: "}
-                <span className="text-cyan-300 font-semibold">{nodes.length}</span>
+                <span className="text-cyan-600 dark:text-cyan-300 font-semibold">{nodes.length}</span>
                 {" nodes, "}
-                <span className="text-cyan-300 font-semibold">{edges.length}</span>
+                <span className="text-cyan-600 dark:text-cyan-300 font-semibold">{edges.length}</span>
                 {" edges"}
               </div>
             </div>

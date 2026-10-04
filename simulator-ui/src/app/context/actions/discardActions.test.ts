@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Flow, Group, Variable } from '../../types';
 import type { SavedStateSnapshot } from '../reducer';
+import { DEFAULT_PROJECT_SETTINGS } from '../../core/tickSettings';
 
 const send = vi.fn();
 const getInitialState = vi.fn();
@@ -57,6 +58,7 @@ const variable = (id: string, overrides: Partial<Variable> = {}): Variable => ({
 const saved: SavedStateSnapshot = {
   groups: [group('g1', [flow('f1'), flow('f2', { enabled: false })])],
   variables: [variable('v1')],
+  settings: DEFAULT_PROJECT_SETTINGS,
 };
 
 describe('buildDiscardCommands', () => {

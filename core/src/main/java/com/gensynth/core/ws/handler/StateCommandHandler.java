@@ -3,6 +3,7 @@ package com.gensynth.core.ws.handler;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gensynth.core.model.GroupDefinition;
+import com.gensynth.core.model.ProjectSettings;
 import com.gensynth.core.model.Variable;
 import com.gensynth.core.ws.BridgeContext;
 import com.gensynth.core.ws.UiBridgeWebSocketServer;
@@ -83,8 +84,9 @@ public class StateCommandHandler implements CommandHandler {
      *
      * @param conn the WebSocket connection
      * @param commandId the command identifier
-     * @param payload the JSON payload containing the complete project state and, optionally,
-     *                the {@code sourceFilePath} it was read from (echoed back in the ack)
+     * @param payload the JSON payload containing the complete project state, optionally its
+     *                {@code settings} (defaults when missing) and the {@code sourceFilePath}
+     *                it was read from (echoed back in the ack)
      */
     public void handleImportState(WebSocket conn, String commandId, JsonNode payload) {
         UiBridgeWebSocketServer server = ctx.getServer();
@@ -119,6 +121,10 @@ public class StateCommandHandler implements CommandHandler {
                 }
             }
 
+            ProjectSettings settings = ProjectSettings.fromPayload(
+                payload.has("settings") ? objectMapper.convertValue(payload.get("settings"), Map.class) : null
+            );
+
             synchronized (ctx.getStateLock()) {
                 // Stop everything before clearing
                 for (GroupRuntime group : ctx.getGroupsById().values()) {
@@ -128,7 +134,6 @@ public class StateCommandHandler implements CommandHandler {
                 ctx.getGroupsById().clear();
                 ctx.getVariablesById().clear();
                 ctx.getConnectorByFlowId().clear();
-                ctx.getPublisherTasksByFlowId().clear();
 
                 for (GroupDefinition def : newGroups) {
                     ctx.getGroupsById().put(def.getGroupId(), GroupRuntime.fromDefinition(def));
@@ -138,6 +143,7 @@ public class StateCommandHandler implements CommandHandler {
                 }
 
                 ctx.setSystemRunning(false);
+                ctx.applyProjectSettings(settings);
                 persistState();
             }
 
@@ -152,6 +158,7 @@ public class StateCommandHandler implements CommandHandler {
             server.broadcastGroupsUpdate();
             server.broadcastSystemStatus();
             server.sendVariablesUpdate();
+            server.settingsCommandHandler.broadcastSettingsUpdate();
 
         } catch (Exception e) {
             logger.error("Failed to import state", e);
@@ -180,7 +187,8 @@ public class StateCommandHandler implements CommandHandler {
             ctx.getStateRepository().exportState(
                 java.nio.file.Paths.get(filePath),
                 groupDefinitions,
-                new ArrayList<>(ctx.getVariablesById().values())
+                new ArrayList<>(ctx.getVariablesById().values()),
+                ctx.getProjectSettings()
             );
 
             server.sendAck(conn, commandId, "state_exported", Map.of("filePath", filePath));
@@ -191,7 +199,7 @@ public class StateCommandHandler implements CommandHandler {
     }
 
     /**
-     * Persists the current runtime state of groups and variables to the state repository.
+     * Persists the current runtime state of groups, variables and project settings to the state repository.
      */
     public void persistState() {
         try {
@@ -202,13 +210,14 @@ public class StateCommandHandler implements CommandHandler {
 
             ctx.getStateRepository().saveGroups(groupDefinitions);
             ctx.getStateRepository().saveVariables(new ArrayList<>(ctx.getVariablesById().values()));
+            ctx.getStateRepository().saveSettings(ctx.getProjectSettings());
         } catch (Exception e) {
             ctx.getTotalErrors().incrementAndGet();
         }
     }
 
     /**
-     * Loads the runtime state of groups and variables from the state repository.
+     * Loads the runtime state of groups, variables and project settings from the state repository.
      *
      * @param createDefaultIfEmpty if true and the repository is empty, saves an empty state to initialize
      */
@@ -222,11 +231,11 @@ public class StateCommandHandler implements CommandHandler {
             ctx.getGroupsById().clear();
             ctx.getVariablesById().clear();
             ctx.getConnectorByFlowId().clear();
-            ctx.getPublisherTasksByFlowId().clear();
 
             try {
                 List<GroupDefinition> persistedGroups = ctx.getStateRepository().loadGroups();
                 List<Variable> persistedVariables = ctx.getStateRepository().loadVariables();
+                ctx.applyProjectSettings(ctx.getStateRepository().loadSettings());
 
                 if (persistedGroups.isEmpty() && createDefaultIfEmpty) {
                     persistState();
@@ -270,6 +279,7 @@ public class StateCommandHandler implements CommandHandler {
             }
         }
         payload.put("variables", variablesPayload);
+        payload.put("settings", ctx.getProjectSettings().toPayload());
         payload.put("metrics", server.systemCommandHandler.buildMetricsPayload(null));
         payload.put("connectorCatalog", ctx.getConnectorCatalogService().listAvailableConnectors());
 

@@ -3,6 +3,7 @@ package com.gensynth.core.ws.handler;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.gensynth.core.ws.BridgeContext;
 import com.gensynth.core.ws.UiBridgeWebSocketServer;
+import com.gensynth.core.ws.runtime.FlowRuntime;
 import com.gensynth.core.ws.runtime.GroupRuntime;
 import org.java_websocket.WebSocket;
 import org.slf4j.Logger;
@@ -164,6 +165,15 @@ public class SystemCommandHandler implements CommandHandler {
         try {
             ctx.setMessagesPerSecond(ctx.getMessagesLastWindow().getAndSet(0));
             ctx.setNetworkUpPerSecond(ctx.getBytesSentLastWindow().getAndSet(0));
+            ctx.setTicksPerSecond(ctx.getTickClock().sampleTicksPerSecond());
+            synchronized (ctx.getStateLock()) {
+                // Measured messages per second of each flow over the same 1s window
+                for (GroupRuntime group : ctx.getGroupsById().values()) {
+                    for (FlowRuntime flow : group.flows) {
+                        flow.throughput = (int) flow.sentInWindow.getAndSet(0);
+                    }
+                }
+            }
             if (ctx.getMetricSubscribers().isEmpty()) {
                 return;
             }
@@ -295,6 +305,8 @@ public class SystemCommandHandler implements CommandHandler {
         payload.put("totalMessages", ctx.getTotalMessages().get());
         payload.put("networkUp", ctx.getNetworkUpPerSecond());
         payload.put("networkDown", 0.0);
+        payload.put("ticksPerSecond", ctx.getTicksPerSecond());
+        payload.put("totalTicks", ctx.getTickClock().getTickCount());
         long uptime = ctx.isSystemRunning() ? Math.max(0, (System.currentTimeMillis() - ctx.getSystemStartedAt()) / 1000) : 0;
         payload.put("uptime", uptime);
         payload.put("activeConnections", ctx.getServer().getConnections().size());

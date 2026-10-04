@@ -1,5 +1,15 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+
+// The real dialog needs the app context; a stub is enough to check how the header opens it
+vi.mock('./settings/SettingsDialog', () => ({
+  SettingsDialog: ({ onOpenChange }: { onOpenChange: (open: boolean) => void }) => (
+    <div data-testid="settings-dialog">
+      <button onClick={() => onOpenChange(false)}>close settings</button>
+    </div>
+  ),
+}));
+
 import { Header } from './Header';
 
 function renderHeader(currentFileName: string | null) {
@@ -13,8 +23,6 @@ function renderHeader(currentFileName: string | null) {
       onSaveAsProject={vi.fn().mockResolvedValue(undefined)}
       currentFileName={currentFileName}
       isDirty={false}
-      isDark
-      onThemeToggle={vi.fn()}
       latestConnectors={[]}
       connectorHealthSummary={[]}
       variables={[]}
@@ -43,5 +51,16 @@ describe('Header', () => {
   it('no longer embeds the telemetry bar', () => {
     renderHeader(null);
     expect(screen.queryByTestId('resource-bar')).toBeNull();
+  });
+
+  it('opens the settings dialog from the settings button and closes it', () => {
+    renderHeader(null);
+    expect(screen.queryByTestId('settings-dialog')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    expect(screen.getByTestId('settings-dialog')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('close settings'));
+    expect(screen.queryByTestId('settings-dialog')).toBeNull();
   });
 });

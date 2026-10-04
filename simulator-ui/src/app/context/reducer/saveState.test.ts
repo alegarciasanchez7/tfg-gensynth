@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { rootReducer, initialState, type AppState, type AppAction, type ProjectFileInfo } from './index';
-import type { Group, Variable } from '../../types';
+import type { Group, ProjectSettings, Variable } from '../../types';
+import { DEFAULT_PROJECT_SETTINGS } from '../../core/tickSettings';
 
 const file: ProjectFileInfo = { fileName: 'demo.json', filePath: null, fileHandle: null };
 
@@ -170,7 +171,7 @@ describe('rootReducer save state tracking', () => {
   it('marks the saved snapshot as baseline and keeps later edits dirty', () => {
     const loaded = loadFile();
     const edited = run(loaded, { type: 'SET_GROUPS', payload: [{ ...fileGroup, name: 'Renamed' }] });
-    const savedSnapshot = { groups: edited.groups, variables: edited.variables };
+    const savedSnapshot = { groups: edited.groups, variables: edited.variables, settings: edited.settings };
 
     const saved = run(edited, { type: 'MARK_SAVED', payload: { savedState: savedSnapshot, file } });
     expect(saved.isDirty).toBe(false);
@@ -227,5 +228,75 @@ describe('rootReducer save state tracking', () => {
     expect(state.variables.map((v) => v.id)).toEqual(['v1']);
     expect(state.selection).toEqual({ type: 'none' });
     expect(state.isDirty).toBe(false);
+  });
+
+  describe('project settings', () => {
+    const fastTicks: ProjectSettings = { tick: { mode: 'FIXED_RATE', value: 100, unit: 'MILLISECONDS' } };
+
+    it('marks the project dirty when the tick settings change', () => {
+      const state = run(loadFile(), { type: 'SET_SETTINGS', payload: fastTicks });
+      expect(state.settings).toEqual(fastTicks);
+      expect(state.isDirty).toBe(true);
+      // Settings are not tied to an entity, so no item is flagged
+      expect(state.dirtyItems.groupIds.size).toBe(0);
+    });
+
+    it('is clean again when the settings return to the saved value', () => {
+      const state = run(
+        loadFile(),
+        { type: 'SET_SETTINGS', payload: fastTicks },
+        { type: 'SET_SETTINGS', payload: DEFAULT_PROJECT_SETTINGS },
+      );
+      expect(state.isDirty).toBe(false);
+    });
+
+    it('keeps the same state object when the Core echoes identical settings', () => {
+      const loaded = loadFile();
+      const echoed = run(loaded, { type: 'SET_SETTINGS', payload: { tick: { ...loaded.settings.tick } } });
+      expect(echoed).toBe(loaded);
+    });
+
+    it('clears the dirty flag once the new settings are saved', () => {
+      const edited = run(loadFile(), { type: 'SET_SETTINGS', payload: fastTicks });
+      const saved = run(edited, {
+        type: 'MARK_SAVED',
+        payload: { savedState: { groups: edited.groups, variables: edited.variables, settings: edited.settings }, file },
+      });
+      expect(saved.isDirty).toBe(false);
+    });
+
+    it('adopts the settings of an opened file as the saved baseline', () => {
+      const state = run(initialState, {
+        type: 'LOAD_INITIAL_STATE',
+        payload: { groups: [fileGroup], variables: [fileVariable], settings: fastTicks, file },
+      });
+      expect(state.settings).toEqual(fastTicks);
+      expect(state.savedState?.settings).toEqual(fastTicks);
+      expect(state.isDirty).toBe(false);
+    });
+
+    it('keeps the current settings when the Core sends none (older cores)', () => {
+      const edited = run(loadFile(), { type: 'SET_SETTINGS', payload: fastTicks });
+      const resynced = run(edited, { type: 'LOAD_INITIAL_STATE', payload: { groups: [fileGroup], variables: [fileVariable] } });
+      expect(resynced.settings).toEqual(fastTicks);
+      expect(resynced.isDirty).toBe(true);
+    });
+
+    it('adopts settings echoed by the Core during a load as the baseline', () => {
+      const state = run(
+        loadFile(),
+        { type: 'SET_BASELINE_SYNC', payload: true },
+        { type: 'SET_SETTINGS', payload: fastTicks },
+        { type: 'SET_BASELINE_SYNC', payload: false },
+      );
+      expect(state.isDirty).toBe(false);
+      expect(state.savedState?.settings).toEqual(fastTicks);
+    });
+
+    it('resets the settings to the defaults for a new project', () => {
+      const state = run(loadFile(), { type: 'SET_SETTINGS', payload: fastTicks }, { type: 'NEW_PROJECT' });
+      expect(state.settings).toEqual(DEFAULT_PROJECT_SETTINGS);
+      expect(state.isDirty).toBe(false);
+    });
   });
 });

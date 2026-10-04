@@ -61,6 +61,23 @@ public class ProjectFileFormatTest {
     }
 
     @Test
+    public void validateAcceptsMissingOrObjectSettings() {
+        // 1.0.0 files have no settings section
+        ProjectFileFormat.validate(validProject());
+
+        ObjectNode withSettings = validProject();
+        withSettings.putObject("settings").putObject("tick").put("mode", "FIXED_RATE");
+        ProjectFileFormat.validate(withSettings);
+    }
+
+    @Test
+    public void validateRejectsNonObjectSettings() {
+        ObjectNode root = validProject();
+        root.put("settings", "fast");
+        assertRejected(root);
+    }
+
+    @Test
     public void validateRejectsNonObjectRoot() {
         assertThrows(IllegalArgumentException.class, () -> ProjectFileFormat.validate(mapper.createArrayNode()));
         assertThrows(IllegalArgumentException.class, () -> ProjectFileFormat.validate(null));

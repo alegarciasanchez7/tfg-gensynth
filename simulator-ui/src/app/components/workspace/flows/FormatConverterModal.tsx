@@ -211,7 +211,7 @@ export function FormatConverterModal({
               <span className="text-[10px] text-emerald-400 font-mono uppercase tracking-wider flex items-center gap-1">
                 <RefreshCw size={10} className="animate-spin" /> Converted Preview ({targetFormat.toUpperCase()})
               </span>
-              <pre className="h-48 p-2.5 bg-[var(--c-bg1)] border border-emerald-500/30 rounded font-mono text-xs text-emerald-300 overflow-auto whitespace-pre-wrap break-all">
+              <pre className="h-48 p-2.5 bg-[var(--c-bg1)] border border-emerald-500/30 rounded font-mono text-xs text-emerald-600 dark:text-emerald-300 overflow-auto whitespace-pre-wrap break-all">
                 {convertedPreview || '(Empty)'}
               </pre>
             </div>

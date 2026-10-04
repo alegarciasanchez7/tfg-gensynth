@@ -102,6 +102,17 @@ export function validateCommand<T extends UICommandType>(
       return isObjectPayload && typeof readField('message') === 'string'
         ? null
         : new Error('El comando UI_LOG requiere message');
+    case 'UPDATE_SETTINGS': {
+      const tick = readField('tick');
+      const isTickObject = typeof tick === 'object' && tick !== null && !Array.isArray(tick);
+      const tickField = (field: string): unknown => (isTickObject ? (tick as Record<string, unknown>)[field] : undefined);
+      return isTickObject
+        && typeof tickField('mode') === 'string'
+        && typeof tickField('value') === 'number'
+        && typeof tickField('unit') === 'string'
+        ? null
+        : new Error('El comando UPDATE_SETTINGS requiere tick con mode, value y unit');
+    }
     case 'PICK_DIRECTORY':
     case 'EXPORT_STATE':
       return null;

@@ -287,7 +287,7 @@ export function CreateVariableDialog({
                 {jsonError && <div>{jsonError}</div>}
                 {validationResult.cycle && (
                   <div>
-                    Circular dependency detected: <span className="font-mono text-amber-300">{validationResult.cycle.join(' → ')}</span>
+                    Circular dependency detected: <span className="font-mono text-amber-600 dark:text-amber-300">{validationResult.cycle.join(' → ')}</span>
                   </div>
                 )}
                 {Object.values(validationResult.errors).map((err, idx) => (

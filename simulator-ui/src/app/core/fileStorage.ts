@@ -3,14 +3,18 @@
  * Handles serialization/deserialization of project state to/from local files
  */
 
-import { Group, Variable, Flow } from '../types';
+import { Group, Variable, Flow, ProjectSettings } from '../types';
+import { normalizeProjectSettings } from './tickSettings';
 
 /** Extension of GenSynth project files. Must match ProjectFileFormat.EXTENSION in the Core. */
 export const PROJECT_FILE_EXTENSION = '.gsynth';
 /** Marker stored in every project file. Must match ProjectFileFormat.FORMAT_ID in the Core. */
 export const PROJECT_FORMAT_ID = 'gensynth-project';
-/** Current project file format version. Must match ProjectFileFormat.VERSION in the Core. */
-export const PROJECT_FORMAT_VERSION = '1.0.0';
+/**
+ * Current project file format version. Must match ProjectFileFormat.VERSION in the Core.
+ * 1.1.0 added the `settings` section; 1.0.0 files load with the default settings.
+ */
+export const PROJECT_FORMAT_VERSION = '1.1.0';
 
 export interface ProjectSnapshot {
   format: typeof PROJECT_FORMAT_ID;
@@ -18,6 +22,7 @@ export interface ProjectSnapshot {
   exportedAt: string;
   groups: Group[];
   variables: Variable[];
+  settings: ProjectSettings;
 }
 
 /**
@@ -126,13 +131,14 @@ export function normalizeVariableFromSnapshot(variable: Partial<Variable>): Vari
 /**
  * Serialize current state to a project snapshot
  */
-export function createProjectSnapshot(groups: Group[], variables: Variable[]): ProjectSnapshot {
+export function createProjectSnapshot(groups: Group[], variables: Variable[], settings: ProjectSettings): ProjectSnapshot {
   return {
     format: PROJECT_FORMAT_ID,
     version: PROJECT_FORMAT_VERSION,
     exportedAt: new Date().toISOString(),
     groups,
     variables,
+    settings,
   };
 }
 
@@ -206,6 +212,7 @@ export async function loadProjectSnapshotFromFile(file: File): Promise<ProjectSn
           exportedAt: snapshot.exportedAt,
           groups: snapshot.groups.map(normalizeGroupFromSnapshot),
           variables: snapshot.variables.map(normalizeVariableFromSnapshot),
+          settings: normalizeProjectSettings((snapshot as { settings?: unknown }).settings),
         };
 
         resolve(normalizedSnapshot);

@@ -297,4 +297,200 @@ public class UiBridgeWebSocketServerTest {
         assertEquals(com.gensynth.core.persistence.ProjectFileFormat.FORMAT_ID, exported.path("format").asText());
         assertEquals(com.gensynth.core.persistence.ProjectFileFormat.VERSION, exported.path("version").asText());
     }
+
+    // ============ Tick settings ============
+
+    private static UiBridgeWebSocketServer newServer(Path tempDir, StateRepository repository) {
+        return new UiBridgeWebSocketServer(
+                new InetSocketAddress("localhost", 0),
+                new ConnectorCatalogService(),
+                repository,
+                new PluginInstallerImpl(tempDir));
+    }
+
+    private static List<JsonNode> sentMessages(WebSocket conn) throws Exception {
+        ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
+        verify(conn, atLeastOnce()).send(captor.capture());
+        ObjectMapper mapper = new ObjectMapper();
+        List<JsonNode> messages = new java.util.ArrayList<>();
+        for (String msg : captor.getAllValues()) {
+            messages.add(mapper.readTree(msg));
+        }
+        return messages;
+    }
+
+    private static JsonNode findMessage(List<JsonNode> messages, String type, String commandId) {
+        for (JsonNode message : messages) {
+            if (type.equals(message.path("type").asText())
+                    && (commandId == null || commandId.equals(message.path("commandId").asText()))) {
+                return message;
+            }
+        }
+        return null;
+    }
+
+    @Test
+    public void updateSettingsAppliesPersistsAndBroadcasts() throws Exception {
+        Path tempDir = Files.createTempDirectory("gensynth-ws-test-settings-");
+        StateRepository repository = new JsonStateRepositoryImpl(tempDir.toString());
+        UiBridgeWebSocketServer server = newServer(tempDir, repository);
+        WebSocket mockConn = mock(WebSocket.class);
+        when(mockConn.isOpen()).thenReturn(true);
+
+        server.onMessage(mockConn, """
+                {
+                  "type": "UPDATE_SETTINGS",
+                  "commandId": "cmd-settings",
+                  "protocolVersion": "1.0.0",
+                  "payload": { "tick": { "mode": "FIXED_RATE", "value": 250, "unit": "MILLISECONDS" } }
+                }
+                """);
+
+        com.gensynth.core.model.TickSettings expected = new com.gensynth.core.model.TickSettings(
+                com.gensynth.core.model.TickSettings.Mode.FIXED_RATE, 250, com.gensynth.core.model.TickSettings.Unit.MILLISECONDS);
+        assertEquals(expected, server.tickClock.getSettings());
+        assertEquals(expected, repository.loadSettings().getTick());
+
+        // Desktop socket is null and the mock is not a registered connection, so only the ack reaches it
+        List<JsonNode> messages = sentMessages(mockConn);
+        JsonNode ack = findMessage(messages, "CONNECTION_STATUS", "cmd-settings");
+        assertNotNull("UPDATE_SETTINGS should be acknowledged", ack);
+        assertEquals("settings_updated", ack.path("payload").path("result").asText());
+        assertEquals(250, ack.path("payload").path("settings").path("tick").path("value").asInt());
+        server.shutdown();
+    }
+
+    @Test
+    public void updateSettingsRejectsInvalidTick() throws Exception {
+        Path tempDir = Files.createTempDirectory("gensynth-ws-test-settings-invalid-");
+        UiBridgeWebSocketServer server = newServer(tempDir, new JsonStateRepositoryImpl(tempDir.toString()));
+        WebSocket mockConn = mock(WebSocket.class);
+        when(mockConn.isOpen()).thenReturn(true);
+
+        server.onMessage(mockConn, "{\"type\":\"UPDATE_SETTINGS\",\"commandId\":\"cmd-bad\",\"protocolVersion\":\"1.0.0\","
+                + "\"payload\":{\"tick\":{\"mode\":\"FIXED_RATE\",\"value\":0,\"unit\":\"SECONDS\"}}}");
+        server.onMessage(mockConn, "{\"type\":\"UPDATE_SETTINGS\",\"commandId\":\"cmd-missing\",\"protocolVersion\":\"1.0.0\",\"payload\":{}}");
+
+        List<JsonNode> messages = sentMessages(mockConn);
+        JsonNode badError = findMessage(messages, "ERROR", "cmd-bad");
+        assertNotNull(badError);
+        assertEquals("INVALID_PAYLOAD", badError.path("payload").path("code").asText());
+        assertNotNull(findMessage(messages, "ERROR", "cmd-missing"));
+        assertEquals(com.gensynth.core.model.TickSettings.defaults(), server.tickClock.getSettings());
+        server.shutdown();
+    }
+
+    @Test
+    public void initialStateAndMetricsIncludeTickInformation() throws Exception {
+        Path tempDir = Files.createTempDirectory("gensynth-ws-test-initial-settings-");
+        UiBridgeWebSocketServer server = newServer(tempDir, new JsonStateRepositoryImpl(tempDir.toString()));
+        WebSocket mockConn = mock(WebSocket.class);
+        when(mockConn.isOpen()).thenReturn(true);
+
+        server.onMessage(mockConn, "{\"type\":\"GET_INITIAL_STATE\",\"commandId\":\"cmd-init\",\"protocolVersion\":\"1.0.0\"}");
+
+        JsonNode initial = findMessage(sentMessages(mockConn), "INITIAL_STATE", "cmd-init");
+        assertNotNull(initial);
+        JsonNode tick = initial.path("payload").path("settings").path("tick");
+        assertEquals("FIXED_RATE", tick.path("mode").asText());
+        assertEquals(1, tick.path("value").asInt());
+        assertEquals("SECONDS", tick.path("unit").asText());
+        assertTrue(initial.path("payload").path("metrics").has("ticksPerSecond"));
+        assertTrue(initial.path("payload").path("metrics").has("totalTicks"));
+        server.shutdown();
+    }
+
+    @Test
+    public void importStateAppliesSettingsAndExportWritesThem() throws Exception {
+        Path tempDir = Files.createTempDirectory("gensynth-ws-test-import-settings-");
+        UiBridgeWebSocketServer server = newServer(tempDir, new JsonStateRepositoryImpl(tempDir.toString()));
+        WebSocket mockConn = mock(WebSocket.class);
+        when(mockConn.isOpen()).thenReturn(true);
+
+        server.onMessage(mockConn, """
+                {
+                  "type": "IMPORT_STATE",
+                  "commandId": "cmd-import-settings",
+                  "protocolVersion": "1.0.0",
+                  "payload": {
+                    "groups": [], "variables": [],
+                    "settings": { "tick": { "mode": "AS_FAST_AS_POSSIBLE", "value": 2, "unit": "MINUTES" } }
+                  }
+                }
+                """);
+        assertEquals(com.gensynth.core.model.TickSettings.Mode.AS_FAST_AS_POSSIBLE, server.tickClock.getSettings().getMode());
+        assertEquals(2, server.tickClock.getSettings().getValue());
+
+        Path exportPath = tempDir.resolve("with-settings.gsynth");
+        server.onMessage(mockConn, "{\"type\":\"EXPORT_STATE\",\"commandId\":\"cmd-export-settings\",\"protocolVersion\":\"1.0.0\","
+                + "\"payload\":{\"filePath\":\"" + exportPath.toString().replace("\\", "\\\\") + "\"}}");
+        JsonNode exported = com.gensynth.core.persistence.ProjectFileFormat.read(exportPath, new ObjectMapper());
+        assertEquals("1.1.0", exported.path("version").asText());
+        assertEquals("AS_FAST_AS_POSSIBLE", exported.path("settings").path("tick").path("mode").asText());
+
+        // An old 1.0.0 project without settings falls back to the defaults
+        server.onMessage(mockConn, "{\"type\":\"IMPORT_STATE\",\"commandId\":\"cmd-import-old\",\"protocolVersion\":\"1.0.0\","
+                + "\"payload\":{\"groups\":[],\"variables\":[]}}");
+        assertEquals(com.gensynth.core.model.TickSettings.defaults(), server.tickClock.getSettings());
+        server.shutdown();
+    }
+
+    @Test
+    public void loadStateRestoresPersistedSettings() throws Exception {
+        Path tempDir = Files.createTempDirectory("gensynth-ws-test-load-settings-");
+        StateRepository repository = new JsonStateRepositoryImpl(tempDir.toString());
+        repository.saveSettings(new com.gensynth.core.model.ProjectSettings(new com.gensynth.core.model.TickSettings(
+                com.gensynth.core.model.TickSettings.Mode.FIXED_RATE, 5, com.gensynth.core.model.TickSettings.Unit.SECONDS)));
+        UiBridgeWebSocketServer server = newServer(tempDir, repository);
+
+        server.onMessage(null, "{\"type\":\"LOAD_STATE\",\"commandId\":\"cmd-load\",\"protocolVersion\":\"1.0.0\",\"payload\":{}}");
+
+        assertEquals(5, server.tickClock.getSettings().getValue());
+        assertEquals(com.gensynth.core.model.TickSettings.Unit.SECONDS, server.tickClock.getSettings().getUnit());
+        server.shutdown();
+    }
+
+    @Test
+    public void tickClockRunsOnlyWhileSystemIsRunning() throws Exception {
+        Path tempDir = Files.createTempDirectory("gensynth-ws-test-clock-lifecycle-");
+        UiBridgeWebSocketServer server = newServer(tempDir, new JsonStateRepositoryImpl(tempDir.toString()));
+        assertFalse(server.tickClock.isRunning());
+
+        server.onMessage(null, "{\"type\":\"START_SYSTEM\",\"commandId\":\"cmd-start\",\"protocolVersion\":\"1.0.0\",\"payload\":{}}");
+        assertTrue(server.tickClock.isRunning());
+
+        server.onMessage(null, "{\"type\":\"STOP_SYSTEM\",\"commandId\":\"cmd-stop\",\"protocolVersion\":\"1.0.0\",\"payload\":{}}");
+        assertFalse(server.tickClock.isRunning());
+        server.shutdown();
+    }
+
+    @Test
+    public void tickClockDrivesRealMessageGenerationEndToEnd() throws Exception {
+        Path tempDir = Files.createTempDirectory("gensynth-ws-test-e2e-ticks-");
+        StateRepository repository = new JsonStateRepositoryImpl(tempDir.toString());
+        repository.saveGroups(List.of(new com.gensynth.core.model.GroupDefinition("g-e2e", "E2E", "", 1, "parallel")));
+        UiBridgeWebSocketServer server = newServer(tempDir, repository);
+        String outputDir = tempDir.resolve("out").toString().replace("\\", "\\\\");
+
+        server.onMessage(null, "{\"type\":\"LOAD_STATE\",\"commandId\":\"c1\",\"protocolVersion\":\"1.0.0\",\"payload\":{}}");
+        server.onMessage(null, "{\"type\":\"CREATE_FLOW\",\"commandId\":\"c2\",\"protocolVersion\":\"1.0.0\",\"payload\":{"
+                + "\"groupId\":\"g-e2e\",\"flowId\":\"f-e2e\",\"name\":\"E2E\",\"technology\":\"file\",\"host\":\"localhost\","
+                + "\"burst\":2,\"template\":\"{\\\"n\\\":{{n}}}\",\"connectorConfig\":{\"outputDir\":\"" + outputDir + "\"}}}");
+        server.onMessage(null, "{\"type\":\"UPDATE_SETTINGS\",\"commandId\":\"c3\",\"protocolVersion\":\"1.0.0\","
+                + "\"payload\":{\"tick\":{\"mode\":\"FIXED_RATE\",\"value\":20,\"unit\":\"MILLISECONDS\"}}}");
+
+        server.onMessage(null, "{\"type\":\"START_SYSTEM\",\"commandId\":\"c4\",\"protocolVersion\":\"1.0.0\",\"payload\":{}}");
+        long deadline = System.currentTimeMillis() + 3000;
+        while (server.totalMessages.get() < 10 && System.currentTimeMillis() < deadline) {
+            Thread.sleep(10);
+        }
+        server.onMessage(null, "{\"type\":\"STOP_SYSTEM\",\"commandId\":\"c5\",\"protocolVersion\":\"1.0.0\",\"payload\":{}}");
+
+        assertTrue("expected messages driven by the tick clock, got " + server.totalMessages.get(),
+                server.totalMessages.get() >= 10);
+        assertEquals("every tick publishes the whole burst", 0, server.totalMessages.get() % 2);
+        assertTrue(server.tickClock.getTickCount() >= 5);
+        assertFalse(server.tickClock.isRunning());
+        server.shutdown();
+    }
 }

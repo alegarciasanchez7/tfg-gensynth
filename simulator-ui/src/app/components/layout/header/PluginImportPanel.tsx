@@ -232,14 +232,14 @@ export function PluginImportPanel({ onClose }: PluginImportPanelProps) {
           {validationState === 'validating' ? (
             <div className="flex flex-col items-center gap-3 py-2">
               <Loader2 size={24} className="text-amber-400 animate-spin" />
-              <span className="text-[11px] text-amber-300 font-medium animate-pulse">Verifying bytecode integrity...</span>
+              <span className="text-[11px] text-amber-600 dark:text-amber-300 font-medium animate-pulse">Verifying bytecode integrity...</span>
             </div>
           ) : validationState === 'success' ? (
             <div className="flex flex-col items-center gap-2">
               <div className="w-10 h-10 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-400">
                 <ShieldCheck size={24} />
               </div>
-              <span className="text-[11px] text-emerald-300 font-bold">{fileName}</span>
+              <span className="text-[11px] text-emerald-600 dark:text-emerald-300 font-bold">{fileName}</span>
               <span className="text-[9px] text-emerald-500/70 uppercase tracking-tighter">Integrity Verified</span>
             </div>
           ) : fileName ? (
@@ -322,7 +322,7 @@ export function PluginImportPanel({ onClose }: PluginImportPanelProps) {
             </button>
           ) : (
             <div className="flex flex-col gap-3 animate-in fade-in zoom-in-95 duration-200">
-              <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2.5 text-[10px] text-amber-300 flex items-start gap-3">
+              <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2.5 text-[10px] text-amber-600 dark:text-amber-300 flex items-start gap-3">
                 <AlertTriangle size={16} className="mt-0.5 shrink-0" />
                 <span className="leading-relaxed">The system will restart to finalize installation. Active flows will be interrupted. Proceed?</span>
               </div>

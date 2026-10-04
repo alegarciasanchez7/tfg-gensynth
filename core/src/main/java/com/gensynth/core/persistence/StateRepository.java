@@ -1,6 +1,7 @@
 package com.gensynth.core.persistence;
 
 import com.gensynth.core.model.GroupDefinition;
+import com.gensynth.core.model.ProjectSettings;
 import com.gensynth.core.model.Variable;
 
 import java.util.List;
@@ -12,6 +13,7 @@ import java.util.List;
  * - GroupDefinition configurations
  * - FlowDefinition configurations (nested within groups)
  * - Variable definitions (across all scopes)
+ * - Project settings (tick clock configuration)
  *
  * The repository abstracts the storage mechanism, allowing for
  * different implementations (JSON files, databases, etc.).
@@ -55,7 +57,23 @@ public interface StateRepository {
     void saveVariables(List<Variable> variables) throws StateRepositoryException;
 
     /**
-     * Clears all persisted state (groups, flows, variables).
+     * Loads the project settings from storage.
+     *
+     * @return the persisted settings, or the defaults if none were saved
+     * @throws StateRepositoryException if loading fails
+     */
+    ProjectSettings loadSettings() throws StateRepositoryException;
+
+    /**
+     * Saves the project settings to storage (full overwrite).
+     *
+     * @param settings the settings to save
+     * @throws StateRepositoryException if saving fails
+     */
+    void saveSettings(ProjectSettings settings) throws StateRepositoryException;
+
+    /**
+     * Clears all persisted state (groups, flows, variables, settings).
      *
      * @throws StateRepositoryException if clearing fails
      */
@@ -67,9 +85,10 @@ public interface StateRepository {
      * @param targetFile Path where the state should be exported
      * @param groups List of groups to export
      * @param variables List of variables to export
+     * @param settings Project settings to export
      * @throws StateRepositoryException if export fails
      */
-    void exportState(java.nio.file.Path targetFile, List<com.gensynth.core.model.GroupDefinition> groups, List<com.gensynth.core.model.Variable> variables) throws StateRepositoryException;
+    void exportState(java.nio.file.Path targetFile, List<GroupDefinition> groups, List<Variable> variables, ProjectSettings settings) throws StateRepositoryException;
 
     /**
      * Gets the root directory where state is persisted.

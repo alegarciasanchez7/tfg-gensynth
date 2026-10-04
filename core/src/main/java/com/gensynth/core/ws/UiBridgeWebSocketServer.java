@@ -4,6 +4,8 @@ import com.fasterxml.jackson.core.StreamReadConstraints;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gensynth.core.api.IPluginInstaller;
+import com.gensynth.core.api.ITickClock;
+import com.gensynth.core.clock.TickClockImpl;
 import com.gensynth.core.connectors.plugin.PluginInstallerImpl;
 import com.gensynth.core.connectors.runtime.ConnectorCatalogService;
 import com.gensynth.core.connectors.spi.ConnectorPlugin;
@@ -30,7 +32,6 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import org.slf4j.Logger;
@@ -75,7 +76,8 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         "CLONE_FLOW",
         "PAUSE_GROUP",
         "UI_LOG",
-        "CONVERT_MESSAGE_FORMAT"
+        "CONVERT_MESSAGE_FORMAT",
+        "UPDATE_SETTINGS"
     );
 
     private final ObjectMapper objectMapper = createConfiguredMapper();
@@ -101,7 +103,6 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
     final Map<String, GroupRuntime> groupsById = new LinkedHashMap<>();
     final Map<String, Variable> variablesById = new ConcurrentHashMap<>();
     final Map<String, ConnectorPlugin> connectorByFlowId = new ConcurrentHashMap<>();
-    final Map<String, ScheduledFuture<?>> publisherTasksByFlowId = new ConcurrentHashMap<>();
     final Set<WebSocket> metricSubscribers = ConcurrentHashMap.newKeySet();
 
     final ScheduledExecutorService scheduler;
@@ -112,6 +113,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
     final AtomicLong bytesSentLastWindow = new AtomicLong(0);
     volatile double messagesPerSecond = 0.0;
     volatile double networkUpPerSecond = 0.0;
+    volatile double ticksPerSecond = 0.0;
 
     volatile boolean systemRunning = false;
     volatile long systemStartedAt = 0;
@@ -126,6 +128,9 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
     public final PluginCommandHandler pluginCommandHandler = new PluginCommandHandler(bridgeContext);
     public final StateCommandHandler stateCommandHandler = new StateCommandHandler(bridgeContext);
     public final SystemCommandHandler systemCommandHandler = new SystemCommandHandler(bridgeContext);
+    public final SettingsCommandHandler settingsCommandHandler = new SettingsCommandHandler(bridgeContext);
+    /** Global simulation clock; runs exactly while the system is running (see BridgeContext#setSystemRunning). */
+    final ITickClock tickClock = new TickClockImpl(flowCommandHandler);
     
     public WebSocket getDesktopSocket() {
         return desktopSocket;
@@ -211,6 +216,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             systemRunning = false;
         }
 
+        tickClock.shutdown();
         scheduler.shutdownNow();
         try {
             stop(1000);
@@ -225,7 +231,6 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             groupsById.clear();
             variablesById.clear();
             connectorByFlowId.clear();
-            publisherTasksByFlowId.clear();
             systemRunning = false;
         }
     }
@@ -321,6 +326,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                 case "EXPORT_STATE" -> stateCommandHandler.handleExportState(conn, commandId, payload);
                 case "IMPORT_STATE" -> stateCommandHandler.handleImportState(conn, commandId, payload);
                 case "CONVERT_MESSAGE_FORMAT" -> handleConvertMessageFormat(conn, payload, commandId);
+                case "UPDATE_SETTINGS" -> settingsCommandHandler.handleUpdateSettings(conn, payload, commandId);
                 default -> sendError(conn, commandId, "UNSUPPORTED_COMMAND", "Unsupported command: " + type, Map.of(
                     "command", type
                 ));

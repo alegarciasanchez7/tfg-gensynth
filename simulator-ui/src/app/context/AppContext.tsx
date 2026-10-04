@@ -20,6 +20,7 @@ import type {
   VariableType,
   VariableScope,
   Variable,
+  TickSettings,
 } from '../types';
 
 import { toast } from 'sonner';
@@ -33,6 +34,7 @@ import * as systemActions from './actions/systemActions';
 import * as projectActions from './actions/projectActions';
 import * as templateActions from './actions/templateActions';
 import * as discardActions from './actions/discardActions';
+import * as settingsActions from './actions/settingsActions';
 
 // Hooks
 import { useCrudActions } from './hooks/useCrudActions';
@@ -59,6 +61,9 @@ interface AppContextValue {
     discardAllChanges: () => void;
     setAutoSave: (enabled: boolean) => void;
     setAutoSaveInterval: (seconds: number) => void;
+
+    // Project settings
+    updateTickSettings: (tick: TickSettings) => Promise<void>;
     
     // Selection
     selectGroup: (groupId: string) => void;
@@ -367,6 +372,7 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
       connectionMode: current.connectionMode,
       groups: current.groups,
       variables: current.variables,
+      settings: current.settings,
       file: {
         fileName: current.currentFileName,
         filePath: current.currentFilePath,
@@ -419,6 +425,17 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
     dispatch({ type: 'SET_AUTO_SAVE_INTERVAL', payload: seconds });
   }, []);
 
+  const updateTickSettings = useCallback(
+    (tick: TickSettings) =>
+      settingsActions.updateTickSettings({
+        dispatch,
+        getConnectionMode: () => stateRef.current.connectionMode,
+        getSettings: () => stateRef.current.settings,
+        reportCommandError,
+      })(tick),
+    [reportCommandError]
+  );
+
   // UI / Logs
   const setBottomTab = useCallback((tab: 'logs' | 'stats' | 'preview') => {
     dispatch({ type: 'SET_BOTTOM_TAB', payload: tab });
@@ -457,6 +474,7 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
     discardAllChanges,
     setAutoSave,
     setAutoSaveInterval,
+    updateTickSettings,
     selectGroup,
     selectFlow,
     selectVariable,

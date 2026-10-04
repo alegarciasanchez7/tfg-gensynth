@@ -13,7 +13,7 @@ import java.util.Objects;
  * - Name and description
  * - Technology connector type (rabbitmq, kafka, etc.)
  * - Connection parameters (host, port, topic)
- * - Generation parameters (interval, burst)
+ * - Generation parameters (burst per tick; interval is legacy and ignored)
  * - Template for payload generation
  * - Connector-specific configuration
  *
@@ -48,8 +48,9 @@ public class FlowDefinition {
      * @param host Connection host
      * @param port Connection port
      * @param topic Topic/queue name
-     * @param interval Publish interval in milliseconds
-     * @param burst Number of events per burst
+     * @param interval Legacy publish interval in milliseconds; ignored by the engine since the
+     *                 global tick clock (project format 1.1.0), kept for file compatibility
+     * @param burst Number of events published on every tick
      * @param template Event template with placeholders
      * @param connectorId Connector plugin ID
      * @param connectorConfig Connector-specific configuration

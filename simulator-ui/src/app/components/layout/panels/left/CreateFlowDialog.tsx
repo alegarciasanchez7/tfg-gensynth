@@ -50,7 +50,6 @@ export function CreateFlowDialog({
   const [flowHost, setFlowHost] = useState('localhost');
   const [flowPort, setFlowPort] = useState('8080');
   const [flowTopic, setFlowTopic] = useState('');
-  const [flowInterval, setFlowInterval] = useState('1000');
   const [flowBurst, setFlowBurst] = useState('1');
   const [connectorConfig, setConnectorConfig] = useState<Record<string, unknown>>({});
 
@@ -71,7 +70,6 @@ export function CreateFlowDialog({
       setFlowHost('localhost');
       setFlowPort('8080');
       setFlowTopic('');
-      setFlowInterval('1000');
       setFlowBurst('1');
       if (!groupId) {
         setSelectedGroupId('');
@@ -123,7 +121,6 @@ export function CreateFlowDialog({
       ? String(connectorConfig['topic'] || connectorConfig['exchange'] || connectorConfig['queue'] || '')
       : flowTopic.trim();
 
-    const interval = flowInterval.trim() ? Number(flowInterval) : undefined;
     const burst = flowBurst.trim() ? Number(flowBurst) : undefined;
 
     try {
@@ -134,7 +131,7 @@ export function CreateFlowDialog({
         host,
         port,
         topic || undefined,
-        Number.isNaN(interval) ? undefined : interval,
+        undefined, // Legacy interval: generation is paced by the global tick clock
         Number.isNaN(burst) ? undefined : burst,
         '{}',
         selectedConnector ? connectorConfig : undefined,
@@ -295,23 +292,8 @@ export function CreateFlowDialog({
               ) : null}
 
               <div className="space-y-2">
-                <label className="text-xs text-[var(--c-tx3)]" htmlFor="flow-interval">
-                  Interval (ms)
-                </label>
-                <Input
-                  id="flow-interval"
-                  type="number"
-                  min={1}
-                  value={flowInterval}
-                  onChange={(event) => setFlowInterval(event.target.value)}
-                  placeholder="1000"
-                  className="bg-[var(--c-bg1)] border-[var(--c-br1)] text-[var(--c-tx1)] placeholder-[var(--c-tx4)]"
-                />
-              </div>
-
-              <div className="space-y-2">
                 <label className="text-xs text-[var(--c-tx3)]" htmlFor="flow-burst">
-                  Burst
+                  Burst (messages per tick)
                 </label>
                 <Input
                   id="flow-burst"

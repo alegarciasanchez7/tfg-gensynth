@@ -13,6 +13,7 @@ import {
 } from './components/dialogs/CloseConfigurationDialog';
 import { pickProjectFile, type PickedProjectFile } from './core/fileStorage';
 import { useEffect, useState } from 'react';
+import { useDocumentTheme } from './context/hooks/useDocumentTheme';
 import bridge from './core/bridge';
 
 /** Project switch waiting for the user to confirm closing the current configuration. */
@@ -119,9 +120,11 @@ export default function App() {
   // Usar templates del estado directamente
   const mergedTemplates = formatTemplates;
 
+  useDocumentTheme(isDark);
+
   return (
     <div
-      className={`h-screen w-screen flex flex-col overflow-hidden ${isDark ? 'dark' : ''}`}
+      className="h-screen w-screen flex flex-col overflow-hidden"
       style={{
         background: 'var(--c-bg3)',
         color: 'var(--c-tx2)',
@@ -149,8 +152,6 @@ export default function App() {
         onSaveAsProject={actions.saveProjectStateAs}
         currentFileName={currentFileName}
         isDirty={isDirty}
-        isDark={isDark}
-        onThemeToggle={actions.toggleTheme}
         latestConnectors={latestConnectors}
         connectorHealthSummary={connectorHealthSummary}
         variables={variables}
@@ -211,7 +212,7 @@ export default function App() {
         systemStatus={systemStatus}
       />
 
-      <Toaster position="top-right" richColors closeButton />
+      <Toaster position="top-right" richColors closeButton theme={isDark ? 'dark' : 'light'} />
     </div>
   );
 }

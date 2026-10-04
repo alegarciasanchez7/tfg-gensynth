@@ -87,7 +87,6 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
   const [draftHost, setDraftHost] = useState(flow.host);
   const [draftPort, setDraftPort] = useState(flow.port);
   const [draftTopic, setDraftTopic] = useState(flow.topic);
-  const [draftInterval, setDraftInterval] = useState(flow.interval);
   const [draftBurst, setDraftBurst] = useState(flow.burst);
   const [isDeletingFlow, setIsDeletingFlow] = useState(false);
   const [isConverterOpen, setIsConverterOpen] = useState(false);
@@ -98,10 +97,9 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
     setDraftHost(flow.host);
     setDraftPort(flow.port);
     setDraftTopic(flow.topic);
-    setDraftInterval(flow.interval);
     setDraftBurst(flow.burst);
     setFormatMode(flow.format || (flow.technology === 'file' ? 'plain' : 'json'));
-  }, [flow.name, flow.host, flow.port, flow.topic, flow.interval, flow.burst, flow.format, flow.technology, flow.id]);
+  }, [flow.name, flow.host, flow.port, flow.topic, flow.burst, flow.format, flow.technology, flow.id]);
 
   const handleUpdateConfig = (updates: Partial<Omit<Flow, 'id'>>) => {
     actions.updateFlowConfig(group.id, flow.id, updates);
@@ -241,8 +239,6 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
           setDraftPort={(val) => { setDraftPort(val); handleUpdateConfig({ port: val }); }}
           draftTopic={draftTopic}
           setDraftTopic={(val) => { setDraftTopic(val); handleUpdateConfig({ topic: val }); }}
-          draftInterval={draftInterval}
-          setDraftInterval={(val) => { setDraftInterval(val); handleUpdateConfig({ interval: val }); }}
           draftBurst={draftBurst}
           setDraftBurst={(val) => { setDraftBurst(val); handleUpdateConfig({ burst: val }); }}
           connectorSelection={connectorSelection}
