@@ -1,7 +1,7 @@
 import type { AppState, AppAction } from './appReducer';
+import { defaultConnectorConfig } from '../../core/connectorFields';
 import {
   findDescriptor,
-  getDefaultConfigFromSchema,
   normalizeConnectorState,
   buildConnectorHealthSummary,
   latestConnectorsFromCatalog
@@ -45,7 +45,7 @@ export function connectorsReducer(state: AppState, action: AppAction): AppState 
       const nextConfigs = {
         ...state.flowConnectorConfigs,
         [action.payload.flowId]: descriptor
-          ? getDefaultConfigFromSchema(descriptor.configSchema)
+          ? defaultConnectorConfig(descriptor.fields)
           : {},
       };
 

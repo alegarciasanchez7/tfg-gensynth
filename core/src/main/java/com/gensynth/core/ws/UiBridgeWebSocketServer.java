@@ -8,7 +8,7 @@ import com.gensynth.core.api.ITickClock;
 import com.gensynth.core.clock.TickClockImpl;
 import com.gensynth.core.connectors.plugin.PluginInstallerImpl;
 import com.gensynth.core.connectors.runtime.ConnectorCatalogService;
-import com.gensynth.core.connectors.spi.ConnectorPlugin;
+import com.gensynth.plugin.api.ConnectorSession;
 import com.gensynth.core.model.Variable;
 import com.gensynth.core.flow.TemplateEngine;
 import com.gensynth.core.persistence.JsonStateRepositoryImpl;
@@ -102,7 +102,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
 
     final Map<String, GroupRuntime> groupsById = new LinkedHashMap<>();
     final Map<String, Variable> variablesById = new ConcurrentHashMap<>();
-    final Map<String, ConnectorPlugin> connectorByFlowId = new ConcurrentHashMap<>();
+    final Map<String, ConnectorSession> connectorByFlowId = new ConcurrentHashMap<>();
     final Set<WebSocket> metricSubscribers = ConcurrentHashMap.newKeySet();
 
     final ScheduledExecutorService scheduler;

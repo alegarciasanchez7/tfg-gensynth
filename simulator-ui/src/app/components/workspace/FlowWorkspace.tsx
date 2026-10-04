@@ -11,7 +11,6 @@ import { TemplateEditor } from './flows/TemplateEditor';
 import { TechnicalConfigPanel, compareVersions } from './flows/TechnicalConfigPanel';
 import { FormatConverterModal } from './flows/FormatConverterModal';
 import type { ConnectorPluginDescriptor } from '../../core/types';
-import { deriveConnectionFields } from '../../core/connectionFields';
 import { formatRate } from '../../core/metricsFormat';
 
 const connCfg: Record<ConnectionStatus, { color: string; bg: string; dot: string; label: string }> = {
@@ -138,8 +137,7 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
 
   const handleConnectorConfigChange = (nextConfig: Record<string, unknown>) => {
     actions.setFlowConnectorConfig(flow.id, nextConfig);
-    // Keep the legacy host/port/topic in sync: the Core still publishes to flow.topic
-    handleUpdateConfig({ connectorConfig: nextConfig, ...deriveConnectionFields(nextConfig) });
+    handleUpdateConfig({ connectorConfig: nextConfig });
   };
 
   const handleDiscard = () => {

@@ -261,6 +261,22 @@ export function PluginImportPanel({ onClose }: PluginImportPanelProps) {
           )}
         </div>
 
+        {/* Summary of the validated plugin */}
+        {validationResult?.valid && validationResult.pluginId && (
+          <div
+            className="mt-4 rounded border border-emerald-500/30 bg-emerald-500/5 px-2.5 py-2 text-[10px] text-[var(--c-tx3)] flex flex-col gap-0.5"
+            data-testid="plugin-summary"
+          >
+            <span className="text-[var(--c-tx1)] font-semibold">
+              {validationResult.displayName} · {validationResult.pluginId}@{validationResult.pluginVersion}
+            </span>
+            {validationResult.description && <span>{validationResult.description}</span>}
+            <span className="text-[var(--c-tx4)]">
+              Plugin API {validationResult.apiVersion} · {validationResult.fieldCount ?? 0} configuration fields
+            </span>
+          </div>
+        )}
+
         {/* Validation Logs (Terminal Style) */}
         {validationResult && (
           <div className="mt-4 animate-in fade-in slide-in-from-bottom-2 duration-300">

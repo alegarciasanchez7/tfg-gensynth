@@ -2,8 +2,9 @@ package com.gensynth.core.ws.handler;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.gensynth.core.connectors.spi.ConnectorPlugin;
-import com.gensynth.core.connectors.spi.ConnectorPluginDescriptor;
+import com.gensynth.plugin.api.ConnectorConfigException;
+import com.gensynth.plugin.api.ConnectorContext;
+import com.gensynth.plugin.api.ConnectorSession;
 import com.gensynth.core.model.Variable;
 import com.gensynth.core.ws.BridgeContext;
 import com.gensynth.core.ws.UiBridgeWebSocketServer;
@@ -52,10 +53,11 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
         String groupId = server.requireTextField(conn, commandId, payload, "groupId", "INVALID_PAYLOAD", "CREATE_FLOW");
         String name = server.requireTextField(conn, commandId, payload, "name", "INVALID_PAYLOAD", "CREATE_FLOW");
         String technology = server.requireTextField(conn, commandId, payload, "technology", "INVALID_PAYLOAD", "CREATE_FLOW");
-        String host = server.requireTextField(conn, commandId, payload, "host", "INVALID_PAYLOAD", "CREATE_FLOW");
-        if (groupId == null || name == null || technology == null || host == null) {
+        if (groupId == null || name == null || technology == null) {
             return;
         }
+        // Legacy connection fields: the destination is now part of the connector configuration
+        String host = payload.path("host").asText("");
 
         String clientRequestId = payload.path("clientRequestId").asText(null);
 
@@ -146,14 +148,7 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
                 return;
             }
 
-            ConnectorPlugin connector = ctx.getConnectorByFlowId().remove(flowId);
-            if (connector != null) {
-                try {
-                    connector.stop();
-                } catch (Exception ignored) {
-                    ctx.getTotalErrors().incrementAndGet();
-                }
-            }
+            closeSession(flowId);
 
             server.logToBackend("info", "FLOWS", "Deleted flow '" + flow.name + "'", commandId);
             group.flows.remove(flow);
@@ -424,39 +419,22 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
             flow.meter.reset();
             flow.throughput = 0;
 
-            // Release a connector left over from a previous start (e.g. restarting a paused group)
-            ConnectorPlugin previous = ctx.getConnectorByFlowId().remove(flow.id);
-            if (previous != null) {
-                try {
-                    previous.stop();
-                } catch (Exception ignored) {
-                    ctx.getTotalErrors().incrementAndGet();
-                }
-            }
+            // Release a session left over from a previous start (e.g. restarting a paused group)
+            closeSession(flow.id);
 
             try {
-                ConnectorPluginDescriptor descriptor = ctx.getConnectorCatalogService()
-                    .findLatestConnector(flow.technology)
-                    .orElseThrow(() -> new IllegalStateException("No connector found for " + flow.technology));
-
-                Map<String, Object> connectorConfig = buildFlowConnectorConfig(group, flow);
-                ConnectorPlugin plugin = ctx.getConnectorCatalogService().createAndInitialize(
-                    descriptor.getPluginId(),
-                    descriptor.getPluginVersion(),
-                    connectorConfig
-                );
-
-                plugin.start();
-                ctx.getConnectorByFlowId().put(flow.id, plugin);
+                ConnectorContext context = new ConnectorContext(flow.name, group.name, ctx.getCurrentOutputDir());
+                ConnectorSession session = ctx.getConnectorCatalogService()
+                    .openSession(flow.technology, flow.connectorConfig, context);
+                ctx.getConnectorByFlowId().put(flow.id, session);
 
                 flow.connectionStatus = "connected";
                 flow.hasError = false;
                 flow.errorMessage = null;
-            } catch (Exception ex) {
-                flow.connectionStatus = "error";
-                flow.hasError = true;
-                flow.errorMessage = ex.getMessage();
-                ctx.getTotalErrors().incrementAndGet();
+            } catch (ConnectorConfigException ex) {
+                markConnectorError(flow, "Invalid connector configuration: " + ex.getMessage());
+            } catch (Exception | LinkageError ex) {
+                markConnectorError(flow, ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage());
             }
         }
 
@@ -515,14 +493,7 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
         shutdownDispatcher(group);
         ctx.getTemplateEngine().clearVariableCache();
         for (FlowRuntime flow : group.flows) {
-            ConnectorPlugin connector = ctx.getConnectorByFlowId().remove(flow.id);
-            if (connector != null) {
-                try {
-                    connector.stop();
-                } catch (Exception ignored) {
-                    ctx.getTotalErrors().incrementAndGet();
-                }
-            }
+            closeSession(flow.id);
 
             flow.connectionStatus = "disconnected";
             flow.throughput = 0;
@@ -575,30 +546,30 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
         return dispatched;
     }
 
-    public Map<String, Object> buildFlowConnectorConfig(GroupRuntime group, FlowRuntime flow) {
-        Map<String, Object> config = new LinkedHashMap<>();
-        if (flow.connectorConfig != null && !flow.connectorConfig.isEmpty()) {
-            config.putAll(flow.connectorConfig);
-        }
+    private void markConnectorError(FlowRuntime flow, String message) {
+        flow.connectionStatus = "error";
+        flow.hasError = true;
+        flow.errorMessage = message;
+        ctx.getTotalErrors().incrementAndGet();
+        ctx.getServer().sendLogToAll("error", flow.id, "[" + flow.name + "] " + message);
+    }
 
-        if ("file".equalsIgnoreCase(flow.technology)) {
-            config.putIfAbsent("outputDir", ctx.getCurrentOutputDir() == null ? "OUTPUT_FILES" : ctx.getCurrentOutputDir());
-            config.putIfAbsent("groupName", group.name);
-            config.putIfAbsent("format", "json");
-            config.putIfAbsent("fileName", sanitizeFileName(flow.name));
-            return config;
+    /**
+     * Closes the connector session of a flow, if open.
+     *
+     * @param flowId the flow
+     */
+    public void closeSession(String flowId) {
+        ConnectorSession session = ctx.getConnectorByFlowId().remove(flowId);
+        if (session == null) {
+            return;
         }
-
-        config.putIfAbsent("host", flow.host);
-        config.putIfAbsent("port", flow.port);
-        config.putIfAbsent("username", "guest");
-        config.putIfAbsent("password", "guest");
-        config.putIfAbsent("virtualHost", "/");
-        config.putIfAbsent("exchange", "gensynth.exchange");
-        config.putIfAbsent("exchangeType", "topic");
-        config.putIfAbsent("exchangeDurable", true);
-        config.putIfAbsent("routingKey", flow.topic);
-        return config;
+        try {
+            session.close();
+        } catch (Exception ex) {
+            ctx.getTotalErrors().incrementAndGet();
+            ctx.getServer().logToBackend("warn", "CONNECTORS", "Failed to close connector of flow " + flowId + ": " + ex.getMessage(), null);
+        }
     }
 
     public FlowRuntime findFlowById(GroupRuntime group, String flowId) {
@@ -608,13 +579,6 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
             }
         }
         return null;
-    }
-
-    private String sanitizeFileName(String value) {
-        if (value == null || value.isBlank()) {
-            return "flow";
-        }
-        return value.replaceAll("[^a-zA-Z0-9._-]", "_");
     }
 
     private Map<String, Object> parseConnectorConfig(JsonNode connectorConfigNode) {

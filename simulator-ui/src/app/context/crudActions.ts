@@ -221,10 +221,7 @@ export async function createFlow(
   if (!groupId?.trim()) throwValidationError('groupId', 'is required');
   if (!name?.trim()) throwValidationError('name', 'is required');
   if (!technology?.trim()) throwValidationError('technology', 'is required');
-  if (!host?.trim()) throwValidationError('host', 'is required');
-  if (typeof port !== 'number' || port <= 0 || port > 65535) {
-    throwValidationError('port', 'must be a number between 1 and 65535');
-  }
+  // host/port/topic are legacy: the destination is part of the connector configuration
 
   try {
     if (ctx.connectionMode !== 'mock') {
@@ -232,7 +229,7 @@ export async function createFlow(
         groupId: groupId.trim(),
         name: name.trim(),
         technology: technology.trim(),
-        host: host.trim(),
+        host: host?.trim() ?? '',
         port,
         topic: topic?.trim() || '',
         interval: interval ?? 1000,
@@ -262,7 +259,7 @@ export async function createFlow(
       burst: burst ?? 1,
       everyTicks: everyTicks ?? 1,
       topic: topic?.trim() || '',
-      host: host.trim(),
+      host: host?.trim() ?? '',
       port,
       enabled: true,
     };
