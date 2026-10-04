@@ -12,6 +12,9 @@ export function validateCommand<T extends UICommandType>(
   const isObjectPayload = typeof payload === 'object' && payload !== null && !Array.isArray(payload);
   const readField = (field: string): unknown => (isObjectPayload ? ((payload as unknown) as Record<string, unknown>)[field] : undefined);
 
+  const everyTicks = readField('everyTicks');
+  const invalidEveryTicks = everyTicks !== undefined && !(Number.isInteger(everyTicks) && (everyTicks as number) >= 1);
+
   const requireStringField = (field: string, message: string) => {
     const value = readField(field);
     return typeof value === 'string' && value.trim().length > 0 ? null : new Error(message);
@@ -45,6 +48,7 @@ export function validateCommand<T extends UICommandType>(
     case 'CREATE_GROUP':
       return requireStringField('name', 'El comando CREATE_GROUP requiere name');
     case 'CREATE_FLOW':
+      if (invalidEveryTicks) return new Error('everyTicks must be an integer >= 1');
       return isObjectPayload
         && typeof readField('groupId') === 'string'
         && typeof readField('name') === 'string'
@@ -56,6 +60,7 @@ export function validateCommand<T extends UICommandType>(
     case 'UPDATE_GROUP_CONFIG':
       return requireStringField('groupId', 'El comando UPDATE_GROUP_CONFIG requiere groupId');
     case 'UPDATE_FLOW_CONFIG':
+      if (invalidEveryTicks) return new Error('everyTicks must be an integer >= 1');
       return isObjectPayload
         && typeof readField('flowId') === 'string'
         && typeof readField('groupId') === 'string'

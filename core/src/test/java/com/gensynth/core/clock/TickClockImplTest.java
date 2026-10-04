@@ -169,4 +169,17 @@ public class TickClockImplTest {
         clock.stop();
         assertEquals(0.0, clock.sampleTicksPerSecond(), 0.0);
     }
+
+    @Test
+    public void asFastAsPossibleRecoversQuicklyAfterIdleTicks() throws Exception {
+        // Work appears every other tick (e.g. a busy flow freeing up): the adaptive back-off
+        // must reset on work instead of always pausing 1 ms
+        clock = new TickClockImpl(n -> n % 2 == 0, AFAP);
+        clock.start();
+        Thread.sleep(100);
+        long ticks = clock.getTickCount();
+        clock.stop();
+
+        assertTrue("expected far more than 100 ticks in 100 ms, got " + ticks, ticks > 500);
+    }
 }

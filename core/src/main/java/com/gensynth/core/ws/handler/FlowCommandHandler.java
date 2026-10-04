@@ -11,12 +11,14 @@ import com.gensynth.core.ws.runtime.FlowRuntime;
 import com.gensynth.core.ws.runtime.GroupRuntime;
 import org.java_websocket.WebSocket;
 
-import java.nio.charset.StandardCharsets;
 import java.util.*;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
+import com.gensynth.core.api.IFlowMessageHandler;
+import com.gensynth.core.api.IGroupDispatcher;
 import com.gensynth.core.api.ITickListener;
+import com.gensynth.core.model.OutputMode;
+import com.gensynth.core.ws.dispatch.FlowMessagePublisher;
+import com.gensynth.core.ws.dispatch.ParallelGroupDispatcher;
+import com.gensynth.core.ws.dispatch.SequentialGroupDispatcher;
 import com.gensynth.core.flow.variables.VariableConfiguration;
 import com.gensynth.core.flow.variables.VariableFactory;
 import com.gensynth.core.flow.variables.DependencyResolver;
@@ -25,18 +27,19 @@ import com.gensynth.core.flow.variables.CyclicDependencyException;
 /**
  * Handles logic for CRUD and execution of simulation Flows.
  *
- * Message generation is driven by the global tick clock: on every tick
- * ({@link #onTick(long)}) each enabled flow of every running group publishes its burst.
+ * Message generation is driven by the global tick clock: on every tick ({@link #onTick(long)})
+ * each enabled flow of every running group that is due (one message every {@code everyTicks}
+ * ticks) is handed to its group's {@link IGroupDispatcher}, which sends it following the
+ * group's output mode.
  */
 public class FlowCommandHandler implements CommandHandler, ITickListener {
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
-    /** Minimum time between two "data" preview log entries of the same flow. */
-    private static final long PREVIEW_LOG_THROTTLE_MS = 250;
     private final BridgeContext ctx;
-    private final Map<String, Long> lastPreviewLogByFlowId = new ConcurrentHashMap<>();
+    private final IFlowMessageHandler messageHandler;
 
     public FlowCommandHandler(BridgeContext ctx) {
         this.ctx = ctx;
+        this.messageHandler = new FlowMessagePublisher(ctx);
     }
 
     @Override
@@ -82,6 +85,7 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
             int port = payload.path("port").asInt(5672);
             int interval = Math.max(50, payload.path("interval").asInt(1000));
             int burst = Math.max(1, payload.path("burst").asInt(1));
+            int everyTicks = Math.max(1, payload.path("everyTicks").asInt(1));
             String template = payload.path("template").asText("{\"eventId\":\"{{uuid}}\",\"timestamp\":\"{{ts}}\",\"source\":\"gen-synth\",\"value\":{{n}}}");
             String format = payload.path("format").asText(technology.equalsIgnoreCase("file") ? "plain" : "json");
             Map<String, Object> connectorConfig = parseConnectorConfig(payload.path("connectorConfig"));
@@ -106,9 +110,12 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
                 connectorConfig
             ));
 
+            FlowRuntime flow = findFlowById(group, flowId);
+            if (flow != null) {
+                flow.everyTicks = everyTicks;
+            }
             server.persistState();
 
-            FlowRuntime flow = findFlowById(group, flowId);
             if (flow != null) {
                 server.sendCreatedResponse(conn, commandId, clientRequestId, flow.toPayload(), "flow_created");
             }
@@ -179,7 +186,7 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
                 return;
             }
 
-            // Generation fields (burst, template, format) apply on the next tick.
+            // Generation fields (everyTicks, template, format) apply on the next tick.
             // Connection fields (technology, host, port, connectorConfig) apply when the group is restarted.
             if (payload.hasNonNull("name")) {
                 flow.name = payload.path("name").asText(flow.name);
@@ -206,6 +213,9 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
             }
             if (payload.hasNonNull("burst")) {
                 flow.burst = Math.max(1, payload.path("burst").asInt(flow.burst));
+            }
+            if (payload.hasNonNull("everyTicks")) {
+                flow.everyTicks = Math.max(1, payload.path("everyTicks").asInt(flow.everyTicks));
             }
             if (payload.hasNonNull("template")) {
                 flow.template = payload.path("template").asText(flow.template);
@@ -282,6 +292,7 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
                     original.enabled,
                     original.connectorConfig
                 );
+                clone.everyTicks = original.everyTicks;
                 group.flows.add(clone);
 
                 // Clone variables for this flow
@@ -315,10 +326,19 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
         server.sendVariablesUpdate();
     }
 
+    /**
+     * Starts (or resumes) a group: validates its variables and templates, starts one
+     * connector per flow and creates the dispatcher of its output mode. Counters are reset
+     * when the group starts from stopped, and kept when it resumes from paused.
+     *
+     * @param group the group to start
+     * @throws IllegalStateException on cyclic or broken variable references
+     */
     public void startGroupInternal(GroupRuntime group) {
         if ("running".equals(group.status)) {
             return;
         }
+        boolean resuming = "paused".equals(group.status);
 
         // Validate all variables in the group and perform cycle detection fail-fast
         Map<String, VariableConfiguration> configs = new HashMap<>();
@@ -395,8 +415,15 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
         }
 
         ctx.getTemplateEngine().clearVariableCache();
+        shutdownDispatcher(group);
 
         for (FlowRuntime flow : group.flows) {
+            if (!resuming) {
+                flow.resetCounters();
+            }
+            flow.meter.reset();
+            flow.throughput = 0;
+
             // Release a connector left over from a previous start (e.g. restarting a paused group)
             ConnectorPlugin previous = ctx.getConnectorByFlowId().remove(flow.id);
             if (previous != null) {
@@ -433,10 +460,59 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
             }
         }
 
+        group.dispatcher = createDispatcher(group);
+        group.startTick = 0;
         group.status = "running";
     }
 
+    /**
+     * Creates the dispatcher of the group's output mode for the flows whose connector started.
+     *
+     * @param group the group being started
+     * @return a parallel or sequential dispatcher
+     */
+    public IGroupDispatcher createDispatcher(GroupRuntime group) {
+        if (OutputMode.fromValue(group.outputMode) == OutputMode.SEQUENTIAL) {
+            return new SequentialGroupDispatcher(group, messageHandler, SequentialGroupDispatcher.DEFAULT_QUEUE_CAPACITY);
+        }
+        List<FlowRuntime> sendingFlows = new ArrayList<>();
+        for (FlowRuntime flow : group.flows) {
+            if (ctx.getConnectorByFlowId().containsKey(flow.id)) {
+                sendingFlows.add(flow);
+            }
+        }
+        return new ParallelGroupDispatcher(group, sendingFlows, messageHandler);
+    }
+
+    private void shutdownDispatcher(GroupRuntime group) {
+        if (group.dispatcher != null) {
+            group.dispatcher.shutdown();
+            group.dispatcher = null;
+        }
+    }
+
+    /**
+     * Pauses a group: no more messages are generated and pending ones are dropped (they stay
+     * counted as tries). Connectors and counters are kept; START_GROUP resumes it.
+     *
+     * @param group the group to pause
+     */
+    public void pauseGroupInternal(GroupRuntime group) {
+        shutdownDispatcher(group);
+        for (FlowRuntime flow : group.flows) {
+            flow.throughput = 0;
+        }
+        group.status = "paused";
+    }
+
+    /**
+     * Stops a group: shuts down its dispatcher and connectors. Counters are kept so the
+     * final numbers stay visible until the group starts again.
+     *
+     * @param group the group to stop
+     */
     public void stopGroupInternal(GroupRuntime group) {
+        shutdownDispatcher(group);
         ctx.getTemplateEngine().clearVariableCache();
         for (FlowRuntime flow : group.flows) {
             ConnectorPlugin connector = ctx.getConnectorByFlowId().remove(flow.id);
@@ -450,7 +526,6 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
 
             flow.connectionStatus = "disconnected";
             flow.throughput = 0;
-            flow.sentInWindow.set(0);
             flow.hasError = false;
             flow.errorMessage = null;
         }
@@ -459,121 +534,45 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
     }
 
     /**
-     * Dispatches one global tick: every enabled flow of every running group publishes its
-     * burst. Flows publish in parallel on the shared scheduler pool, and the method waits
-     * for all of them so tick N is complete before tick N+1 starts. Paused and stopped
-     * groups are skipped.
+     * Dispatches one global tick: for every running group, the enabled flows that are due on
+     * this tick (one message every {@code everyTicks} ticks, counted from the group's first
+     * tick) are handed to the group's dispatcher. Dispatchers never block on network I/O, so
+     * a slow group does not delay the others. Paused and stopped groups are skipped.
      *
      * @param tickNumber sequential tick number
-     * @return true if at least one flow published on this tick
+     * @return true if at least one message was generated or handed to a sender
      */
     @Override
     public boolean onTick(long tickNumber) {
-        List<Runnable> work = new ArrayList<>();
+        Map<IGroupDispatcher, List<FlowRuntime>> work = new LinkedHashMap<>();
         synchronized (ctx.getStateLock()) {
-            // Snapshot under the lock; publishing happens outside it
+            // Snapshot under the lock; generating and publishing happen outside it
             for (GroupRuntime group : ctx.getGroupsById().values()) {
-                if (!"running".equals(group.status)) {
+                if (!"running".equals(group.status) || group.dispatcher == null) {
                     continue;
                 }
+                if (group.startTick == 0) {
+                    group.startTick = tickNumber;
+                }
+                List<FlowRuntime> due = new ArrayList<>();
                 for (FlowRuntime flow : group.flows) {
-                    // Phase 2 hook: per-group/per-flow "every N ticks" filter (tickNumber % N == 0)
-                    if (flow.enabled && ctx.getConnectorByFlowId().containsKey(flow.id)) {
-                        work.add(() -> publishBurst(group, flow));
+                    if (flow.enabled
+                        && ctx.getConnectorByFlowId().containsKey(flow.id)
+                        && flow.isDueOn(tickNumber, group.startTick)) {
+                        due.add(flow);
                     }
+                }
+                if (!due.isEmpty()) {
+                    work.put(group.dispatcher, due);
                 }
             }
         }
 
-        if (work.isEmpty()) {
-            return false;
+        boolean dispatched = false;
+        for (Map.Entry<IGroupDispatcher, List<FlowRuntime>> entry : work.entrySet()) {
+            dispatched |= entry.getKey().dispatch(entry.getValue());
         }
-        if (work.size() == 1) {
-            work.get(0).run();
-            return true;
-        }
-        CompletableFuture.allOf(work.stream()
-            .map(task -> CompletableFuture.runAsync(task, ctx.getScheduler()))
-            .toArray(CompletableFuture[]::new)).join();
-        return true;
-    }
-
-    /**
-     * Publishes one burst of messages for a flow (called once per tick).
-     *
-     * @param group the group that owns the flow
-     * @param flow  the flow to publish
-     */
-    public void publishBurst(GroupRuntime group, FlowRuntime flow) {
-        ConnectorPlugin connector = ctx.getConnectorByFlowId().get(flow.id);
-        if (connector == null || !flow.enabled) {
-            return;
-        }
-
-        long startedAt = System.nanoTime();
-        int sent = 0;
-        String lastPayload = null;
-
-        try {
-            for (int i = 0; i < Math.max(1, flow.burst); i++) {
-                String payload = buildPayload(flow, group.id, i);
-                connector.publish(flow.topic, payload.getBytes(StandardCharsets.UTF_8), Map.of("content-type", "application/json"));
-                sent++;
-                lastPayload = payload;
-            }
-
-            long elapsedNanos = System.nanoTime() - startedAt;
-            flow.latency = (int) Math.max(1L, TimeUnit.NANOSECONDS.toMillis(elapsedNanos));
-            flow.sentInWindow.addAndGet(sent);
-            flow.connectionStatus = "connected";
-            flow.hasError = false;
-            flow.errorMessage = null;
-
-            ctx.getTotalMessages().addAndGet(sent);
-            ctx.getMessagesLastWindow().addAndGet(sent);
-
-            int burstBytes = 0;
-            if (lastPayload != null) {
-                burstBytes = lastPayload.getBytes(StandardCharsets.UTF_8).length * sent;
-            }
-            ctx.getBytesSentLastWindow().addAndGet(burstBytes);
-
-            if (lastPayload != null && shouldLogPreview(flow.id)) {
-                String preview = lastPayload.length() > 250 ? lastPayload.substring(0, 250) + "..." : lastPayload;
-                ctx.getServer().sendLogToAll("data", flow.id, "[" + group.name + " - " + flow.name + "] ==> " + preview);
-            }
-
-            ctx.getServer().broadcastFlowUpdate(flow);
-        } catch (Exception ex) {
-            if (ctx.getConnectorByFlowId().get(flow.id) != connector) {
-                // The group was stopped while this tick was publishing; not a real error
-                return;
-            }
-            flow.connectionStatus = "error";
-            flow.hasError = true;
-            flow.errorMessage = ex.getMessage();
-            ctx.getTotalErrors().incrementAndGet();
-            ctx.getServer().sendLogToAll("error", flow.id, "Publish failed: " + ex.getMessage());
-            ctx.getServer().broadcastFlowUpdate(flow);
-        }
-    }
-
-    /**
-     * Throttles the "data" preview log so high tick rates do not flood the UI and the log file.
-     */
-    private boolean shouldLogPreview(String flowId) {
-        long now = System.currentTimeMillis();
-        Long last = lastPreviewLogByFlowId.get(flowId);
-        if (last != null && now - last < PREVIEW_LOG_THROTTLE_MS) {
-            return false;
-        }
-        lastPreviewLogByFlowId.put(flowId, now);
-        return true;
-    }
-
-    public String buildPayload(FlowRuntime flow, String groupId, int indexInBurst) {
-        long sequence = ctx.getTotalMessages().get() + indexInBurst + 1;
-        return ctx.getTemplateEngine().evaluate(flow.template, sequence, ctx.getVariablesById(), flow.id, groupId);
+        return dispatched;
     }
 
     public Map<String, Object> buildFlowConnectorConfig(GroupRuntime group, FlowRuntime flow) {

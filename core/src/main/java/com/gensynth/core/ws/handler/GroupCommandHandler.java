@@ -1,6 +1,7 @@
 package com.gensynth.core.ws.handler;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.gensynth.core.model.OutputMode;
 import com.gensynth.core.model.Variable;
 import com.gensynth.core.ws.BridgeContext;
 import com.gensynth.core.ws.UiBridgeWebSocketServer;
@@ -17,6 +18,7 @@ import java.util.UUID;
  * Handles group management actions (create, delete, update, clone, start, stop, pause).
  */
 public class GroupCommandHandler implements CommandHandler {
+    private static final String INVALID_OUTPUT_MODE = "outputMode must be 'parallel' or 'sequential'";
     private final BridgeContext ctx;
     private final FlowCommandHandler flowHandler;
 
@@ -53,7 +55,11 @@ public class GroupCommandHandler implements CommandHandler {
             }
             String description = payload.path("description").asText("");
             int threads = Math.max(1, payload.path("threads").asInt(1));
-            String outputMode = payload.path("outputMode").asText("parallel");
+            String outputMode = payload.path("outputMode").asText(OutputMode.PARALLEL.wireValue());
+            if (!OutputMode.isValid(outputMode)) {
+                server.sendError(conn, commandId, clientRequestId, "INVALID_PAYLOAD", INVALID_OUTPUT_MODE, Map.of("outputMode", outputMode));
+                return;
+            }
 
             GroupRuntime newGroup = new GroupRuntime(id, name, "stopped", description, threads, outputMode, true);
             ctx.getGroupsById().put(id, newGroup);
@@ -133,8 +139,13 @@ public class GroupCommandHandler implements CommandHandler {
             }
 
             if (payload.hasNonNull("outputMode")) {
-                String outputMode = payload.path("outputMode").asText(group.outputMode).trim();
-                group.outputMode = outputMode.isBlank() ? group.outputMode : outputMode;
+                String outputMode = payload.path("outputMode").asText("");
+                if (!OutputMode.isValid(outputMode)) {
+                    server.sendError(conn, commandId, "INVALID_PAYLOAD", INVALID_OUTPUT_MODE, Map.of("outputMode", outputMode));
+                    return;
+                }
+                // Applied the next time the group starts
+                group.outputMode = OutputMode.fromValue(outputMode).wireValue();
             }
 
             if (payload.hasNonNull("enabled")) {
@@ -195,6 +206,7 @@ public class GroupCommandHandler implements CommandHandler {
         server.sendAck(conn, commandId, "group_started");
         server.broadcastGroupsUpdate();
         server.broadcastSystemStatus();
+        server.broadcastFlowsMetrics();
         server.sendLog(conn, "info", group.id, "Group started");
     }
 
@@ -219,6 +231,7 @@ public class GroupCommandHandler implements CommandHandler {
         server.sendAck(conn, commandId, "group_stopped");
         server.broadcastGroupsUpdate();
         server.broadcastSystemStatus();
+        server.broadcastFlowsMetrics();
         server.sendLog(conn, "info", group.id, "Group stopped");
     }
 
@@ -234,10 +247,11 @@ public class GroupCommandHandler implements CommandHandler {
             return;
         }
         synchronized (ctx.getStateLock()) {
-            group.status = "paused";
+            flowHandler.pauseGroupInternal(group);
         }
         server.sendAck(conn, commandId, "group_paused");
         server.broadcastGroupsUpdate();
+        server.broadcastFlowsMetrics();
         server.sendLog(conn, "info", group.id, "Group paused");
     }
 
@@ -294,6 +308,7 @@ public class GroupCommandHandler implements CommandHandler {
                         originalFlow.enabled,
                         originalFlow.connectorConfig
                     );
+                    flowClone.everyTicks = originalFlow.everyTicks;
                     clone.flows.add(flowClone);
 
                     // Clone variables for this flow

@@ -425,7 +425,7 @@ public class UiBridgeWebSocketServerTest {
         server.onMessage(mockConn, "{\"type\":\"EXPORT_STATE\",\"commandId\":\"cmd-export-settings\",\"protocolVersion\":\"1.0.0\","
                 + "\"payload\":{\"filePath\":\"" + exportPath.toString().replace("\\", "\\\\") + "\"}}");
         JsonNode exported = com.gensynth.core.persistence.ProjectFileFormat.read(exportPath, new ObjectMapper());
-        assertEquals("1.1.0", exported.path("version").asText());
+        assertEquals(com.gensynth.core.persistence.ProjectFileFormat.VERSION, exported.path("version").asText());
         assertEquals("AS_FAST_AS_POSSIBLE", exported.path("settings").path("tick").path("mode").asText());
 
         // An old 1.0.0 project without settings falls back to the defaults
@@ -464,33 +464,73 @@ public class UiBridgeWebSocketServerTest {
         server.shutdown();
     }
 
-    @Test
-    public void tickClockDrivesRealMessageGenerationEndToEnd() throws Exception {
+    /**
+     * Runs a real group with one file flow at a 20 ms tick until {@code minMessages} are sent.
+     *
+     * @return { sent messages, ticks }
+     */
+    private static long[] runEndToEnd(String outputMode, int everyTicks, long minMessages) throws Exception {
         Path tempDir = Files.createTempDirectory("gensynth-ws-test-e2e-ticks-");
         StateRepository repository = new JsonStateRepositoryImpl(tempDir.toString());
-        repository.saveGroups(List.of(new com.gensynth.core.model.GroupDefinition("g-e2e", "E2E", "", 1, "parallel")));
+        repository.saveGroups(List.of(new com.gensynth.core.model.GroupDefinition("g-e2e", "E2E", "", 1, outputMode)));
         UiBridgeWebSocketServer server = newServer(tempDir, repository);
         String outputDir = tempDir.resolve("out").toString().replace("\\", "\\\\");
 
         server.onMessage(null, "{\"type\":\"LOAD_STATE\",\"commandId\":\"c1\",\"protocolVersion\":\"1.0.0\",\"payload\":{}}");
         server.onMessage(null, "{\"type\":\"CREATE_FLOW\",\"commandId\":\"c2\",\"protocolVersion\":\"1.0.0\",\"payload\":{"
                 + "\"groupId\":\"g-e2e\",\"flowId\":\"f-e2e\",\"name\":\"E2E\",\"technology\":\"file\",\"host\":\"localhost\","
-                + "\"burst\":2,\"template\":\"{\\\"n\\\":{{n}}}\",\"connectorConfig\":{\"outputDir\":\"" + outputDir + "\"}}}");
+                + "\"everyTicks\":" + everyTicks + ",\"template\":\"{\\\"n\\\":{{n}}}\",\"connectorConfig\":{\"outputDir\":\"" + outputDir + "\"}}}");
         server.onMessage(null, "{\"type\":\"UPDATE_SETTINGS\",\"commandId\":\"c3\",\"protocolVersion\":\"1.0.0\","
                 + "\"payload\":{\"tick\":{\"mode\":\"FIXED_RATE\",\"value\":20,\"unit\":\"MILLISECONDS\"}}}");
 
         server.onMessage(null, "{\"type\":\"START_SYSTEM\",\"commandId\":\"c4\",\"protocolVersion\":\"1.0.0\",\"payload\":{}}");
-        long deadline = System.currentTimeMillis() + 3000;
-        while (server.totalMessages.get() < 10 && System.currentTimeMillis() < deadline) {
+        long deadline = System.currentTimeMillis() + 5000;
+        while (server.totalMessages.get() < minMessages && System.currentTimeMillis() < deadline) {
             Thread.sleep(10);
         }
         server.onMessage(null, "{\"type\":\"STOP_SYSTEM\",\"commandId\":\"c5\",\"protocolVersion\":\"1.0.0\",\"payload\":{}}");
 
-        assertTrue("expected messages driven by the tick clock, got " + server.totalMessages.get(),
-                server.totalMessages.get() >= 10);
-        assertEquals("every tick publishes the whole burst", 0, server.totalMessages.get() % 2);
-        assertTrue(server.tickClock.getTickCount() >= 5);
+        long[] result = { server.totalMessages.get(), server.tickClock.getTickCount() };
         assertFalse(server.tickClock.isRunning());
+        server.shutdown();
+        return result;
+    }
+
+    @Test
+    public void tickClockDrivesRealMessageGenerationEndToEnd() throws Exception {
+        long[] result = runEndToEnd("parallel", 1, 10);
+        assertTrue("expected messages driven by the tick clock, got " + result[0], result[0] >= 10);
+        assertTrue("at most one message per tick", result[0] <= result[1]);
+    }
+
+    @Test
+    public void sequentialFlowSendsEveryNTicksEndToEnd() throws Exception {
+        long[] result = runEndToEnd("sequential", 2, 5);
+        assertTrue("expected messages, got " + result[0], result[0] >= 5);
+        assertTrue("one message every 2 ticks: " + result[0] + " messages in " + result[1] + " ticks",
+                result[0] <= result[1] / 2 + 1);
+    }
+
+    @Test
+    public void groupConfigRejectsUnknownOutputMode() throws Exception {
+        Path tempDir = Files.createTempDirectory("gensynth-ws-test-output-mode-");
+        StateRepository repository = new JsonStateRepositoryImpl(tempDir.toString());
+        repository.saveGroups(List.of(new com.gensynth.core.model.GroupDefinition("g-mode", "Mode", "", 1, "parallel")));
+        UiBridgeWebSocketServer server = newServer(tempDir, repository);
+        WebSocket mockConn = mock(WebSocket.class);
+        when(mockConn.isOpen()).thenReturn(true);
+        server.onMessage(null, "{\"type\":\"LOAD_STATE\",\"commandId\":\"c1\",\"protocolVersion\":\"1.0.0\",\"payload\":{}}");
+
+        server.onMessage(mockConn, "{\"type\":\"UPDATE_GROUP_CONFIG\",\"commandId\":\"bad\",\"protocolVersion\":\"1.0.0\","
+                + "\"payload\":{\"groupId\":\"g-mode\",\"outputMode\":\"round-robin\"}}");
+        server.onMessage(mockConn, "{\"type\":\"UPDATE_GROUP_CONFIG\",\"commandId\":\"ok\",\"protocolVersion\":\"1.0.0\","
+                + "\"payload\":{\"groupId\":\"g-mode\",\"outputMode\":\"sequential\"}}");
+
+        List<JsonNode> messages = sentMessages(mockConn);
+        JsonNode error = findMessage(messages, "ERROR", "bad");
+        assertNotNull(error);
+        assertEquals("INVALID_PAYLOAD", error.path("payload").path("code").asText());
+        assertEquals("sequential", server.groupsById.get("g-mode").outputMode);
         server.shutdown();
     }
 }

@@ -95,6 +95,7 @@ interface AppContextValue {
       burst?: number,
       template?: string,
       connectorConfig?: Record<string, unknown>,
+      everyTicks?: number,
     ) => Promise<Flow>;
     deleteFlow: (groupId: string, flowId: string) => Promise<void>;
     updateFlowConfig: (

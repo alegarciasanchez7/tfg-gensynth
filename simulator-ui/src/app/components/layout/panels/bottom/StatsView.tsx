@@ -1,4 +1,5 @@
 import { useApp } from '../../../../context';
+import { formatRate } from '../../../../core/metricsFormat';
 
 function formatShortNumber(num: number): string {
   if (num >= 1000000) {
@@ -41,14 +42,7 @@ export function StatsView({ running }: StatsViewProps) {
         color: techColors[tech] || 'bg-slate-400' 
       };
       
-      const metricsForFlow = flowMetrics[flow.id];
-      if (metricsForFlow) {
-        current.throughput += metricsForFlow.throughput;
-      } else {
-        // Fallback to parsing the string throughput if metrics not available yet
-        const match = flow.throughput.match(/^(\d+)/);
-        if (match) current.throughput += parseInt(match[1], 10);
-      }
+      current.throughput += flowMetrics[flow.id]?.throughput ?? 0;
       
       techStats.set(tech, current);
     });
@@ -103,7 +97,7 @@ export function StatsView({ running }: StatsViewProps) {
               />
             </div>
             <span className="text-[10px] text-[var(--c-tx4)] w-20 shrink-0" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-              {b.throughput.toLocaleString()} msg/s
+              {formatRate(b.throughput)} msg/s
             </span>
           </div>
         )) : (

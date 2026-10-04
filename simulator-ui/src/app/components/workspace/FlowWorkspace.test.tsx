@@ -57,6 +57,7 @@ describe('FlowWorkspace', () => {
     hasError: false,
     interval: 1000,
     burst: 1,
+    everyTicks: 1,
     topic: 'test',
     host: 'localhost',
     port: 8080,

@@ -11,6 +11,8 @@ import { TemplateEditor } from './flows/TemplateEditor';
 import { TechnicalConfigPanel, compareVersions } from './flows/TechnicalConfigPanel';
 import { FormatConverterModal } from './flows/FormatConverterModal';
 import type { ConnectorPluginDescriptor } from '../../core/types';
+import { deriveConnectionFields } from '../../core/connectionFields';
+import { formatRate } from '../../core/metricsFormat';
 
 const connCfg: Record<ConnectionStatus, { color: string; bg: string; dot: string; label: string }> = {
   connected:    { color: 'text-emerald-500', bg: 'bg-emerald-500/10 border-emerald-500/40', dot: 'bg-emerald-400', label: 'CONNECTED' },
@@ -84,22 +86,25 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
 
   const currentTemplate = template ?? flow.template ?? '';
   const [draftName, setDraftName] = useState(flow.name);
-  const [draftHost, setDraftHost] = useState(flow.host);
-  const [draftPort, setDraftPort] = useState(flow.port);
-  const [draftTopic, setDraftTopic] = useState(flow.topic);
-  const [draftBurst, setDraftBurst] = useState(flow.burst);
+  const [draftEveryTicks, setDraftEveryTicks] = useState(String(flow.everyTicks));
   const [isDeletingFlow, setIsDeletingFlow] = useState(false);
   const [isConverterOpen, setIsConverterOpen] = useState(false);
   const [selectedTargetFormat, setSelectedTargetFormat] = useState<'json' | 'xml' | 'csv' | 'plain'>('xml');
 
   useEffect(() => {
     setDraftName(flow.name);
-    setDraftHost(flow.host);
-    setDraftPort(flow.port);
-    setDraftTopic(flow.topic);
-    setDraftBurst(flow.burst);
+    setDraftEveryTicks(String(flow.everyTicks));
     setFormatMode(flow.format || (flow.technology === 'file' ? 'plain' : 'json'));
-  }, [flow.name, flow.host, flow.port, flow.topic, flow.burst, flow.format, flow.technology, flow.id]);
+  }, [flow.name, flow.everyTicks, flow.format, flow.technology, flow.id]);
+
+  const handleEveryTicksChange = (value: string) => {
+    setDraftEveryTicks(value);
+    const everyTicks = Number(value);
+    // Only valid values reach the Core; invalid drafts are restored on blur
+    if (Number.isInteger(everyTicks) && everyTicks >= 1 && everyTicks !== flow.everyTicks) {
+      handleUpdateConfig({ everyTicks });
+    }
+  };
 
   const handleUpdateConfig = (updates: Partial<Omit<Flow, 'id'>>) => {
     actions.updateFlowConfig(group.id, flow.id, updates);
@@ -133,7 +138,8 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
 
   const handleConnectorConfigChange = (nextConfig: Record<string, unknown>) => {
     actions.setFlowConnectorConfig(flow.id, nextConfig);
-    handleUpdateConfig({ connectorConfig: nextConfig });
+    // Keep the legacy host/port/topic in sync: the Core still publishes to flow.topic
+    handleUpdateConfig({ connectorConfig: nextConfig, ...deriveConnectionFields(nextConfig) });
   };
 
   const handleDiscard = () => {
@@ -175,7 +181,7 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
           {conn.label}
         </div>
         <span className={`text-xs ${conn.color}`} style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-          {flow.throughput}
+          {formatRate(state.flowMetrics?.[flow.id]?.throughput ?? 0)} msg/s
         </span>
         {flow.hasError && (
           <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-red-500/10 border border-red-500/30 text-[10px] text-red-500"
@@ -233,14 +239,9 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
           activeTab={activeTab}
           draftName={draftName}
           setDraftName={(val) => { setDraftName(val); handleUpdateConfig({ name: val }); }}
-          draftHost={draftHost}
-          setDraftHost={(val) => { setDraftHost(val); handleUpdateConfig({ host: val }); }}
-          draftPort={draftPort}
-          setDraftPort={(val) => { setDraftPort(val); handleUpdateConfig({ port: val }); }}
-          draftTopic={draftTopic}
-          setDraftTopic={(val) => { setDraftTopic(val); handleUpdateConfig({ topic: val }); }}
-          draftBurst={draftBurst}
-          setDraftBurst={(val) => { setDraftBurst(val); handleUpdateConfig({ burst: val }); }}
+          draftEveryTicks={draftEveryTicks}
+          setDraftEveryTicks={handleEveryTicksChange}
+          onEveryTicksBlur={() => setDraftEveryTicks(String(flow.everyTicks))}
           connectorSelection={connectorSelection}
           latestConnectorForFlow={latestConnectorForFlow}
           connectorVersions={connectorVersions}

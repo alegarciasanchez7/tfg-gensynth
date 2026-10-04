@@ -108,6 +108,8 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
     final ScheduledExecutorService scheduler;
 
     final AtomicLong totalMessages = new AtomicLong(0);
+    /** Sequence behind {{n}}: incremented once per generated message, never reset. */
+    final AtomicLong messageSequence = new AtomicLong(0);
     final AtomicLong totalErrors = new AtomicLong(0);
     final AtomicLong messagesLastWindow = new AtomicLong(0);
     final AtomicLong bytesSentLastWindow = new AtomicLong(0);
@@ -440,30 +442,11 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         systemCommandHandler.broadcastGroupsUpdate();
     }
 
-    private final Map<String, Long> lastFlowUpdateByFlowId = new ConcurrentHashMap<>();
-
-    public void broadcastFlowUpdate(FlowRuntime flow) {
-        long now = System.currentTimeMillis();
-        Long lastUpdate = lastFlowUpdateByFlowId.get(flow.id);
-        
-        // Throttle updates to 2 times per second (500ms) to avoid flooding the UI
-        if (lastUpdate != null && (now - lastUpdate) < 500) {
-            return;
-        }
-        
-        lastFlowUpdateByFlowId.put(flow.id, now);
-        
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("flowId", flow.id);
-        payload.put("throughput", flow.throughput);
-        payload.put("latency", flow.latency);
-        payload.put("errorRate", flow.hasError ? 1.0 : 0.0);
-        payload.put("connectionStatus", flow.connectionStatus);
-        if (flow.errorMessage != null) {
-            payload.put("lastError", flow.errorMessage);
-        }
-
-        broadcastMessage("FLOW_UPDATE", payload);
+    /**
+     * Broadcasts the live metrics of every flow (FLOWS_METRICS).
+     */
+    public void broadcastFlowsMetrics() {
+        systemCommandHandler.broadcastFlowsMetrics();
     }
 
     public List<Map<String, Object>> toGroupsPayload() {

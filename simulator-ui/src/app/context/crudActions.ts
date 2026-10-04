@@ -112,7 +112,7 @@ export async function createGroup(
       status: 'stopped',
       throughput: 0,
       threads: 1,
-      outputMode: 'serial',
+      outputMode: 'parallel',
       enabled: true,
       flows: [],
     };
@@ -215,6 +215,7 @@ export async function createFlow(
   template?: string,
   connectorConfig?: Record<string, unknown>,
   onResponse?: (data: FlowState) => void,
+  everyTicks?: number,
 ): Promise<FlowState> {
   // Validations
   if (!groupId?.trim()) throwValidationError('groupId', 'is required');
@@ -236,6 +237,7 @@ export async function createFlow(
         topic: topic?.trim() || '',
         interval: interval ?? 1000,
         burst: burst ?? 1,
+        everyTicks: everyTicks ?? 1,
         template: template || '{}',
         ...(connectorConfig && { connectorConfig }),
       }, onResponse);
@@ -258,6 +260,7 @@ export async function createFlow(
       errorMessage: undefined,
       interval: interval ?? 1000,
       burst: burst ?? 1,
+      everyTicks: everyTicks ?? 1,
       topic: topic?.trim() || '',
       host: host.trim(),
       port,

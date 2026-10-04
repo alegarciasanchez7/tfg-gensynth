@@ -150,7 +150,7 @@ export function createOptimisticGroup(
     status: 'stopped',
     throughput: '0 msg/s',
     threads: 1,
-    outputMode: 'serial',
+    outputMode: 'parallel',
     expanded: true,
     enabled: true,
     flows: [],
@@ -169,6 +169,7 @@ export function createOptimisticFlow(
   topic: string = '',
   interval: number = 1000,
   burst: number = 1,
+  everyTicks: number = 1,
 ): Flow {
   return {
     id,
@@ -181,6 +182,7 @@ export function createOptimisticFlow(
     errorMessage: undefined,
     interval,
     burst,
+    everyTicks,
     topic,
     host,
     port,

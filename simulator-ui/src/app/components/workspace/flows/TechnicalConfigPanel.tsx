@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { Settings2 } from 'lucide-react';
 import type { Flow, ConnectorHealthSummary } from '../../../types';
 import type { ConnectorPluginDescriptor } from '../../../core/types';
@@ -18,45 +17,6 @@ export function compareVersions(leftVersion: string, rightVersion: string): numb
   }
 
   return leftVersion.localeCompare(rightVersion);
-}
-
-function TNumber({ value, unit }: { value: number; unit?: string }) {
-  const [v, setV] = useState(value);
-  return (
-    <div className="flex">
-      <input
-        type="number"
-        value={v}
-        onChange={(e) => setV(Number(e.target.value))}
-        className="bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded-l px-2.5 py-1.5 text-[11px] text-[var(--c-tx1)] outline-none focus:border-cyan-500/50 transition-all w-full"
-        style={{ fontFamily: 'JetBrains Mono, monospace' }}
-      />
-      {unit && (
-        <span
-          className="px-2 py-1.5 bg-[var(--c-bg4)] border border-l-0 border-[var(--c-br1)] rounded-r text-[10px] text-[var(--c-tx4)] shrink-0 flex items-center"
-          style={{ fontFamily: 'JetBrains Mono, monospace' }}
-        >
-          {unit}
-        </span>
-      )}
-    </div>
-  );
-}
-
-function TSelect({ options, value }: { options: string[]; value: string }) {
-  const [v, setV] = useState(value);
-  return (
-    <select
-      value={v}
-      onChange={(e) => setV(e.target.value)}
-      className="bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded px-2.5 py-1.5 text-[11px] text-[var(--c-tx1)] outline-none focus:border-cyan-500/50 transition-all"
-      style={{ fontFamily: 'JetBrains Mono, monospace' }}
-    >
-      {options.map((o) => (
-        <option key={o}>{o}</option>
-      ))}
-    </select>
-  );
 }
 
 type ConnectorSchemaProperty = {
@@ -174,14 +134,10 @@ interface TechnicalConfigPanelProps {
   activeTab: 'technical' | 'format';
   draftName: string;
   setDraftName: (val: string) => void;
-  draftHost: string;
-  setDraftHost: (val: string) => void;
-  draftPort: number;
-  setDraftPort: (val: number) => void;
-  draftTopic: string;
-  setDraftTopic: (val: string) => void;
-  draftBurst: number;
-  setDraftBurst: (val: number) => void;
+  /** Raw text of the "Every N ticks" input (may be temporarily invalid while typing). */
+  draftEveryTicks: string;
+  setDraftEveryTicks: (val: string) => void;
+  onEveryTicksBlur: () => void;
   connectorSelection: { pluginId: string; pluginVersion: string } | null;
   latestConnectorForFlow: ConnectorPluginDescriptor | null;
   connectorVersions: ConnectorPluginDescriptor[];
@@ -199,14 +155,9 @@ export function TechnicalConfigPanel({
   activeTab,
   draftName,
   setDraftName,
-  draftHost,
-  setDraftHost,
-  draftPort,
-  setDraftPort,
-  draftTopic,
-  setDraftTopic,
-  draftBurst,
-  setDraftBurst,
+  draftEveryTicks,
+  setDraftEveryTicks,
+  onEveryTicksBlur,
   connectorSelection,
   latestConnectorForFlow,
   connectorVersions,
@@ -245,9 +196,23 @@ export function TechnicalConfigPanel({
           </span>
           <FieldRow label="Flow Name">
             <input
+              aria-label="Flow name"
               value={draftName}
               onChange={(event) => setDraftName(event.target.value)}
               placeholder="Flow name"
+              className="bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded px-2.5 py-1.5 text-[11px] text-[var(--c-tx1)] outline-none focus:border-cyan-500/50 transition-all w-full"
+              style={{ fontFamily: 'JetBrains Mono, monospace' }}
+            />
+          </FieldRow>
+          <FieldRow label="Every N ticks" description="1 message every N ticks · tick rate in Settings → Simulation">
+            <input
+              type="number"
+              min={1}
+              step={1}
+              aria-label="Every N ticks"
+              value={draftEveryTicks}
+              onChange={(event) => setDraftEveryTicks(event.target.value)}
+              onBlur={onEveryTicksBlur}
               className="bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded px-2.5 py-1.5 text-[11px] text-[var(--c-tx1)] outline-none focus:border-cyan-500/50 transition-all w-full"
               style={{ fontFamily: 'JetBrains Mono, monospace' }}
             />
@@ -339,98 +304,6 @@ export function TechnicalConfigPanel({
           )}
         </div>
 
-        {/* Generation */}
-        <div className="h-px bg-[var(--c-br2)]" />
-        <div className="flex flex-col gap-2">
-          <span
-            className="text-[9px] text-[var(--c-tx5)] tracking-widest uppercase"
-            style={{ fontFamily: 'JetBrains Mono, monospace' }}
-          >
-            CONNECTION
-          </span>
-          <div className="grid grid-cols-2 gap-2">
-            <FieldRow label="Host">
-              <input
-                value={draftHost}
-                onChange={(event) => setDraftHost(event.target.value)}
-                className="bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded px-2.5 py-1.5 text-[11px] text-[var(--c-tx1)] outline-none focus:border-cyan-500/50 transition-all w-full"
-                style={{ fontFamily: 'JetBrains Mono, monospace' }}
-              />
-            </FieldRow>
-            <FieldRow label="Port">
-              <input
-                type="number"
-                min={1}
-                max={65535}
-                value={draftPort}
-                onChange={(event) => setDraftPort(Number(event.target.value))}
-                className="bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded px-2.5 py-1.5 text-[11px] text-[var(--c-tx1)] outline-none focus:border-cyan-500/50 transition-all w-full"
-                style={{ fontFamily: 'JetBrains Mono, monospace' }}
-              />
-            </FieldRow>
-          </div>
-          <FieldRow label="Topic / Endpoint">
-            <input
-              value={draftTopic}
-              onChange={(event) => setDraftTopic(event.target.value)}
-              className="bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded px-2.5 py-1.5 text-[11px] text-[var(--c-tx1)] outline-none focus:border-cyan-500/50 transition-all w-full"
-              style={{ fontFamily: 'JetBrains Mono, monospace' }}
-            />
-          </FieldRow>
-        </div>
-
-        <div className="flex flex-col gap-2">
-          <span
-            className="text-[9px] text-[var(--c-tx5)] tracking-widest uppercase"
-            style={{ fontFamily: 'JetBrains Mono, monospace' }}
-          >
-            GENERATION
-          </span>
-          <FieldRow label="Burst" description="Messages per tick · tick rate in Settings → Simulation">
-            <input
-              type="number"
-              min={1}
-              aria-label="Burst"
-              value={draftBurst}
-              onChange={(event) => setDraftBurst(Number(event.target.value))}
-              className="bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded px-2.5 py-1.5 text-[11px] text-[var(--c-tx1)] outline-none focus:border-cyan-500/50 transition-all w-full"
-              style={{ fontFamily: 'JetBrains Mono, monospace' }}
-            />
-          </FieldRow>
-          <div className="grid grid-cols-2 gap-2">
-            <FieldRow label="Pattern">
-              <TSelect options={['random', 'sequential', 'gaussian', 'spike']} value="random" />
-            </FieldRow>
-            <FieldRow label="Jitter">
-              <TNumber value={0} unit="ms" />
-            </FieldRow>
-          </div>
-          <FieldRow label="Rate Limit">
-            <TNumber value={0} unit="msg/s (0=unlimited)" />
-          </FieldRow>
-        </div>
-
-        {/* Error handling */}
-        <div className="h-px bg-[var(--c-br2)]" />
-        <div className="flex flex-col gap-2">
-          <span
-            className="text-[9px] text-[var(--c-tx5)] tracking-widest uppercase"
-            style={{ fontFamily: 'JetBrains Mono, monospace' }}
-          >
-            ERROR HANDLING
-          </span>
-          <div className="grid grid-cols-2 gap-2">
-            <FieldRow label="On Error">
-              <TSelect options={['retry', 'skip', 'stop', 'log']} value="retry" />
-            </FieldRow>
-            <FieldRow label="Max Retries">
-              <TNumber value={3} />
-            </FieldRow>
-          </div>
-          <FieldRow label="Retry Backoff">
-            <TSelect options={['linear', 'exponential', 'fixed']} value="exponential" />
-          </FieldRow>
-        </div>
       </div>
     </div>
   );

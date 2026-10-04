@@ -215,8 +215,8 @@ export function useBridgeSubscriptions({
         dispatch({ type: 'SET_SETTINGS', payload: normalizeProjectSettings(settings) });
       }),
 
-      bridge.on('flow-update', (flowMetrics: FlowMetricsPayload) => {
-        dispatch({ type: 'SET_FLOW_METRICS', payload: flowMetrics });
+      bridge.on('flows-metrics', (flowsMetrics: FlowMetricsPayload[]) => {
+        dispatch({ type: 'SET_FLOWS_METRICS', payload: flowsMetrics });
       }),
 
       bridge.on('error', ({ error, commandId, code, details, recoverable }) => {
