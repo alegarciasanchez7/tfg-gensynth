@@ -90,7 +90,7 @@ public class TickDispatchTest {
 
         verify(connector, times(2)).publish(eq("topic"), any(byte[].class), anyMap());
         assertEquals(2, flow.generated.get());
-        assertEquals(0, flow.tries());
+        assertEquals(0, flow.failed.get());
         assertEquals(2, server.totalMessages.get());
     }
 
@@ -164,7 +164,7 @@ public class TickDispatchTest {
     }
 
     @Test
-    public void publishErrorCountsAsFailedAndTry() throws Exception {
+    public void publishErrorCountsAsFailed() throws Exception {
         doThrow(new IllegalStateException("broker down")).when(connector).publish(anyString(), any(byte[].class), anyMap());
 
         server.flowCommandHandler.onTick(1);
@@ -175,7 +175,7 @@ public class TickDispatchTest {
         }
         assertEquals(1, flow.failed.get());
         assertEquals(0, flow.sent.get());
-        assertEquals(1, flow.tries());
+        assertEquals(1, flow.generated.get());
         assertTrue(flow.hasError);
         assertEquals("error", flow.connectionStatus);
     }
@@ -191,7 +191,7 @@ public class TickDispatchTest {
         assertEquals("g1", entry.get("groupId"));
         assertEquals(1L, entry.get("generated"));
         assertEquals(1L, entry.get("sent"));
-        assertEquals(0L, entry.get("tries"));
+        assertEquals(0L, entry.get("failed"));
         assertTrue((Double) entry.get("throughput") > 0);
 
         synchronized (server.stateLock) {

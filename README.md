@@ -131,6 +131,13 @@ Projects are saved and loaded as `.gsynth` files. They are JSON documents with a
 - Version `1.2.0` added the flow field `everyTicks` (default 1). Older files load with one message per tick, and legacy output modes (`serial`, `TEXT`, `round-robin`) load as `parallel`.
 - The Core also mirrors the current state in `core/state/` (`groups.json`, `variables.json`, `settings.json`) on every change.
 
+## ⌨️ Keyboard Shortcuts
+
+| Shortcut | Action |
+|---|---|
+| `Ctrl/Cmd + S` | Save (same as the **Save** button; opens "Save as" if no file is open yet). |
+| `Ctrl/Cmd + Z` | Discard the unsaved changes of the selected group, flow or variable (same as its **Discard** button). With nothing selected, discards every unsaved change of the project after a confirmation. Inside text fields it keeps the normal text undo, and it does nothing while a dialog is open. |
+
 ## ⏱️ Simulation Clock (Ticks)
 
 Message generation is paced by a single global **tick clock**, configured in **Settings → Simulation**:
@@ -138,7 +145,7 @@ Message generation is paced by a single global **tick clock**, configured in **S
 - **Fixed period**: one tick every N milliseconds, seconds or minutes (whole number ≥ 1, at most 24 hours). Default: 1 second.
 - **As Fast As You Can**: the next tick starts as soon as the previous one finishes, with no wait. Useful to measure the maximum throughput; it may keep a CPU core busy while running.
 
-Each flow sends **one message every N ticks** (*Every N ticks*, minimum 1); paused groups are skipped. Changes to the tick apply live, without stopping the simulation, and are saved with the project. The resource bar shows the measured tick rate (`TICK`), and each flow in the left panel shows its measured **msg/s**, **sent** (publishes completed without error) and **tries** (generated but not sent: pending in a queue or failed).
+Each flow sends **one message every N ticks** (*Every N ticks*, minimum 1); paused groups are skipped. Changes to the tick apply live, without stopping the simulation, and are saved with the project. The resource bar shows the measured tick rate (`TICK`), and each flow in the left panel shows its measured **msg/s**, **sent** (publishes completed without error) and **fails** (messages that could not be generated or published).
 
 Each group chooses how its flows send (**Output Mode**, applied the next time the group starts):
 - **Parallel**: every flow runs on its own thread and sends as soon as it generates, independently of the other flows. A flow that is still sending skips its next tick instead of building a backlog.

@@ -105,7 +105,7 @@ public class SequentialGroupDispatcher implements IGroupDispatcher {
     @Override
     public void shutdown() {
         closed = true;
-        // Dropped messages stay counted as generated but not sent (tries)
+        // Dropped messages stay counted as generated but not sent
         queue.clear();
     }
 }

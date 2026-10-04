@@ -45,7 +45,7 @@ const metrics = (flowId: string, throughput: number): FlowMetricsPayload => ({
   throughput,
   generated: 0,
   sent: 0,
-  tries: 0,
+  failed: 0,
   latency: 0,
   errorRate: 0,
   connectionStatus: 'connected',

@@ -58,7 +58,7 @@ interface AppContextValue {
     saveProjectState: (isAutoSave?: boolean) => Promise<boolean>;
     saveProjectStateAs: () => Promise<boolean>;
     discardItemChanges: (type: 'group' | 'flow' | 'variable', id: string) => Promise<void>;
-    discardAllChanges: () => void;
+    discardAllChanges: () => Promise<void>;
     setAutoSave: (enabled: boolean) => void;
     setAutoSaveInterval: (seconds: number) => void;
 
@@ -408,6 +408,7 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
         savedState: current.savedState,
         groups: current.groups,
         variables: current.variables,
+        settings: current.settings,
       },
       type,
       id,
@@ -415,7 +416,15 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
   }, []);
 
   const discardAllChanges = useCallback(() => {
-    dispatch({ type: 'DISCARD_ALL_CHANGES' });
+    const current = stateRef.current;
+    return discardActions.discardAllChanges({
+      dispatch,
+      isConnected: current.isConnected,
+      savedState: current.savedState,
+      groups: current.groups,
+      variables: current.variables,
+      settings: current.settings,
+    });
   }, []);
 
   const setAutoSave = useCallback((enabled: boolean) => {

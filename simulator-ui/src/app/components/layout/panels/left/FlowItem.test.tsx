@@ -32,7 +32,7 @@ const metrics: FlowMetricsPayload = {
   throughput: 0.2,
   generated: 1203,
   sent: 1200,
-  tries: 3,
+  failed: 3,
   latency: 1,
   errorRate: 0,
   connectionStatus: 'connected',
@@ -57,12 +57,12 @@ function renderItem(flowMetrics: Record<string, FlowMetricsPayload> | undefined)
 describe('FlowItem', () => {
   afterEach(() => cleanup());
 
-  it('shows the live msg/s, sent and tries of the flow', () => {
+  it('shows the live msg/s, sent and failed messages of the flow', () => {
     renderItem({ f1: metrics });
     const row = screen.getByTestId('flow-metrics');
     expect(row).toHaveTextContent('0.20 msg/s');
     expect(row).toHaveTextContent('1.2K sent');
-    expect(row).toHaveTextContent('3 tries');
+    expect(row).toHaveTextContent('3 fails');
     // The legacy throughput string is no longer shown
     expect(screen.queryByText('99 msg/s')).not.toBeInTheDocument();
   });
@@ -72,6 +72,6 @@ describe('FlowItem', () => {
     const row = screen.getByTestId('flow-metrics');
     expect(row).toHaveTextContent('0 msg/s');
     expect(row).toHaveTextContent('0 sent');
-    expect(row).toHaveTextContent('0 tries');
+    expect(row).toHaveTextContent('0 fails');
   });
 });

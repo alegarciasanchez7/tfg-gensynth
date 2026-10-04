@@ -12,7 +12,7 @@ vi.mock('../../core/bridge', () => ({
 }));
 vi.mock('sonner', () => ({ toast: { error: vi.fn() } }));
 
-const { buildDiscardCommands, discardItemChanges } = await import('./discardActions');
+const { buildDiscardCommands, buildDiscardAllCommands, discardItemChanges, discardAllChanges } = await import('./discardActions');
 
 const flow = (id: string, overrides: Partial<Flow> = {}): Flow => ({
   id,
@@ -152,7 +152,7 @@ describe('discardItemChanges', () => {
     const dispatch = vi.fn();
 
     await discardItemChanges(
-      { dispatch, isConnected: true, savedState: saved, groups: edited, variables: saved.variables },
+      { dispatch, isConnected: true, savedState: saved, groups: edited, variables: saved.variables, settings: DEFAULT_PROJECT_SETTINGS },
       'flow',
       'f1',
     );
@@ -165,7 +165,7 @@ describe('discardItemChanges', () => {
     const dispatch = vi.fn();
 
     await discardItemChanges(
-      { dispatch, isConnected: false, savedState: saved, groups: edited, variables: saved.variables },
+      { dispatch, isConnected: false, savedState: saved, groups: edited, variables: saved.variables, settings: DEFAULT_PROJECT_SETTINGS },
       'flow',
       'f1',
     );
@@ -180,12 +180,73 @@ describe('discardItemChanges', () => {
     const dispatch = vi.fn();
 
     await discardItemChanges(
-      { dispatch, isConnected: true, savedState: saved, groups: edited, variables: saved.variables },
+      { dispatch, isConnected: true, savedState: saved, groups: edited, variables: saved.variables, settings: DEFAULT_PROJECT_SETTINGS },
       'flow',
       'f1',
     );
 
     expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'ADD_LOG' }));
     expect(getInitialState).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('buildDiscardAllCommands', () => {
+  it('sends nothing when nothing changed', () => {
+    expect(buildDiscardAllCommands(saved, saved.groups, saved.variables, DEFAULT_PROJECT_SETTINGS)).toEqual([]);
+  });
+
+  it('reverts edited items, deletes new ones and recreates deleted ones with their ids', () => {
+    const groups = [group('g2', [flow('f9')], { name: 'New group' })];
+    const variables = [variable('v1', { name: 'renamed' }), variable('v2')];
+
+    const commands = buildDiscardAllCommands(saved, groups, variables, DEFAULT_PROJECT_SETTINGS);
+
+    expect(commands.map((command) => command.type)).toEqual([
+      'DELETE_GROUP', // g2 was created after the save
+      'CREATE_GROUP', // g1 was deleted after the save
+      'CREATE_FLOW',
+      'CREATE_FLOW',
+      'UPDATE_FLOW_CONFIG', // f2 was saved disabled
+      'UPDATE_VARIABLE', // v1 was renamed
+      'DELETE_VARIABLE', // v2 was created after the save
+    ]);
+    expect(commands[1].payload).toMatchObject({ groupId: 'g1', name: 'Group g1', outputMode: 'parallel' });
+    expect(commands[2].payload).toMatchObject({ groupId: 'g1', flowId: 'f1' });
+  });
+
+  it('recreates deleted variables and reverts the tick settings', () => {
+    const fastTicks = { tick: { mode: 'FIXED_RATE' as const, value: 100, unit: 'MILLISECONDS' as const } };
+
+    const commands = buildDiscardAllCommands(saved, saved.groups, [], fastTicks);
+
+    expect(commands).toEqual([
+      { type: 'CREATE_VARIABLE', payload: expect.objectContaining({ variableId: 'v1', name: 'var_v1' }) },
+      { type: 'UPDATE_SETTINGS', payload: DEFAULT_PROJECT_SETTINGS },
+    ]);
+  });
+});
+
+describe('discardAllChanges', () => {
+  beforeEach(() => {
+    send.mockReset();
+    getInitialState.mockReset();
+  });
+
+  it('reverts the UI and sends the revert commands to the Core', async () => {
+    send.mockResolvedValue({ status: 'ok' });
+    const dispatch = vi.fn();
+    const edited = [group('g1', [flow('f1', { port: 9999 }), flow('f2', { enabled: false })])];
+
+    await discardAllChanges({
+      dispatch,
+      isConnected: true,
+      savedState: saved,
+      groups: edited,
+      variables: saved.variables,
+      settings: DEFAULT_PROJECT_SETTINGS,
+    });
+
+    expect(dispatch).toHaveBeenCalledWith({ type: 'DISCARD_ALL_CHANGES' });
+    expect(send).toHaveBeenCalledWith('UPDATE_FLOW_CONFIG', expect.objectContaining({ flowId: 'f1', port: 5672 }));
   });
 });

@@ -493,7 +493,7 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
 
     /**
      * Pauses a group: no more messages are generated and pending ones are dropped (they stay
-     * counted as tries). Connectors and counters are kept; START_GROUP resumes it.
+     * generated but not sent). Connectors and counters are kept; START_GROUP resumes it.
      *
      * @param group the group to pause
      */

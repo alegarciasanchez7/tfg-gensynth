@@ -219,7 +219,7 @@ public class SystemCommandHandler implements CommandHandler {
     /**
      * Builds the FLOWS_METRICS payload: live counters and send rate of every flow.
      *
-     * @return payload {@code { flows: [{ flowId, groupId, throughput, generated, sent, tries, latency, errorRate, connectionStatus, lastError? }] }}
+     * @return payload {@code { flows: [{ flowId, groupId, throughput, generated, sent, failed, latency, errorRate, connectionStatus, lastError? }] }}
      */
     public Map<String, Object> buildFlowsMetricsPayload() {
         List<Map<String, Object>> flows = new ArrayList<>();
@@ -232,7 +232,7 @@ public class SystemCommandHandler implements CommandHandler {
                     entry.put("throughput", flow.throughput);
                     entry.put("generated", flow.generated.get());
                     entry.put("sent", flow.sent.get());
-                    entry.put("tries", flow.tries());
+                    entry.put("failed", flow.failed.get());
                     entry.put("latency", flow.latency);
                     entry.put("errorRate", flow.hasError ? 1.0 : 0.0);
                     entry.put("connectionStatus", flow.connectionStatus);

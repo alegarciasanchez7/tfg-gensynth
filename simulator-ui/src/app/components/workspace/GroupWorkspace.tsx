@@ -153,7 +153,7 @@ export function GroupWorkspace({ group }: GroupWorkspaceProps) {
             disabled={!isDirty || isDeleting}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-[var(--c-br1)] bg-[var(--c-bg1)] text-[var(--c-tx4)] text-xs hover:text-[var(--c-tx1)] hover:bg-[var(--c-bg5)] transition-all disabled:opacity-30 disabled:cursor-not-allowed"
             style={{ fontFamily: 'JetBrains Mono, monospace' }}
-            title="Revert group configuration to last saved state"
+            title="Revert group configuration to last saved state (Ctrl+Z)"
           >
             <RotateCcw size={11} /> Discard
           </button>

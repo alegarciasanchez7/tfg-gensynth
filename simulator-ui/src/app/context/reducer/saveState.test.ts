@@ -300,4 +300,23 @@ describe('rootReducer save state tracking', () => {
       expect(state.isDirty).toBe(false);
     });
   });
+
+  it('discarding everything restores groups, variables and settings but keeps runtime state', () => {
+    const fastTicks: ProjectSettings = { tick: { mode: 'FIXED_RATE', value: 100, unit: 'MILLISECONDS' } };
+    const state = run(
+      loadFile(),
+      { type: 'SET_GROUPS', payload: [{ ...fileGroup, name: 'Renamed', status: 'running', expanded: true }] },
+      { type: 'SET_VARIABLES', payload: [] },
+      { type: 'SET_SETTINGS', payload: fastTicks },
+      { type: 'SET_SELECTION', payload: { type: 'variable', variableId: 'v1' } },
+      { type: 'DISCARD_ALL_CHANGES' },
+    );
+
+    expect(state.groups[0].name).toBe('Group 1');
+    expect(state.groups[0].status).toBe('running');
+    expect(state.variables.map((v) => v.id)).toEqual(['v1']);
+    expect(state.settings).toEqual(DEFAULT_PROJECT_SETTINGS);
+    expect(state.isDirty).toBe(false);
+    expect(state.selection).toEqual({ type: 'variable', variableId: 'v1' });
+  });
 });
