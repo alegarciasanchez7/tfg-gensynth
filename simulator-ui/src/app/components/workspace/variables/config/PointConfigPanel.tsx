@@ -55,7 +55,7 @@ const CustomDropdown: React.FC<CustomDropdownProps> = ({ id, value, onChange, op
         id={id}
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="flex h-8 w-full items-center justify-between rounded-md border border-input bg-input-background dark:bg-input/30 px-3 py-1 text-xs text-[var(--c-tx2)] outline-none hover:bg-white/5 transition-colors cursor-pointer"
+        className="flex h-8 w-full items-center justify-between rounded-md border border-input bg-input-background dark:bg-input/30 px-3 py-1 text-xs text-[var(--c-tx2)] outline-none hover:bg-[var(--c-bg5)] transition-colors cursor-pointer"
       >
         <span>{selectedOption.label}</span>
         <svg
@@ -84,7 +84,7 @@ const CustomDropdown: React.FC<CustomDropdownProps> = ({ id, value, onChange, op
                 className={`w-full text-left px-2.5 py-1.5 rounded text-xs transition-colors flex items-center justify-between cursor-pointer ${
                   opt.value === value
                     ? 'bg-violet-500/20 text-violet-400 font-semibold'
-                    : 'hover:bg-white/5 text-[var(--c-tx2)]'
+                    : 'hover:bg-[var(--c-bg5)] text-[var(--c-tx2)]'
                 }`}
               >
                 <span>{opt.label}</span>
@@ -470,7 +470,7 @@ export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onCh
                             type="checkbox"
                             checked={config.graphLoopSequence ?? true}
                             onChange={(e) => onChange({ graphLoopSequence: e.target.checked })}
-                            className="rounded border-[var(--c-br1)] bg-slate-900 text-cyan-500 focus:ring-0 h-3 w-3"
+                            className="rounded border-[var(--c-br1)] bg-[var(--c-bg2)] text-cyan-500 focus:ring-0 h-3 w-3"
                           />
                           Loop Sequence
                         </label>
@@ -478,7 +478,7 @@ export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onCh
                           <button
                             type="button"
                             onClick={() => onChange({ graphSequence: [] })}
-                            className="text-[10px] text-rose-400 hover:text-rose-300 transition-colors flex items-center gap-1"
+                            className="text-[10px] text-rose-400 hover:text-rose-600 dark:hover:text-rose-300 transition-colors flex items-center gap-1"
                           >
                             <Trash2 size={10} />
                             Clear Path
@@ -489,19 +489,19 @@ export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onCh
 
                     {/* Sequence Badge Chips */}
                     {sequence.length === 0 ? (
-                      <div className="p-2 bg-slate-900/50 rounded border border-dashed border-slate-800 text-[11px] text-slate-400 text-center">
+                      <div className="p-2 bg-[var(--c-bg2)]/50 rounded border border-dashed border-[var(--c-br2)] text-[11px] text-[var(--c-tx4)] text-center">
                         No nodes added to the sequence yet. Select an initial starting node below.
                       </div>
                     ) : (
-                      <div className="flex flex-wrap items-center gap-1.5 p-2 bg-slate-900/70 rounded border border-slate-800">
+                      <div className="flex flex-wrap items-center gap-1.5 p-2 bg-[var(--c-bg2)]/70 rounded border border-[var(--c-br2)]">
                         {sequence.map((nodeId, idx) => {
                           const nodeObj = graphNodes.find((n) => n.id === nodeId);
                           const displayName = nodeObj?.name || nodeId;
                           return (
                             <React.Fragment key={`${nodeId}-${idx}`}>
                               {idx > 0 && <ArrowRight size={10} className="text-cyan-500/60 shrink-0" />}
-                              <div className="flex items-center gap-1.5 px-2 py-1 bg-cyan-500/10 border border-cyan-500/30 rounded text-cyan-300 text-[11px] font-mono">
-                                <span className="text-[9px] text-slate-400 font-sans">{idx + 1}.</span>
+                              <div className="flex items-center gap-1.5 px-2 py-1 bg-cyan-500/10 border border-cyan-500/30 rounded text-cyan-600 dark:text-cyan-300 text-[11px] font-mono">
+                                <span className="text-[9px] text-[var(--c-tx4)] font-sans">{idx + 1}.</span>
                                 <span>{displayName}</span>
                                 <button
                                   type="button"
@@ -509,7 +509,7 @@ export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onCh
                                     const updated = sequence.filter((_, i) => i !== idx);
                                     onChange({ graphSequence: updated });
                                   }}
-                                  className="text-slate-400 hover:text-rose-400 ml-1 transition-colors"
+                                  className="text-[var(--c-tx4)] hover:text-rose-400 ml-1 transition-colors"
                                   title="Remove node from sequence"
                                 >
                                   <X size={12} />
@@ -523,7 +523,7 @@ export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onCh
 
                     {/* Dropdown to Append Next Step */}
                     <div className="space-y-1 pt-1">
-                      <Label className="text-[10px] text-slate-400 uppercase">
+                      <Label className="text-[10px] text-[var(--c-tx4)] uppercase">
                         {isInitial
                           ? '1. Select Initial Starting Node'
                           : `2. Add Next Connected Step (Neighbors of ${lastNode?.name || lastNodeId})`}
@@ -546,7 +546,7 @@ export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onCh
                                 onChange({ graphSequence: [...sequence, selectedId] });
                               }
                             }}
-                            className="h-8 flex-1 bg-slate-900 border border-slate-700 rounded text-xs text-slate-200 px-2 font-mono focus:border-cyan-500 focus:outline-none"
+                            className="h-8 flex-1 bg-[var(--c-bg2)] border border-[var(--c-br1)] rounded text-xs text-[var(--c-tx1)] px-2 font-mono focus:border-cyan-500 focus:outline-none"
                           >
                             <option value="" disabled>
                               {isInitial

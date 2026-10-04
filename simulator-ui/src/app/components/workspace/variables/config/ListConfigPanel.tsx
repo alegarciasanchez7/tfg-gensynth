@@ -330,7 +330,7 @@ export const ListConfigPanel: React.FC<ListConfigPanelProps> = ({
         />
       </div>
 
-      <div className="flex items-center gap-2 p-2 rounded bg-cyan-950/30 border border-cyan-800/40 text-[11px] text-cyan-300/90">
+      <div className="flex items-center gap-2 p-2 rounded bg-cyan-100 dark:bg-cyan-950/30 border border-cyan-800/40 text-[11px] text-cyan-600/90 dark:text-cyan-300/90">
         <Info className="w-3.5 h-3.5 shrink-0 text-cyan-400" />
         <span>Sub-variables support 1 level of embedded generator configuration for heterogeneous data items.</span>
       </div>
@@ -351,15 +351,15 @@ export const ListConfigPanel: React.FC<ListConfigPanelProps> = ({
             {unifiedItems.map((item: any, unifiedIdx: number) => {
               if (item.isInherited) {
                 return (
-                  <div key={item.id || `inh_${unifiedIdx}`} className="rounded border border-violet-500/30 bg-violet-950/20 p-2 space-y-2">
+                  <div key={item.id || `inh_${unifiedIdx}`} className="rounded border border-violet-500/30 bg-violet-100 dark:bg-violet-950/20 p-2 space-y-2">
                     <div className="flex gap-2 items-center">
-                      <div className="w-36 flex items-center justify-between gap-1 px-2.5 h-8 rounded border border-violet-500/30 bg-violet-500/10 text-[11px] font-mono text-violet-300 shrink-0">
-                        <span className="font-semibold text-violet-300">Inherited</span>
+                      <div className="w-36 flex items-center justify-between gap-1 px-2.5 h-8 rounded border border-violet-500/30 bg-violet-500/10 text-[11px] font-mono text-violet-600 dark:text-violet-300 shrink-0">
+                        <span className="font-semibold text-violet-600 dark:text-violet-300">Inherited</span>
                         <span className="text-[9px] text-violet-400/80 truncate">({parentList?.name || 'Parent'})</span>
                       </div>
 
                       <Input
-                        className="flex-1 h-8 text-xs font-mono border-violet-500/30 bg-black/30 text-violet-200 cursor-not-allowed opacity-90"
+                        className="flex-1 h-8 text-xs font-mono border-violet-500/30 bg-[var(--c-bg1)] text-violet-700 dark:text-violet-200 cursor-not-allowed opacity-90"
                         value={item.value ?? item.id ?? ''}
                         readOnly
                         disabled
@@ -375,7 +375,7 @@ export const ListConfigPanel: React.FC<ListConfigPanelProps> = ({
                             value={item.weight ?? 1.0}
                             readOnly
                             disabled
-                            className="h-8 text-xs font-mono border-violet-500/30 bg-black/30 text-violet-200 cursor-not-allowed opacity-90"
+                            className="h-8 text-xs font-mono border-violet-500/30 bg-[var(--c-bg1)] text-violet-700 dark:text-violet-200 cursor-not-allowed opacity-90"
                           />
                         </div>
                       )}
@@ -385,7 +385,7 @@ export const ListConfigPanel: React.FC<ListConfigPanelProps> = ({
                           type="button"
                           variant="ghost"
                           size="icon"
-                          className="h-8 w-8 text-violet-300 hover:text-white disabled:opacity-30 p-0"
+                          className="h-8 w-8 text-violet-600 dark:text-violet-300 hover:text-[var(--c-tx1)] disabled:opacity-30 p-0"
                           disabled={unifiedIdx === 0}
                           onClick={() => handleMoveUnifiedItem(unifiedIdx, 'up')}
                           title="Move Up"
@@ -396,7 +396,7 @@ export const ListConfigPanel: React.FC<ListConfigPanelProps> = ({
                           type="button"
                           variant="ghost"
                           size="icon"
-                          className="h-8 w-8 text-violet-300 hover:text-white disabled:opacity-30 p-0"
+                          className="h-8 w-8 text-violet-600 dark:text-violet-300 hover:text-[var(--c-tx1)] disabled:opacity-30 p-0"
                           disabled={unifiedIdx === unifiedItems.length - 1}
                           onClick={() => handleMoveUnifiedItem(unifiedIdx, 'down')}
                           title="Move Down"
@@ -458,7 +458,7 @@ export const ListConfigPanel: React.FC<ListConfigPanelProps> = ({
                           variant="ghost"
                           size="sm"
                           onClick={() => setModalEmbeddedIndex(localIdx)}
-                          className="h-8 text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1.5"
+                          className="h-8 text-xs text-cyan-400 hover:text-cyan-600 dark:hover:text-cyan-300 flex items-center gap-1.5"
                           title="Configure generator parameters for this item"
                         >
                           <Settings className="w-3.5 h-3.5" />
@@ -596,7 +596,7 @@ export const ListConfigPanel: React.FC<ListConfigPanelProps> = ({
           {modalEmbeddedIndex !== null && items[modalEmbeddedIndex] && (
             <>
               <DialogHeader>
-                <DialogTitle className="text-base font-mono text-violet-300 flex items-center gap-2">
+                <DialogTitle className="text-base font-mono text-violet-600 dark:text-violet-300 flex items-center gap-2">
                   <Settings className="w-4 h-4 text-violet-400" />
                   <span>Configure Item ({(items[modalEmbeddedIndex].embeddedType || 'numeric').toUpperCase()})</span>
                 </DialogTitle>
@@ -605,7 +605,7 @@ export const ListConfigPanel: React.FC<ListConfigPanelProps> = ({
                 </DialogDescription>
               </DialogHeader>
 
-              <div className="p-4 rounded-lg border border-violet-500/20 bg-violet-950/20 space-y-4">
+              <div className="p-4 rounded-lg border border-violet-500/20 bg-violet-100 dark:bg-violet-950/20 space-y-4">
                 <EmbeddedSubGeneratorPanel
                   item={items[modalEmbeddedIndex]}
                   index={modalEmbeddedIndex}

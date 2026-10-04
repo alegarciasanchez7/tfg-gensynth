@@ -268,7 +268,7 @@ export const StringConfigPanel: React.FC<StringConfigPanelProps> = ({
                 className="bg-[var(--c-bg2)] border-[var(--c-br1)] h-8 text-[11px]"
               />
             </div>
-            <div className="flex items-center gap-2 p-2 rounded bg-cyan-950/30 border border-cyan-800/40 text-[11px] text-cyan-300/90">
+            <div className="flex items-center gap-2 p-2 rounded bg-cyan-100 dark:bg-cyan-950/30 border border-cyan-800/40 text-[11px] text-cyan-600/90 dark:text-cyan-300/90">
               <Sparkles className="w-3.5 h-3.5 shrink-0 text-cyan-400" />
               <span>Generates a random string using A-Z, a-z, 0-9.</span>
             </div>
@@ -399,7 +399,7 @@ export const StringConfigPanel: React.FC<StringConfigPanelProps> = ({
               </div>
               
               <p className="text-[9px] text-[var(--c-tx4)] mt-1">
-                Use <code className="bg-[var(--c-bg4)] px-1 py-0.5 rounded text-amber-200/90">{`{{variable_name}}`}</code> to interpolate values from other variables in the same flow.
+                Use <code className="bg-[var(--c-bg4)] px-1 py-0.5 rounded text-amber-700/90 dark:text-amber-200/90">{`{{variable_name}}`}</code> to interpolate values from other variables in the same flow.
               </p>
 
               {/* Validation Badges */}
@@ -480,11 +480,11 @@ export const StringConfigPanel: React.FC<StringConfigPanelProps> = ({
       <div className="my-2 border-t border-[var(--c-br1)]" />
 
       {/* Data Corruption Simulation */}
-      <div className="rounded border border-rose-950/40 bg-rose-950/10 p-3 space-y-3">
+      <div className="rounded border border-rose-950/40 bg-rose-100 dark:bg-rose-950/10 p-3 space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-rose-400">
             <ShieldAlert className="w-4 h-4" />
-            <Label htmlFor="corruption-switch" className="font-medium text-rose-300">Simulate Data Corruption</Label>
+            <Label htmlFor="corruption-switch" className="font-medium text-rose-600 dark:text-rose-300">Simulate Data Corruption</Label>
           </div>
           <Switch
             id="corruption-switch"

@@ -121,7 +121,7 @@ export const ListReferenceSelector: React.FC<ListReferenceSelectorProps> = ({
             id="enable-list-ref"
             checked={isEnabled}
             onChange={(e) => handleToggle(e.target.checked)}
-            className="h-3.5 w-3.5 rounded border-[var(--c-br2)] bg-black/20 text-violet-500 focus:ring-violet-500/30"
+            className="h-3.5 w-3.5 rounded border-[var(--c-br2)] bg-[var(--c-bg1)] text-violet-500 focus:ring-violet-500/30"
           />
           <Label htmlFor="enable-list-ref" className="font-mono text-xs font-semibold text-[var(--c-tx1)] cursor-pointer">
             Inherit value from parent-scope List
@@ -164,7 +164,7 @@ export const ListReferenceSelector: React.FC<ListReferenceSelectorProps> = ({
                       onClick={() => onChange({ sourceListSelectionMode: 'RANDOM_ITEM' })}
                       className={`h-7 px-2 rounded text-xs font-mono border transition-all ${
                         selectionMode === 'RANDOM_ITEM'
-                          ? 'border-violet-500 bg-violet-500/20 text-violet-300 font-semibold'
+                          ? 'border-violet-500 bg-violet-500/20 text-violet-600 dark:text-violet-300 font-semibold'
                           : 'border-[var(--c-br2)] bg-[var(--c-bg2)] text-[var(--c-tx3)] hover:text-[var(--c-tx1)]'
                       }`}
                     >
@@ -175,7 +175,7 @@ export const ListReferenceSelector: React.FC<ListReferenceSelectorProps> = ({
                       onClick={() => onChange({ sourceListSelectionMode: 'FIXED_ITEM' })}
                       className={`h-7 px-2 rounded text-xs font-mono border transition-all ${
                         selectionMode === 'FIXED_ITEM'
-                          ? 'border-violet-500 bg-violet-500/20 text-violet-300 font-semibold'
+                          ? 'border-violet-500 bg-violet-500/20 text-violet-600 dark:text-violet-300 font-semibold'
                           : 'border-[var(--c-br2)] bg-[var(--c-bg2)] text-[var(--c-tx3)] hover:text-[var(--c-tx1)]'
                       }`}
                     >
@@ -213,7 +213,7 @@ export const ListReferenceSelector: React.FC<ListReferenceSelectorProps> = ({
                       onClick={() => onChange({ sourceListSelectionMode: 'SUBSET_SPECIFIC' })}
                       className={`h-7 px-2 rounded text-xs font-mono border transition-all ${
                         selectionMode === 'SUBSET_SPECIFIC'
-                          ? 'border-violet-500 bg-violet-500/20 text-violet-300 font-semibold'
+                          ? 'border-violet-500 bg-violet-500/20 text-violet-600 dark:text-violet-300 font-semibold'
                           : 'border-[var(--c-br2)] bg-[var(--c-bg2)] text-[var(--c-tx3)] hover:text-[var(--c-tx1)]'
                       }`}
                     >
@@ -224,7 +224,7 @@ export const ListReferenceSelector: React.FC<ListReferenceSelectorProps> = ({
                       onClick={() => onChange({ sourceListSelectionMode: 'SUBSET_RANDOM' })}
                       className={`h-7 px-2 rounded text-xs font-mono border transition-all ${
                         selectionMode === 'SUBSET_RANDOM'
-                          ? 'border-violet-500 bg-violet-500/20 text-violet-300 font-semibold'
+                          ? 'border-violet-500 bg-violet-500/20 text-violet-600 dark:text-violet-300 font-semibold'
                           : 'border-[var(--c-br2)] bg-[var(--c-bg2)] text-[var(--c-tx3)] hover:text-[var(--c-tx1)]'
                       }`}
                     >
@@ -237,7 +237,7 @@ export const ListReferenceSelector: React.FC<ListReferenceSelectorProps> = ({
                       <Label className="text-[10px] text-[var(--c-tx4)] font-mono block">
                         Select items to include in this sub-list:
                       </Label>
-                      <div className="max-h-32 overflow-y-auto space-y-1 rounded border border-[var(--c-br2)] bg-black/20 p-2">
+                      <div className="max-h-32 overflow-y-auto space-y-1 rounded border border-[var(--c-br2)] bg-[var(--c-bg1)] p-2">
                         {listItems.map((item: any) => {
                           const isSelected = (config.selectedListItemIds || []).includes(item.id);
                           return (

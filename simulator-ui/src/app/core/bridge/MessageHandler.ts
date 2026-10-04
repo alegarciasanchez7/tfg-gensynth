@@ -17,6 +17,7 @@ import type {
   RollbackReportPayload,
   InitialStatePayload,
 } from '../types';
+import type { ProjectSettings } from '../../types';
 
 export interface MessageHandlerOptions {
   config: BridgeConfig;
@@ -83,6 +84,9 @@ export class MessageHandler {
           break;
         case 'ROLLBACK_REPORT':
           this.emit('rollback-report', message.payload as RollbackReportPayload);
+          break;
+        case 'SETTINGS_UPDATE':
+          this.emit('settings-update', message.payload as ProjectSettings);
           break;
       }
 

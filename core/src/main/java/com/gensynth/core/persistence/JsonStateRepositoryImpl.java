@@ -3,6 +3,7 @@ package com.gensynth.core.persistence;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.gensynth.core.model.GroupDefinition;
+import com.gensynth.core.model.ProjectSettings;
 import com.gensynth.core.model.Variable;
 
 import java.io.File;
@@ -20,6 +21,7 @@ import java.util.Map;
  * Persists state to JSON files in a configurable directory:
  * - groups.json: All GroupDefinition objects with nested FlowDefinition
  * - variables.json: All Variable objects
+ * - settings.json: Project settings (tick clock configuration)
  *
  * Files are automatically created if they don't exist. If loading from a
  * non-existent file, returns an empty list.
@@ -28,6 +30,7 @@ public class JsonStateRepositoryImpl implements StateRepository {
 
     private static final String GROUPS_FILE = "groups.json";
     private static final String VARIABLES_FILE = "variables.json";
+    private static final String SETTINGS_FILE = "settings.json";
 
     private final String stateDirectory;
     private final ObjectMapper objectMapper;
@@ -154,6 +157,38 @@ public class JsonStateRepositoryImpl implements StateRepository {
     }
 
     @Override
+    public ProjectSettings loadSettings() throws StateRepositoryException {
+        if (!initialized) {
+            throw new StateRepositoryException("Repository not initialized");
+        }
+
+        File file = new File(stateDirectory, SETTINGS_FILE);
+        if (!file.exists()) {
+            return ProjectSettings.defaults();
+        }
+
+        try {
+            return ProjectSettings.fromPayload(objectMapper.readValue(file, Map.class));
+        } catch (IOException e) {
+            throw new StateRepositoryException("Failed to load settings from " + file.getAbsolutePath(), e);
+        }
+    }
+
+    @Override
+    public void saveSettings(ProjectSettings settings) throws StateRepositoryException {
+        if (!initialized) {
+            throw new StateRepositoryException("Repository not initialized");
+        }
+
+        File file = new File(stateDirectory, SETTINGS_FILE);
+        try {
+            objectMapper.writeValue(file, settings.toPayload());
+        } catch (IOException e) {
+            throw new StateRepositoryException("Failed to save settings to " + file.getAbsolutePath(), e);
+        }
+    }
+
+    @Override
     public void clear() throws StateRepositoryException {
         try {
             File groupsFile = new File(stateDirectory, GROUPS_FILE);
@@ -165,13 +200,18 @@ public class JsonStateRepositoryImpl implements StateRepository {
             if (variablesFile.exists() && !variablesFile.delete()) {
                 throw new IOException("Failed to delete " + VARIABLES_FILE);
             }
+
+            File settingsFile = new File(stateDirectory, SETTINGS_FILE);
+            if (settingsFile.exists() && !settingsFile.delete()) {
+                throw new IOException("Failed to delete " + SETTINGS_FILE);
+            }
         } catch (IOException e) {
             throw new StateRepositoryException("Failed to clear state directory", e);
         }
     }
 
     @Override
-    public void exportState(Path targetFile, List<GroupDefinition> groups, List<Variable> variables) throws StateRepositoryException {
+    public void exportState(Path targetFile, List<GroupDefinition> groups, List<Variable> variables, ProjectSettings settings) throws StateRepositoryException {
         try {
             Map<String, Object> exportData = new java.util.LinkedHashMap<>();
             
@@ -190,6 +230,7 @@ public class JsonStateRepositoryImpl implements StateRepository {
             exportData.put("exportedAt", java.time.Instant.now().toString());
             exportData.put("groups", groupsData);
             exportData.put("variables", variablesData);
+            exportData.put("settings", (settings != null ? settings : ProjectSettings.defaults()).toPayload());
 
             objectMapper.writeValue(targetFile.toFile(), exportData);
         } catch (IOException e) {

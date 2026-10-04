@@ -76,7 +76,7 @@ export function VariableEditorWorkspace({ variable, onBack }: VariableEditorWork
               {!validationResult.isJsonValid && <div>Config text must be a valid JSON structure.</div>}
               {validationResult.cycle && (
                 <div>
-                  Circular dependency detected: <span className="font-mono text-amber-300">{validationResult.cycle.join(' → ')}</span>
+                  Circular dependency detected: <span className="font-mono text-amber-600 dark:text-amber-300">{validationResult.cycle.join(' → ')}</span>
                 </div>
               )}
               {Object.values(validationResult.errors).map((err, idx) => (

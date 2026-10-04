@@ -16,6 +16,7 @@ import type {
   RollbackReportPayload,
   InitialStatePayload,
 } from '../types';
+import type { ProjectSettings } from '../../types';
 
 export type EventCallback<T = unknown> = (data: T) => void;
 
@@ -59,6 +60,7 @@ export const SUPPORTED_COMMANDS = new Set<UICommandType>([
   'EXPORT_STATE',
   'PAUSE_GROUP',
   'UI_LOG',
+  'UPDATE_SETTINGS',
 ]);
 
 export interface EventMap {
@@ -79,5 +81,6 @@ export interface EventMap {
   'plugin-install-result': PluginInstallResultPayload;
   'restart-required': RestartRequiredPayload;
   'rollback-report': RollbackReportPayload;
+  'settings-update': ProjectSettings;
   'NATIVE_FILE_DROPPED': { filename: string; base64: string };
 }

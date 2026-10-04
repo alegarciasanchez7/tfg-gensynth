@@ -140,7 +140,7 @@ describe('LeftPanel', () => {
       'localhost',
       8080,
       undefined,
-      1000,
+      undefined, // legacy interval: pacing comes from the global tick clock
       1,
       '{}',
       {

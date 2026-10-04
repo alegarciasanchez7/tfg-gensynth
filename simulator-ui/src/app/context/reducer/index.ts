@@ -6,6 +6,8 @@ import { variablesReducer } from './variablesSlice';
 import { connectorsReducer } from './connectorsSlice';
 import { logsReducer } from './logsSlice';
 import { metricsReducer } from './metricsSlice';
+import { settingsReducer } from './settingsSlice';
+import { DEFAULT_PROJECT_SETTINGS } from '../../core/tickSettings';
 import { normalizeVariableListFromCore } from '../variableNormalization';
 import {
   normalizeConnectorState,
@@ -86,12 +88,13 @@ export function rootReducer(state: AppState, action: AppAction): AppState {
       ...state,
       groups: [],
       variables: [],
+      settings: DEFAULT_PROJECT_SETTINGS,
       formatTemplates: {},
       flowConnectorSelections: {},
       flowConnectorConfigs: {},
       connectorHealthSummary: [],
       flowMetrics: {},
-      savedState: { groups: [], variables: [] },
+      savedState: { groups: [], variables: [], settings: DEFAULT_PROJECT_SETTINGS },
       isDirty: false,
       dirtyItems: createEmptyDirtyItems(),
       currentFilePath: null,
@@ -104,7 +107,7 @@ export function rootReducer(state: AppState, action: AppAction): AppState {
   if (action.type === 'MARK_SAVED') {
     const { savedState, file } = action.payload;
     // Compare against the current state: edits made while the save was in flight stay dirty
-    const { isDirty, dirtyItems } = computeDirtyState(savedState, state.groups, state.variables);
+    const { isDirty, dirtyItems } = computeDirtyState(savedState, state.groups, state.variables, state.settings);
     return {
       ...state,
       savedState,
@@ -220,7 +223,7 @@ export function rootReducer(state: AppState, action: AppAction): AppState {
       }
     }
 
-    const { isDirty, dirtyItems } = computeDirtyState(state.savedState, nextGroups, nextVariables);
+    const { isDirty, dirtyItems } = computeDirtyState(state.savedState, nextGroups, nextVariables, state.settings);
     const flowState = resetFlowEditorState(state, nextGroups, itemType === 'group' ? collectGroupFlowIds(state, itemId) : itemType === 'flow' ? [itemId] : []);
 
     return {
@@ -272,6 +275,7 @@ export function rootReducer(state: AppState, action: AppAction): AppState {
 
     const normalizedGroups = action.payload.groups;
     const normalizedVars = normalizeVariableListFromCore(action.payload.variables);
+    const settings = action.payload.settings ?? state.settings;
     const file = action.payload.file;
 
     // The loaded state becomes the saved baseline when opening a file, on the very first sync
@@ -279,16 +283,17 @@ export function rootReducer(state: AppState, action: AppAction): AppState {
     // a reconnection) must keep the baseline so unsaved changes are not silently forgotten.
     const resetsBaseline = Boolean(file) || state.savedState === null || state.baselineSyncPending;
     const savedState = resetsBaseline
-      ? { groups: normalizedGroups, variables: normalizedVars }
+      ? { groups: normalizedGroups, variables: normalizedVars, settings }
       : state.savedState;
     const { isDirty, dirtyItems } = resetsBaseline
       ? { isDirty: false, dirtyItems: createEmptyDirtyItems() }
-      : computeDirtyState(savedState, normalizedGroups, normalizedVars);
+      : computeDirtyState(savedState, normalizedGroups, normalizedVars, settings);
 
     return {
       ...state,
       groups: normalizedGroups,
       variables: normalizedVars,
+      settings,
       savedState,
       isDirty,
       dirtyItems,
@@ -316,19 +321,25 @@ export function rootReducer(state: AppState, action: AppAction): AppState {
   newState = connectorsReducer(newState, action);
   newState = logsReducer(newState, action);
   newState = metricsReducer(newState, action);
+  newState = settingsReducer(newState, action);
 
-  // Automatically recalculate dirty state if groups or variables changed
-  if (newState.groups !== state.groups || newState.variables !== state.variables || newState.savedState !== state.savedState) {
+  // Automatically recalculate dirty state if groups, variables or settings changed
+  if (
+    newState.groups !== state.groups
+    || newState.variables !== state.variables
+    || newState.settings !== state.settings
+    || newState.savedState !== state.savedState
+  ) {
     if (newState.baselineSyncPending) {
       // Core echoes of a load/new-project are not user changes: adopt them as the baseline
       newState = {
         ...newState,
-        savedState: { groups: newState.groups, variables: newState.variables },
+        savedState: { groups: newState.groups, variables: newState.variables, settings: newState.settings },
         isDirty: false,
         dirtyItems: createEmptyDirtyItems(),
       };
     } else {
-      const { isDirty, dirtyItems } = computeDirtyState(newState.savedState, newState.groups, newState.variables);
+      const { isDirty, dirtyItems } = computeDirtyState(newState.savedState, newState.groups, newState.variables, newState.settings);
       newState = {
         ...newState,
         isDirty,

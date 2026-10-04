@@ -4,6 +4,7 @@ import com.gensynth.core.model.FlowDefinition;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Represents the runtime state of a data flow.
@@ -17,7 +18,12 @@ public class FlowRuntime {
     public int latency;
     public boolean hasError;
     public String errorMessage;
+    /**
+     * Legacy publish interval in milliseconds. Ignored by the engine since message generation
+     * is driven by the global tick clock; kept so existing project files round-trip.
+     */
     public int interval;
+    /** Messages published on every tick. */
     public int burst;
     public String topic;
     public String host;
@@ -26,6 +32,8 @@ public class FlowRuntime {
     public String format;
     public boolean enabled;
     public Map<String, Object> connectorConfig;
+    /** Messages sent since the last metrics sample (runtime only, never persisted). */
+    public final AtomicLong sentInWindow = new AtomicLong();
 
     public FlowRuntime(
         String id,

@@ -16,8 +16,11 @@ import java.util.Locale;
  *
  * A project file is a JSON document with the following shape:
  * <pre>
- * { "format": "gensynth-project", "version": "1.0.0", "exportedAt": "...", "groups": [...], "variables": [...] }
+ * { "format": "gensynth-project", "version": "1.1.0", "exportedAt": "...", "groups": [...], "variables": [...],
+ *   "settings": { "tick": { "mode": "FIXED_RATE", "value": 1, "unit": "SECONDS" } } }
  * </pre>
+ * The {@code settings} section was added in version 1.1.0; files without it (1.0.0) are still
+ * valid and load with the default settings.
  * The extension makes file dialogs show only project files, and the {@code format} marker
  * guarantees that a file renamed to ".gsynth" is still rejected when it is not a GenSynth project.
  */
@@ -30,7 +33,7 @@ public final class ProjectFileFormat {
     public static final String FORMAT_ID = "gensynth-project";
 
     /** Current version of the project file format. */
-    public static final String VERSION = "1.0.0";
+    public static final String VERSION = "1.1.0";
 
     private ProjectFileFormat() {
     }
@@ -73,6 +76,9 @@ public final class ProjectFileFormat {
         }
         if (!root.path("groups").isArray() || !root.path("variables").isArray()) {
             throw new IllegalArgumentException("Invalid GenSynth project file: 'groups' and 'variables' must be arrays");
+        }
+        if (root.has("settings") && !root.path("settings").isObject()) {
+            throw new IllegalArgumentException("Invalid GenSynth project file: 'settings' must be an object");
         }
     }
 

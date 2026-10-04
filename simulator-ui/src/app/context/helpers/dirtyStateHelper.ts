@@ -1,4 +1,5 @@
-import type { Group, Variable, Flow } from '../../types';
+import type { Group, Variable, Flow, ProjectSettings } from '../../types';
+import { tickSettingsEqual } from '../../core/tickSettings';
 
 export interface DirtyItems {
   groupIds: Set<string>;
@@ -77,12 +78,14 @@ export function getVariableComparable(variable: Variable) {
 
 /**
  * Computes which specific entities (groups, flows, variables) are dirty
- * and whether the project overall has unsaved changes.
+ * and whether the project overall has unsaved changes. Project settings only affect
+ * the overall flag, since they are not tied to a specific entity.
  */
 export function computeDirtyState(
-  savedState: { groups: Group[]; variables: Variable[] } | null,
+  savedState: { groups: Group[]; variables: Variable[]; settings?: ProjectSettings } | null,
   currentGroups: Group[],
-  currentVariables: Variable[]
+  currentVariables: Variable[],
+  currentSettings?: ProjectSettings,
 ): DirtyStateResult {
   const dirtyItems = createEmptyDirtyItems();
 
@@ -103,6 +106,10 @@ export function computeDirtyState(
   const savedVarsMap = new Map<string, Variable>(savedState.variables.map((v) => [v.id, v]));
 
   let isDirtyOverall = false;
+
+  if (savedState.settings && currentSettings && !tickSettingsEqual(savedState.settings.tick, currentSettings.tick)) {
+    isDirtyOverall = true;
+  }
 
   // Check deleted groups or variables
   if (currentGroups.length !== savedState.groups.length) {

@@ -47,7 +47,7 @@ const Modal2DVisualEditor: React.FC<{
           />
         </div>
         <div className="lg:col-span-5 xl:col-span-4 flex flex-col h-full min-h-0 bg-[var(--c-bg4)] p-4 rounded-xl border border-[var(--c-br1)] overflow-y-auto space-y-4">
-          <h3 className="text-xs font-semibold uppercase text-violet-300 tracking-wider shrink-0">
+          <h3 className="text-xs font-semibold uppercase text-violet-600 dark:text-violet-300 tracking-wider shrink-0">
             2D Barriers & Obstacles Management
           </h3>
           <div className="flex-1 min-h-0">
@@ -352,8 +352,8 @@ export const SpatialBoundariesTab: React.FC<SpatialBoundariesTabProps> = ({ conf
                 onClick={() => onChange({ boundaryBehavior: b.value as BoundaryBehavior })}
                 className={`p-2 rounded border text-left transition-colors cursor-pointer ${
                   boundaryBehavior === b.value
-                    ? 'border-violet-500 bg-violet-500/10 text-violet-300'
-                    : 'border-[var(--c-br1)] bg-[var(--c-bg2)] text-[var(--c-tx3)] hover:bg-white/5'
+                    ? 'border-violet-500 bg-violet-500/10 text-violet-600 dark:text-violet-300'
+                    : 'border-[var(--c-br1)] bg-[var(--c-bg2)] text-[var(--c-tx3)] hover:bg-[var(--c-bg5)]'
                 }`}
               >
                 <div className="text-xs font-semibold">{b.label}</div>
@@ -532,11 +532,11 @@ export const SpatialBoundariesTab: React.FC<SpatialBoundariesTabProps> = ({ conf
                   key={i}
                   className="flex items-center justify-between p-1.5 rounded border border-[var(--c-br1)] bg-[var(--c-bg2)] text-xs font-mono text-[var(--c-tx2)]"
                 >
-                  <span className="text-[10px] font-semibold text-violet-300 w-16">Vertex {i + 1}:</span>
+                  <span className="text-[10px] font-semibold text-violet-600 dark:text-violet-300 w-16">Vertex {i + 1}:</span>
                   <div className="flex gap-3 text-[11px]">
-                    <span>{labelX}: <strong className="text-white">{pt.x ?? 0}</strong></span>
-                    <span>{labelY}: <strong className="text-white">{pt.y ?? pt.x ?? 0}</strong></span>
-                    {!is2D && <span>{labelZ}: <strong className="text-white">{pt.z ?? 0}</strong></span>}
+                    <span>{labelX}: <strong className="text-[var(--c-tx1)]">{pt.x ?? 0}</strong></span>
+                    <span>{labelY}: <strong className="text-[var(--c-tx1)]">{pt.y ?? pt.x ?? 0}</strong></span>
+                    {!is2D && <span>{labelZ}: <strong className="text-[var(--c-tx1)]">{pt.z ?? 0}</strong></span>}
                   </div>
                 </div>
               ))}

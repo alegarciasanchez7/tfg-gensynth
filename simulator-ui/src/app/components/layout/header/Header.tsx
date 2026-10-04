@@ -4,7 +4,7 @@ import type { SystemStatus, ConnectorHealthSummary, Variable } from '../../../ty
 import type { ConnectorPluginDescriptor } from '../../../core/types';
 import { PluginImportPanel } from './PluginImportPanel';
 import { ConnectorCatalogPanel } from './ConnectorCatalogPanel';
-import { SettingsPanel } from './SettingsPanel';
+import { SettingsDialog } from './settings/SettingsDialog';
 import { PROJECT_FILE_EXTENSION } from '../../../core/fileStorage';
 
 interface HeaderProps {
@@ -16,8 +16,6 @@ interface HeaderProps {
   onSaveAsProject: () => Promise<unknown>;
   currentFileName: string | null;
   isDirty: boolean;
-  isDark: boolean;
-  onThemeToggle: () => void;
   latestConnectors: ConnectorPluginDescriptor[];
   connectorHealthSummary: ConnectorHealthSummary[];
   variables: Variable[];
@@ -54,8 +52,6 @@ export function Header({
   onSaveAsProject,
   currentFileName,
   isDirty,
-  isDark,
-  onThemeToggle,
   latestConnectors,
   connectorHealthSummary,
   variables = [],
@@ -333,7 +329,9 @@ export function Header({
       {/* Settings */}
       <div className="relative shrink-0">
         <button
-          onClick={() => setShowSettings(s => !s)}
+          onClick={() => setShowSettings(true)}
+          aria-label="Settings"
+          title="Settings"
           className={`flex items-center justify-center w-7 h-7 rounded border transition-all ${showSettings
               ? 'border-cyan-500/50 bg-cyan-500/10 text-cyan-400'
               : 'border-[var(--c-br1)] text-[var(--c-tx3)] hover:text-[var(--c-tx1)] hover:border-[var(--c-br3)] hover:bg-[var(--c-bg5)]'
@@ -341,13 +339,8 @@ export function Header({
         >
           <Settings size={13} />
         </button>
-        {showSettings && (
-          <SettingsPanel
-            isDark={isDark}
-            onThemeToggle={onThemeToggle}
-            onClose={() => setShowSettings(false)}
-          />
-        )}
+        {/* Mounted only while open, so the dialog always starts on its first category */}
+        {showSettings && <SettingsDialog open onOpenChange={setShowSettings} />}
       </div>
     </div>
   );

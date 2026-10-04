@@ -180,8 +180,6 @@ interface TechnicalConfigPanelProps {
   setDraftPort: (val: number) => void;
   draftTopic: string;
   setDraftTopic: (val: string) => void;
-  draftInterval: number;
-  setDraftInterval: (val: number) => void;
   draftBurst: number;
   setDraftBurst: (val: number) => void;
   connectorSelection: { pluginId: string; pluginVersion: string } | null;
@@ -207,8 +205,6 @@ export function TechnicalConfigPanel({
   setDraftPort,
   draftTopic,
   setDraftTopic,
-  draftInterval,
-  setDraftInterval,
   draftBurst,
   setDraftBurst,
   connectorSelection,
@@ -390,28 +386,17 @@ export function TechnicalConfigPanel({
           >
             GENERATION
           </span>
-          <div className="grid grid-cols-2 gap-2">
-            <FieldRow label="Interval">
-              <input
-                type="number"
-                min={1}
-                value={draftInterval}
-                onChange={(event) => setDraftInterval(Number(event.target.value))}
-                className="bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded px-2.5 py-1.5 text-[11px] text-[var(--c-tx1)] outline-none focus:border-cyan-500/50 transition-all w-full"
-                style={{ fontFamily: 'JetBrains Mono, monospace' }}
-              />
-            </FieldRow>
-            <FieldRow label="Burst">
-              <input
-                type="number"
-                min={1}
-                value={draftBurst}
-                onChange={(event) => setDraftBurst(Number(event.target.value))}
-                className="bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded px-2.5 py-1.5 text-[11px] text-[var(--c-tx1)] outline-none focus:border-cyan-500/50 transition-all w-full"
-                style={{ fontFamily: 'JetBrains Mono, monospace' }}
-              />
-            </FieldRow>
-          </div>
+          <FieldRow label="Burst" description="Messages per tick · tick rate in Settings → Simulation">
+            <input
+              type="number"
+              min={1}
+              aria-label="Burst"
+              value={draftBurst}
+              onChange={(event) => setDraftBurst(Number(event.target.value))}
+              className="bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded px-2.5 py-1.5 text-[11px] text-[var(--c-tx1)] outline-none focus:border-cyan-500/50 transition-all w-full"
+              style={{ fontFamily: 'JetBrains Mono, monospace' }}
+            />
+          </FieldRow>
           <div className="grid grid-cols-2 gap-2">
             <FieldRow label="Pattern">
               <TSelect options={['random', 'sequential', 'gaussian', 'spike']} value="random" />
