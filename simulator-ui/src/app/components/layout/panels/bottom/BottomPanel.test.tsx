@@ -15,7 +15,7 @@ describe('BottomPanel', () => {
   const connectorHealthSummary: ConnectorHealthSummary[] = [
     {
       pluginId: 'rabbitmq',
-      pluginVersion: '1.1.0',
+      pluginVersion: '1.0.0',
       displayName: 'RabbitMQ Connector',
       status: 'healthy',
       flowCount: 2,
@@ -61,7 +61,7 @@ describe('BottomPanel', () => {
             timestamp: '14:32:01',
             level: 'info',
             source: 'CONNECTORS',
-            message: 'RabbitMQ Connector@1.1.0:healthy',
+            message: 'RabbitMQ Connector@1.0.0:healthy',
           },
           {
             id: 'l2',
@@ -92,7 +92,7 @@ describe('BottomPanel', () => {
     expect(screen.getByText('Connector Health')).toBeInTheDocument()
     expect(screen.getByText('RabbitMQ Connector')).toBeInTheDocument()
     expect(screen.getByText('healthy')).toBeInTheDocument()
-    expect(screen.getByText('RabbitMQ Connector@1.1.0:healthy')).toBeInTheDocument()
+    expect(screen.getByText('RabbitMQ Connector@1.0.0:healthy')).toBeInTheDocument()
   })
 
   it('filters only data logs when toggled', () => {
@@ -104,9 +104,9 @@ describe('BottomPanel', () => {
       />,
     )
 
-    expect(screen.getAllByText('RabbitMQ Connector@1.1.0:healthy').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('RabbitMQ Connector@1.0.0:healthy').length).toBeGreaterThan(0)
     fireEvent.click(screen.getAllByText('only data')[0])
-    expect(screen.queryAllByText('RabbitMQ Connector@1.1.0:healthy')).toHaveLength(0)
+    expect(screen.queryAllByText('RabbitMQ Connector@1.0.0:healthy')).toHaveLength(0)
     expect(screen.getByText('File output -> {"value":1}')).toBeInTheDocument()
   })
 })

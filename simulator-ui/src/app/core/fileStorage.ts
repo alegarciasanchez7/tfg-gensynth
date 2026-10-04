@@ -13,10 +13,10 @@ export const PROJECT_FILE_EXTENSION = '.gsynth';
 export const PROJECT_FORMAT_ID = 'gensynth-project';
 /**
  * Current project file format version. Must match ProjectFileFormat.VERSION in the Core.
- * 1.1.0 added the `settings` section; 1.0.0 files load with the default settings.
- * 1.2.0 added the flow field `everyTicks` (default 1); `burst`, `interval` and `threads` are legacy.
+ * The `settings` section and the flow field `everyTicks` are optional (defaults apply);
+ * `burst`, `interval` and `threads` are legacy.
  */
-export const PROJECT_FORMAT_VERSION = '1.2.0';
+export const PROJECT_FORMAT_VERSION = '1.0.0';
 
 export interface ProjectSnapshot {
   format: typeof PROJECT_FORMAT_ID;
