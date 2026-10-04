@@ -93,7 +93,7 @@ export function FlowItem({
   
   const connCfg = connColor[flow.connectionStatus];
   const liveMetrics = state?.flowMetrics?.[flow.id];
-  const tries = liveMetrics?.tries ?? 0;
+  const fails = liveMetrics?.failed ?? 0;
   const template = formatTemplate[flow.id] ?? '';
   const usedVars = parseTemplateVars(template);
 
@@ -210,7 +210,7 @@ export function FlowItem({
         />
       </div>
 
-      {/* Row 2: status dot + live metrics (msg/s · sent · tries) + error */}
+      {/* Row 2: status dot + live metrics (msg/s · sent · fails) + error */}
       <div
         className={`flex items-center gap-1.5 pl-0.5 text-[10px] transition-opacity ${!flow.enabled ? 'opacity-40' : ''}`}
         style={{ fontFamily: 'JetBrains Mono, monospace' }}
@@ -226,10 +226,10 @@ export function FlowItem({
         </span>
         <span className="text-[var(--c-tx5)]">·</span>
         <span
-          className={tries > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-[var(--c-tx2)]'}
-          title="Generated but not sent yet: pending in the queue or failed"
+          className={fails > 0 ? 'text-red-600 dark:text-red-400' : 'text-[var(--c-tx2)]'}
+          title="Messages that could not be sent (generation or publish error)"
         >
-          {formatCount(tries)} <span className="text-[var(--c-tx4)]">tries</span>
+          {formatCount(fails)} <span className="text-[var(--c-tx4)]">fails</span>
         </span>
         {flow.hasError && (
           <AlertTriangle size={10} className="text-red-500 ml-auto" />

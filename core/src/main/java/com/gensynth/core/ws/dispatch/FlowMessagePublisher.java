@@ -18,7 +18,8 @@ import java.util.concurrent.TimeUnit;
  * through the flow's connector, updating the flow counters and the global metrics.
  *
  * Counters: {@code generated} after a successful generation, {@code sent} when
- * {@link ConnectorPlugin#publish} returns without error, {@code failed} when it throws.
+ * {@link ConnectorPlugin#publish} returns without error, {@code failed} when the template
+ * cannot be evaluated or the publish throws.
  */
 public class FlowMessagePublisher implements IFlowMessageHandler {
 
@@ -53,6 +54,7 @@ public class FlowMessagePublisher implements IFlowMessageHandler {
             flow.generated.incrementAndGet();
             return payload;
         } catch (Exception ex) {
+            flow.failed.incrementAndGet();
             markError(flow, "Message generation failed: " + ex.getMessage());
             return null;
         }

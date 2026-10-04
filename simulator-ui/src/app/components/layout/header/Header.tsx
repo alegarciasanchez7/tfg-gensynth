@@ -252,7 +252,7 @@ export function Header({
             }
           }}
           disabled={loadingState}
-          title="Save changes to configuration file"
+          title="Save changes to configuration file (Ctrl+S)"
           className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-[var(--c-br1)] text-xs text-[var(--c-tx3)] hover:text-[var(--c-tx1)] hover:border-[var(--c-br3)] hover:bg-[var(--c-bg5)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Save size={12} /> Save

@@ -42,7 +42,7 @@ public class FlowRuntime {
     public final AtomicLong generated = new AtomicLong();
     /** Messages whose publish completed without error since the group was started. */
     public final AtomicLong sent = new AtomicLong();
-    /** Messages whose publish failed since the group was started. */
+    /** Messages that could not be sent since the group was started (generation or publish error). */
     public final AtomicLong failed = new AtomicLong();
     /** Send rate meter of this flow. */
     public final ThroughputMeter meter = new ThroughputMeter();
@@ -119,13 +119,6 @@ public class FlowRuntime {
      */
     public boolean isDueOn(long tickNumber, long startTick) {
         return Math.floorMod(tickNumber - startTick, (long) Math.max(1, everyTicks)) == 0;
-    }
-
-    /**
-     * @return messages generated but not (yet) sent: pending in a queue or failed
-     */
-    public long tries() {
-        return Math.max(0, generated.get() - sent.get());
     }
 
     /**

@@ -5,15 +5,17 @@ import { Workspace } from './components/workspace/Workspace';
 import { RightPanel } from './components/layout/panels/right/RightPanel';
 import { BottomPanel } from './components/layout/panels/bottom/BottomPanel';
 import { useApp } from './context';
-import { Toaster } from 'sonner';
+import { Toaster, toast } from 'sonner';
 import { RestartOverlay } from './components/layout/header/RestartOverlay';
 import {
   CloseConfigurationDialog,
   type CloseConfigurationReason,
 } from './components/dialogs/CloseConfigurationDialog';
 import { pickProjectFile, type PickedProjectFile } from './core/fileStorage';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useDocumentTheme } from './context/hooks/useDocumentTheme';
+import { resolveDiscardTarget, useKeyboardShortcuts } from './context/hooks/useKeyboardShortcuts';
+import { ConfirmDeleteDialog } from './components/common/ConfirmDeleteDialog';
 import bridge from './core/bridge';
 
 /** Project switch waiting for the user to confirm closing the current configuration. */
@@ -26,6 +28,8 @@ interface PendingProjectAction {
 export default function App() {
   const { state, actions } = useApp();
   const [pendingAction, setPendingAction] = useState<PendingProjectAction | null>(null);
+  const [isDiscardAllOpen, setIsDiscardAllOpen] = useState(false);
+  const isSavingRef = useRef(false);
 
   const {
     isDark,
@@ -122,6 +126,46 @@ export default function App() {
 
   useDocumentTheme(isDark);
 
+  // Ctrl+S: same as the Save button (ignored while a save is still running)
+  const handleSaveShortcut = async () => {
+    if (isSavingRef.current) return;
+    isSavingRef.current = true;
+    try {
+      await actions.saveProjectState();
+    } finally {
+      isSavingRef.current = false;
+    }
+  };
+
+  // Ctrl+Z: same as the Discard button of the selected group/flow/variable, or a confirmed
+  // general discard when nothing is selected
+  const handleDiscardShortcut = () => {
+    const target = resolveDiscardTarget(selection, state.dirtyItems, isDirty);
+    if (target === 'all') {
+      setIsDiscardAllOpen(true);
+      return;
+    }
+    if (!target) {
+      toast.info(selection.type === 'none' ? 'No unsaved changes to discard' : `No unsaved changes in the selected ${selection.type}`);
+      return;
+    }
+    const name = target.type === 'variable'
+      ? variables.find((variable) => variable.id === target.id)?.name
+      : target.type === 'group'
+        ? groups.find((group) => group.id === target.id)?.name
+        : groups.flatMap((group) => group.flows).find((flow) => flow.id === target.id)?.name;
+    void actions.discardItemChanges(target.type, target.id);
+    toast.info(`Changes discarded for ${target.type} "${name ?? target.id}"`);
+  };
+
+  useKeyboardShortcuts({ onSave: handleSaveShortcut, onDiscard: handleDiscardShortcut });
+
+  const handleDiscardAllConfirm = async () => {
+    setIsDiscardAllOpen(false);
+    await actions.discardAllChanges();
+    toast.info('All unsaved changes discarded');
+  };
+
   return (
     <div
       className="h-screen w-screen flex flex-col overflow-hidden"
@@ -210,6 +254,15 @@ export default function App() {
         tab={bottomTab}
         onTabChange={actions.setBottomTab}
         systemStatus={systemStatus}
+      />
+
+      <ConfirmDeleteDialog
+        open={isDiscardAllOpen}
+        onOpenChange={setIsDiscardAllOpen}
+        title="Discard all changes?"
+        description="Every unsaved change (groups, flows, variables and settings) will be lost and the configuration will return to its last saved state. This cannot be undone."
+        confirmLabel="Discard all"
+        onConfirm={handleDiscardAllConfirm}
       />
 
       <Toaster position="top-right" richColors closeButton theme={isDark ? 'dark' : 'light'} />

@@ -157,12 +157,27 @@ export function rootReducer(state: AppState, action: AppAction): AppState {
     if (!state.savedState) {
       return state;
     }
+    const saved = state.savedState;
+    // Keep runtime/UI fields (status, throughput, expanded) of the groups that still exist
+    const liveGroups = new Map(state.groups.map((group) => [group.id, group]));
+    const nextGroups = saved.groups.map((savedGroup) => {
+      const live = liveGroups.get(savedGroup.id);
+      return live
+        ? { ...savedGroup, status: live.status, throughput: live.throughput, expanded: live.expanded }
+        : savedGroup;
+    });
+    const flowIds = [...state.groups, ...saved.groups].flatMap((group) => group.flows.map((flow) => flow.id));
+    const flowState = resetFlowEditorState(state, nextGroups, [...new Set(flowIds)]);
+
     return {
       ...state,
-      groups: state.savedState.groups,
-      variables: state.savedState.variables,
+      ...flowState,
+      groups: nextGroups,
+      variables: saved.variables,
+      settings: saved.settings,
       isDirty: false,
       dirtyItems: createEmptyDirtyItems(),
+      selection: selectionExists(state.selection, nextGroups, saved.variables) ? state.selection : { type: 'none' },
     };
   }
 

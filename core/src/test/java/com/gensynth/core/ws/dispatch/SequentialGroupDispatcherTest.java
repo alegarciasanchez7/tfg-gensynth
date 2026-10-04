@@ -77,7 +77,7 @@ public class SequentialGroupDispatcherTest {
         Thread.sleep(250);
 
         assertEquals("only the message in progress is sent", List.of("A1"), handler.published);
-        assertEquals(1, b.tries());
+        assertEquals("dropped messages are generated but not sent", 1, b.generated.get() - b.sent.get());
         assertFalse(dispatcher.dispatch(List.of(a)));
     }
 
