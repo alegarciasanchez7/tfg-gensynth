@@ -11,6 +11,17 @@ vi.mock('./settings/SettingsDialog', () => ({
   ),
 }));
 
+vi.mock('./ConnectorCatalogDialog', () => ({
+  ConnectorCatalogDialog: ({ onImportPlugin }: { onImportPlugin: () => void }) => (
+    <div data-testid="catalog-dialog">
+      <button onClick={onImportPlugin}>import from catalog</button>
+    </div>
+  ),
+}));
+vi.mock('./PluginImportPanel', () => ({
+  PluginImportPanel: () => <div data-testid="plugin-import-panel" />,
+}));
+
 import { Header } from './Header';
 
 function renderHeader(currentFileName: string | null) {
@@ -63,6 +74,16 @@ describe('Header', () => {
 
     fireEvent.click(screen.getByText('close settings'));
     expect(screen.queryByTestId('settings-dialog')).toBeNull();
+  });
+
+  it('opens the connector catalog dialog, which can switch to the plugin import', () => {
+    renderHeader(null);
+    fireEvent.click(screen.getByRole('button', { name: /Connectors/ }));
+    expect(screen.getByTestId('catalog-dialog')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('import from catalog'));
+    expect(screen.queryByTestId('catalog-dialog')).toBeNull();
+    expect(screen.getByTestId('plugin-import-panel')).toBeInTheDocument();
   });
 
   it('shows the application version', () => {

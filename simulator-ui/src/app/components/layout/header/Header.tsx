@@ -3,7 +3,7 @@ import { Power, Square, FolderOpen, Save, Settings, Package, Plus, FilePlus } fr
 import type { SystemStatus, ConnectorHealthSummary, Variable } from '../../../types';
 import type { ConnectorPluginDescriptor } from '../../../core/types';
 import { PluginImportPanel } from './PluginImportPanel';
-import { ConnectorCatalogPanel } from './ConnectorCatalogPanel';
+import { ConnectorCatalogDialog } from './ConnectorCatalogDialog';
 import { SettingsDialog } from './settings/SettingsDialog';
 import { PROJECT_FILE_EXTENSION } from '../../../core/fileStorage';
 import { APP_VERSION } from '../../../core/appInfo';
@@ -292,11 +292,17 @@ export function Header({
         >
           <Package size={12} /> Connectors ({latestConnectors.length})
         </button>
+        {/* Mounted only while open, so the dialog always starts on the first connector */}
         {showCatalog && (
-          <ConnectorCatalogPanel
+          <ConnectorCatalogDialog
+            open
+            onOpenChange={setShowCatalog}
             latestConnectors={latestConnectors}
             connectorHealthSummary={connectorHealthSummary}
-            onClose={() => setShowCatalog(false)}
+            onImportPlugin={() => {
+              setShowCatalog(false);
+              setShowPluginImport(true);
+            }}
           />
         )}
       </div>
