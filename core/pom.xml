@@ -219,6 +219,8 @@
                         <configuration>
                             <target>
                                 <echo message="Copying UI distribution from simulator-ui/dist to core resources..." />
+                                <!-- Start clean so hashed bundles from previous builds do not pile up in the JAR -->
+                                <delete dir="${project.basedir}/src/main/resources/ui" />
                                 <mkdir dir="${project.basedir}/src/main/resources/ui" />
                                 <copy todir="${project.basedir}/src/main/resources/ui">
                                     <fileset dir="${project.basedir}/../simulator-ui/dist" />
