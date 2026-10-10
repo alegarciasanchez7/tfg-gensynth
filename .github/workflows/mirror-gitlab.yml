@@ -1,0 +1,44 @@
+# Mirrors every pushed branch and tag to GitLab, where .gitlab-ci.yml runs its own pipeline.
+# Needs the GITLAB_TOKEN secret and the GITLAB_REPO variable (e.g. "user/tfg-gensynth");
+# while they are not set, the job is skipped.
+name: Mirror to GitLab
+
+on:
+  push:
+    branches: ['**']
+    tags: ['**']
+
+concurrency:
+  group: mirror-${{ github.ref }}
+
+permissions:
+  contents: read
+
+jobs:
+  mirror:
+    name: Push to GitLab
+    runs-on: ubuntu-latest
+    env:
+      GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+      GITLAB_REPO: ${{ vars.GITLAB_REPO }}
+    steps:
+      - name: Check configuration
+        id: config
+        run: |
+          if [ -z "$GITLAB_TOKEN" ] || [ -z "$GITLAB_REPO" ]; then
+            echo "::notice::GitLab mirror not configured (GITLAB_TOKEN / GITLAB_REPO), skipping."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v7
+        if: steps.config.outputs.enabled == 'true'
+        with:
+          # GitLab needs the whole history, a shallow clone cannot be pushed
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Push ref
+        if: steps.config.outputs.enabled == 'true'
+        run: git push --force "https://oauth2:${GITLAB_TOKEN}@gitlab.com/${GITLAB_REPO}.git" "${GITHUB_SHA}:${GITHUB_REF}"
