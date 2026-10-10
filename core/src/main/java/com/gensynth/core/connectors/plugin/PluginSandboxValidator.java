@@ -330,6 +330,10 @@ public class PluginSandboxValidator {
         } catch (TimeoutException e) {
             builder.log(PluginValidationResult.ValidationLevel.ERROR, "Loading timeout: plugin took too long to respond (> " + DESCRIPTOR_LOAD_TIMEOUT_SECONDS + "s)");
             return null;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            builder.log(PluginValidationResult.ValidationLevel.ERROR, "Plugin validation was interrupted.");
+            return null;
         } catch (Exception e) {
             logger.debug("Error loading plugin descriptor in sandbox", e);
             String message = (e.getCause() != null) ? e.getCause().getMessage() : e.getMessage();
