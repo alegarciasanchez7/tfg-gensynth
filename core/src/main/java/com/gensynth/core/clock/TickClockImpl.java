@@ -166,9 +166,26 @@ public class TickClockImpl implements ITickClock {
             if (tickOnce()) {
                 backoff = MIN_IDLE_BACKOFF_NANOS;
             } else {
-                LockSupport.parkNanos(backoff);
+                pause(backoff);
                 backoff = Math.min(MAX_IDLE_BACKOFF_NANOS, backoff * 2);
             }
+        }
+    }
+
+    /**
+     * Pauses the clock thread for about {@code nanos}. Pauses shorter than the maximum back-off
+     * spin, because parking depends on the OS timer: on Windows it lasts at least ~1 ms (often
+     * ~15 ms) however short the requested pause, which would make the adaptive back-off useless.
+     * Only the maximum back-off, reached while everything stays idle, parks the thread.
+     */
+    private static void pause(long nanos) {
+        if (nanos >= MAX_IDLE_BACKOFF_NANOS) {
+            LockSupport.parkNanos(nanos);
+            return;
+        }
+        long deadline = System.nanoTime() + nanos;
+        while (System.nanoTime() - deadline < 0) {
+            Thread.onSpinWait();
         }
     }
 
