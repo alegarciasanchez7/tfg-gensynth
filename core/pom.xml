@@ -20,6 +20,12 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <benchmark.mainClass>com.gensynth.core.flow.variables.config.VariableConfigBenchmark</benchmark.mainClass>
         <jacoco.version>0.8.15</jacoco.version>
+        <!-- Installers (-Dinstaller): built with jpackage on the OS they target -->
+        <installer.dir>${project.build.directory}/installer</installer.dir>
+        <installer.input>${installer.dir}/input</installer.input>
+        <installer.packaging>${project.basedir}/../packaging</installer.packaging>
+        <!-- Skips the .rpm on Linux machines without rpmbuild (-Dinstaller.skipRpm=true) -->
+        <installer.skipRpm>false</installer.skipRpm>
         <!-- Skips the npm build and the UI copy (-DskipUi=true), for environments without Node such as GitLab CI -->
         <skipUi>false</skipUi>
     </properties>
@@ -337,6 +343,36 @@
                         </lifecycleMappingMetadata>
                     </configuration>
                 </plugin>
+                <!-- Settings shared by the installers of every OS (see the installer-* profiles) -->
+                <plugin>
+                    <groupId>org.panteleyev</groupId>
+                    <artifactId>jpackage-maven-plugin</artifactId>
+                    <version>1.8.0</version>
+                    <configuration>
+                        <name>GenSynth</name>
+                        <appVersion>${project.version}</appVersion>
+                        <vendor>Alejandro Garcia Sanchez</vendor>
+                        <copyright>Copyright 2026 Alejandro Garcia Sanchez</copyright>
+                        <description>Synthetic data generator for IoT and messaging systems. The first start downloads the embedded browser (about 150 MB) and needs an internet connection.</description>
+                        <aboutUrl>https://github.com/alegarciasanchez7/tfg-gensynth</aboutUrl>
+                        <input>${installer.input}</input>
+                        <!-- Installed next to $APPDIR, outside the classpath: only the plugins load them -->
+                        <appContentPaths>
+                            <appContentPath>${installer.dir}/shared</appContentPath>
+                        </appContentPaths>
+                        <mainJar>${project.build.finalName}.jar</mainJar>
+                        <mainClass>com.gensynth.core.App</mainClass>
+                        <destination>${installer.dir}/dist</destination>
+                        <!-- Default arguments of the launcher: passing any argument replaces them -->
+                        <arguments>
+                            <argument>--desktop</argument>
+                        </arguments>
+                        <!-- $APPDIR is expanded by the launcher: the folder of the installed application files -->
+                        <javaOptions>
+                            <option>-Dgensynth.appdir=$APPDIR</option>
+                        </javaOptions>
+                    </configuration>
+                </plugin>
             </plugins>
         </pluginManagement>
     </build>
@@ -354,6 +390,168 @@
                             <mainClass>${benchmark.mainClass}</mainClass>
                             <classpathScope>test</classpathScope>
                         </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <!--
+          Installers: ./mvnw -B -Dinstaller -DskipTests package (from the root, on the target OS).
+          This profile gathers the application files in target/installer/input; the installer-<os>
+          profile of the running OS turns them into an installer in target/installer/dist.
+          A future CLI launcher only needs a <launchers> entry in the jpackage configuration.
+        -->
+        <profile>
+            <id>installer</id>
+            <activation>
+                <property><name>installer</name></property>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-dependency-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>installer-dependencies</id>
+                                <phase>package</phase>
+                                <goals><goal>copy-dependencies</goal></goals>
+                                <configuration>
+                                    <outputDirectory>${installer.input}</outputDirectory>
+                                    <!-- Only what the application needs at runtime: no test or provided libraries -->
+                                    <includeScope>runtime</includeScope>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-antrun-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>installer-input</id>
+                                <phase>package</phase>
+                                <goals><goal>run</goal></goals>
+                                <configuration>
+                                    <skip>false</skip>
+                                    <target>
+                                        <copy file="${project.build.directory}/${project.build.finalName}.jar" todir="${installer.input}"/>
+                                        <!-- Client libraries shared with the plugins: app content, not on the classpath -->
+                                        <copy todir="${installer.dir}/shared">
+                                            <fileset dir="${project.basedir}/lib/shared" includes="*.jar"/>
+                                        </copy>
+                                    </target>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <profile>
+            <id>installer-windows</id>
+            <activation>
+                <property><name>installer</name></property>
+                <os><family>windows</family></os>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.panteleyev</groupId>
+                        <artifactId>jpackage-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>installer-msi</id>
+                                <phase>package</phase>
+                                <goals><goal>jpackage</goal></goals>
+                                <configuration>
+                                    <type>MSI</type>
+                                    <icon>${installer.packaging}/icons/gensynth.ico</icon>
+                                    <winMenu>true</winMenu>
+                                    <winMenuGroup>GenSynth</winMenuGroup>
+                                    <winShortcut>true</winShortcut>
+                                    <winDirChooser>true</winDirChooser>
+                                    <!-- Fixed forever: lets a newer version replace the installed one -->
+                                    <winUpgradeUuid>5c2b9d1e-7f4a-4c3e-9b8d-2e6f1a0c4d73</winUpgradeUuid>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <profile>
+            <id>installer-linux</id>
+            <activation>
+                <property><name>installer</name></property>
+                <os><family>unix</family><name>Linux</name></os>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.panteleyev</groupId>
+                        <artifactId>jpackage-maven-plugin</artifactId>
+                        <configuration>
+                            <icon>${installer.packaging}/icons/gensynth.png</icon>
+                            <linuxPackageName>gensynth</linuxPackageName>
+                            <linuxShortcut>true</linuxShortcut>
+                            <linuxMenuGroup>Development</linuxMenuGroup>
+                            <linuxAppCategory>devel</linuxAppCategory>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>installer-deb</id>
+                                <phase>package</phase>
+                                <goals><goal>jpackage</goal></goals>
+                                <configuration>
+                                    <type>DEB</type>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>installer-rpm</id>
+                                <phase>package</phase>
+                                <goals><goal>jpackage</goal></goals>
+                                <configuration>
+                                    <type>RPM</type>
+                                    <skip>${installer.skipRpm}</skip>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <profile>
+            <id>installer-mac</id>
+            <activation>
+                <property><name>installer</name></property>
+                <os><family>mac</family></os>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.panteleyev</groupId>
+                        <artifactId>jpackage-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>installer-dmg</id>
+                                <phase>package</phase>
+                                <goals><goal>jpackage</goal></goals>
+                                <configuration>
+                                    <type>DMG</type>
+                                    <icon>${installer.packaging}/icons/gensynth.icns</icon>
+                                    <macPackageIdentifier>com.gensynth.desktop</macPackageIdentifier>
+                                    <macPackageName>GenSynth</macPackageName>
+                                    <!-- Shown next to the app in the disk image: how to open an unsigned app -->
+                                    <macDmgContentPaths>
+                                        <macDmgContentPath>${installer.packaging}/macos/READ ME FIRST.txt</macDmgContentPath>
+                                    </macDmgContentPaths>
+                                </configuration>
+                            </execution>
+                        </executions>
                     </plugin>
                 </plugins>
             </build>
