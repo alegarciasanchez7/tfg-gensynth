@@ -19,6 +19,9 @@
         <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <benchmark.mainClass>com.gensynth.core.flow.variables.config.VariableConfigBenchmark</benchmark.mainClass>
+        <jacoco.version>0.8.15</jacoco.version>
+        <!-- Skips the npm build and the UI copy (-DskipUi=true), for environments without Node such as GitLab CI -->
+        <skipUi>false</skipUi>
     </properties>
 
     <dependencies>
@@ -173,6 +176,9 @@
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>
                 <version>3.5.0</version>
+                <configuration>
+                    <skip>${skipUi}</skip>
+                </configuration>
                 <executions>
                     <execution>
                         <id>npm-install</id>
@@ -202,6 +208,9 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-antrun-plugin</artifactId>
                 <version>3.1.0</version>
+                <configuration>
+                    <skip>${skipUi}</skip>
+                </configuration>
                 <executions>
                     <execution>
                         <id>copy-ui-resources</id>
@@ -262,6 +271,23 @@
                             <overWriteSnapshots>false</overWriteSnapshots>
                             <overWriteIfNewer>true</overWriteIfNewer>
                         </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <!-- Test coverage report (target/site/jacoco/jacoco.xml), consumed by SonarQube -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>${jacoco.version}</version>
+                <executions>
+                    <execution>
+                        <id>prepare-agent</id>
+                        <goals><goal>prepare-agent</goal></goals>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>verify</phase>
+                        <goals><goal>report</goal></goals>
                     </execution>
                 </executions>
             </plugin>
