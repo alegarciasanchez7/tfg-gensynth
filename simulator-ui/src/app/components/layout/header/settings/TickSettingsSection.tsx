@@ -133,7 +133,7 @@ export function TickSettingsSection() {
               value={valueDraft}
               onChange={(e) => setValueDraft(e.target.value)}
               onBlur={commitValue}
-              onKeyDown={(e) => { if (e.key === 'Enter') commitValue(); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') void commitValue(); }}
               className="h-8 w-32 px-2 text-[11px] md:text-[11px] text-right bg-[var(--c-bg1)] border-[var(--c-br1)] text-[var(--c-tx1)]"
               style={{ fontFamily: 'JetBrains Mono, monospace' }}
             />

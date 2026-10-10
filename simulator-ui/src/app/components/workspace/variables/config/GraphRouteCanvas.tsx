@@ -943,7 +943,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
                     onClick={() => setShowCoordinateLabels(!showCoordinateLabels)}
                   >
                     {showCoordinateLabels ? <Eye size={12} /> : <EyeOff size={12} />}
-                    <span>{showCoordinateLabels ? 'Labels' : 'Labels'}</span>
+                    <span>Labels</span>
                   </Button>
                 </span>
               </TooltipTrigger>
