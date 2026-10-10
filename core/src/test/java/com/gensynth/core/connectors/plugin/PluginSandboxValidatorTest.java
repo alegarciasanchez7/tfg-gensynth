@@ -13,6 +13,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.jar.JarEntry;
@@ -175,7 +177,7 @@ public class PluginSandboxValidatorTest {
         });
         validation.start();
         // Interrupt only while the plugin is loading, not while its JAR is being written
-        awaitSandboxLoaderThread();
+        assertTrue("the plugin never started loading", SlowPluginProbe.STARTED.await(5, TimeUnit.SECONDS));
         validation.interrupt();
         validation.join(5000);
 
@@ -187,19 +189,30 @@ public class PluginSandboxValidatorTest {
 
     // ─── Helper methods ─────────────────────────────────────────
 
-    private static void awaitSandboxLoaderThread() throws InterruptedException {
-        long deadline = System.currentTimeMillis() + 3000;
-        while (Thread.getAllStackTraces().keySet().stream()
-                .noneMatch(thread -> "plugin-sandbox-loader".equals(thread.getName()) && thread.isAlive())) {
-            if (System.currentTimeMillis() > deadline) {
-                fail("the plugin never started loading");
+    /**
+     * Called by the constructor of the generated slow plugin. The sandbox class loader delegates
+     * to the test class path, so the plugin can reach it: it tells the test that loading started
+     * and then hangs until the sandbox interrupts it.
+     */
+    public static final class SlowPluginProbe {
+        static final CountDownLatch STARTED = new CountDownLatch(1);
+        private static final CountDownLatch NEVER = new CountDownLatch(1);
+
+        private SlowPluginProbe() {
+        }
+
+        public static void hang() {
+            STARTED.countDown();
+            try {
+                NEVER.await();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
             }
-            Thread.sleep(5);
         }
     }
 
     /**
-     * Creates a plugin JAR whose ConnectorPlugin hangs in its constructor (sleeps for a minute).
+     * Creates a plugin JAR whose ConnectorPlugin hangs in its constructor ({@link SlowPluginProbe#hang()}).
      * The class is generated with ASM so that only the sandbox class loader can load it.
      */
     private byte[] createJarWithSlowPlugin() throws IOException {
@@ -210,8 +223,8 @@ public class PluginSandboxValidatorTest {
         constructor.visitCode();
         constructor.visitVarInsn(Opcodes.ALOAD, 0);
         constructor.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
-        constructor.visitLdcInsn(60_000L);
-        constructor.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/Thread", "sleep", "(J)V", false);
+        constructor.visitMethodInsn(Opcodes.INVOKESTATIC,
+                "com/gensynth/core/connectors/plugin/PluginSandboxValidatorTest$SlowPluginProbe", "hang", "()V", false);
         constructor.visitInsn(Opcodes.RETURN);
         constructor.visitMaxs(0, 0);
         constructor.visitEnd();

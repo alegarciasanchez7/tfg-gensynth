@@ -7,7 +7,6 @@ import me.friwi.jcefmaven.CefInitializationException;
 import me.friwi.jcefmaven.EnumProgress;
 import me.friwi.jcefmaven.IProgressHandler;
 import me.friwi.jcefmaven.MavenCefAppHandlerAdapter;
-import me.friwi.jcefmaven.UnsupportedPlatformException;
 import org.cef.CefApp;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -51,14 +50,12 @@ public class NativeLoader {
                 logger.info("JCEF Environment initialized successfully.");
                 return instance;
             } catch (CefInitializationException | IOException e) {
-                logger.error("Failed to initialize JCEF: {}", e.getMessage());
                 progress.close();
+                // Not retried: the caller reports the failure
                 if (GraphicsEnvironment.isHeadless() || !FirstRunWindow.askRetry(e.getMessage())) {
                     throw e;
                 }
-            } catch (UnsupportedPlatformException | InterruptedException e) {
-                logger.error("Failed to initialize JCEF: {}", e.getMessage());
-                throw e;
+                logger.warn("Retrying the embedded browser setup after: {}", e.getMessage());
             } finally {
                 progress.close();
             }
