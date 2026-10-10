@@ -21,6 +21,9 @@ public class PluginCommandHandler implements CommandHandler {
 
     private static final Logger logger = LoggerFactory.getLogger(PluginCommandHandler.class);
     
+    /** Name of the thread that restarts the application after a plugin change. */
+    static final String RESTART_THREAD_NAME = "gensynth-restart";
+
     private final BridgeContext ctx;
 
     /**
@@ -128,7 +131,7 @@ public class PluginCommandHandler implements CommandHandler {
             broadcastRestartRequired();
 
             // Schedule JVM exit (the process wrapper/script will restart)
-            ctx.getScheduler().schedule(this::restartAfterPluginInstall, 3, TimeUnit.SECONDS);
+            scheduleRestart();
         } else {
             server.logToBackend("error", "PLUGINS", "Plugin install failed: " + result.getMessage(), commandId);
         }
@@ -165,7 +168,7 @@ public class PluginCommandHandler implements CommandHandler {
             server.persistState();
             broadcastRestartRequired();
 
-            ctx.getScheduler().schedule(this::restartAfterPluginInstall, 3, TimeUnit.SECONDS);
+            scheduleRestart();
         } else {
             server.logToBackend("error", "PLUGINS", "Plugin uninstall failed: " + result.getMessage(), commandId);
         }
@@ -185,6 +188,18 @@ public class PluginCommandHandler implements CommandHandler {
                 server.sendMessage(conn, "RESTART_REQUIRED", null, payload);
             }
         }
+    }
+
+    /**
+     * Restarts the application in a few seconds, so the UI can show the restart notice first.
+     * The restart runs on a thread of its own: it shuts the server scheduler down
+     * ({@code shutdownNow}), which would interrupt the restart itself if it ran on a scheduler
+     * thread, skipping the pause that lets the embedded browser release its files.
+     */
+    void scheduleRestart() {
+        ctx.getScheduler().schedule(
+            () -> new Thread(this::restartAfterPluginInstall, RESTART_THREAD_NAME).start(),
+            3, TimeUnit.SECONDS);
     }
 
     /**
