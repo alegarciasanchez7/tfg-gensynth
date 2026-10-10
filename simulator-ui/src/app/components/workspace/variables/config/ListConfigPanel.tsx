@@ -91,7 +91,9 @@ export const ListConfigPanel: React.FC<ListConfigPanelProps> = ({
     if (appCtx && appCtx.state) {
       state = appCtx.state;
     }
-  } catch (ignored) {}
+  } catch {
+    // Graceful fallback when rendered outside the app context
+  }
 
   const [modalEmbeddedIndex, setModalEmbeddedIndex] = useState<number | null>(null);
 
@@ -150,7 +152,7 @@ export const ListConfigPanel: React.FC<ListConfigPanelProps> = ({
   }, [config.sourceListVariableId, config.sourceListSelectionMode, config.selectedListItemIds, config.randomSubsetCount, config.selectedListItemId, parentItems, parentList?.name]);
 
   const unifiedItems: any[] = useMemo(() => {
-    let list = [
+    const list = [
       ...inheritedItems.map((item: any) => ({ ...item, isInherited: true })),
       ...items.map((item: ListItemConfig, localIdx: number) => ({ ...item, localIdx, isInherited: false })),
     ];
