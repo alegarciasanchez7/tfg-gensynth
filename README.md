@@ -1,5 +1,9 @@
 # GenSynth
 
+[![CI](https://github.com/alegarciasanchez7/tfg-gensynth/actions/workflows/ci.yml/badge.svg)](https://github.com/alegarciasanchez7/tfg-gensynth/actions/workflows/ci.yml)
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=alegarciasanchez7_tfg-gensynth&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=alegarciasanchez7_tfg-gensynth)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=alegarciasanchez7_tfg-gensynth&metric=coverage)](https://sonarcloud.io/summary/new_code?id=alegarciasanchez7_tfg-gensynth)
+
 GenSynth is a **synthetic data generator** for IoT and messaging systems. You design **flows**
 that produce messages from a template filled with **variables** (numbers, texts, lists, dates,
 coordinates, booleans…), group them, and send them at a controlled pace to a destination: a file
@@ -13,8 +17,7 @@ useful to test consumers, dashboards and pipelines with realistic data without r
 | Software | Version | Why |
 |---|---|---|
 | Java (JDK) | 21 | Runs GenSynth |
-| Maven | 3.8 or newer | Builds the application |
-| Node.js + npm | 18 or newer | Builds the user interface |
+| Node.js + npm | 20 or newer | Builds the user interface |
 | Internet connection | first run only | Downloads the embedded browser (~150 MB) used by the desktop app |
 
 Check your Java version with `java -version`.
@@ -23,11 +26,18 @@ Check your Java version with `java -version`.
 
 Run this once from the root folder of the project (and again after updating it):
 
-```bash
-mvn clean install -DskipTests
-```
+- **Linux / macOS**
+  ```bash
+  ./mvnw clean install -DskipTests
+  ```
+- **Windows**
+  ```bash
+  mvnw.cmd clean install -DskipTests
+  ```
 
 This builds the user interface and the application. It takes a couple of minutes the first time.
+`mvnw` is the Maven Wrapper: it downloads the right Maven version by itself, so Maven does not need
+to be installed.
 
 ## ▶️ Running GenSynth
 
@@ -206,7 +216,7 @@ Open them with the ⚙ icon in the top bar:
 
 | Problem | Solution |
 |---|---|
-| `NoClassDefFoundError` or `ClassNotFoundException` when starting | The application is not fully built. Run `mvn clean install -DskipTests` from the root folder again. |
+| `NoClassDefFoundError` or `ClassNotFoundException` when starting | The application is not fully built. Run `./mvnw clean install -DskipTests` (`mvnw.cmd` on Windows) from the root folder again. |
 | The browser version shows "disconnected" | Start the engine first (step 1) and check that port 8765 is free. |
 | The logs show *Invalid connector configuration…* when starting a group | A required connector field is empty or invalid; the message says which one. |
 | A plugin is rejected as "built for the legacy plugin API" | That plugin was made for an older GenSynth; it must be rebuilt by its author. |
@@ -219,6 +229,27 @@ Open them with the ⚙ icon in the top bar:
 - Creating a connector plugin for another technology: [Plugin Developer Guide](plugin-api/PLUGIN_DEVELOPER_GUIDE.md).
 - The interface is in `simulator-ui/` (React + TypeScript) and the engine in `core/` (Java 21);
   the root `pom.xml` builds the plugin API and the engine.
+
+### Continuous integration
+
+Every push and pull request runs the [CI workflow](.github/workflows/ci.yml) on GitHub Actions:
+
+| Job | What it checks |
+|---|---|
+| **Frontend** | `npm run lint`, `npm run typecheck`, `npm run test:coverage` and `npm run build` in `simulator-ui/`. |
+| **Backend** | `./mvnw verify` (build, tests and JaCoCo coverage) on Linux, Windows and macOS. |
+| **SonarQube analysis** | Analyses the Java and TypeScript code on [SonarQube Cloud](https://sonarcloud.io/summary/new_code?id=alegarciasanchez7_tfg-gensynth) and fails when the Quality Gate fails. |
+
+Run the same checks locally before pushing:
+
+```bash
+./mvnw verify                          # backend (also builds the UI)
+cd simulator-ui && npm run lint && npm run typecheck && npm run test:coverage
+```
+
+`-DskipUi=true` skips the UI build in Maven, for machines without Node.js. The repository is also
+mirrored to GitLab, where [`.gitlab-ci.yml`](.gitlab-ci.yml) runs the same checks on Linux.
+Dependabot opens weekly pull requests to keep the dependencies up to date.
 
 ## 📝 License
 
