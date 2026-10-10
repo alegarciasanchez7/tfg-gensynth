@@ -424,6 +424,8 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
 
             try {
                 ConnectorContext context = new ConnectorContext(flow.name, group.name, ctx.getCurrentOutputDir());
+                // The session outlives this method: connectorByFlowId owns it and closeSession() closes it
+                @SuppressWarnings("java:S2095")
                 ConnectorSession session = ctx.getConnectorCatalogService()
                     .openSession(flow.technology, flow.connectorConfig, context);
                 ctx.getConnectorByFlowId().put(flow.id, session);

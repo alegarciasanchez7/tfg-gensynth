@@ -16,7 +16,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useDocumentTheme } from './context/hooks/useDocumentTheme';
 import { resolveDiscardTarget, useKeyboardShortcuts } from './context/hooks/useKeyboardShortcuts';
 import { ConfirmDeleteDialog } from './components/common/ConfirmDeleteDialog';
-import bridge from './core/bridge';
+import { reportUiErrorToCore } from './core/uiErrorReporter';
 
 /** Project switch waiting for the user to confirm closing the current configuration. */
 interface PendingProjectAction {
@@ -49,21 +49,11 @@ export default function App() {
 
   useEffect(() => {
     const handleError = (event: ErrorEvent) => {
-      const errorMsg = `[UI CRASH] ${event.message} at ${event.filename}:${event.lineno}`;
-      bridge.send('UI_LOG', {
-        level: 'error',
-        source: 'UI_RUNTIME',
-        message: errorMsg
-      });
+      void reportUiErrorToCore(`[UI CRASH] ${event.message} at ${event.filename}:${event.lineno}`);
     };
 
     const handleRejection = (event: PromiseRejectionEvent) => {
-      const errorMsg = `[UI UNHANDLED REJECTION] ${event.reason}`;
-      bridge.send('UI_LOG', {
-        level: 'error',
-        source: 'UI_RUNTIME',
-        message: errorMsg
-      });
+      void reportUiErrorToCore(`[UI UNHANDLED REJECTION] ${event.reason}`);
     };
 
     window.addEventListener('error', handleError);

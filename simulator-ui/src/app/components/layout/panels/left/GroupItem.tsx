@@ -168,7 +168,9 @@ export function GroupItem({
                     <DropdownMenuItem
                       onClick={(e) => {
                         e.stopPropagation();
-                        onUpdateGroupConfig(group.id, { enabled: !group.enabled }, group.name);
+                        onUpdateGroupConfig(group.id, { enabled: !group.enabled }, group.name).catch(() => {
+                          // Already reported and rolled back by the action
+                        });
                       }}
                       className="text-xs text-[var(--c-tx2)] focus:bg-cyan-500/10 focus:text-cyan-400"
                     >
