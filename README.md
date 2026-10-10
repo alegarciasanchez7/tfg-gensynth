@@ -12,7 +12,44 @@ useful to test consumers, dashboards and pipelines with realistic data without r
 
 ---
 
-## 🚀 Requirements
+## 📥 Download and install
+
+Download the installer for your system from the
+[**latest release**](https://github.com/alegarciasanchez7/tfg-gensynth/releases/latest).
+Everything GenSynth needs is included: you do not need to install Java.
+
+| Your system | File | How to install |
+|---|---|---|
+| Windows 10/11 (64-bit) | `GenSynth-<version>-windows-x64.msi` | Double-click it and follow the steps. GenSynth appears in the Start menu. |
+| Ubuntu, Debian, Linux Mint… | `gensynth_<version>_amd64.deb` | Double-click it, or `sudo apt install ./gensynth_<version>_amd64.deb` |
+| Fedora, openSUSE, RHEL… | `gensynth-<version>.x86_64.rpm` | `sudo dnf install ./gensynth-<version>.x86_64.rpm` |
+| macOS (Apple Silicon) | `GenSynth-<version>-macos-arm64.dmg` | Open it and drag GenSynth into *Applications*. |
+
+> [!IMPORTANT]
+> - **Windows:** GenSynth is not signed, so SmartScreen may show *"Windows protected your PC"*.
+>   Click **More info → Run anyway**.
+> - **macOS:** the first time, right-click GenSynth in *Applications* and choose **Open** (or
+>   *System Settings → Privacy & Security → Open Anyway*). The disk image includes a
+>   *READ ME FIRST* file with these steps.
+> - **First start:** GenSynth downloads its embedded browser (about 150 MB), so it needs an
+>   internet connection. A window shows the progress; it only happens once.
+
+To update, install the new version over the old one: your plugins and settings are kept.
+
+### Where GenSynth keeps its files
+
+| What | Installed application | Built from source |
+|---|---|---|
+| Plugins, autosave and embedded browser | Windows: `%LOCALAPPDATA%\GenSynth`<br>Linux: `~/.local/share/gensynth`<br>macOS: `~/Library/Application Support/GenSynth` | `core/` |
+| Generated files (`OUTPUT_FILES_<date>`) | `~/GenSynth` (your user folder) | `core/` |
+
+Uninstalling GenSynth does not delete these folders.
+
+---
+
+## 🏗️ Build from source
+
+### Requirements
 
 | Software | Version | Why |
 |---|---|---|
@@ -22,7 +59,7 @@ useful to test consumers, dashboards and pipelines with realistic data without r
 
 Check your Java version with `java -version`.
 
-## 📦 Installation
+### Build
 
 Run this once from the root folder of the project (and again after updating it):
 
@@ -39,12 +76,12 @@ This builds the user interface and the application. It takes a couple of minutes
 `mvnw` is the Maven Wrapper: it downloads the right Maven version by itself, so Maven does not need
 to be installed.
 
-## ▶️ Running GenSynth
+### Run
 
-> Always start GenSynth **from the `core` folder**: your installed plugins and the automatic state
-> backups live there.
+> When built from source, always start GenSynth **from the `core` folder**: your installed
+> plugins and the automatic state backups live there.
 
-### Desktop application (recommended)
+#### Desktop application (recommended)
 
 ```bash
 cd core
@@ -75,7 +112,7 @@ so it can take a moment.
 >   java --patch-module jcef=target/dependency/jcef-api-jcef-d3de827+cef-146.0.10+g8219561+chromium-146.0.7680.179.jar -cp "target/classes;target/dependency/*" com.gensynth.core.App --desktop
 >   ```
 
-### In the web browser (alternative)
+#### In the web browser (alternative)
 
 Open two terminals:
 
@@ -161,12 +198,12 @@ GenSynth includes one connector, always available, that writes the messages of e
 | Field | What it does |
 |---|---|
 | **File format** | *JSON array*, *Text* (one message per line), *XML dataset* or *CSV* (one message per line). |
-| **Output directory** | Optional. When empty, files go to the folder of the current session, `core/OUTPUT_FILES_<date>/`. A sub-folder with the group name is always added. |
+| **Output directory** | Optional. When empty, files go to the folder of the current session, `OUTPUT_FILES_<date>/` (in `~/GenSynth` for the installed application, in `core/` when built from source; see [Where GenSynth keeps its files](#where-gensynth-keeps-its-files)). A sub-folder with the group name is always added. |
 | **File name** | Optional. When empty, the flow name is used. The extension is added automatically. |
 
 For example, with the Text format a flow *Sensor 1* in group *Plant A* writes to
-`core/OUTPUT_FILES_<date>/Plant_A/Sensor_1.txt` (characters other than letters, digits, `.`, `_`
-and `-` become `_`).
+`~/GenSynth/OUTPUT_FILES_<date>/Plant_A/Sensor_1.txt` (characters other than letters, digits, `.`,
+`_` and `-` become `_`).
 
 ### Other destinations: connector plugins
 
@@ -216,7 +253,8 @@ Open them with the ⚙ icon in the top bar:
 
 | Problem | Solution |
 |---|---|
-| `NoClassDefFoundError` or `ClassNotFoundException` when starting | The application is not fully built. Run `./mvnw clean install -DskipTests` (`mvnw.cmd` on Windows) from the root folder again. |
+| The first start shows *"GenSynth could not set up its embedded browser"* | The embedded browser could not be downloaded. Check your internet connection (and proxy or firewall) and click **Retry**. |
+| `NoClassDefFoundError` or `ClassNotFoundException` when starting (built from source) | The application is not fully built. Run `./mvnw clean install -DskipTests` (`mvnw.cmd` on Windows) from the root folder again. |
 | The browser version shows "disconnected" | Start the engine first (step 1) and check that port 8765 is free. |
 | The logs show *Invalid connector configuration…* when starting a group | A required connector field is empty or invalid; the message says which one. |
 | A plugin is rejected as "built for the legacy plugin API" | That plugin was made for an older GenSynth; it must be rebuilt by its author. |
@@ -250,6 +288,33 @@ cd simulator-ui && npm run lint && npm run typecheck && npm run test:coverage
 `-DskipUi=true` skips the UI build in Maven, for machines without Node.js. The repository is also
 mirrored to GitLab, where [`.gitlab-ci.yml`](.gitlab-ci.yml) runs the same checks on Linux.
 Dependabot opens weekly pull requests to keep the dependencies up to date.
+
+### Releases (continuous delivery)
+
+The [Release workflow](.github/workflows/release.yml) builds the installers with `jpackage` on
+Windows (`.msi`), Linux (`.deb` and `.rpm`) and macOS (`.dmg`) and publishes them in a GitHub
+Release. Releases are always made from `main`:
+
+1. Merge `dev` into `main`.
+2. For a new version, update it in `pom.xml`, `core/pom.xml`, `plugin-api/pom.xml`,
+   `simulator-ui/package.json`, `simulator-ui/src/app/core/appInfo.ts` and
+   `sonar-project.properties` (the workflow refuses to publish if they differ).
+3. Tag `main` and push the tag:
+   ```bash
+   git switch main && git pull
+   git tag v1.0.0
+   git push origin v1.0.0
+   ```
+
+The workflow also refuses tags that are not on `main`. Pull requests that change the packaging
+(`packaging/`, `core/pom.xml` or the workflow itself) and manual runs from the *Actions* tab are
+dry runs: they build the installers as downloadable artifacts of the run and publish nothing.
+
+To build the installer of your own OS locally (it is written to `core/target/installer/dist`):
+
+```bash
+./mvnw -B -Dinstaller -DskipTests package          # Linux without rpmbuild: add -Dinstaller.skipRpm=true
+```
 
 ## 📝 License
 
