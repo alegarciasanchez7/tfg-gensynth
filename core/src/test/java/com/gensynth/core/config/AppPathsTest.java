@@ -125,7 +125,7 @@ public class AppPathsTest {
         Path sessionDir = Paths.get(paths.newSessionOutputDir());
 
         assertTrue(sessionDir.isAbsolute());
-        assertEquals(Paths.get(HOME, "GenSynth"), sessionDir.getParent());
+        assertEquals(Paths.get(HOME, "GenSynth").toAbsolutePath(), sessionDir.getParent());
         assertTrue(sessionDir.getFileName().toString().matches("OUTPUT_FILES_\\d{4}(_\\d{2}){5}"));
     }
 

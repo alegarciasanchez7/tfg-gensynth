@@ -45,6 +45,6 @@ public record JcefSetupStatus(String message, int percent, boolean finished) {
     }
 
     private static int clamp(float percent) {
-        return Math.max(0, Math.min(100, Math.round(percent)));
+        return Math.round(Math.clamp(percent, 0f, 100f));
     }
 }

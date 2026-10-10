@@ -2,8 +2,8 @@ package com.gensynth.core.config;
 
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.text.SimpleDateFormat;
-import java.util.Date;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Locale;
 import java.util.Map;
 import java.util.function.UnaryOperator;
@@ -35,9 +35,16 @@ public final class AppPaths {
     /** Report of an automatic plugin rollback, shown once by the UI. */
     public static final String ROLLBACK_REPORT = ".rollback_report.json";
 
+    /** Folder name of the application on Windows and macOS, and of the generated files. */
+    private static final String APP_FOLDER = "GenSynth";
     private static final String OUTPUT_DIR_PREFIX = "OUTPUT_FILES_";
+    private static final DateTimeFormatter SESSION_TIMESTAMP = DateTimeFormatter.ofPattern("yyyy_MM_dd_HH_mm_ss");
 
-    private static volatile AppPaths current;
+    /** Resolved lazily and once by the JVM class initialization, which is thread-safe. */
+    private static final class Holder {
+        private static final AppPaths CURRENT =
+            resolve(System.getProperty("os.name", ""), System.getenv(), System::getProperty);
+    }
 
     private final boolean installed;
     private final Path dataHome;
@@ -56,17 +63,7 @@ public final class AppPaths {
      *         the environment
      */
     public static AppPaths current() {
-        AppPaths paths = current;
-        if (paths == null) {
-            synchronized (AppPaths.class) {
-                paths = current;
-                if (paths == null) {
-                    paths = resolve(System.getProperty("os.name", ""), System.getenv(), System::getProperty);
-                    current = paths;
-                }
-            }
-        }
-        return paths;
+        return Holder.CURRENT;
     }
 
     /**
@@ -91,7 +88,7 @@ public final class AppPaths {
             outputsHome = dataHome;
         } else if (installed) {
             dataHome = osDataHome(osName, env, userHome);
-            outputsHome = userHome.resolve("GenSynth");
+            outputsHome = userHome.resolve(APP_FOLDER);
         } else {
             dataHome = workingDir;
             outputsHome = workingDir;
@@ -114,10 +111,10 @@ public final class AppPaths {
             Path base = (localAppData != null && !localAppData.isBlank())
                 ? Paths.get(localAppData)
                 : userHome.resolve("AppData").resolve("Local");
-            return base.resolve("GenSynth");
+            return base.resolve(APP_FOLDER);
         }
         if (os.contains("mac") || os.contains("darwin")) {
-            return userHome.resolve("Library").resolve("Application Support").resolve("GenSynth");
+            return userHome.resolve("Library").resolve("Application Support").resolve(APP_FOLDER);
         }
         // Linux and other Unix systems: XDG Base Directory specification
         String xdgDataHome = env.get("XDG_DATA_HOME");
@@ -196,7 +193,7 @@ public final class AppPaths {
      * @return absolute path of the session output folder (not created yet)
      */
     public String newSessionOutputDir() {
-        String timestamp = new SimpleDateFormat("yyyy_MM_dd_HH_mm_ss").format(new Date());
+        String timestamp = LocalDateTime.now().format(SESSION_TIMESTAMP);
         return outputsHome.resolve(OUTPUT_DIR_PREFIX + timestamp).toAbsolutePath().toString();
     }
 }
