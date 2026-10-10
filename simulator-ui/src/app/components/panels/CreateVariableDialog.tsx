@@ -1,4 +1,4 @@
-import { useState, useMemo, type FormEvent } from 'react';
+import { useMemo, type FormEvent } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Button } from '../ui/button';
 import { CalendarClock, Binary, ListChecks, ALargeSmall, MapPin, ToggleLeft, AlertTriangle } from 'lucide-react';
 import type { Group, Variable, VariableScope, VariableType } from '../../types';
-import { useVariableValidation } from '../../context/hooks/useVariableValidation';
+import { useVariableValidation, type ValidationErrors } from '../../context/hooks/useVariableValidation';
 
 interface CreateVariableDialogProps {
   open: boolean;
@@ -78,12 +78,10 @@ export function CreateVariableDialog({
   variablesList = [],
 }: CreateVariableDialogProps) {
   const { validateConfig, detectCycle } = useVariableValidation();
-  const [jsonError, setJsonError] = useState<string | null>(null);
 
   // Parse config JSON safely and perform validation
-  const validationResult = useMemo(() => {
-    setJsonError(null);
-    if (!state.configText.trim()) return { errors: {}, cycle: null };
+  const validationResult = useMemo<{ errors: ValidationErrors; cycle: string[] | null; jsonError: string | null }>(() => {
+    if (!state.configText.trim()) return { errors: {}, cycle: null, jsonError: null };
     try {
       const parsedConfig = JSON.parse(state.configText);
       const errors = validateConfig(state.type, parsedConfig, variablesList);
@@ -93,12 +91,12 @@ export function CreateVariableDialog({
         cycle = detectCycle(variablesList, '', state.name || 'new_var', parsedConfig.formula);
       }
 
-      return { errors, cycle };
-    } catch (e: any) {
-      setJsonError('Invalid JSON structure');
-      return { errors: {}, cycle: null };
+      return { errors, cycle, jsonError: null };
+    } catch {
+      return { errors: {}, cycle: null, jsonError: 'Invalid JSON structure' };
     }
   }, [state.configText, state.type, state.name, variablesList]);
+  const { jsonError } = validationResult;
 
   const hasValidationError = Object.keys(validationResult.errors).length > 0 || jsonError !== null || validationResult.cycle !== null;
 

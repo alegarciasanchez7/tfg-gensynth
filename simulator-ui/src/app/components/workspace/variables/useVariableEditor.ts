@@ -163,11 +163,11 @@ export function useVariableEditor(variable: Variable) {
     }
   };
 
+  const { validateConfig, detectCycle } = useVariableValidation();
+
   const validationResult = useMemo(() => {
-    let parsedConfig: Variable['config'] = {};
     try {
-      parsedConfig = parseConfig(draft.configText);
-      const { validateConfig, detectCycle } = useVariableValidation();
+      const parsedConfig: Variable['config'] = parseConfig(draft.configText);
       const variablesList = actions.getVariables?.() || [];
       const errors = validateConfig(draft.type, parsedConfig, variablesList);
       

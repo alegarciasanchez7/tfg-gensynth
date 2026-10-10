@@ -7,7 +7,7 @@ export function normalizeVariableFromCore(variable: any): Variable {
     if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
       try {
         config = JSON.parse(trimmed);
-      } catch (e) {
+      } catch {
         // ignore
       }
     }

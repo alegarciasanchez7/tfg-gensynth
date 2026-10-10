@@ -118,7 +118,7 @@ export function convertFormatClientSide(content: string, src: string, tgt: strin
     }
 
     return String(content);
-  } catch (err) {
+  } catch {
     return content;
   }
 }
