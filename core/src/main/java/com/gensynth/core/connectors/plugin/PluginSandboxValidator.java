@@ -356,6 +356,9 @@ public class PluginSandboxValidator {
      * @return the new, empty temporary file
      * @throws IOException if the file cannot be created
      */
+    // S5443 flags the Windows branch, which cannot set POSIX permissions: there the temporary
+    // directory (%TEMP%) is inside the user profile and not writable by other users
+    @SuppressWarnings("java:S5443")
     static Path createPrivateTempJar() throws IOException {
         if (FileSystems.getDefault().supportedFileAttributeViews().contains("posix")) {
             return Files.createTempFile(TEMP_JAR_PREFIX, ".jar",
