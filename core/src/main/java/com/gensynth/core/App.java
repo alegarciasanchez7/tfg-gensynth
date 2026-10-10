@@ -1,6 +1,7 @@
 package com.gensynth.core;
 
 import com.gensynth.core.config.AppConfig;
+import com.gensynth.core.config.AppPaths;
 import com.gensynth.core.ws.UiBridgeWebSocketServer;
 import com.gensynth.core.desktop.DesktopFileChooser;
 import com.gensynth.core.desktop.MainFrame;
@@ -49,13 +50,15 @@ public class App {
         // --- ROLLBACK LOGIC ---
         checkAndPerformRollback();
 
+        AppPaths paths = AppPaths.current();
+        logger.info("Data folder: {} | Output folder: {}", paths.dataHome(), paths.outputsHome());
         logger.info("WebSocket Server: {}:{}", config.getWebsocketHost(), config.getWebsocketPort());
         webSocketServer = new UiBridgeWebSocketServer(config.getWebsocketHost(), config.getWebsocketPort());
         wsServer = webSocketServer; // Store reference for desktop mode
     }
 
     private void checkAndPerformRollback() {
-        Path markerPath = Paths.get("plugins", ".pending_install.json");
+        Path markerPath = AppPaths.current().pendingInstallMarker();
         if (Files.exists(markerPath)) {
             try {
                 String content = Files.readString(markerPath);
@@ -117,7 +120,7 @@ public class App {
 
     private void saveRollbackReport(String markerContent) {
         try {
-            Path reportPath = Paths.get("plugins", ".rollback_report.json");
+            Path reportPath = AppPaths.current().rollbackReport();
 
             // Build a JSON report from the marker content
             String json = markerContent;
@@ -143,7 +146,7 @@ public class App {
     }
 
     private void confirmSuccessfulPluginBoot() {
-        Path markerPath = Paths.get("plugins", ".pending_install.json");
+        Path markerPath = AppPaths.current().pendingInstallMarker();
         if (Files.exists(markerPath)) {
             try {
                 Files.delete(markerPath);
@@ -221,7 +224,7 @@ public class App {
     }
 
     private void handleEmergencyRecovery() {
-        Path markerPath = Paths.get("plugins", ".pending_install.json");
+        Path markerPath = AppPaths.current().pendingInstallMarker();
         if (Files.exists(markerPath)) {
             logger.warn("[EMERGENCY] Pending plugin installation found. Performing automatic rollback...");
             try {

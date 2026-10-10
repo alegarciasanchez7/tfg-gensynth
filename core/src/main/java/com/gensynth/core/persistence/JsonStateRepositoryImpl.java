@@ -1,5 +1,6 @@
 package com.gensynth.core.persistence;
 
+import com.gensynth.core.config.AppPaths;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.gensynth.core.model.GroupDefinition;
@@ -42,17 +43,17 @@ public class JsonStateRepositoryImpl implements StateRepository {
      * @param stateDirectory Path to directory where state files will be stored
      */
     public JsonStateRepositoryImpl(String stateDirectory) {
-        this.stateDirectory = stateDirectory != null ? stateDirectory : "core/state";
+        this.stateDirectory = stateDirectory != null ? stateDirectory : AppPaths.current().stateDir().toString();
         this.objectMapper = new ObjectMapper();
         this.objectMapper.enable(SerializationFeature.INDENT_OUTPUT);
         this.initialized = initializeDirectory();
     }
 
     /**
-     * Creates a JsonStateRepositoryImpl with default state directory (core/state).
+     * Creates a JsonStateRepositoryImpl with the default state directory ({@link AppPaths#stateDir()}).
      */
     public JsonStateRepositoryImpl() {
-        this("core/state");
+        this(null);
     }
 
     /**
