@@ -69,9 +69,14 @@ public class SequentialGroupDispatcher implements IGroupDispatcher {
         // Single producer (the clock thread), so the capacity checked above is still available
         for (FlowRuntime flow : dueFlows) {
             String payload = handler.generate(group, flow);
-            if (payload != null) {
-                queue.offer(new PendingMessage(flow, payload));
+            if (payload == null) {
+                continue;
+            }
+            if (queue.offer(new PendingMessage(flow, payload))) {
                 generated = true;
+            } else {
+                // Not expected after the capacity check; the message stays generated but not sent
+                handler.onTickSkipped(group, flow);
             }
         }
         return generated;
