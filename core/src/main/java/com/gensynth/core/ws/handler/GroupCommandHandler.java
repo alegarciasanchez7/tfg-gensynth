@@ -1,5 +1,6 @@
 package com.gensynth.core.ws.handler;
 
+import com.gensynth.core.config.AppPaths;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.gensynth.core.model.OutputMode;
 import com.gensynth.core.model.Variable;
@@ -180,8 +181,7 @@ public class GroupCommandHandler implements CommandHandler {
 
         synchronized (ctx.getStateLock()) {
             if (ctx.getCurrentOutputDir() == null) {
-                String timestamp = new java.text.SimpleDateFormat("yyyy_MM_dd_HH_mm_ss").format(new java.util.Date());
-                ctx.setCurrentOutputDir("OUTPUT_FILES_" + timestamp);
+                ctx.setCurrentOutputDir(AppPaths.current().newSessionOutputDir());
             }
             if (!ctx.isSystemRunning()) {
                 ctx.setSystemStartedAt(System.currentTimeMillis());

@@ -1,5 +1,6 @@
 package com.gensynth.core.util;
 
+import com.gensynth.core.config.AppPaths;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -30,8 +31,17 @@ public class RestartUtil {
             boolean isMaven = classpath.contains("plexus-classworlds") || System.getProperty("maven.home") != null;
 
             List<String> command = new ArrayList<>();
-            
-            if (isMaven) {
+            // Installed application: relaunch its native launcher, which knows the bundled runtime
+            String launcher = System.getProperty(AppPaths.LAUNCHER_PROPERTY);
+
+            if (launcher != null) {
+                logger.info("Detected installed application. Restarting via its launcher...");
+                command.add(launcher);
+                String[] args = com.gensynth.core.App.getOriginalArgs();
+                if (args != null) {
+                    command.addAll(List.of(args));
+                }
+            } else if (isMaven) {
                 logger.info("Detected Maven environment. Restarting via Maven...");
                 command.add(isWindows ? "mvn.cmd" : "mvn");
                 command.add("exec:java");

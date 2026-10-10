@@ -1,5 +1,6 @@
 package com.gensynth.core.ws.handler;
 
+import com.gensynth.core.config.AppPaths;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.gensynth.core.ws.BridgeContext;
 import com.gensynth.core.ws.UiBridgeWebSocketServer;
@@ -52,8 +53,7 @@ public class SystemCommandHandler implements CommandHandler {
         synchronized (ctx.getStateLock()) {
             ctx.setSystemRunning(true);
             ctx.setSystemStartedAt(System.currentTimeMillis());
-            String timestamp = new java.text.SimpleDateFormat("yyyy_MM_dd_HH_mm_ss").format(new java.util.Date());
-            ctx.setCurrentOutputDir("OUTPUT_FILES_" + timestamp);
+            ctx.setCurrentOutputDir(AppPaths.current().newSessionOutputDir());
 
             for (GroupRuntime group : ctx.getGroupsById().values()) {
                 if (!"running".equals(group.status)) {
