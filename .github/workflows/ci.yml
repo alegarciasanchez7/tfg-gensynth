@@ -4,9 +4,9 @@ name: CI
 
 on:
   push:
-    branches: [main, pre-build, 'feat/**', 'fix/**', 'ci/**']
+    branches: [main, dev, 'feat/**', 'fix/**', 'ci/**']
   pull_request:
-    branches: [main, pre-build]
+    branches: [main, dev]
   workflow_dispatch:
 
 # A new push to the same branch cancels the run that is still in progress
@@ -99,8 +99,9 @@ jobs:
     name: SonarQube analysis
     needs: frontend
     runs-on: ubuntu-latest
-    # The SonarQube Cloud plan only gives access to the main branch, so only main is analysed
-    if: github.ref == 'refs/heads/main'
+    # The SonarQube Cloud plan only analyses one branch: dev, so the Quality Gate is checked
+    # before the code is merged into main
+    if: github.ref == 'refs/heads/dev'
     env:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
     steps:
