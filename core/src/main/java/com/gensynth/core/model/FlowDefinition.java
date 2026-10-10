@@ -13,7 +13,8 @@ import java.util.Objects;
  * - Name and description
  * - Technology connector type (rabbitmq, kafka, etc.)
  * - Connection parameters (host, port, topic)
- * - Generation parameters (interval, burst)
+ * - Generation parameters (one message every {@code everyTicks} global ticks;
+ *   interval and burst are legacy and ignored by the engine)
  * - Template for payload generation
  * - Connector-specific configuration
  *
@@ -30,8 +31,10 @@ public class FlowDefinition {
     private String topic;
     private int interval;
     private int burst;
+    private int everyTicks = 1;
     private String template;
     private String format; // "json", "xml", "csv", "plain"
+    private boolean enabled;
     private String connectorId;
     private final Map<String, Object> connectorConfig;
     private final Instant createdAt;
@@ -47,8 +50,9 @@ public class FlowDefinition {
      * @param host Connection host
      * @param port Connection port
      * @param topic Topic/queue name
-     * @param interval Publish interval in milliseconds
-     * @param burst Number of events per burst
+     * @param interval Legacy publish interval in milliseconds; ignored by the engine (the global
+     *                 tick clock drives sending), kept for file compatibility
+     * @param burst Legacy number of events per send; ignored by the engine
      * @param template Event template with placeholders
      * @param connectorId Connector plugin ID
      * @param connectorConfig Connector-specific configuration
@@ -79,6 +83,7 @@ public class FlowDefinition {
         this.burst = Math.max(1, burst);
         this.template = Objects.requireNonNull(template, "template cannot be null");
         this.format = format != null ? format : "json";
+        this.enabled = true;
         this.connectorId = connectorId;
         this.connectorConfig = connectorConfig != null ? new HashMap<>(connectorConfig) : new HashMap<>();
         this.createdAt = Instant.now();
@@ -125,6 +130,13 @@ public class FlowDefinition {
         return burst;
     }
 
+    /**
+     * @return number of global ticks between two messages of this flow (at least 1)
+     */
+    public int getEveryTicks() {
+        return everyTicks;
+    }
+
     public String getTemplate() {
         return template;
     }
@@ -139,6 +151,10 @@ public class FlowDefinition {
 
     public Map<String, Object> getConnectorConfig() {
         return new HashMap<>(connectorConfig);
+    }
+
+    public boolean isEnabled() {
+        return enabled;
     }
 
     public Instant getCreatedAt() {
@@ -188,6 +204,16 @@ public class FlowDefinition {
         this.updatedAt = Instant.now();
     }
 
+    /**
+     * Sets how many global ticks pass between two messages of this flow.
+     *
+     * @param everyTicks ticks between messages; values below 1 are clamped to 1
+     */
+    public void setEveryTicks(int everyTicks) {
+        this.everyTicks = Math.max(1, everyTicks);
+        this.updatedAt = Instant.now();
+    }
+
     public void setTemplate(String template) {
         this.template = Objects.requireNonNull(template, "template cannot be null");
         this.updatedAt = Instant.now();
@@ -195,6 +221,11 @@ public class FlowDefinition {
 
     public void setFormat(String format) {
         this.format = format;
+        this.updatedAt = Instant.now();
+    }
+
+    public void setEnabled(boolean enabled) {
+        this.enabled = enabled;
         this.updatedAt = Instant.now();
     }
 
@@ -231,8 +262,10 @@ public class FlowDefinition {
         payload.put("topic", topic);
         payload.put("interval", interval);
         payload.put("burst", burst);
+        payload.put("everyTicks", everyTicks);
         payload.put("template", template);
         payload.put("format", format);
+        payload.put("enabled", enabled);
         payload.put("connectorId", connectorId);
         payload.put("connectorConfig", connectorConfig);
         payload.put("createdAt", createdAt.toString());
@@ -247,22 +280,41 @@ public class FlowDefinition {
      * @return FlowDefinition instance
      */
     public static FlowDefinition fromPayload(Map<String, Object> payload) {
-        String flowId = (String) payload.get("id");
+        String flowId = (String) payload.getOrDefault("id", java.util.UUID.randomUUID().toString());
         String groupId = (String) payload.get("groupId");
-        String name = (String) payload.get("name");
-        String technology = (String) payload.get("technology");
-        String host = (String) payload.get("host");
-        int port = ((Number) payload.get("port")).intValue();
-        String topic = (String) payload.get("topic");
-        int interval = ((Number) payload.get("interval")).intValue();
-        int burst = ((Number) payload.get("burst")).intValue();
-        String template = (String) payload.get("template");
-        String format = (String) payload.get("format");
-        String connectorId = (String) payload.get("connectorId");
+        String name = (String) payload.getOrDefault("name", "Unnamed Flow");
+        String technology = (String) payload.getOrDefault("technology", "rabbitmq");
+        String host = (String) payload.getOrDefault("host", "localhost");
+        
+        Object portObj = payload.get("port");
+        int port = (portObj instanceof Number) ? ((Number) portObj).intValue() : 5672;
+        
+        String topic = (String) payload.getOrDefault("topic", "");
+        
+        Object intervalObj = payload.get("interval");
+        int interval = (intervalObj instanceof Number) ? ((Number) intervalObj).intValue() : 1000;
+        
+        Object burstObj = payload.get("burst");
+        int burst = (burstObj instanceof Number) ? ((Number) burstObj).intValue() : 1;
+        
+        String template = (String) payload.getOrDefault("template", "{\"eventId\":\"{{uuid}}\"}");
+        String format = (String) payload.getOrDefault("format", "json");
+        String connectorId = (String) payload.getOrDefault("connectorId", technology);
+        
         @SuppressWarnings("unchecked")
         Map<String, Object> connectorConfig = (Map<String, Object>) payload.get("connectorConfig");
 
-        return new FlowDefinition(flowId, groupId, name, technology, host, port, topic, interval, burst, template, format, connectorId, connectorConfig);
+        FlowDefinition flow = new FlowDefinition(flowId, groupId, name, technology, host, port, topic, interval, burst, template, format, connectorId, connectorConfig);
+        
+        Object enabledObj = payload.get("enabled");
+        if (enabledObj instanceof Boolean) {
+            flow.setEnabled((Boolean) enabledObj);
+        }
+
+        Object everyTicksObj = payload.get("everyTicks");
+        flow.setEveryTicks(everyTicksObj instanceof Number ? ((Number) everyTicksObj).intValue() : 1);
+        
+        return flow;
     }
 
     @Override
@@ -277,6 +329,7 @@ public class FlowDefinition {
             ", topic='" + topic + '\'' +
             ", interval=" + interval +
             ", burst=" + burst +
+            ", everyTicks=" + everyTicks +
             ", createdAt=" + createdAt +
             ", updatedAt=" + updatedAt +
             '}';

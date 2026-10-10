@@ -1,0 +1,181 @@
+# Continuous delivery: builds the installer of every OS with jpackage and publishes them in a
+# GitHub Release when a version tag (v1.2.3) is pushed. Releases are only made from main.
+# Pull requests that change the packaging, and manual runs (workflow_dispatch), are dry runs:
+# they build the installers as downloadable artifacts of the run and publish nothing.
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - .github/workflows/release.yml
+      - packaging/**
+      - core/pom.xml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+
+jobs:
+  version-check:
+    name: Check version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Full history and branches, to check that the tag is on main
+          fetch-depth: 0
+
+      - name: Check that every file declares the same version
+        id: check
+        run: |
+          set -euo pipefail
+          declare -A versions=(
+            [pom.xml]=$(grep -m1 -oP '(?<=<version>)[^<]+' pom.xml)
+            [core/pom.xml]=$(grep -m1 -oP '(?<=<version>)[^<]+' core/pom.xml)
+            [plugin-api/pom.xml]=$(grep -m1 -oP '(?<=<version>)[^<]+' plugin-api/pom.xml)
+            [simulator-ui/package.json]=$(node -p "require('./simulator-ui/package.json').version")
+            [simulator-ui/src/app/core/appInfo.ts]=$(grep -oP "(?<=APP_VERSION = ')[^']+" simulator-ui/src/app/core/appInfo.ts)
+            [sonar-project.properties]=$(grep -oP '(?<=^sonar.projectVersion=).+' sonar-project.properties)
+          )
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            expected="${GITHUB_REF_NAME#v}"
+          else
+            expected="${versions[pom.xml]}"
+          fi
+          failed=0
+          for file in "${!versions[@]}"; do
+            if [[ "${versions[$file]}" != "$expected" ]]; then
+              echo "::error file=$file::Version ${versions[$file]} does not match $expected"
+              failed=1
+            fi
+          done
+          [[ $failed == 0 ]] || exit 1
+          echo "Version $expected"
+          echo "version=$expected" >> "$GITHUB_OUTPUT"
+
+      - name: Check that the tag is on main
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Tag $GITHUB_REF_NAME is not on main. Merge dev into main and tag main."
+            exit 1
+          fi
+
+  build:
+    name: Installer (${{ matrix.label }})
+    needs: version-check
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            label: windows-x64
+          - os: ubuntu-latest
+            label: linux-x64
+          - os: macos-latest
+            label: macos-arm64
+    runs-on: ${{ matrix.os }}
+    env:
+      VERSION: ${{ needs.version-check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      # The core build bundles the UI with npm
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: simulator-ui/.nvmrc
+          cache: npm
+          cache-dependency-path: simulator-ui/package-lock.json
+
+      - name: Install the RPM tools (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y rpm
+
+      # jpackage (JDK 21) builds .msi files with WiX Toolset 3
+      - name: Install WiX Toolset 3 (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Get-Command candle.exe -ErrorAction SilentlyContinue)) {
+            choco install wixtoolset --version 3.14.1 --no-progress -y
+          }
+          $wix = Get-ChildItem 'C:\Program Files (x86)' -Directory -Filter 'WiX Toolset v3*' | Select-Object -First 1
+          if ($wix) { Join-Path $wix.FullName 'bin' | Out-File -FilePath $env:GITHUB_PATH -Append }
+
+      - name: Build the installer
+        if: runner.os != 'Windows'
+        run: ./mvnw -B -Dinstaller -DskipTests package
+
+      - name: Build the installer (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: .\mvnw.cmd -B -Dinstaller -DskipTests package
+
+      - name: Name the installers
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          for file in core/target/installer/dist/*; do
+            case "$file" in
+              *.msi) cp "$file" "dist/GenSynth-$VERSION-windows-x64.msi" ;;
+              *.dmg) cp "$file" "dist/GenSynth-$VERSION-macos-arm64.dmg" ;;
+              *.deb) cp "$file" "dist/gensynth_${VERSION}_amd64.deb" ;;
+              *.rpm) cp "$file" "dist/gensynth-$VERSION.x86_64.rpm" ;;
+            esac
+          done
+          ls -la dist
+          [[ -n "$(ls dist)" ]] || { echo "::error::No installer was built"; exit 1; }
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: installers-${{ matrix.label }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Publish the GitHub Release
+    needs: [version-check, build]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.version-check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: installers-*
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums and installation notes
+        run: |
+          (cd dist && sha256sum -- * > SHA256SUMS.txt)
+          sed "s/<version>/$VERSION/g" packaging/release-notes.md > release-notes.md
+
+      # The installation notes go first, followed by the notes generated from the merged PRs
+      - uses: softprops/action-gh-release@v3
+        with:
+          name: GenSynth ${{ env.VERSION }}
+          body_path: release-notes.md
+          generate_release_notes: true
+          files: dist/*
+          fail_on_unmatched_files: true

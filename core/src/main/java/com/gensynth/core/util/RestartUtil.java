@@ -1,0 +1,121 @@
+package com.gensynth.core.util;
+
+import com.gensynth.core.config.AppPaths;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.File;
+import java.io.IOException;
+import java.lang.management.ManagementFactory;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Utility to handle self-restarting of the Gen-Synth Core process.
+ * Essential for applying plugin changes without manual intervention.
+ */
+public class RestartUtil {
+
+    private static final Logger logger = LoggerFactory.getLogger(RestartUtil.class);
+
+    /**
+     * Spawns a new instance of the current application and then terminates the current one.
+     */
+    public static void restart() {
+        try {
+            String os = System.getProperty("os.name").toLowerCase();
+            boolean isWindows = os.contains("win");
+            
+            // Detect if we are running under Maven (common in dev)
+            String classpath = System.getProperty("java.class.path");
+            boolean isMaven = classpath.contains("plexus-classworlds") || System.getProperty("maven.home") != null;
+
+            List<String> command = new ArrayList<>();
+            // Installed application: relaunch its native launcher, which knows the bundled runtime
+            String launcher = System.getProperty(AppPaths.LAUNCHER_PROPERTY);
+
+            if (launcher != null) {
+                logger.info("Detected installed application. Restarting via its launcher...");
+                command.add(launcher);
+                String[] args = com.gensynth.core.App.getOriginalArgs();
+                if (args != null) {
+                    command.addAll(List.of(args));
+                }
+            } else if (isMaven) {
+                logger.info("Detected Maven environment. Restarting via Maven...");
+                command.add(isWindows ? "mvn.cmd" : "mvn");
+                command.add("exec:java");
+                command.add("-Dexec.mainClass=com.gensynth.core.App");
+                
+                // Add original application arguments for Maven
+                String[] args = com.gensynth.core.App.getOriginalArgs();
+                if (args != null && args.length > 0) {
+                    command.add("-Dexec.args=" + String.join(" ", args));
+                }
+            } else {
+                logger.info("Detected standard Java environment. Restarting via Java...");
+                String javaHome = System.getProperty("java.home");
+                String javaBin = javaHome + File.separator + "bin" + File.separator + "java";
+                
+                command.add(javaBin);
+                command.addAll(ManagementFactory.getRuntimeMXBean().getInputArguments());
+                command.add("-cp");
+                command.add(classpath);
+                command.add("com.gensynth.core.App");
+
+                // Add original application arguments (e.g., --desktop)
+                String[] args = com.gensynth.core.App.getOriginalArgs();
+                if (args != null) {
+                    for (String arg : args) {
+                        command.add(arg);
+                    }
+                }
+            }
+
+            logger.info("Spawning new process: {}", String.join(" ", command));
+
+            ProcessBuilder builder = new ProcessBuilder(command);
+            // On Windows, if running Maven, we might need shell execution
+            if (isMaven && isWindows) {
+                // Use cmd /c to ensure mvn.cmd is found and executed correctly
+                List<String> winCommand = new ArrayList<>();
+                winCommand.add("cmd");
+                winCommand.add("/c");
+                winCommand.addAll(command);
+                builder = new ProcessBuilder(winCommand);
+            }
+            
+            // 1. Release WebSocket server and port 8765
+            if (com.gensynth.core.App.getWsServer() != null) {
+                try {
+                    com.gensynth.core.App.getWsServer().shutdown();
+                } catch (Exception ignored) {}
+            }
+
+            // 2. Mark restarting flag and close desktop frame
+            com.gensynth.core.desktop.MainFrame.setRestarting(true);
+            com.gensynth.core.desktop.MainFrame.closeActiveFrame();
+
+            // 3. Dispose native JCEF/Chromium resources in parent process
+            com.gensynth.core.desktop.NativeLoader.dispose();
+
+            // Give the OS 1 second to clean up socket bindings and C++ process handles
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException e) {
+                // Restart anyway, but keep the interrupt status for the caller
+                Thread.currentThread().interrupt();
+            }
+
+            Process child = builder.start();
+            logger.info("New process started (PID {}). Terminating parent process...", child.pid());
+            
+            System.exit(0);
+            
+        } catch (IOException e) {
+            logger.error("Failed to self-restart Gen-Synth Core: {}", e.getMessage(), e);
+            // If restart fails, at least we exit so the user knows something happened
+            System.exit(1);
+        }
+    }
+}

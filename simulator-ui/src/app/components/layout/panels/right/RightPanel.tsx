@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Plus, ChevronDown, Hash, List, ToggleLeft, Clock3, LocateFixed, Type } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Plus, ChevronDown, Binary, ListChecks, ALargeSmall, CalendarClock, MapPin, ToggleLeft, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { toast } from 'sonner';
 import { useApp } from '../../../../context';
 import type { Variable, VariableScope, VariableType, Selection } from '../../../../types';
@@ -20,6 +20,8 @@ type CreateState = {
   scope: VariableScope;
   description: string;
   configText: string;
+  flowId?: string;
+  groupId?: string;
 };
 
 const scopeLabels: Record<VariableScope, string> = {
@@ -28,61 +30,118 @@ const scopeLabels: Record<VariableScope, string> = {
   global: 'GLOBAL',
 };
 
-const typeIcons: Record<VariableType, React.ReactNode> = {
-  numeric: <Hash size={11} />,
-  list: <List size={11} />,
-  boolean: <ToggleLeft size={11} />,
-  temporal: <Clock3 size={11} />,
-  point: <LocateFixed size={11} />,
-  string: <Type size={11} />,
+const scopeTabColors: Record<VariableScope, string> = {
+  local: 'text-sky-400 border-sky-400 bg-sky-500/10',
+  group: 'text-violet-400 border-violet-400 bg-violet-500/10',
+  global: 'text-amber-400 border-amber-400 bg-amber-500/10',
 };
 
-const typeStyles: Record<VariableType, { badge: string; icon: string; hover: string }> = {
-  numeric: { badge: 'border-sky-500/20 bg-sky-500/10 text-sky-500', icon: 'text-sky-500', hover: 'hover:bg-sky-500/5' },
-  list: { badge: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-500', icon: 'text-emerald-500', hover: 'hover:bg-emerald-500/5' },
-  boolean: { badge: 'border-amber-500/20 bg-amber-500/10 text-amber-500', icon: 'text-amber-500', hover: 'hover:bg-amber-500/5' },
-  temporal: { badge: 'border-violet-500/20 bg-violet-500/10 text-violet-500', icon: 'text-violet-500', hover: 'hover:bg-violet-500/5' },
-  point: { badge: 'border-cyan-500/20 bg-cyan-500/10 text-cyan-500', icon: 'text-cyan-500', hover: 'hover:bg-cyan-500/5' },
-  string: { badge: 'border-pink-500/20 bg-pink-500/10 text-pink-500', icon: 'text-pink-500', hover: 'hover:bg-pink-500/5' },
+const typeInfo: Record<VariableType, { icon: any; color: string }> = {
+  numeric: { icon: Binary, color: 'text-cyan-500' },
+  list: { icon: ListChecks, color: 'text-violet-500' },
+  string: { icon: ALargeSmall, color: 'text-emerald-500' },
+  temporal: { icon: CalendarClock, color: 'text-purple-500' },
+  point: { icon: MapPin, color: 'text-teal-500' },
+  boolean: { icon: ToggleLeft, color: 'text-pink-500' },
 };
-
-function defaultConfigTextForType(type: VariableType): string {
-  switch (type) {
-    case 'numeric':
-      return JSON.stringify({ min: 0, max: 100, step: 1 }, null, 2);
-    case 'list':
-      return JSON.stringify({ values: [] }, null, 2);
-    case 'boolean':
-      return JSON.stringify({ value: false }, null, 2);
-    case 'temporal':
-      return JSON.stringify({ pattern: 'SYSTEM_NOW' }, null, 2);
-    case 'point':
-      return JSON.stringify({ x: 0, y: 0, z: 0 }, null, 2);
-    case 'string':
-    default:
-      return JSON.stringify({ value: '' }, null, 2);
-  }
-}
 
 export function RightPanel({ variables, selection, onSelectVariable, onInsertVariable }: RightPanelProps) {
-  const { actions } = useApp();
-  const [activeScope, setActiveScope] = useState<VariableScope>('local');
+  const { state, actions } = useApp();
+  const [width, setWidth] = useState(264);
+  const [collapsed, setCollapsed] = useState(false);
+  const [isResizing, setIsResizing] = useState(false);
+  const [activeScope, setActiveScope] = useState<VariableScope>('global');
   const [showAdd, setShowAdd] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+
+  const startX = useRef(0);
+  const startW = useRef(0);
+
+  const handleMouseDownResizer = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    startX.current = e.clientX;
+    startW.current = width;
+    setIsResizing(true);
+  };
+
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const delta = startX.current - e.clientX;
+      const newWidth = Math.max(180, Math.min(500, startW.current + delta));
+      setWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing]);
+
   const [createState, setCreateState] = useState<CreateState>({
     name: '',
     type: 'numeric',
     scope: activeScope,
     description: '',
-    configText: '{\n  "min": 0,\n  "max": 100,\n  "step": 1\n}',
+    configText: JSON.stringify({ min: 0, max: 100 }, null, 2),
+    flowId: selection.flowId,
+    groupId: selection.groupId,
   });
   const [deleteVariable, setDeleteVariable] = useState<Variable | null>(null);
 
   const isFlowSelected = selection.type === 'flow';
-  const filteredVars = variables.filter(v => v.scope === activeScope);
-  const scopes: VariableScope[] = ['local', 'group', 'global'];
-  const createScopeLabel = scopeLabels[createState.scope];
+  const isGroupSelected = selection.type === 'group';
+
+  const selectedVariable = selection.variableId
+    ? variables.find(v => v.id === selection.variableId)
+    : undefined;
+
+  // Determine active flowId & groupId context from selection or selected variable
+  const activeFlowId = isFlowSelected
+    ? selection.flowId
+    : selectedVariable?.scope === 'local'
+    ? selectedVariable.flowId
+    : undefined;
+
+  const activeGroupId = isGroupSelected
+    ? selection.groupId
+    : isFlowSelected
+    ? selection.groupId || (activeFlowId ? state.groups.find(g => g.flows.some(f => f.id === activeFlowId))?.id : undefined)
+    : selectedVariable?.scope === 'group'
+    ? selectedVariable.groupId
+    : selectedVariable?.scope === 'local' && selectedVariable.flowId
+    ? state.groups.find(g => g.flows.some(f => f.id === selectedVariable.flowId))?.id
+    : selection.groupId;
+
+  // Auto-switch scope based on selection
+  useEffect(() => {
+    if (isFlowSelected) {
+      setActiveScope('local');
+    } else if (isGroupSelected) {
+      setActiveScope('group');
+    } else if (selection.type === 'variable' && selectedVariable) {
+      setActiveScope(selectedVariable.scope);
+    }
+  }, [selection.type, selection.variableId, isFlowSelected, isGroupSelected, selectedVariable?.scope]);
+
+  // Update createState scope when activeScope changes
+  useEffect(() => {
+    setCreateState(prev => ({ 
+      ...prev, 
+      scope: activeScope,
+      flowId: activeScope === 'local' ? selection.flowId : undefined,
+      groupId: activeScope === 'group' ? selection.groupId : undefined
+    }));
+  }, [activeScope, selection.flowId, selection.groupId]);
 
   const handleCreateSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -99,16 +158,20 @@ export function RightPanel({ variables, selection, onSelectVariable, onInsertVar
           ...config,
           ...(createState.description.trim() ? { description: createState.description.trim() } : {}),
         },
+        createState.flowId,
+        createState.groupId,
       );
       
       toast.success('Variable created');
       setCreateDialogOpen(false);
       setCreateState({
         name: '',
-        type: 'numeric',
+        type: createState.type,
         scope: activeScope,
         description: '',
-        configText: '{\n  "min": 0,\n  "max": 100,\n  "step": 1\n}',
+        configText: JSON.stringify({ min: 0, max: 100 }, null, 2),
+        flowId: selection.flowId,
+        groupId: selection.groupId,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to create variable';
@@ -127,67 +190,116 @@ export function RightPanel({ variables, selection, onSelectVariable, onInsertVar
       toast.success('Variable deleted');
       setDeleteDialogOpen(false);
       setDeleteVariable(null);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to delete variable';
-      toast.error(message);
+    } catch {
+      toast.error('Unable to delete variable');
     }
   };
 
-  return (
-    <div className="flex flex-col border-l border-[var(--c-br1)] bg-[var(--c-bg2)] shrink-0 overflow-hidden" style={{ width: 260 }}>
-      {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--c-br2)] shrink-0 relative gap-2">
-        <div className="flex items-center gap-2 min-w-0 flex-1">
-          <span
-            className="inline-flex items-center rounded border border-[var(--c-br1)] bg-[var(--c-bg1)] px-2 py-1 text-[10px] text-[var(--c-tx4)] tracking-widest uppercase shrink-0"
-            style={{ fontFamily: 'JetBrains Mono, monospace' }}
-          >
-            Variables
-          </span>
-        </div>
+  const scopes: VariableScope[] = ['local', 'group', 'global'];
 
-        <div className="flex items-center gap-2 shrink-0">
-          <div className="relative shrink-0">
+  const filteredVars = variables.filter(v => {
+    if (v.scope !== activeScope) return false;
+    
+    if (activeScope === 'local') {
+      if (activeFlowId) return v.flowId === activeFlowId;
+      if (activeGroupId) {
+        const groupFlowIds = state.groups.find(g => g.id === activeGroupId)?.flows.map(f => f.id) || [];
+        return v.flowId && groupFlowIds.includes(v.flowId);
+      }
+    }
+    
+    if (activeScope === 'group' && activeGroupId) {
+      return v.groupId === activeGroupId;
+    }
+    
+    return true;
+  });
+
+  const getContextName = (v: Variable): string | undefined => {
+    // When inside a flow or group in the workspace, all variables listed are already scoped to that flow/group.
+    // Hiding redundant flow/group text gives full width to variable names.
+    if (selection.type !== 'none' && (activeFlowId || activeGroupId)) {
+      return undefined;
+    }
+
+    if (v.scope === 'local' && v.flowId) {
+      for (const g of state.groups) {
+        const flow = g.flows.find(f => f.id === v.flowId);
+        if (flow) return flow.name;
+      }
+    } else if (v.scope === 'group' && v.groupId) {
+      const g = state.groups.find(group => group.id === v.groupId);
+      if (g) return g.name;
+    }
+    return undefined;
+  };
+
+  if (collapsed) {
+    return (
+      <div className="flex flex-col border-l border-[var(--c-br2)] bg-[var(--c-bg8)] shrink-0 z-20">
+        <button
+          onClick={() => setCollapsed(false)}
+          title="Expand Variables"
+          className="flex items-center gap-2 px-2 py-3 text-[10px] font-bold text-[var(--c-tx3)] hover:text-cyan-400 hover:bg-[var(--c-bg5)] transition-all tracking-widest uppercase border-b border-[var(--c-br2)]"
+          style={{ writingMode: 'vertical-rl', fontFamily: 'JetBrains Mono, monospace' }}
+        >
+          <PanelRightOpen size={13} className="rotate-90" />
+          <span>VARIABLES</span>
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="flex flex-col h-full bg-[var(--c-bg8)] border-l border-[var(--c-br2)] shadow-2xl z-20 shrink-0 relative"
+      style={{ width }}
+    >
+      {/* Header */}
+        <div className="p-3 border-b border-[var(--c-br2)] bg-[var(--c-bg2)]/50">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5 min-w-0 truncate">
+              <h2 className="text-[11px] font-bold uppercase tracking-[0.2em] text-[var(--c-tx3)] truncate" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+                VARIABLES
+              </h2>
+              <button
+                onClick={() => setCollapsed(true)}
+                title="Collapse Variables"
+                className="p-1 rounded text-[var(--c-tx4)] hover:text-[var(--c-tx1)] hover:bg-[var(--c-bg5)] transition-all shrink-0"
+              >
+                <PanelRightClose size={13} />
+              </button>
+            </div>
+          <div className="relative">
             <button
               onClick={() => setShowAdd(!showAdd)}
-              className={`inline-flex items-center gap-1 rounded border px-2.5 py-1 text-[11px] transition-all whitespace-nowrap ${
-                showAdd
-                  ? 'border-cyan-500/50 text-cyan-500 bg-cyan-500/10'
-                  : 'border-[var(--c-br1)] text-[var(--c-tx4)] hover:text-[var(--c-tx2)] hover:border-[var(--c-br3)] hover:bg-[var(--c-bg5)]'
-              }`}
+              className="flex items-center gap-1.5 px-2 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-[10px] font-bold transition-all shadow-lg shadow-cyan-500/10"
               style={{ fontFamily: 'JetBrains Mono, monospace' }}
-              aria-label="Add variable"
             >
-              <Plus size={11} />
-              <span>add</span>
-              <ChevronDown size={10} className={`transition-transform ${showAdd ? 'rotate-180' : ''}`} />
+              <Plus size={12} /> ADD
+              <ChevronDown size={10} className={`transition-transform duration-200 ${showAdd ? 'rotate-180' : ''}`} />
             </button>
 
             {showAdd && (
-              <div className="absolute right-0 top-full mt-1 z-50 bg-[var(--c-bg8)] border border-[var(--c-br1)] rounded shadow-xl shadow-black/20 min-w-40 py-1">
-                {(['numeric', 'list', 'string', 'temporal', 'point', 'boolean'] as const).map(type => (
-                  <button
-                    key={type}
-                    onClick={() => {
-                      setShowAdd(false);
-                      setCreateState({
-                        name: '',
-                        type,
-                        scope: activeScope,
-                        description: '',
-                        configText: defaultConfigTextForType(type),
-                      });
-                      setCreateDialogOpen(true);
-                    }}
-                    className={`w-full flex items-center gap-2 px-3 py-1.5 text-left transition-colors text-[11px] text-[var(--c-tx3)] ${typeStyles[type].hover}`}
-                    style={{ fontFamily: 'JetBrains Mono, monospace' }}
-                  >
-                    <span className={`inline-flex h-4 w-4 items-center justify-center rounded border ${typeStyles[type].badge}`}>
-                      <span className={typeStyles[type].icon}>{typeIcons[type]}</span>
-                    </span>
-                    <span className="capitalize">{type}</span>
-                  </button>
-                ))}
+              <div className="absolute right-0 top-full mt-1.5 z-50 bg-[var(--c-bg2)] border border-[var(--c-br1)] rounded shadow-2xl py-1 min-w-36 animate-in fade-in zoom-in-95 duration-150">
+                {(Object.entries(typeInfo) as [VariableType, typeof typeInfo['numeric']][]).map(([type, info]) => {
+                  const Icon = info.icon;
+                  return (
+                    <button
+                      key={type}
+                      onClick={() => {
+                        setCreateState(prev => ({ ...prev, type }));
+                        setCreateDialogOpen(true);
+                        setShowAdd(false);
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[10px] text-[var(--c-tx2)] hover:bg-cyan-500/10 hover:text-cyan-400 transition-colors"
+                      style={{ fontFamily: 'JetBrains Mono, monospace' }}
+                    >
+                      <Icon size={12} className={info.color} />
+                      <span className="capitalize">{type}</span>
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -195,14 +307,14 @@ export function RightPanel({ variables, selection, onSelectVariable, onInsertVar
       </div>
 
       {/* Scope tabs */}
-      <div className="flex border-b border-[var(--c-br2)] shrink-0">
+      <div className="flex border-b border-[var(--c-br2)] shrink-0 bg-[var(--c-bg2)]/30">
         {scopes.map(scope => (
           <button
             key={scope}
             onClick={() => setActiveScope(scope)}
-            className={`flex-1 py-1.5 text-[10px] tracking-wider border-b-2 transition-all ${
+            className={`flex-1 py-2 text-[10px] tracking-widest border-b-2 transition-all ${
               scope === activeScope
-                ? 'text-cyan-500 border-cyan-500 bg-[var(--c-bg4)]'
+                ? scopeTabColors[scope]
                 : 'text-[var(--c-tx4)] border-transparent hover:text-[var(--c-tx2)]'
             }`}
             style={{ fontFamily: 'JetBrains Mono, monospace' }}
@@ -213,11 +325,14 @@ export function RightPanel({ variables, selection, onSelectVariable, onInsertVar
       </div>
 
       {/* Variables list */}
-      <div className="flex-1 overflow-y-auto py-1">
+      <div className="flex-1 overflow-y-auto custom-scrollbar">
         {filteredVars.length === 0 ? (
-          <div className="flex items-center justify-center h-24 text-[var(--c-tx4)]">
-            <span className="text-[10px]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-              no variables in {activeScope} scope
+          <div className="flex flex-col items-center justify-center h-32 text-[var(--c-tx4)] px-4 text-center">
+            <span className="text-[9px] uppercase tracking-tighter opacity-50 mb-2" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+              Void Space
+            </span>
+            <span className="text-[10px] italic">
+              No variables found in {activeScope} scope
             </span>
           </div>
         ) : (
@@ -227,6 +342,7 @@ export function RightPanel({ variables, selection, onSelectVariable, onInsertVar
               variable={v}
               isSelected={selection.variableId === v.id}
               isFlowSelected={isFlowSelected}
+              contextName={getContextName(v)}
               onSelect={() => onSelectVariable(v.id)}
               onDelete={() => {
                 setDeleteVariable(v);
@@ -243,10 +359,11 @@ export function RightPanel({ variables, selection, onSelectVariable, onInsertVar
         open={createDialogOpen}
         onOpenChange={setCreateDialogOpen}
         activeScope={activeScope}
-        scopeLabel={createScopeLabel}
+        groups={state.groups}
         state={createState}
-        onStateChange={(updates) => setCreateState((current) => ({ ...current, ...updates }))}
+        onStateChange={(updates) => setCreateState(prev => ({ ...prev, ...updates }))}
         onSubmit={handleCreateSubmit}
+        variablesList={variables}
       />
 
       <DeleteVariableDialog
@@ -255,6 +372,22 @@ export function RightPanel({ variables, selection, onSelectVariable, onInsertVar
         variable={deleteVariable}
         onDelete={handleDeleteVariable}
       />
+      {/* Ultrafine Resizer Handle on Left Edge */}
+      <div
+        onMouseDown={handleMouseDownResizer}
+        className="absolute top-0 bottom-0 -left-1 w-2 cursor-col-resize z-40 group flex justify-center"
+        title="Drag to resize width"
+      >
+        <div
+          className={`w-[2px] h-full transition-colors ${
+            isResizing ? 'bg-cyan-500' : 'bg-transparent group-hover:bg-cyan-500/60'
+          }`}
+        />
+      </div>
+
+      {isResizing && (
+        <div className="fixed inset-0 z-[9999] cursor-col-resize select-none" />
+      )}
     </div>
   );
 }

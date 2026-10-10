@@ -189,6 +189,31 @@ public class AppConfig {
         this.useVirtualThreads = useVirtualThreads;
     }
 
+    // ============ Plugin Management Configuration ============
+
+    /**
+     * Directory where external plugin JARs are stored.
+     * Relative to the working directory.
+     * Default: "plugins"
+     */
+    private String pluginsDirectory = "plugins";
+
+    /**
+     * Get the plugins directory path.
+     *
+     * @return path to the directory containing external plugin JARs
+     */
+    public String getPluginsDirectory() {
+        return pluginsDirectory;
+    }
+
+    public void setPluginsDirectory(String pluginsDirectory) {
+        if (pluginsDirectory == null || pluginsDirectory.isBlank()) {
+            throw new IllegalArgumentException("pluginsDirectory cannot be null or blank");
+        }
+        this.pluginsDirectory = pluginsDirectory;
+    }
+
     // ============ Validation Methods ============
 
     /**

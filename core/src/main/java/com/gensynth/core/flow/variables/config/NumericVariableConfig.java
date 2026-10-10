@@ -1,6 +1,8 @@
 package com.gensynth.core.flow.variables.config;
 
 import com.gensynth.core.flow.variables.*;
+import net.objecthunter.exp4j.Expression;
+import net.objecthunter.exp4j.ExpressionBuilder;
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -9,31 +11,78 @@ import java.util.concurrent.ThreadLocalRandom;
  * Supports multiple patterns: Random, Constant, Sequential, Trend.
  */
 public class NumericVariableConfig extends VariableConfiguration {
-    
+
     // Range and format
-    private double fromValue;
-    private double toValue;
-    private double initialValue;
+    private double fromValue = 0.0;
+    private double toValue = 100.0;
+    private Double initialValue;
     private int steps;
     private String format;
-    
+
+    // Advanced config
+    private String formula;
+    private String precision = "DOUBLE"; // "INTEGER", "FLOAT", "DOUBLE"
+    private String distribution = "UNIFORM"; // "UNIFORM", "NORMAL", "EXPONENTIAL"
+
     // Pattern: SEQUENTIAL
     private SequentialConfig sequentialConfig;
-    
+
     // Pattern: TREND
     private TrendConfig trendConfig;
-    
+
     // Pattern: RANDOM / CONSTANT
     private double constantValue;
-    
+
+    // New Advanced Custom Fields
+    private int decimalPlaces = 2;
+    private String integerFormat = "";
+    private String prefix = "";
+    private String suffix = "";
+    private double step = 0.0;
+    private double constantMargin = 0.0;
+    private String distributionType = "UNIFORM";
+    private String boundaryMode = "RIGHT"; // "LEFT", "RIGHT", "SPLIT"
+    private List<Map<String, Object>> sequentialGraph = new ArrayList<>();
+    private List<Map<String, Object>> customDistributionGraph = new ArrayList<>();
+
+    // Pattern: SINUSOIDAL
+    private double sineFrequency = 1.0;
+    private double sineAmplitude = 10.0;
+    private double sinePhase = 0.0;
+    private double sineOffset = 0.0;
+
+    // Pattern: DRIFT
+    private double driftRate = 0.5;
+    private Double driftInitialValue = null;
+    private String driftLimitMode = "CLAMP"; // "CLAMP", "WRAP", "RESET", "BOUNCE"
+    private boolean driftReverseDirection = false;
+
+    // Virtual Simulation Clock
+    private double simulationTimeStep = 1.0; // Seconds per tick
+
+    // Noise Modifier Layer
+    private boolean noiseEnabled = false;
+    private String noiseType = "GAUSSIAN"; // "GAUSSIAN", "UNIFORM"
+    private double noiseAmplitude = 1.0;
+    private double noiseStdDev = 1.0;
+
+    // Spike Anomaly Modifier Layer
+    private boolean spikeEnabled = false;
+    private double spikeProbability = 0.05; // 0.0 to 1.0 (or 0 to 100%)
+    private String spikeMode = "FIXED_OFFSET"; // "FIXED_OFFSET", "RANGE_SPIKE", "MULTIPLIER"
+    private double spikeMagnitude = 50.0;
+    private double spikeMin = 100.0;
+    private double spikeMax = 200.0;
+    private double spikeMultiplier = 2.0;
+
     // Internal state
     private double currentValue;
     private boolean isAnomalous;
     private long anomalyStartTick;
-    
+
     // Performance optimization: cache for tick-based anomalies
-    private long cachedWhenTicks = -1;  // -1 means not calculated yet
-    private double stepSize;  // Pre-calculated for sequential pattern
+    private long cachedWhenTicks = -1; // -1 means not calculated yet
+    private double stepSize; // Pre-calculated for sequential pattern
 
     public NumericVariableConfig() {
         super();
@@ -46,38 +95,285 @@ public class NumericVariableConfig extends VariableConfiguration {
         calculateStepSize();
     }
 
+    private static final java.util.logging.Logger configLogger = java.util.logging.Logger.getLogger(NumericVariableConfig.class.getName());
+
+    @Override
+    public java.util.List<String> validate() {
+        java.util.List<String> errors = new java.util.ArrayList<>();
+        if (fromValue > toValue) {
+            errors.add("Numeric range is invalid: min must be <= max");
+        }
+        if (initialValue != null && (initialValue < fromValue || initialValue > toValue)) {
+            errors.add("Initial value " + initialValue + " is outside [min, max] range [" + fromValue + ", " + toValue + "]");
+        }
+        if (step < 0) {
+            errors.add("Step cannot be negative");
+        }
+        if (step > 0 && step > (toValue - fromValue)) {
+            errors.add("Step " + step + " exceeds the range [min, max]: no value can be generated");
+        }
+        if (pattern == GenerationPattern.SEQUENTIAL && steps <= 0) {
+            errors.add("Steps must be > 0 for SEQUENTIAL pattern");
+        }
+        if (pattern == GenerationPattern.FORMULA && (formula == null || formula.trim().isEmpty())) {
+            errors.add("Formula pattern requires a non-empty formula expression");
+        }
+        if (pattern == GenerationPattern.DISTRIBUTION && "CUSTOM".equalsIgnoreCase(distributionType)) {
+            if (customDistributionGraph == null || customDistributionGraph.isEmpty()) {
+                errors.add("Custom distribution requires at least one segment");
+            } else {
+                double totalWeight = 0;
+                for (Map<String, Object> pt : customDistributionGraph) {
+                    Number wNum = (Number) pt.get("weight");
+                    if (wNum != null) {
+                        totalWeight += wNum.doubleValue();
+                    }
+                }
+                if (totalWeight <= 0) {
+                    errors.add("Custom distribution: all weights are zero or negative");
+                }
+            }
+        }
+        return errors;
+    }
+
+    @Override
+    public java.util.Set<String> getDependencies() {
+        java.util.Set<String> deps = super.getDependencies();
+        if (pattern == GenerationPattern.FORMULA && formula != null && !formula.trim().isEmpty()) {
+            // Very basic heuristic: extract variable names from formula via regex
+            java.util.regex.Matcher m = java.util.regex.Pattern
+                    .compile("(?:\\x5B|\\x7B\\x7B)([a-zA-Z0-9_-]+)(?:\\x5D|\\x7D\\x7D)").matcher(formula);
+            while (m.find()) {
+                deps.add(m.group(1));
+            }
+        }
+        return deps;
+    }
+
     @Override
     public Object generateNextValue() {
         tickCounter++;
         checkAnomalyCondition();
-        
+
         if (isAnomalous) {
             return anomalyConfig.getAnomalousValue();
         }
-        
-        switch (pattern) {
-            case RANDOM:
-                currentValue = fromValue + (toValue - fromValue) * ThreadLocalRandom.current().nextDouble();
-                break;
-            case CONSTANT:
-                currentValue = constantValue;
-                break;
-            case SEQUENTIAL:
-                currentValue = generateSequential();
-                break;
-            case TREND:
-                currentValue = generateTrend();
-                break;
-            default:
-                currentValue = initialValue;
+
+        if (sourceListVariableId != null && !sourceListVariableId.trim().isEmpty()) {
+            Object refVal = resolveListReferenceValue();
+            if (refVal != null) {
+                try {
+                    if (refVal instanceof Number) {
+                        currentValue = ((Number) refVal).doubleValue();
+                    } else {
+                        currentValue = Double.parseDouble(refVal.toString().trim());
+                    }
+                    if (noiseEnabled) currentValue = applyNoise(currentValue);
+                    if (spikeEnabled) currentValue = applySpike(currentValue);
+                    return formatValue(currentValue);
+                } catch (Exception ignored) {
+                    // Fallback to standard numeric generation
+                }
+            }
         }
-        
+
+        double baseValue;
+
+        if (pattern == GenerationPattern.FORMULA) {
+            if (formula != null && !formula.trim().isEmpty()) {
+                baseValue = evaluateFormula();
+            } else {
+                baseValue = 0.0;
+            }
+        } else if (tickCounter == 1 && initialValue != null && 
+                  (pattern == GenerationPattern.RANDOM || pattern == GenerationPattern.SEQUENTIAL)) {
+            baseValue = initialValue;
+        } else {
+            switch (pattern) {
+                case RANDOM:
+                    if (step > 0 && (toValue - fromValue) > 0) {
+                        double range = toValue - fromValue;
+                        long numSteps = (long) (range / step);
+                        if (numSteps > 0) {
+                            long randomStep = ThreadLocalRandom.current().nextLong(0, numSteps + 1);
+                            baseValue = fromValue + (randomStep * step);
+                            baseValue = Math.min(Math.max(baseValue, fromValue), toValue);
+                        } else {
+                            baseValue = fromValue;
+                        }
+                    } else {
+                        baseValue = generateDistribution();
+                    }
+                    break;
+                case CONSTANT:
+                    if (constantMargin > 0.0) {
+                        double randomOffset = ThreadLocalRandom.current().nextDouble(-constantMargin, constantMargin);
+                        baseValue = constantValue + randomOffset;
+                        if (fromValue < toValue) {
+                            baseValue = Math.min(Math.max(baseValue, fromValue), toValue);
+                        }
+                    } else {
+                        baseValue = constantValue;
+                    }
+                    break;
+                case SEQUENTIAL:
+                    baseValue = generateSequential();
+                    break;
+                case DISTRIBUTION:
+                    if ("CUSTOM".equalsIgnoreCase(distributionType)) {
+                        baseValue = generateCustomDistribution();
+                    } else {
+                        baseValue = generateDistribution();
+                    }
+                    break;
+                case TREND:
+                    baseValue = generateTrend();
+                    break;
+                case SINUSOIDAL:
+                    baseValue = generateSinusoidal();
+                    break;
+                case DRIFT:
+                    baseValue = generateDrift();
+                    break;
+                default:
+                    baseValue = initialValue != null ? initialValue : fromValue;
+            }
+        }
+
+        currentValue = baseValue;
+
+        // Apply Noise modifier layer if enabled
+        if (noiseEnabled) {
+            currentValue = applyNoise(currentValue);
+        }
+
+        // Apply Spike anomaly modifier layer if enabled
+        if (spikeEnabled) {
+            currentValue = applySpike(currentValue);
+        }
+
         return formatValue(currentValue);
     }
 
+    private double generateSinusoidal() {
+        // Relative simulation time t in seconds
+        double t = (tickCounter - 1) * simulationTimeStep;
+        return sineOffset + sineAmplitude * Math.sin(2.0 * Math.PI * sineFrequency * t + sinePhase);
+    }
+
+    private double generateDrift() {
+        double startVal = driftInitialValue != null ? driftInitialValue : (initialValue != null ? initialValue : fromValue);
+        double t = (tickCounter - 1) * simulationTimeStep;
+        double effectiveRate = driftReverseDirection ? -driftRate : driftRate;
+        double rawVal = startVal + effectiveRate * t;
+
+        if (fromValue < toValue) {
+            String mode = driftLimitMode != null ? driftLimitMode.toUpperCase() : "CLAMP";
+            switch (mode) {
+                case "BOUNCE":
+                    if (rawVal > toValue) {
+                        driftReverseDirection = true;
+                        rawVal = toValue - (rawVal - toValue);
+                    } else if (rawVal < fromValue) {
+                        driftReverseDirection = false;
+                        rawVal = fromValue + (fromValue - rawVal);
+                    }
+                    return Math.min(Math.max(rawVal, fromValue), toValue);
+                case "WRAP":
+                case "RESET":
+                    if (rawVal > toValue) {
+                        double range = toValue - fromValue;
+                        rawVal = fromValue + ((rawVal - fromValue) % range);
+                    } else if (rawVal < fromValue) {
+                        double range = toValue - fromValue;
+                        rawVal = toValue - ((toValue - rawVal) % range);
+                    }
+                    return rawVal;
+                case "CLAMP":
+                default:
+                    return Math.min(Math.max(rawVal, fromValue), toValue);
+            }
+        }
+        return rawVal;
+    }
+
+    private double applyNoise(double val) {
+        if ("UNIFORM".equalsIgnoreCase(noiseType)) {
+            double jitter = ThreadLocalRandom.current().nextDouble(-noiseAmplitude, noiseAmplitude);
+            return val + jitter;
+        } else { // GAUSSIAN
+            double noise = ThreadLocalRandom.current().nextGaussian() * noiseStdDev;
+            return val + noise;
+        }
+    }
+
+    private double applySpike(double val) {
+        double probThreshold = spikeProbability > 1.0 ? spikeProbability / 100.0 : spikeProbability;
+        if (ThreadLocalRandom.current().nextDouble() < probThreshold) {
+            String mode = spikeMode != null ? spikeMode.toUpperCase() : "FIXED_OFFSET";
+            switch (mode) {
+                case "RANGE_SPIKE":
+                case "OUT_OF_RANGE":
+                    if (spikeMin < spikeMax) {
+                        return spikeMin + (spikeMax - spikeMin) * ThreadLocalRandom.current().nextDouble();
+                    }
+                    return spikeMin;
+                case "MULTIPLIER":
+                    return val * spikeMultiplier;
+                case "FIXED_OFFSET":
+                default:
+                    boolean positive = ThreadLocalRandom.current().nextBoolean();
+                    return val + (positive ? spikeMagnitude : -spikeMagnitude);
+            }
+        }
+        return val;
+    }
+
+    private double generateDistribution() {
+        String dist = (distributionType != null && !distributionType.equalsIgnoreCase("UNIFORM")) ? distributionType
+                : distribution;
+        if ("NORMAL".equalsIgnoreCase(dist)) {
+            double mean = (fromValue + toValue) / 2.0;
+            double stdDev = (toValue - fromValue) / 6.0; // 99.7% of values within range
+            double val = mean + ThreadLocalRandom.current().nextGaussian() * stdDev;
+            return Math.min(Math.max(val, fromValue), toValue);
+        } else if ("EXPONENTIAL".equalsIgnoreCase(dist)) {
+            double val = fromValue - Math.log(ThreadLocalRandom.current().nextDouble()) * ((toValue - fromValue) / 5.0);
+            return Math.min(Math.max(val, fromValue), toValue);
+        } else {
+            // UNIFORM
+            return fromValue + (toValue - fromValue) * ThreadLocalRandom.current().nextDouble();
+        }
+    }
+
+    private double evaluateFormula() {
+        try {
+            // Replace [var] or {{var}} with actual variable names for exp4j
+            String parsedFormula = formula.replaceAll("(?:\\x5B|\\x7B\\x7B)([a-zA-Z0-9_-]+)(?:\\x5D|\\x7D\\x7D)", "$1");
+            ExpressionBuilder builder = new ExpressionBuilder(parsedFormula);
+
+            Map<String, Double> vars = new HashMap<>();
+            for (Map.Entry<String, Object> entry : currentContext.entrySet()) {
+                if (entry.getValue() instanceof Number) {
+                    builder.variable(entry.getKey());
+                    vars.put(entry.getKey(), ((Number) entry.getValue()).doubleValue());
+                }
+            }
+
+            Expression expression = builder.build();
+            expression.setVariables(vars);
+            return expression.evaluate();
+        } catch (Exception e) {
+            configLogger.warning("Error evaluating formula: " + formula + " -> " + e.getMessage());
+            return 0.0;
+        }
+    }
+
     private void checkAnomalyCondition() {
-        if (!anomalyConfig.isEnabled()) return;
-        
+        if (!anomalyConfig.isEnabled())
+            return;
+
         if (anomalyConfig.isEnabledProbabilityMode()) {
             // Probability-based: each tick has a chance to trigger
             double probabilityThreshold = anomalyConfig.getProbabilityRatio() / 100.0;
@@ -89,17 +385,16 @@ public class NumericVariableConfig extends VariableConfiguration {
             // Tick-based: calculate once, then check
             if (cachedWhenTicks == -1) {
                 cachedWhenTicks = getRandomLongInRange(
-                    anomalyConfig.getWhenTicksRangeMin(),
-                    anomalyConfig.getWhenTicksRangeMax()
-                );
+                        anomalyConfig.getWhenTicksRangeMin(),
+                        anomalyConfig.getWhenTicksRangeMax());
             }
-            
+
             if (tickCounter == cachedWhenTicks && !isAnomalous) {
                 isAnomalous = true;
                 anomalyStartTick = tickCounter;
             }
         }
-        
+
         // Handle anomaly duration (same logic for both modes)
         if (isAnomalous) {
             handleAnomalyDuration();
@@ -129,9 +424,9 @@ public class NumericVariableConfig extends VariableConfiguration {
         }
     }
 
-    private double generateSequential() {
+    private double generateOriginalSequential() {
         if (sequentialConfig.descending) {
-            currentValue -= stepSize;  // Pre-calculated, no division needed
+            currentValue -= stepSize; // Pre-calculated, no division needed
             if (currentValue < fromValue) {
                 if (sequentialConfig.goBack) {
                     currentValue = fromValue;
@@ -141,7 +436,7 @@ public class NumericVariableConfig extends VariableConfiguration {
                 }
             }
         } else {
-            currentValue += stepSize;  // Pre-calculated
+            currentValue += stepSize; // Pre-calculated
             if (currentValue > toValue) {
                 if (sequentialConfig.goBack) {
                     currentValue = toValue;
@@ -154,23 +449,242 @@ public class NumericVariableConfig extends VariableConfiguration {
         return currentValue;
     }
 
+    private double generateSequential() {
+        if (sequentialGraph == null || sequentialGraph.isEmpty()) {
+            return generateOriginalSequential();
+        }
+
+        // Find max x in the graph
+        double maxX = 0;
+        for (Map<String, Object> pt : sequentialGraph) {
+            Number xNum = (Number) pt.get("x");
+            if (xNum != null && xNum.doubleValue() > maxX) {
+                maxX = xNum.doubleValue();
+            }
+        }
+
+        if (maxX <= 0) {
+            return fromValue;
+        }
+
+        // Current index in the loop
+        double index = (tickCounter - 1) % maxX; // tickCounter is already incremented in generateNextValue()
+
+        // Find the bracket points
+        Map<String, Object> before = null;
+        Map<String, Object> after = null;
+
+        for (Map<String, Object> pt : sequentialGraph) {
+            Number xNum = (Number) pt.get("x");
+            if (xNum == null)
+                continue;
+            double px = xNum.doubleValue();
+            if (px == index) {
+                Number yNum = (Number) pt.get("y");
+                return yNum != null ? yNum.doubleValue() : fromValue;
+            }
+            if (px < index) {
+                if (before == null || px > ((Number) before.get("x")).doubleValue()) {
+                    before = pt;
+                }
+            }
+            if (px > index) {
+                if (after == null || px < ((Number) after.get("x")).doubleValue()) {
+                    after = pt;
+                }
+            }
+        }
+
+        // Interpolate
+        if (before != null && after != null) {
+            double x1 = ((Number) before.get("x")).doubleValue();
+            double y1 = ((Number) before.get("y")).doubleValue();
+            double x2 = ((Number) after.get("x")).doubleValue();
+            double y2 = ((Number) after.get("y")).doubleValue();
+            return y1 + (y2 - y1) * (index - x1) / (x2 - x1);
+        } else if (before != null) {
+            return ((Number) before.get("y")).doubleValue();
+        } else if (after != null) {
+            return ((Number) after.get("y")).doubleValue();
+        }
+
+        return fromValue;
+    }
+
+    private double generateRandomInInterval(double f, double t) {
+        if ("LEFT".equalsIgnoreCase(boundaryMode)) {
+            return t - (t - f) * ThreadLocalRandom.current().nextDouble();
+        } else if ("SPLIT".equalsIgnoreCase(boundaryMode)) {
+            if (ThreadLocalRandom.current().nextBoolean()) {
+                return t - (t - f) * ThreadLocalRandom.current().nextDouble();
+            } else {
+                return f + (t - f) * ThreadLocalRandom.current().nextDouble();
+            }
+        } else {
+            return f + (t - f) * ThreadLocalRandom.current().nextDouble();
+        }
+    }
+
+    private double generateCustomDistribution() {
+        if (customDistributionGraph == null || customDistributionGraph.isEmpty()) {
+            return fromValue + (toValue - fromValue) * ThreadLocalRandom.current().nextDouble();
+        }
+
+        double totalWeight = 0;
+        for (Map<String, Object> pt : customDistributionGraph) {
+            Number wNum = (Number) pt.get("weight");
+            if (wNum != null) {
+                totalWeight += wNum.doubleValue();
+            }
+        }
+
+        if (totalWeight <= 0) {
+            Map<String, Object> first = customDistributionGraph.get(0);
+            Number fromNum = (Number) first.get("from");
+            Number toNum = (Number) first.get("to");
+            if (fromNum != null && toNum != null) {
+                return generateRandomInInterval(fromNum.doubleValue(), toNum.doubleValue());
+            }
+            Number valNum = (Number) first.get("value");
+            return valNum != null ? valNum.doubleValue() : fromValue;
+        }
+
+        double r = ThreadLocalRandom.current().nextDouble() * totalWeight;
+        double cumulativeWeight = 0;
+        for (Map<String, Object> pt : customDistributionGraph) {
+            Number wNum = (Number) pt.get("weight");
+            if (wNum == null)
+                continue;
+            cumulativeWeight += wNum.doubleValue();
+            if (r <= cumulativeWeight) {
+                Number fromNum = (Number) pt.get("from");
+                Number toNum = (Number) pt.get("to");
+                if (fromNum != null && toNum != null) {
+                    return generateRandomInInterval(fromNum.doubleValue(), toNum.doubleValue());
+                }
+                Number valNum = (Number) pt.get("value");
+                return valNum != null ? valNum.doubleValue() : fromValue;
+            }
+        }
+
+        Map<String, Object> last = customDistributionGraph.get(customDistributionGraph.size() - 1);
+        Number fromNum = (Number) last.get("from");
+        Number toNum = (Number) last.get("to");
+        if (fromNum != null && toNum != null) {
+            return generateRandomInInterval(fromNum.doubleValue(), toNum.doubleValue());
+        }
+        Number valNum = (Number) last.get("value");
+        return valNum != null ? valNum.doubleValue() : fromValue;
+    }
+
     private double generateTrend() {
         int intervalIndex = (int) ((tickCounter / trendConfig.intervalSize) % trendConfig.getIntervalCount());
         double intervalMin = fromValue + (intervalIndex * (toValue - fromValue) / trendConfig.getIntervalCount());
         double intervalMax = fromValue + ((intervalIndex + 1) * (toValue - fromValue) / trendConfig.getIntervalCount());
-        
+
         return intervalMin + (intervalMax - intervalMin) * ThreadLocalRandom.current().nextDouble();
     }
 
     private Object formatValue(double value) {
-        if (steps < 10) {
-            return (long) value;
+        String activePrefix = this.prefix != null ? this.prefix : "";
+        String activeSuffix = this.suffix != null ? this.suffix : "";
+        String numberFormat = "";
+        boolean hasFormatSpec = false;
+
+        if (integerFormat != null && !integerFormat.isEmpty()) {
+            if (integerFormat.contains("(") && integerFormat.contains(")")) {
+                int start = integerFormat.indexOf('(');
+                int end = integerFormat.indexOf(')');
+                if (start < end) {
+                    if (activePrefix.isEmpty()) {
+                        activePrefix = integerFormat.substring(start + 1, end);
+                    }
+                    numberFormat = integerFormat.substring(end + 1);
+                    hasFormatSpec = true;
+                }
+            } else {
+                numberFormat = integerFormat;
+                hasFormatSpec = true;
+            }
         }
-        return value;
+
+        if ("INTEGER".equalsIgnoreCase(precision)) {
+            long intVal = (long) value;
+            String formattedNum;
+            if (hasFormatSpec && numberFormat.matches("0*1?")) {
+                int padLen = numberFormat.length();
+                if (padLen > 0) {
+                    formattedNum = String.format("%0" + padLen + "d", intVal);
+                } else {
+                    formattedNum = String.valueOf(intVal);
+                }
+            } else {
+                formattedNum = String.valueOf(intVal);
+            }
+
+            if (!activePrefix.isEmpty() || !activeSuffix.isEmpty()) {
+                return activePrefix + formattedNum + activeSuffix;
+            }
+            return hasFormatSpec ? formattedNum : intVal;
+        } else {
+            double roundedValue = value;
+            int activeDecimalPlaces = this.decimalPlaces;
+            if (pattern == GenerationPattern.CONSTANT) {
+                if (constantMargin == 0.0) {
+                    if (constantValue % 1.0 == 0.0) {
+                        activeDecimalPlaces = 0;
+                    }
+                } else {
+                    if (constantMargin % 1.0 == 0.0 && constantValue % 1.0 == 0.0) {
+                        activeDecimalPlaces = 0;
+                    }
+                }
+            }
+
+            if (activeDecimalPlaces >= 0) {
+                double scale = Math.pow(10, activeDecimalPlaces);
+                roundedValue = Math.round(value * scale) / scale;
+            }
+
+            if (hasFormatSpec || !activePrefix.isEmpty() || !activeSuffix.isEmpty()) {
+                String formattedNum;
+                String strValue = String.format(Locale.US,
+                        "%." + (activeDecimalPlaces >= 0 ? activeDecimalPlaces : 2) + "f", roundedValue);
+                int dotIdx = strValue.indexOf('.');
+                String intPartStr = dotIdx >= 0 ? strValue.substring(0, dotIdx) : strValue;
+                String decPartStr = dotIdx >= 0 ? strValue.substring(dotIdx) : "";
+
+                boolean isNegative = intPartStr.startsWith("-");
+                if (isNegative) {
+                    intPartStr = intPartStr.substring(1);
+                }
+
+                if (hasFormatSpec && numberFormat.matches("0*1?")) {
+                    int padLen = numberFormat.length();
+                    if (padLen > 0) {
+                        try {
+                            long intPartVal = Long.parseLong(intPartStr);
+                            intPartStr = String.format("%0" + padLen + "d", intPartVal);
+                        } catch (NumberFormatException e) {
+                            // ignore, keep original
+                        }
+                    }
+                }
+
+                formattedNum = (isNegative ? "-" : "") + intPartStr + decPartStr;
+                return activePrefix + formattedNum + activeSuffix;
+            }
+
+            if ("FLOAT".equalsIgnoreCase(precision)) {
+                return (float) roundedValue;
+            }
+            return roundedValue; // DOUBLE
+        }
     }
 
     private long getRandomLongInRange(long min, long max) {
-        if (min == max) return min;
+        if (min == max)
+            return min;
         return ThreadLocalRandom.current().nextLong(min, max + 1);
     }
 
@@ -184,25 +698,142 @@ public class NumericVariableConfig extends VariableConfiguration {
 
     @Override
     public void reset() {
-        currentValue = initialValue;
+        currentValue = initialValue != null ? initialValue : fromValue;
         tickCounter = 0;
         isAnomalous = false;
         anomalyStartTick = 0;
+        driftReverseDirection = false;
     }
 
     @Override
     public Map<String, Object> toMap() {
-        Map<String, Object> map = new HashMap<>(8);
+        Map<String, Object> map = new HashMap<>(32);
         map.put("identifier", identifier);
         map.put("type", type.name());
         map.put("pattern", pattern.name());
         map.put("from", fromValue);
         map.put("to", toValue);
+        map.put("min", fromValue);
+        map.put("max", toValue);
         map.put("initial", initialValue);
+        map.put("initialValue", initialValue);
         map.put("steps", steps);
         map.put("format", format);
+        map.put("formula", formula);
+        map.put("precision", precision);
+        map.put("distribution", distribution);
+        map.put("decimalPlaces", decimalPlaces);
+        map.put("integerFormat", integerFormat);
+        map.put("prefix", prefix);
+        map.put("suffix", suffix);
+        map.put("step", step);
+        map.put("constantValue", constantValue);
+        map.put("constantMargin", constantMargin);
+        map.put("distributionType", distributionType);
+        map.put("boundaryMode", boundaryMode);
+        map.put("sequentialGraph", sequentialGraph);
+        map.put("customDistributionGraph", customDistributionGraph);
+
+        // Sinusoidal
+        map.put("sineFrequency", sineFrequency);
+        map.put("sineAmplitude", sineAmplitude);
+        map.put("sinePhase", sinePhase);
+        map.put("sineOffset", sineOffset);
+
+        // Drift
+        map.put("driftRate", driftRate);
+        map.put("driftInitialValue", driftInitialValue);
+        map.put("driftLimitMode", driftLimitMode);
+
+        // Simulation Clock
+        map.put("simulationTimeStep", simulationTimeStep);
+
+        // Noise
+        map.put("noiseEnabled", noiseEnabled);
+        map.put("noiseType", noiseType);
+        map.put("noiseAmplitude", noiseAmplitude);
+        map.put("noiseStdDev", noiseStdDev);
+
+        // Spikes
+        map.put("spikeEnabled", spikeEnabled);
+        map.put("spikeProbability", spikeProbability);
+        map.put("spikeMode", spikeMode);
+        map.put("spikeMagnitude", spikeMagnitude);
+        map.put("spikeMin", spikeMin);
+        map.put("spikeMax", spikeMax);
+        map.put("spikeMultiplier", spikeMultiplier);
+
         return map;
     }
+
+    // Builder methods for Sinusoidal, Drift, Clock, Noise, Spikes
+    public NumericVariableConfig sineFrequency(double val) { this.sineFrequency = val; return this; }
+    public NumericVariableConfig sineAmplitude(double val) { this.sineAmplitude = val; return this; }
+    public NumericVariableConfig sinePhase(double val) { this.sinePhase = val; return this; }
+    public NumericVariableConfig sineOffset(double val) { this.sineOffset = val; return this; }
+
+    public NumericVariableConfig driftRate(double val) { this.driftRate = val; return this; }
+    public NumericVariableConfig driftInitialValue(Double val) { this.driftInitialValue = val; return this; }
+    public NumericVariableConfig driftLimitMode(String val) { this.driftLimitMode = val; return this; }
+
+    public NumericVariableConfig simulationTimeStep(double val) { this.simulationTimeStep = val; return this; }
+
+    public NumericVariableConfig noiseEnabled(boolean val) { this.noiseEnabled = val; return this; }
+    public NumericVariableConfig noiseType(String val) { this.noiseType = val; return this; }
+    public NumericVariableConfig noiseAmplitude(double val) { this.noiseAmplitude = val; return this; }
+    public NumericVariableConfig noiseStdDev(double val) { this.noiseStdDev = val; return this; }
+
+    public NumericVariableConfig spikeEnabled(boolean val) { this.spikeEnabled = val; return this; }
+    public NumericVariableConfig spikeProbability(double val) { this.spikeProbability = val; return this; }
+    public NumericVariableConfig spikeMode(String val) { this.spikeMode = val; return this; }
+    public NumericVariableConfig spikeMagnitude(double val) { this.spikeMagnitude = val; return this; }
+    public NumericVariableConfig spikeMin(double val) { this.spikeMin = val; return this; }
+    public NumericVariableConfig spikeMax(double val) { this.spikeMax = val; return this; }
+    public NumericVariableConfig spikeMultiplier(double val) { this.spikeMultiplier = val; return this; }
+
+    // Getters & Setters
+    public double getSineFrequency() { return sineFrequency; }
+    public void setSineFrequency(double sineFrequency) { this.sineFrequency = sineFrequency; }
+    public double getSineAmplitude() { return sineAmplitude; }
+    public void setSineAmplitude(double sineAmplitude) { this.sineAmplitude = sineAmplitude; }
+    public double getSinePhase() { return sinePhase; }
+    public void setSinePhase(double sinePhase) { this.sinePhase = sinePhase; }
+    public double getSineOffset() { return sineOffset; }
+    public void setSineOffset(double sineOffset) { this.sineOffset = sineOffset; }
+
+    public double getDriftRate() { return driftRate; }
+    public void setDriftRate(double driftRate) { this.driftRate = driftRate; }
+    public Double getDriftInitialValue() { return driftInitialValue; }
+    public void setDriftInitialValue(Double driftInitialValue) { this.driftInitialValue = driftInitialValue; }
+    public String getDriftLimitMode() { return driftLimitMode; }
+    public void setDriftLimitMode(String driftLimitMode) { this.driftLimitMode = driftLimitMode; }
+
+    public double getSimulationTimeStep() { return simulationTimeStep; }
+    public void setSimulationTimeStep(double simulationTimeStep) { this.simulationTimeStep = simulationTimeStep; }
+
+    public boolean isNoiseEnabled() { return noiseEnabled; }
+    public void setNoiseEnabled(boolean noiseEnabled) { this.noiseEnabled = noiseEnabled; }
+    public String getNoiseType() { return noiseType; }
+    public void setNoiseType(String noiseType) { this.noiseType = noiseType; }
+    public double getNoiseAmplitude() { return noiseAmplitude; }
+    public void setNoiseAmplitude(double noiseAmplitude) { this.noiseAmplitude = noiseAmplitude; }
+    public double getNoiseStdDev() { return noiseStdDev; }
+    public void setNoiseStdDev(double noiseStdDev) { this.noiseStdDev = noiseStdDev; }
+
+    public boolean isSpikeEnabled() { return spikeEnabled; }
+    public void setSpikeEnabled(boolean spikeEnabled) { this.spikeEnabled = spikeEnabled; }
+    public double getSpikeProbability() { return spikeProbability; }
+    public void setSpikeProbability(double spikeProbability) { this.spikeProbability = spikeProbability; }
+    public String getSpikeMode() { return spikeMode; }
+    public void setSpikeMode(String spikeMode) { this.spikeMode = spikeMode; }
+    public double getSpikeMagnitude() { return spikeMagnitude; }
+    public void setSpikeMagnitude(double spikeMagnitude) { this.spikeMagnitude = spikeMagnitude; }
+    public double getSpikeMin() { return spikeMin; }
+    public void setSpikeMin(double spikeMin) { this.spikeMin = spikeMin; }
+    public double getSpikeMax() { return spikeMax; }
+    public void setSpikeMax(double spikeMax) { this.spikeMax = spikeMax; }
+    public double getSpikeMultiplier() { return spikeMultiplier; }
+    public void setSpikeMultiplier(double spikeMultiplier) { this.spikeMultiplier = spikeMultiplier; }
 
     // Builder methods
     @Override
@@ -226,7 +857,7 @@ public class NumericVariableConfig extends VariableConfiguration {
     @Override
     public NumericVariableConfig anomaly(AnomalyConfig config) {
         super.anomaly(config);
-        this.cachedWhenTicks = -1;  // Reset cache when anomaly config changes
+        this.cachedWhenTicks = -1; // Reset cache when anomaly config changes
         return this;
     }
 
@@ -265,15 +896,183 @@ public class NumericVariableConfig extends VariableConfiguration {
         return this;
     }
 
+    public NumericVariableConfig formula(String formula) {
+        this.formula = formula;
+        return this;
+    }
+
+    public NumericVariableConfig precision(String precision) {
+        this.precision = precision;
+        return this;
+    }
+
+    public NumericVariableConfig distribution(String distribution) {
+        this.distribution = distribution;
+        return this;
+    }
+
+    public NumericVariableConfig decimalPlaces(int decimalPlaces) {
+        this.decimalPlaces = decimalPlaces;
+        return this;
+    }
+
+    public NumericVariableConfig integerFormat(String integerFormat) {
+        this.integerFormat = integerFormat;
+        return this;
+    }
+
+    public NumericVariableConfig prefix(String prefix) {
+        this.prefix = prefix;
+        return this;
+    }
+
+    public NumericVariableConfig suffix(String suffix) {
+        this.suffix = suffix;
+        return this;
+    }
+
+    public NumericVariableConfig step(double step) {
+        this.step = step;
+        return this;
+    }
+
+    public NumericVariableConfig constantMargin(double constantMargin) {
+        this.constantMargin = constantMargin;
+        return this;
+    }
+
+    public NumericVariableConfig distributionType(String distributionType) {
+        this.distributionType = distributionType;
+        return this;
+    }
+
+    public NumericVariableConfig sequentialGraph(List<Map<String, Object>> sequentialGraph) {
+        this.sequentialGraph = sequentialGraph;
+        return this;
+    }
+
+    public NumericVariableConfig customDistributionGraph(List<Map<String, Object>> customDistributionGraph) {
+        this.customDistributionGraph = customDistributionGraph;
+        return this;
+    }
+
+    public NumericVariableConfig boundaryMode(String boundaryMode) {
+        this.boundaryMode = boundaryMode;
+        return this;
+    }
+
     // Getters
-    public double getFromValue() { return fromValue; }
-    public double getToValue() { return toValue; }
-    public double getInitialValue() { return initialValue; }
-    public double getCurrentValue() { return currentValue; }
-    public int getSteps() { return steps; }
-    public String getFormat() { return format; }
-    public SequentialConfig getSequentialConfig() { return sequentialConfig; }
-    public TrendConfig getTrendConfig() { return trendConfig; }
+    public double getFromValue() {
+        return fromValue;
+    }
+
+    public double getToValue() {
+        return toValue;
+    }
+
+    public double getInitialValue() {
+        return initialValue != null ? initialValue : fromValue;
+    }
+
+    public double getCurrentValue() {
+        return currentValue;
+    }
+
+    public int getSteps() {
+        return steps;
+    }
+
+    public String getFormat() {
+        return format;
+    }
+
+    public SequentialConfig getSequentialConfig() {
+        return sequentialConfig;
+    }
+
+    public TrendConfig getTrendConfig() {
+        return trendConfig;
+    }
+
+    public int getDecimalPlaces() {
+        return decimalPlaces;
+    }
+
+    public void setDecimalPlaces(int decimalPlaces) {
+        this.decimalPlaces = decimalPlaces;
+    }
+
+    public String getIntegerFormat() {
+        return integerFormat;
+    }
+
+    public void setIntegerFormat(String integerFormat) {
+        this.integerFormat = integerFormat;
+    }
+
+    public String getPrefix() {
+        return prefix;
+    }
+
+    public void setPrefix(String prefix) {
+        this.prefix = prefix;
+    }
+
+    public String getSuffix() {
+        return suffix;
+    }
+
+    public void setSuffix(String suffix) {
+        this.suffix = suffix;
+    }
+
+    public double getStep() {
+        return step;
+    }
+
+    public void setStep(double step) {
+        this.step = step;
+    }
+
+    public double getConstantMargin() {
+        return constantMargin;
+    }
+
+    public void setConstantMargin(double constantMargin) {
+        this.constantMargin = constantMargin;
+    }
+
+    public String getDistributionType() {
+        return distributionType;
+    }
+
+    public void setDistributionType(String distributionType) {
+        this.distributionType = distributionType;
+    }
+
+    public List<Map<String, Object>> getSequentialGraph() {
+        return sequentialGraph;
+    }
+
+    public void setSequentialGraph(List<Map<String, Object>> sequentialGraph) {
+        this.sequentialGraph = sequentialGraph;
+    }
+
+    public List<Map<String, Object>> getCustomDistributionGraph() {
+        return customDistributionGraph;
+    }
+
+    public void setCustomDistributionGraph(List<Map<String, Object>> customDistributionGraph) {
+        this.customDistributionGraph = customDistributionGraph;
+    }
+
+    public String getBoundaryMode() {
+        return boundaryMode;
+    }
+
+    public void setBoundaryMode(String boundaryMode) {
+        this.boundaryMode = boundaryMode;
+    }
 
     /**
      * Configuration for Sequential pattern
@@ -282,7 +1081,7 @@ public class NumericVariableConfig extends VariableConfiguration {
         public boolean descending = false;
         public boolean goBack = true;
         public boolean proportional = true;
-        
+
         public SequentialConfig descending(boolean desc) {
             this.descending = desc;
             return this;
@@ -303,12 +1102,14 @@ public class NumericVariableConfig extends VariableConfiguration {
      * Configuration for trend pattern
      */
     public static class TrendConfig {
-        public enum TrendMode { NORMAL, GRADUAL, JUMPING }
-        
+        public enum TrendMode {
+            NORMAL, GRADUAL, JUMPING
+        }
+
         public TrendMode mode = TrendMode.NORMAL;
         public int intervalCount = 10;
         public int intervalSize = 1;
-        
+
         public TrendConfig mode(TrendMode mode) {
             this.mode = mode;
             return this;
@@ -319,6 +1120,8 @@ public class NumericVariableConfig extends VariableConfiguration {
             return this;
         }
 
-        public int getIntervalCount() { return intervalCount; }
+        public int getIntervalCount() {
+            return intervalCount;
+        }
     }
 }

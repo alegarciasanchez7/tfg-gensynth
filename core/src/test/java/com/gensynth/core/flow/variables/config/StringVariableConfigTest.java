@@ -173,4 +173,47 @@ public class StringVariableConfigTest {
 
         assertTrue(differentCount > 5);
     }
+    @Test
+    public void testTemplateGeneration() {
+        config.pattern(GenerationPattern.TEMPLATE)
+              .template("DEV-{{sensor_id}}-{{status}}");
+        
+        java.util.Map<String, Object> ctx = new java.util.HashMap<>();
+        ctx.put("sensor_id", 123);
+        ctx.put("status", "ACTIVE");
+        config.setContext(ctx);
+        
+        Object value = config.generateNextValue();
+        assertEquals("DEV-123-ACTIVE", value.toString());
+        
+        java.util.Set<String> deps = config.getDependencies();
+        assertTrue(deps.contains("sensor_id"));
+        assertTrue(deps.contains("status"));
+    }
+
+    @Test
+    public void testFormattedMaskGeneration() {
+        config.pattern(GenerationPattern.FORMATTED_MASK)
+              .formattedMaskType("IPV4");
+        
+        String ip = (String) config.generateNextValue();
+        assertTrue(ip.matches("\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}"));
+        
+        config.formattedMaskType("CUSTOM_MASK").customMask("AA-##-xx");
+        String custom = (String) config.generateNextValue();
+        assertTrue(custom.matches("[A-Z]{2}-\\d{2}-[0-9a-f]{2}"));
+    }
+
+    @Test
+    public void testDataCorruption() {
+        config.pattern(GenerationPattern.CONSTANT)
+              .constant("HELLO_WORLD")
+              .corruptionEnabled(true)
+              .corruptionProbability(1.0)
+              .corruptionMode("TRUNCATE")
+              .corruptionMagnitude(3);
+              
+        String val = (String) config.generateNextValue();
+        assertEquals("HELLO_WO", val);
+    }
 }

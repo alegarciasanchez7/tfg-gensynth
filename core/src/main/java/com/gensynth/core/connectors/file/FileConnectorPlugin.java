@@ -1,171 +1,153 @@
 package com.gensynth.core.connectors.file;
 
-import com.gensynth.core.connectors.spi.ConnectorPlugin;
+import com.gensynth.plugin.api.ConnectorConfig;
+import com.gensynth.plugin.api.ConnectorContext;
+import com.gensynth.plugin.api.ConnectorField;
+import com.gensynth.plugin.api.ConnectorInfo;
+import com.gensynth.plugin.api.ConnectorPlugin;
+import com.gensynth.plugin.api.ConnectorSession;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.List;
 import java.util.Map;
 
 /**
- * File connector plugin supporting TXT and JSON output formats.
+ * Built-in connector that writes the messages of a flow to a file
+ * (a JSON array, an XML dataset, or one message per line for TXT and CSV).
  *
- * Configuration:
- * - outputDir: base directory for output files (required)
- * - format: "txt" or "json" (default: "json")
- * - fileName: base filename without extension (auto-generated if not provided)
+ * The file is written to {@code <outputDir>/<group>/<fileName>.<ext>}. By default the output
+ * directory is the folder of the current simulation session and the file name is the flow name.
  */
 public class FileConnectorPlugin implements ConnectorPlugin {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(FileConnectorPlugin.class);
 
-    private Path outputDir;
-    private String format = "json";  // "json" or "txt"
-    private String fileName;
-    private File outputFile;
-    private FileOutputStream fileStream;
-    private boolean healthy = false;
-    private boolean isFirstMessage = true;
+    private static final ConnectorInfo INFO = new ConnectorInfo(
+        "file", "File Output", "1.0.0", "Writes the messages of the flow to a local file.");
+
+    private static final List<ConnectorField> FIELDS = List.of(
+        ConnectorField.select("format",
+                ConnectorField.Option.of("json", "JSON array"),
+                ConnectorField.Option.of("txt", "Text (one message per line)"),
+                ConnectorField.Option.of("xml", "XML dataset"),
+                ConnectorField.Option.of("csv", "CSV (one message per line)"))
+            .label("File format")
+            .tooltip("How messages are written: a JSON array, an XML <dataset>, or one message per line."),
+        ConnectorField.text("outputDir")
+            .label("Output directory")
+            .placeholder("Session folder")
+            .tooltip("Folder for the file. Leave empty to use the folder of the current simulation session "
+                + "(OUTPUT_FILES_<date>). A sub-folder with the group name is always added."),
+        ConnectorField.text("fileName")
+            .label("File name")
+            .placeholder("Flow name")
+            .tooltip("File name without extension. Leave empty to use the flow name.")
+    );
 
     @Override
-    public void initialize(Map<String, Object> config) {
-        try {
-            // Read configuration
-            Object outputDirObj = config.get("outputDir");
-            if (outputDirObj == null) {
-                throw new IllegalArgumentException("outputDir configuration is required");
-            }
-
-            outputDir = Paths.get(outputDirObj.toString());
-            
-            Object groupNameObj = config.get("groupName");
-            if (groupNameObj != null) {
-                String safeGroupName = groupNameObj.toString().replaceAll("[^a-zA-Z0-9_\\-]", "_");
-                outputDir = outputDir.resolve(safeGroupName);
-            }
-
-            // Create directory if it doesn't exist
-            Files.createDirectories(outputDir);
-            LOGGER.info("File connector initialized with output directory: {}", outputDir.toAbsolutePath());
-
-            // Optional: format override
-            if (config.containsKey("format")) {
-                format = config.get("format").toString().toLowerCase();
-            }
-
-            // Optional: custom filename
-            if (config.containsKey("fileName")) {
-                fileName = config.get("fileName").toString();
-            }
-
-
-            healthy = true;
-        } catch (IOException e) {
-            LOGGER.error("Failed to initialize FileConnectorPlugin", e);
-            healthy = false;
-            throw new RuntimeException("FileConnectorPlugin initialization failed", e);
-        }
+    public ConnectorInfo info() {
+        return INFO;
     }
 
     @Override
-    public void start() {
-        try {
-            // Resolve filename at start time if not provided
-            if (fileName == null) {
-                fileName = "output_" + System.currentTimeMillis();
-            }
-
-            String fileExtension = switch (format) {
-                case "xml" -> ".xml";
-                case "csv" -> ".csv";
-                case "txt", "plain" -> ".txt";
-                default -> ".json";
-            };
-            outputFile = outputDir.resolve(fileName + fileExtension).toFile();
-
-            // Open file in append mode
-            fileStream = new FileOutputStream(outputFile, true);
-            isFirstMessage = true;
-            LOGGER.info("FileConnectorPlugin started: {}", outputFile.getAbsolutePath());
-            healthy = true;
-        } catch (IOException e) {
-            LOGGER.error("Failed to start FileConnectorPlugin", e);
-            healthy = false;
-            throw new RuntimeException("FileConnectorPlugin startup failed", e);
-        }
+    public List<ConnectorField> fields() {
+        return FIELDS;
     }
 
     @Override
-    public void publish(String destination, byte[] payload, Map<String, String> headers) {
-        if (!healthy || fileStream == null) {
-            LOGGER.warn("FileConnectorPlugin is not healthy or started");
-            return;
+    public ConnectorSession connect(ConnectorConfig config, ConnectorContext context) throws IOException {
+        String format = config.getString("format", "json");
+        String baseDir = config.getString("outputDir",
+            context.outputDirectory() == null || context.outputDirectory().isBlank() ? "OUTPUT_FILES" : context.outputDirectory());
+        Path directory = Paths.get(baseDir).resolve(sanitize(context.groupName(), "group"));
+        Files.createDirectories(directory);
+
+        String fileName = sanitize(config.getString("fileName", context.flowName()), "flow");
+        Path file = directory.resolve(fileName + extension(format));
+        LOGGER.info("File connector writing to {}", file.toAbsolutePath());
+        return new FileSession(new FileOutputStream(file.toFile(), true), format);
+    }
+
+    private static String extension(String format) {
+        return switch (format) {
+            case "xml" -> ".xml";
+            case "csv" -> ".csv";
+            case "txt" -> ".txt";
+            default -> ".json";
+        };
+    }
+
+    private static String sanitize(String value, String fallback) {
+        if (value == null || value.isBlank()) {
+            return fallback;
+        }
+        return value.replaceAll("[^a-zA-Z0-9._-]", "_");
+    }
+
+    /**
+     * Appends messages to an open file, keeping it a valid JSON array or XML document.
+     */
+    static final class FileSession implements ConnectorSession {
+        private final FileOutputStream stream;
+        private final String format;
+        private boolean first = true;
+        private boolean closed;
+
+        FileSession(FileOutputStream stream, String format) {
+            this.stream = stream;
+            this.format = format;
         }
 
-        try {
-            synchronized (this) {
-                if (isFirstMessage) {
-                    if ("json".equals(format)) {
-                        fileStream.write("[\n".getBytes());
-                    } else if ("xml".equals(format)) {
-                        fileStream.write("<dataset>\n".getBytes());
-                    }
+        @Override
+        public void send(byte[] payload, Map<String, String> headers) throws IOException {
+            if (closed) {
+                throw new IOException("File is closed");
+            }
+            if (first) {
+                if ("json".equals(format)) write("[\n");
+                else if ("xml".equals(format)) write("<dataset>\n");
+            } else {
+                write("json".equals(format) ? ",\n" : "\n");
+            }
+            first = false;
+            stream.write(payload);
+            stream.flush();
+        }
+
+        @Override
+        public boolean isHealthy() {
+            return !closed;
+        }
+
+        @Override
+        public void close() throws IOException {
+            if (closed) {
+                return;
+            }
+            closed = true;
+            try {
+                if (first) {
+                    if ("json".equals(format)) write("[]");
+                    else if ("xml".equals(format)) write("<dataset></dataset>");
                 } else {
-                    if ("json".equals(format)) {
-                        fileStream.write(",\n".getBytes());
-                    } else {
-                        fileStream.write('\n');
-                    }
+                    if ("json".equals(format)) write("\n]");
+                    else if ("xml".equals(format)) write("\n</dataset>");
+                    else write("\n");
                 }
-                isFirstMessage = false;
-                
-                fileStream.write(payload);
-                fileStream.flush();
+            } finally {
+                stream.close();
             }
-        } catch (IOException e) {
-            LOGGER.error("Failed to write to output file: {}", outputFile.getAbsolutePath(), e);
-            healthy = false;
         }
-    }
 
-    @Override
-    public void stop() {
-        try {
-            if (fileStream != null) {
-                synchronized (this) {
-                    if (!isFirstMessage) {
-                        if ("json".equals(format)) {
-                            fileStream.write("\n]".getBytes());
-                        } else if ("xml".equals(format)) {
-                            fileStream.write("\n</dataset>".getBytes());
-                        } else {
-                            fileStream.write('\n');
-                        }
-                    } else {
-                        if ("json".equals(format)) {
-                            fileStream.write("[]".getBytes());
-                        } else if ("xml".equals(format)) {
-                            fileStream.write("<dataset></dataset>".getBytes());
-                        }
-                    }
-                }
-                fileStream.close();
-                fileStream = null;
-                LOGGER.info("FileConnectorPlugin stopped");
-            }
-            healthy = false;
-        } catch (IOException e) {
-            LOGGER.error("Error closing file stream", e);
+        private void write(String text) throws IOException {
+            stream.write(text.getBytes(StandardCharsets.UTF_8));
         }
-    }
-
-    @Override
-    public boolean isHealthy() {
-        return healthy && fileStream != null;
     }
 }

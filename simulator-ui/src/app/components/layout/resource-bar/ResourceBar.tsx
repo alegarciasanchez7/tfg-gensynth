@@ -1,5 +1,6 @@
-import { Cpu, MemoryStick, ArrowUpRight, ArrowDownLeft, Server, Clock4 } from 'lucide-react';
+import { Cpu, MemoryStick, ArrowUpRight, ArrowDownLeft, Server, Clock4, Timer } from 'lucide-react';
 import { useSystemStatus, useMetrics } from '../../../context';
+import { formatTickRate } from '../../../core/tickSettings';
 
 interface Metric {
   icon: React.ReactNode;
@@ -52,6 +53,8 @@ export function ResourceBar() {
   const msgs = metrics?.messagesPerSecond ?? 0;
   const totalMsgs = metrics?.totalMessages ?? 0;
   const uptime = metrics?.uptime ?? 0;
+  const ticksPerSecond = metrics?.ticksPerSecond ?? 0;
+  const totalTicks = metrics?.totalTicks ?? 0;
 
   const formattedNetUp = formatBytes(networkUp);
   const formattedNetDown = formatBytes(networkDown);
@@ -97,6 +100,13 @@ export function ResourceBar() {
       color: running ? 'text-amber-500' : 'text-slate-400',
     },
     {
+      icon: <Timer size={11} />,
+      label: 'TICK',
+      value: running ? formatTickRate(ticksPerSecond) : '0',
+      unit: running ? `/s (${formatShortNumber(totalTicks)} total)` : '',
+      color: running ? 'text-fuchsia-500' : 'text-slate-400',
+    },
+    {
       icon: <Clock4 size={11} />,
       label: 'UPTIME',
       value: running ? formatUptime(uptime) : '--:--:--',
@@ -107,12 +117,13 @@ export function ResourceBar() {
 
   return (
     <div
-      className="flex items-center gap-0 px-4 border-b border-[var(--c-br2)] bg-[var(--c-bg2)] shrink-0 overflow-x-auto"
-      style={{ height: 34 }}
+      className="flex items-center gap-2.5 px-4 border-b border-[var(--c-br2)] bg-[var(--c-bg2)] shrink-0 overflow-x-auto select-none"
+      style={{ height: 28 }}
+      data-testid="resource-bar"
     >
       {uiMetrics.map((m, i) => (
-        <div key={i} className="flex items-center gap-3 pr-4 mr-4 border-r border-[var(--c-br2)] last:border-r-0">
-          <div className="flex items-center gap-1.5">
+        <div key={i} className="flex shrink-0 items-center gap-2 pr-2.5 mr-0.5 border-r border-[var(--c-br2)] last:border-r-0">
+          <div className="flex items-center gap-1">
             <span className={`${m.color} opacity-70`}>{m.icon}</span>
             <span className="text-[10px] text-[var(--c-tx4)] tracking-wider" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
               {m.label}
@@ -129,22 +140,17 @@ export function ResourceBar() {
             )}
           </div>
           {m.barPct !== undefined && (
-            <div className="w-12 h-1 bg-[var(--c-br2)] rounded-full overflow-hidden">
+            <div className="w-9 h-1 bg-[var(--c-br2)] rounded-full overflow-hidden">
               <div
-                className={`h-full rounded-full transition-all duration-1000 ${m.barPct > 80 ? 'bg-red-500' : m.barPct > 50 ? 'bg-amber-500' : m.color.replace('text-', 'bg-')
-                  }`}
+                className={`h-full rounded-full transition-all duration-1000 ${
+                  m.barPct > 80 ? 'bg-red-500' : m.barPct > 50 ? 'bg-amber-500' : m.color.replace('text-', 'bg-')
+                }`}
                 style={{ width: `${m.barPct}%` }}
               />
             </div>
           )}
         </div>
       ))}
-
-      <div className="flex-1" />
-
-      <div className="text-[10px] text-[var(--c-tx5)] tracking-wider" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-        GenSynth 0.5.0-alpha
-      </div>
     </div>
   );
 }

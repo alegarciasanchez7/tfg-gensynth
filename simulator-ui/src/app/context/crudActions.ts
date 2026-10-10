@@ -16,6 +16,7 @@
 import type React from 'react';
 import bridge from '../core/bridge';
 import type { Group, Flow, Variable } from '../types';
+import type { GroupState, FlowState, VariableState } from '../core/types';
 import type { OptimisticManager } from './optimisticManager';
 
 // ─────────────────────────────────────────────────────────────
@@ -81,7 +82,8 @@ export async function createGroup(
   ctx: CRUDActionContext,
   name: string,
   description?: string,
-): Promise<Group> {
+  onResponse?: (data: GroupState) => void,
+): Promise<GroupState> {
   // Validations
   if (!name?.trim()) {
     throwValidationError('name', 'is required and cannot be empty');
@@ -92,26 +94,26 @@ export async function createGroup(
       const response = await bridge.send('CREATE_GROUP', {
         name: name.trim(),
         description: description?.trim() || '',
-      });
+      }, onResponse);
       
       // Backend returns the created group or just confirms
       // We expect the groups-update event to fire
       if (response && typeof response === 'object' && 'id' in response) {
-        return response as Group;
+        return response as GroupState;
       }
     }
 
     // For mock mode, create locally
     const groupId = generateId();
-    const newGroup: Group = {
+    const newGroup: GroupState = {
       id: groupId,
       name: name.trim(),
       description: description?.trim() || '',
       status: 'stopped',
-      throughput: '0 msg/s',
+      throughput: 0,
       threads: 1,
-      outputMode: 'serial',
-      expanded: true,
+      outputMode: 'parallel',
+      enabled: true,
       flows: [],
     };
 
@@ -131,6 +133,7 @@ export async function updateGroupConfig(
   ctx: CRUDActionContext,
   groupId: string,
   config: Partial<Omit<Group, 'id' | 'flows'>>,
+  groupName?: string,
 ): Promise<void> {
   if (!groupId?.trim()) {
     throwValidationError('groupId', 'is required');
@@ -148,6 +151,19 @@ export async function updateGroupConfig(
       type: 'UPDATE_GROUP',
       payload: { id: groupId, ...config },
     });
+
+    if (config.enabled !== undefined) {
+      ctx.dispatch({
+        type: 'ADD_LOG',
+        payload: {
+          id: `group_enabled_${Date.now()}`,
+          timestamp: new Date().toLocaleTimeString('en-GB', { hour12: false }),
+          level: 'info',
+          source: 'GROUPS',
+          message: `Group '${groupName || groupId}' ${config.enabled ? 'unblocked' : 'blocked'}`,
+        },
+      });
+    }
   } catch (error) {
     ctx.reportError('GROUPS', `updateGroupConfig(${groupId})`, error);
     throw extractCommandError(error);
@@ -198,15 +214,14 @@ export async function createFlow(
   burst?: number,
   template?: string,
   connectorConfig?: Record<string, unknown>,
-): Promise<Flow> {
+  onResponse?: (data: FlowState) => void,
+  everyTicks?: number,
+): Promise<FlowState> {
   // Validations
   if (!groupId?.trim()) throwValidationError('groupId', 'is required');
   if (!name?.trim()) throwValidationError('name', 'is required');
   if (!technology?.trim()) throwValidationError('technology', 'is required');
-  if (!host?.trim()) throwValidationError('host', 'is required');
-  if (typeof port !== 'number' || port <= 0 || port > 65535) {
-    throwValidationError('port', 'must be a number between 1 and 65535');
-  }
+  // host/port/topic are legacy: the destination is part of the connector configuration
 
   try {
     if (ctx.connectionMode !== 'mock') {
@@ -214,35 +229,39 @@ export async function createFlow(
         groupId: groupId.trim(),
         name: name.trim(),
         technology: technology.trim(),
-        host: host.trim(),
+        host: host?.trim() ?? '',
         port,
         topic: topic?.trim() || '',
         interval: interval ?? 1000,
         burst: burst ?? 1,
+        everyTicks: everyTicks ?? 1,
         template: template || '{}',
         ...(connectorConfig && { connectorConfig }),
-      });
+      }, onResponse);
 
       if (response && typeof response === 'object' && 'id' in response) {
-        return response as Flow;
+        return response as FlowState;
       }
     }
 
     // For mock mode
     const flowId = generateId();
-    const newFlow: Flow = {
+    const newFlow: FlowState = {
       id: flowId,
       name: name.trim(),
       technology: technology.trim(),
       connectionStatus: 'disconnected',
-      throughput: '0 msg/s',
+      throughput: 0,
+      latency: 0,
       hasError: false,
       errorMessage: undefined,
       interval: interval ?? 1000,
       burst: burst ?? 1,
+      everyTicks: everyTicks ?? 1,
       topic: topic?.trim() || '',
-      host: host.trim(),
+      host: host?.trim() ?? '',
       port,
+      enabled: true,
     };
 
     return newFlow;
@@ -285,6 +304,19 @@ export async function updateFlowConfig(
         message: `Flow '${flowName || flowId}' configuration updated`,
       },
     });
+
+    if (config.enabled !== undefined) {
+      ctx.dispatch({
+        type: 'ADD_LOG',
+        payload: {
+          id: `flow_enabled_${Date.now()}`,
+          timestamp: new Date().toLocaleTimeString('en-GB', { hour12: false }),
+          level: 'info',
+          source: 'FLOWS',
+          message: `Flow '${flowName || flowId}' ${config.enabled ? 'unblocked' : 'blocked'}`,
+        },
+      });
+    }
   } catch (error) {
     ctx.reportError('FLOWS', `updateFlowConfig(${flowId})`, error);
     throw extractCommandError(error);
@@ -337,11 +369,14 @@ export async function deleteFlow(
 export async function createVariable(
   ctx: CRUDActionContext,
   name: string,
-  type: 'numeric' | 'string' | 'boolean' | 'temporal' | 'point' | 'list',
+  type: string,
   scope: 'global' | 'group' | 'local',
   config?: Record<string, unknown>,
+  flowId?: string,
+  groupId?: string,
   variableId?: string,
-): Promise<Variable> {
+  onResponse?: (data: VariableState) => void,
+): Promise<VariableState> {
   // Validations
   if (!name?.trim()) throwValidationError('name', 'is required');
   const validTypes = ['numeric', 'string', 'boolean', 'temporal', 'point', 'list'];
@@ -360,19 +395,23 @@ export async function createVariable(
         type,
         scope,
         config: config || {},
-      });
-
+        flowId,
+        groupId,
+        variableId,
+      }, onResponse);
       if (response && typeof response === 'object' && 'id' in response) {
-        return response as Variable;
+        return response as VariableState;
       }
     }
 
     const generatedId = variableId ?? generateId();
-    const newVariable: Variable = {
+    const newVariable: VariableState = {
       id: generatedId,
       name: name.trim(),
-      type,
-      scope,
+      type: type as any,
+      scope: scope as any,
+      flowId,
+      groupId,
       config: config || {},
     };
 

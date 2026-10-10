@@ -1,11 +1,28 @@
-import type { Dispatch, SetStateAction } from 'react';
-import type { LucideIcon } from 'lucide-react';
-import { Button } from '../../../components/ui/button';
+import type { Dispatch, ReactNode, SetStateAction } from 'react';
+import { RotateCcw, Trash2, type LucideIcon } from 'lucide-react';
 import { Input } from '../../../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../components/ui/select';
-import { Textarea } from '../../../components/ui/textarea';
-import type { Variable } from '../../../types';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../components/ui/tabs';
+import type { 
+  Variable, 
+  VariableConfig, 
+  NumericVariableConfig, 
+  StringVariableConfig, 
+  ListVariableConfig, 
+  TemporalVariableConfig, 
+  PointVariableConfig, 
+  BooleanVariableConfig 
+} from '../../../types';
 import type { VariableDraft } from './useVariableEditor';
+
+import { NumericConfigPanel } from './config/NumericConfigPanel';
+import { StringConfigPanel } from './config/StringConfigPanel';
+import { ListConfigPanel } from './config/ListConfigPanel';
+import { TemporalConfigPanel } from './config/TemporalConfigPanel';
+import { PointConfigPanel } from './config/PointConfigPanel';
+import { BooleanConfigPanel } from './config/BooleanConfigPanel';
+import { ConditionalRulesTab } from './config/ConditionalRulesTab';
+import { SpatialBoundariesTab } from './config/SpatialBoundariesTab';
 
 export type VariableEditorTheme = {
   icon: LucideIcon;
@@ -23,9 +40,12 @@ interface VariableEditorHeaderProps {
   variable: Variable;
   theme: VariableEditorTheme;
   scopeBadgeClass: string;
+  isDirty?: boolean;
+  /** Actions rendered on the right side of the header (e.g. Discard / Delete), like groups and flows */
+  actions?: ReactNode;
 }
 
-export function VariableEditorHeader({ variable, theme, scopeBadgeClass }: VariableEditorHeaderProps) {
+export function VariableEditorHeader({ variable, theme, scopeBadgeClass, isDirty, actions }: VariableEditorHeaderProps) {
   const Icon = theme.icon;
 
   return (
@@ -37,8 +57,9 @@ export function VariableEditorHeader({ variable, theme, scopeBadgeClass }: Varia
       </div>
       <div className="flex min-w-0 flex-col gap-1">
         <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-sm text-[var(--c-tx1)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+          <h2 className="text-sm text-[var(--c-tx1)] flex items-center gap-1" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
             {variable.name}
+            {isDirty && <span className="text-amber-400 font-bold text-xs" title="Unsaved changes">*</span>}
           </h2>
           <span
             className={`text-[9px] rounded border px-2 py-0.5 tracking-wider uppercase ${scopeBadgeClass}`}
@@ -57,6 +78,7 @@ export function VariableEditorHeader({ variable, theme, scopeBadgeClass }: Varia
           {theme.description}
         </p>
       </div>
+      {actions && <div className="ml-auto shrink-0">{actions}</div>}
     </div>
   );
 }
@@ -65,9 +87,20 @@ interface VariableEditorIdentityCardProps {
   draft: VariableDraft;
   setDraft: Dispatch<SetStateAction<VariableDraft>>;
   scopeOptions: VariableEditorScopeOption[];
+  groups: Variable['scope'] extends any ? any[] : any[]; // Simplified for props, but we'll use Group[]
 }
 
-export function VariableEditorIdentityCard({ draft, setDraft, scopeOptions }: VariableEditorIdentityCardProps) {
+export function VariableEditorIdentityCard({ draft, setDraft, scopeOptions, groups }: VariableEditorIdentityCardProps) {
+  // Flatten flows with group name for the selector
+  const allFlows = (groups || []).flatMap(g =>
+    (g.flows || []).map((f: any) => ({
+      id: f.id,
+      name: f.name,
+      groupName: g.name,
+      groupId: g.id
+    }))
+  );
+
   return (
     <div className="rounded border border-[var(--c-br1)] bg-[var(--c-bg4)] p-3">
       <div className="mb-3">
@@ -83,6 +116,7 @@ export function VariableEditorIdentityCard({ draft, setDraft, scopeOptions }: Va
           </label>
           <Input
             id="variable-name"
+            data-testid="variable-name-input"
             value={draft.name}
             onChange={event => setDraft(current => ({ ...current, name: event.target.value }))}
           />
@@ -94,32 +128,99 @@ export function VariableEditorIdentityCard({ draft, setDraft, scopeOptions }: Va
           </label>
           <Select
             value={draft.scope}
-            onValueChange={value => setDraft(current => ({ ...current, scope: value as Variable['scope'] }))}
+            onValueChange={value => {
+              const newScope = value as Variable['scope'];
+              setDraft(current => ({
+                ...current,
+                scope: newScope,
+                // Automatically pick first valid target if moving TO a scoped level
+                flowId: newScope === 'local' ? (allFlows[0]?.id) : undefined,
+                groupId: newScope === 'group' ? (groups[0]?.id) : undefined,
+              }));
+            }}
           >
             <SelectTrigger id="variable-scope">
               <SelectValue placeholder="Select scope" />
             </SelectTrigger>
             <SelectContent>
-              {scopeOptions.map(option => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
+              {scopeOptions.map(option => {
+                const isDisabled = (option.value === 'local' && allFlows.length === 0) ||
+                  (option.value === 'group' && groups.length === 0);
+                return (
+                  <SelectItem
+                    key={option.value}
+                    value={option.value}
+                    disabled={isDisabled}
+                  >
+                    {option.label}
+                  </SelectItem>
+                );
+              })}
             </SelectContent>
           </Select>
         </div>
       </div>
 
-      <div className="mt-2 flex flex-col gap-1">
-        <label htmlFor="variable-description" className="text-[10px] uppercase tracking-wider text-[var(--c-tx4)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-          Description
-        </label>
-        <Textarea
-          id="variable-description"
-          value={draft.description}
-          onChange={event => setDraft(current => ({ ...current, description: event.target.value }))}
-          rows={3}
-        />
+      {/* Context selectors based on scope */}
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        {draft.scope === 'local' && (
+          <div className="flex flex-col gap-1">
+            <label htmlFor="variable-flow" className="text-[10px] uppercase tracking-wider text-[var(--c-tx4)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+              Target Flow
+            </label>
+            <Select
+              value={draft.flowId}
+              onValueChange={value => setDraft(current => ({ ...current, flowId: value }))}
+            >
+              <SelectTrigger id="variable-flow">
+                <SelectValue placeholder="Select flow" />
+              </SelectTrigger>
+              <SelectContent>
+                {allFlows.map(flow => (
+                  <SelectItem key={flow.id} value={flow.id}>
+                    {flow.groupName} - {flow.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
+        {draft.scope === 'group' && (
+          <div className="flex flex-col gap-1">
+            <label htmlFor="variable-group" className="text-[10px] uppercase tracking-wider text-[var(--c-tx4)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+              Target Group
+            </label>
+            <Select
+              value={draft.groupId}
+              onValueChange={value => setDraft(current => ({ ...current, groupId: value }))}
+            >
+              <SelectTrigger id="variable-group">
+                <SelectValue placeholder="Select group" />
+              </SelectTrigger>
+              <SelectContent>
+                {groups.map(group => (
+                  <SelectItem key={group.id} value={group.id}>
+                    {group.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
+        <div className={`flex flex-col gap-1 ${draft.scope === 'global' ? 'col-span-2' : ''}`}>
+          <label htmlFor="variable-description" className="text-[10px] uppercase tracking-wider text-[var(--c-tx4)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+            Description
+          </label>
+          <Input
+            id="variable-description"
+            data-testid="variable-description-input"
+            value={draft.description}
+            onChange={event => setDraft(current => ({ ...current, description: event.target.value }))}
+            placeholder="Optional note"
+          />
+        </div>
       </div>
     </div>
   );
@@ -135,6 +236,32 @@ interface VariableEditorConfigCardProps {
 export function VariableEditorConfigCard({ typeLabel, theme, draft, setDraft }: VariableEditorConfigCardProps) {
   const Icon = theme.icon;
 
+  let parsedConfig: VariableConfig = {};
+  try {
+    if (draft.configText.trim()) {
+      parsedConfig = JSON.parse(draft.configText);
+    }
+  } catch {
+    // Keep it empty if invalid while typing in JSON mode
+  }
+
+  const handleConfigChange = (newConfig: Partial<VariableConfig>) => {
+    const updated = { ...parsedConfig, ...newConfig };
+    setDraft(current => ({ ...current, configText: JSON.stringify(updated, null, 2) }));
+  };
+
+  const renderVisualEditor = () => {
+    switch (draft.type) {
+      case 'numeric': return <NumericConfigPanel config={parsedConfig as NumericVariableConfig} onChange={handleConfigChange} flowId={draft.flowId} groupId={draft.groupId} variableScope={draft.scope} />;
+      case 'string': return <StringConfigPanel config={parsedConfig as StringVariableConfig} onChange={handleConfigChange} flowId={draft.flowId} groupId={draft.groupId} variableScope={draft.scope} />;
+      case 'list': return <ListConfigPanel config={parsedConfig as ListVariableConfig} onChange={handleConfigChange} flowId={draft.flowId} groupId={draft.groupId} variableScope={draft.scope} />;
+      case 'temporal': return <TemporalConfigPanel config={parsedConfig as TemporalVariableConfig} onChange={handleConfigChange} flowId={draft.flowId} groupId={draft.groupId} variableScope={draft.scope} />;
+      case 'point': return <PointConfigPanel config={parsedConfig as PointVariableConfig} onChange={handleConfigChange} flowId={draft.flowId} groupId={draft.groupId} variableScope={draft.scope} />;
+      case 'boolean': return <BooleanConfigPanel config={parsedConfig as BooleanVariableConfig} onChange={handleConfigChange} flowId={draft.flowId} groupId={draft.groupId} variableScope={draft.scope} />;
+      default: return <p className="text-[11px] text-[var(--c-tx4)] p-6 text-center italic">No visual editor available for this variable type.</p>;
+    }
+  };
+
   return (
     <div className="rounded border border-[var(--c-br1)] bg-[var(--c-bg4)] p-3">
       <div className="mb-3 flex items-center gap-1.5">
@@ -143,62 +270,81 @@ export function VariableEditorConfigCard({ typeLabel, theme, draft, setDraft }: 
         </span>
       </div>
 
-      <div className="flex flex-col gap-1">
-        <label htmlFor="variable-config" className="text-[10px] uppercase tracking-wider text-[var(--c-tx4)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-          Config JSON
-        </label>
-        <Textarea
-          id="variable-config"
-          value={draft.configText}
-          onChange={event => setDraft(current => ({ ...current, configText: event.target.value }))}
-          rows={12}
-          className="font-mono text-[11px]"
-        />
-        <p className="text-[10px] text-[var(--c-tx4)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-          Keep the JSON valid. Empty content resets the configuration to an empty object.
-        </p>
-      </div>
+      <Tabs defaultValue="visual" className="w-full">
+        <TabsList className="mb-2 bg-[var(--c-bg2)] border-[var(--c-br1)]">
+          <TabsTrigger value="visual">Visual Editor</TabsTrigger>
+          <TabsTrigger value="rules">Rules</TabsTrigger>
+          {draft.type === 'point' && (
+            <TabsTrigger value="boundaries">Spatial Boundaries</TabsTrigger>
+          )}
+        </TabsList>
+
+        <TabsContent value="visual" className="mt-0">
+          <div className="p-3 border rounded border-[var(--c-br1)] bg-[var(--c-bg2)]">
+            {renderVisualEditor()}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="rules" className="mt-0">
+          <div className="p-3 border rounded border-[var(--c-br1)] bg-[var(--c-bg2)]">
+            <ConditionalRulesTab
+              rules={parsedConfig.conditionalRules || []}
+              onChange={(rules) => handleConfigChange({ conditionalRules: rules })}
+              variableType={draft.type}
+              variableScope={draft.scope}
+              currentVariableName={draft.name}
+              flowId={draft.flowId}
+              groupId={draft.groupId}
+            />
+          </div>
+        </TabsContent>
+
+        {draft.type === 'point' && (
+          <TabsContent value="boundaries" className="mt-0">
+            <div className="p-3 border rounded border-[var(--c-br1)] bg-[var(--c-bg2)]">
+              <SpatialBoundariesTab
+                config={parsedConfig as PointVariableConfig}
+                onChange={handleConfigChange}
+              />
+            </div>
+          </TabsContent>
+        )}
+      </Tabs>
     </div>
   );
 }
 
 interface VariableEditorActionsProps {
-  isSaving: boolean;
+  isSaving?: boolean;
   isDeleting: boolean;
-  onSave: () => void;
+  isDirty?: boolean;
+  onSave?: () => void;
   onDiscard: () => void;
   onDelete: () => void;
+  saveButtonTitle?: string;
 }
 
-export function VariableEditorActions({ isSaving, isDeleting, onSave, onDiscard, onDelete }: VariableEditorActionsProps) {
+export function VariableEditorActions({ isDeleting, isDirty, onDiscard, onDelete }: VariableEditorActionsProps) {
   return (
-    <div className="flex items-center gap-2">
-      <Button
-        onClick={onSave}
-        disabled={isSaving}
-        className="rounded border border-cyan-500/40 bg-cyan-500/10 px-3 py-1.5 text-xs text-cyan-500 transition-all hover:bg-cyan-500/20"
-        variant="ghost"
-      >
-        Save changes
-      </Button>
-      <Button
-        variant="ghost"
+    <div className="flex gap-1.5">
+      <button
         onClick={onDiscard}
-        disabled={isSaving}
-        className="rounded border border-[var(--c-br1)] px-3 py-1.5 text-xs text-[var(--c-tx3)] transition-all hover:bg-[var(--c-bg6)]"
+        disabled={!isDirty || isDeleting}
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-[var(--c-br1)] bg-[var(--c-bg1)] text-[var(--c-tx4)] text-xs hover:text-[var(--c-tx1)] hover:bg-[var(--c-bg5)] transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+        style={{ fontFamily: 'JetBrains Mono, monospace' }}
+        title="Revert variable configuration to last saved state (Ctrl+Z)"
       >
-        Discard
-      </Button>
-      <div className="flex-1" />
-      <Button
-        variant="destructive"
+        <RotateCcw size={11} /> Discard
+      </button>
+      <button
         onClick={onDelete}
-        disabled={isSaving || isDeleting}
+        disabled={isDeleting}
         aria-label="Delete variable"
-        className="flex items-center gap-1.5 rounded border border-red-500/30 px-3 py-1.5 text-xs text-red-500 transition-all hover:bg-red-500/10"
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-red-500/40 bg-red-500/10 text-red-500 text-xs hover:bg-red-500/20 transition-all disabled:opacity-50"
+        style={{ fontFamily: 'JetBrains Mono, monospace' }}
       >
-        Delete
-      </Button>
+        <Trash2 size={11} /> {isDeleting ? 'Deleting...' : 'Delete'}
+      </button>
     </div>
   );
 }

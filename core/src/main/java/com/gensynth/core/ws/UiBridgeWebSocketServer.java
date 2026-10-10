@@ -1,23 +1,27 @@
 package com.gensynth.core.ws;
 
-import com.fasterxml.jackson.core.type.TypeReference;
+import com.gensynth.core.config.AppPaths;
+import com.fasterxml.jackson.core.StreamReadConstraints;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.gensynth.core.api.IPluginInstaller;
+import com.gensynth.core.api.ITickClock;
+import com.gensynth.core.clock.TickClockImpl;
+import com.gensynth.core.connectors.plugin.PluginInstallerImpl;
 import com.gensynth.core.connectors.runtime.ConnectorCatalogService;
-import com.gensynth.core.connectors.spi.ConnectorPlugin;
-import com.gensynth.core.connectors.spi.ConnectorPluginDescriptor;
-import com.gensynth.core.model.FlowDefinition;
-import com.gensynth.core.model.GroupDefinition;
+import com.gensynth.plugin.api.ConnectorSession;
 import com.gensynth.core.model.Variable;
 import com.gensynth.core.flow.TemplateEngine;
 import com.gensynth.core.persistence.JsonStateRepositoryImpl;
 import com.gensynth.core.persistence.StateRepository;
+import com.gensynth.core.ws.handler.*;
+import com.gensynth.core.ws.runtime.*;
 import org.java_websocket.WebSocket;
 import org.java_websocket.handshake.ClientHandshake;
 import org.java_websocket.server.WebSocketServer;
 
 import java.net.InetSocketAddress;
-import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -28,7 +32,6 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import org.slf4j.Logger;
@@ -59,65 +62,126 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         "GET_INITIAL_STATE",
         "LOAD_STATE",
         "SAVE_STATE",
+        "IMPORT_STATE",
         "GET_CONNECTOR_CATALOG",
         "GET_LATEST_CONNECTOR",
         "SUBSCRIBE_METRICS",
-        "UNSUBSCRIBE_METRICS"
+        "UNSUBSCRIBE_METRICS",
+        "VALIDATE_PLUGIN",
+        "INSTALL_PLUGIN",
+        "UNINSTALL_PLUGIN",
+        "EXPORT_STATE",
+        "PICK_DIRECTORY",
+        "CLONE_GROUP",
+        "CLONE_FLOW",
+        "PAUSE_GROUP",
+        "UI_LOG",
+        "CONVERT_MESSAGE_FORMAT",
+        "UPDATE_SETTINGS"
     );
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
-    private final Object stateLock = new Object();
+    private final ObjectMapper objectMapper = createConfiguredMapper();
+    
+    public ObjectMapper getObjectMapper() {
+        return objectMapper;
+    }
 
-    private final ConnectorCatalogService connectorCatalogService;
-    private final StateRepository stateRepository;
+    private static ObjectMapper createConfiguredMapper() {
+        ObjectMapper mapper = new ObjectMapper();
+        // Increase the string length limit to allow uploading large plugin JARs (100MB)
+        mapper.getFactory().setStreamReadConstraints(
+            StreamReadConstraints.builder().maxStringLength(100_000_000).build()
+        );
+        return mapper;
+    }
+    final Object stateLock = new Object();
 
-    private final Map<String, GroupRuntime> groupsById = new LinkedHashMap<>();
-    private final Map<String, Variable> variablesById = new ConcurrentHashMap<>();
-    private final Map<String, ConnectorPlugin> connectorByFlowId = new ConcurrentHashMap<>();
-    private final Map<String, ScheduledFuture<?>> publisherTasksByFlowId = new ConcurrentHashMap<>();
-    private final Set<WebSocket> metricSubscribers = ConcurrentHashMap.newKeySet();
+    final ConnectorCatalogService connectorCatalogService;
+    final StateRepository stateRepository;
+    final IPluginInstaller pluginInstaller;
 
-    private final ScheduledExecutorService scheduler;
-    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
+    final Map<String, GroupRuntime> groupsById = new LinkedHashMap<>();
+    final Map<String, Variable> variablesById = new ConcurrentHashMap<>();
+    final Map<String, ConnectorSession> connectorByFlowId = new ConcurrentHashMap<>();
+    final Set<WebSocket> metricSubscribers = ConcurrentHashMap.newKeySet();
 
-    private final AtomicLong totalMessages = new AtomicLong(0);
-    private final AtomicLong totalErrors = new AtomicLong(0);
-    private final AtomicLong messagesLastWindow = new AtomicLong(0);
-    private final AtomicLong bytesSentLastWindow = new AtomicLong(0);
-    private volatile double messagesPerSecond = 0.0;
-    private volatile double networkUpPerSecond = 0.0;
+    final ScheduledExecutorService scheduler;
 
-    private volatile boolean systemRunning = false;
-    private volatile long systemStartedAt = 0;
+    final AtomicLong totalMessages = new AtomicLong(0);
+    /** Sequence behind {{n}}: incremented once per generated message, never reset. */
+    final AtomicLong messageSequence = new AtomicLong(0);
+    final AtomicLong totalErrors = new AtomicLong(0);
+    final AtomicLong messagesLastWindow = new AtomicLong(0);
+    final AtomicLong bytesSentLastWindow = new AtomicLong(0);
+    volatile double messagesPerSecond = 0.0;
+    volatile double networkUpPerSecond = 0.0;
+    volatile double ticksPerSecond = 0.0;
 
-    private final TemplateEngine templateEngine = new TemplateEngine();
-    private String currentOutputDir = null;
+    volatile boolean systemRunning = false;
+    volatile long systemStartedAt = 0;
+
+    final TemplateEngine templateEngine = new TemplateEngine();
+    String currentOutputDir = null;
+    WebSocket desktopSocket = null;
+    final BridgeContext bridgeContext = new BridgeContext(this);
+    public final FlowCommandHandler flowCommandHandler = new FlowCommandHandler(bridgeContext);
+    public final GroupCommandHandler groupCommandHandler = new GroupCommandHandler(bridgeContext, flowCommandHandler);
+    public final VariableCommandHandler variableCommandHandler = new VariableCommandHandler(bridgeContext);
+    public final PluginCommandHandler pluginCommandHandler = new PluginCommandHandler(bridgeContext);
+    public final StateCommandHandler stateCommandHandler = new StateCommandHandler(bridgeContext);
+    public final SystemCommandHandler systemCommandHandler = new SystemCommandHandler(bridgeContext);
+    public final SettingsCommandHandler settingsCommandHandler = new SettingsCommandHandler(bridgeContext);
+    /** Global simulation clock; runs exactly while the system is running (see BridgeContext#setSystemRunning). */
+    final ITickClock tickClock = new TickClockImpl(flowCommandHandler);
+    
+    public WebSocket getDesktopSocket() {
+        return desktopSocket;
+    }
 
     public UiBridgeWebSocketServer(String host, int port) {
-        this(new InetSocketAddress(host, port), new ConnectorCatalogService(), new JsonStateRepositoryImpl());
+        this(host, port, AppPaths.current().pluginsDir());
+    }
+
+    /**
+     * Constructor with external plugins directory support.
+     *
+     * @param host             WebSocket host
+     * @param port             WebSocket port
+     * @param pluginsDirectory path to the directory containing external plugin JARs
+     */
+    public UiBridgeWebSocketServer(String host, int port, Path pluginsDirectory) {
+        this(new InetSocketAddress(host, port),
+             new ConnectorCatalogService(pluginsDirectory, AppPaths.current().sharedLibsDir()),
+             new JsonStateRepositoryImpl(),
+             new PluginInstallerImpl(pluginsDirectory, AppPaths.current().sharedLibsDir()));
     }
 
     UiBridgeWebSocketServer(InetSocketAddress address, ConnectorCatalogService connectorCatalogService) {
-        this(address, connectorCatalogService, new JsonStateRepositoryImpl());
+        this(address, connectorCatalogService, new JsonStateRepositoryImpl(),
+             new PluginInstallerImpl(AppPaths.current().pluginsDir(), AppPaths.current().sharedLibsDir()));
     }
 
     UiBridgeWebSocketServer(
         InetSocketAddress address,
         ConnectorCatalogService connectorCatalogService,
-        StateRepository stateRepository
+        StateRepository stateRepository,
+        IPluginInstaller pluginInstaller
     ) {
         super(address);
         this.connectorCatalogService = connectorCatalogService;
         this.stateRepository = stateRepository;
+        this.pluginInstaller = pluginInstaller;
+        if (this.pluginInstaller instanceof PluginInstallerImpl) {
+            ((PluginInstallerImpl) this.pluginInstaller).setPluginManager(this.connectorCatalogService.getPluginManager());
+        }
         this.scheduler = Executors.newScheduledThreadPool(Math.max(4, Runtime.getRuntime().availableProcessors() * 2));
         initializeRuntime();
     }
 
     @Override
     public void onOpen(WebSocket conn, ClientHandshake handshake) {
-        sendLog(conn, "info", "WS", "Client connected");
-        sendSystemStatus(conn, null);
-        sendGroupsUpdate(conn);
+        systemCommandHandler.sendSystemStatus(conn, null);
+        systemCommandHandler.sendGroupsUpdate(conn);
     }
 
     @Override
@@ -142,20 +206,20 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
 
     @Override
     public void onStart() {
-        scheduler.scheduleAtFixedRate(this::emitMetricsTick, 1, 1, TimeUnit.SECONDS);
-        scheduler.scheduleAtFixedRate(this::emitGroupsHeartbeat, 1, 2, TimeUnit.SECONDS);
+        scheduler.scheduleAtFixedRate(systemCommandHandler::emitMetricsTick, 1, 1, TimeUnit.SECONDS);
+        scheduler.scheduleAtFixedRate(systemCommandHandler::emitGroupsHeartbeat, 1, 2, TimeUnit.SECONDS);
         setConnectionLostTimeout(30);
     }
 
     public void shutdown() {
         synchronized (stateLock) {
             for (GroupRuntime group : groupsById.values()) {
-                stopGroupInternal(group);
+                flowCommandHandler.stopGroupInternal(group);
             }
             systemRunning = false;
-            persistState();
         }
 
+        tickClock.shutdown();
         scheduler.shutdownNow();
         try {
             stop(1000);
@@ -165,89 +229,32 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
     }
 
     private void initializeRuntime() {
-        loadRuntimeState(true);
-    }
-
-    private void createDefaultRuntime() {
-        GroupRuntime rabbitGroup = new GroupRuntime(
-            "g-rabbit",
-            "RabbitMQ Local",
-            "stopped",
-            "Flujo base para validacion E2E con RabbitMQ local",
-            1,
-            "parallel"
-        );
-
-        rabbitGroup.flows.add(new FlowRuntime(
-            "f-rabbit",
-            "RabbitMQ Publisher",
-            "rabbitmq",
-            "disconnected",
-            0,
-            0,
-            false,
-            null,
-            1000,
-            1,
-            "gensynth.data",
-            "localhost",
-            5672,
-            "{\"eventId\":\"{{uuid}}\",\"timestamp\":\"{{ts}}\",\"source\":\"gen-synth\",\"value\":{{n}}}",
-            "json",
-            Map.of()
-        ));
-
-        groupsById.put(rabbitGroup.id, rabbitGroup);
-    }
-
-    private void persistState() {
-        try {
-            List<GroupDefinition> groupDefinitions = new ArrayList<>();
-            for (GroupRuntime group : groupsById.values()) {
-                groupDefinitions.add(group.toDefinition());
-            }
-
-            stateRepository.saveGroups(groupDefinitions);
-            stateRepository.saveVariables(new ArrayList<>(variablesById.values()));
-        } catch (StateRepository.StateRepositoryException e) {
-            totalErrors.incrementAndGet();
-        }
-    }
-
-    private void loadRuntimeState(boolean createDefaultIfEmpty) {
+        // Start empty as requested by user
         synchronized (stateLock) {
-            for (GroupRuntime group : groupsById.values()) {
-                stopGroupInternal(group);
-            }
-
             groupsById.clear();
             variablesById.clear();
             connectorByFlowId.clear();
-            publisherTasksByFlowId.clear();
-
-            try {
-                List<GroupDefinition> persistedGroups = stateRepository.loadGroups();
-                List<Variable> persistedVariables = stateRepository.loadVariables();
-
-                if (persistedGroups.isEmpty() && createDefaultIfEmpty) {
-                    createDefaultRuntime();
-                    persistState();
-                } else {
-                    for (GroupDefinition definition : persistedGroups) {
-                        groupsById.put(definition.getGroupId(), GroupRuntime.fromDefinition(definition));
-                    }
-                }
-
-                for (Variable variable : persistedVariables) {
-                    variablesById.put(variable.getId(), variable);
-                }
-
-                systemRunning = false;
-            } catch (StateRepository.StateRepositoryException e) {
-                createDefaultRuntime();
-                systemRunning = false;
-            }
+            systemRunning = false;
         }
+    }
+
+    public void persistState() {
+        stateCommandHandler.persistState();
+    }
+
+    /**
+     * Entry point for desktop-mode commands (JCEF bridge).
+     * This bypasses the WebSocket network layer but reuses the same business logic.
+     */
+    public void handleDesktopCommand(String rawMessage, org.cef.callback.CefQueryCallback callback, org.cef.browser.CefBrowser browser) {
+        // Reuse or create the persistent desktop socket
+        if (this.desktopSocket == null) {
+            this.desktopSocket = new DesktopBridgeSocket(this, callback, objectMapper, browser);
+        } else {
+            // Update the callback for the current query, but keep the socket reference
+            ((DesktopBridgeSocket)this.desktopSocket).setCallback(callback);
+        }
+        handleCommand(this.desktopSocket, rawMessage);
     }
 
     private void handleCommand(WebSocket conn, String rawMessage) {
@@ -292,140 +299,37 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             }
 
             switch (type) {
-                case "GET_INITIAL_STATE" -> {
-                    sendInitialState(conn, commandId);
-                }
-                case "LOAD_STATE" -> {
-                    loadRuntimeState(true);
-                    logToBackend("info", "SYSTEM", "State loaded from repository", commandId);
-                    sendInitialState(conn, commandId);
-                }
-                case "SAVE_STATE" -> {
-                    persistState();
-                    logToBackend("info", "SYSTEM", "State saved to repository", commandId);
-                    sendAck(conn, commandId, "state_saved");
-                }
-                case "SUBSCRIBE_METRICS" -> {
-                    metricSubscribers.add(conn);
-                    sendAck(conn, commandId, "subscribed");
-                    sendMetrics(conn, commandId);
-                }
-                case "UNSUBSCRIBE_METRICS" -> {
-                    metricSubscribers.remove(conn);
-                    sendAck(conn, commandId, "unsubscribed");
-                }
-                case "GET_CONNECTOR_CATALOG" -> {
-                    Map<String, Object> response = new LinkedHashMap<>();
-                    response.put("commandId", commandId);
-                    response.put("status", "ok");
-                    response.put("catalog", connectorCatalogService.listAvailableConnectors());
-                    sendMessage(conn, "CONNECTION_STATUS", commandId, response);
-                }
-                case "GET_LATEST_CONNECTOR" -> {
-                    String pluginId = requireTextField(conn, commandId, payload, "pluginId", "INVALID_PAYLOAD", "GET_LATEST_CONNECTOR");
-                    if (pluginId == null) {
-                        return;
-                    }
-
-                    Map<String, Object> response = new LinkedHashMap<>();
-                    response.put("commandId", commandId);
-                    response.put("status", "ok");
-                    response.put("connector", connectorCatalogService.findLatestConnector(pluginId).orElse(null));
-                    sendMessage(conn, "CONNECTION_STATUS", commandId, response);
-                }
-                case "START_SYSTEM" -> {
-                    synchronized (stateLock) {
-                        systemRunning = true;
-                        systemStartedAt = System.currentTimeMillis();
-                        String timestamp = new java.text.SimpleDateFormat("yyyy_MM_dd_HH_mm_ss").format(new java.util.Date());
-                        currentOutputDir = "OUTPUT_FILES_" + timestamp;
-
-                        for (GroupRuntime group : groupsById.values()) {
-                            if (!"running".equals(group.status)) {
-                                startGroupInternal(group);
-                            }
-                        }
-                    }
-                    sendAck(conn, commandId, "system_started");
-                    broadcastSystemStatus();
-                    sendLog(conn, "info", "SYSTEM", "System started");
-                }
-                case "STOP_SYSTEM" -> {
-                    synchronized (stateLock) {
-                        for (GroupRuntime group : groupsById.values()) {
-                            stopGroupInternal(group);
-                        }
-                        systemRunning = false;
-                    }
-                    sendAck(conn, commandId, "system_stopped");
-                    broadcastGroupsUpdate();
-                    broadcastSystemStatus();
-                    sendLog(conn, "info", "SYSTEM", "System stopped");
-                }
-                case "START_GROUP" -> {
-                    String groupId = requireTextField(conn, commandId, payload, "groupId", "INVALID_PAYLOAD", "START_GROUP");
-                    if (groupId == null) {
-                        return;
-                    }
-
-                    GroupRuntime group = groupsById.get(groupId);
-                    if (group == null) {
-                        sendError(conn, commandId, "NOT_FOUND", "Group not found: " + groupId, Map.of(
-                            "groupId", groupId
-                        ));
-                        return;
-                    }
-
-                    synchronized (stateLock) {
-                        if (currentOutputDir == null) {
-                            String timestamp = new java.text.SimpleDateFormat("yyyy_MM_dd_HH_mm_ss").format(new java.util.Date());
-                            currentOutputDir = "OUTPUT_FILES_" + timestamp;
-                        }
-                        if (!systemRunning) {
-                            systemStartedAt = System.currentTimeMillis();
-                        }
-                        startGroupInternal(group);
-                        systemRunning = true;
-                    }
-
-                    sendAck(conn, commandId, "group_started");
-                    broadcastGroupsUpdate();
-                    broadcastSystemStatus();
-                    sendLog(conn, "info", group.id, "Group started");
-                }
-                case "STOP_GROUP" -> {
-                    String groupId = requireTextField(conn, commandId, payload, "groupId", "INVALID_PAYLOAD", "STOP_GROUP");
-                    if (groupId == null) {
-                        return;
-                    }
-
-                    GroupRuntime group = groupsById.get(groupId);
-                    if (group == null) {
-                        sendError(conn, commandId, "NOT_FOUND", "Group not found: " + groupId, Map.of(
-                            "groupId", groupId
-                        ));
-                        return;
-                    }
-
-                    synchronized (stateLock) {
-                        stopGroupInternal(group);
-                        systemRunning = hasAnyRunningGroup();
-                    }
-
-                    sendAck(conn, commandId, "group_stopped");
-                    broadcastGroupsUpdate();
-                    broadcastSystemStatus();
-                    sendLog(conn, "info", group.id, "Group stopped");
-                }
-                case "CREATE_GROUP" -> handleCreateGroup(conn, commandId, payload);
-                case "DELETE_GROUP" -> handleDeleteGroup(conn, commandId, payload);
-                case "UPDATE_GROUP_CONFIG" -> handleUpdateGroupConfig(conn, commandId, payload);
-                case "CREATE_FLOW" -> handleCreateFlow(conn, commandId, payload);
-                case "DELETE_FLOW" -> handleDeleteFlow(conn, commandId, payload);
-                case "UPDATE_FLOW_CONFIG" -> handleUpdateFlowConfig(conn, commandId, payload);
-                case "CREATE_VARIABLE" -> handleCreateVariable(conn, commandId, payload);
-                case "DELETE_VARIABLE" -> handleDeleteVariable(conn, commandId, payload);
-                case "UPDATE_VARIABLE" -> handleUpdateVariable(conn, commandId, payload);
+                case "GET_INITIAL_STATE" -> stateCommandHandler.handleGetInitialState(conn, commandId);
+                case "LOAD_STATE" -> stateCommandHandler.handleLoadState(conn, commandId);
+                case "SAVE_STATE" -> stateCommandHandler.handleSaveState(conn, commandId);
+                case "SUBSCRIBE_METRICS" -> systemCommandHandler.handleSubscribeMetrics(conn, commandId);
+                case "UNSUBSCRIBE_METRICS" -> systemCommandHandler.handleUnsubscribeMetrics(conn, commandId);
+                case "GET_CONNECTOR_CATALOG" -> systemCommandHandler.handleGetConnectorCatalog(conn, commandId);
+                case "GET_LATEST_CONNECTOR" -> systemCommandHandler.handleGetLatestConnector(conn, payload, commandId);
+                case "START_SYSTEM" -> systemCommandHandler.handleStartSystem(conn, commandId);
+                case "STOP_SYSTEM" -> systemCommandHandler.handleStopSystem(conn, commandId);
+                case "PAUSE_GROUP" -> groupCommandHandler.handlePauseGroup(conn, payload, commandId);
+                case "CLONE_GROUP" -> groupCommandHandler.handleCloneGroup(conn, payload, commandId);
+                case "CLONE_FLOW" -> flowCommandHandler.handleCloneFlow(conn, payload, commandId);
+                case "START_GROUP" -> groupCommandHandler.handleStartGroup(conn, payload, commandId);
+                case "STOP_GROUP" -> groupCommandHandler.handleStopGroup(conn, payload, commandId);
+                case "UI_LOG" -> systemCommandHandler.handleUiLog(conn, payload, commandId);
+                case "CREATE_GROUP" -> groupCommandHandler.handleCreateGroup(conn, payload, commandId);
+                case "DELETE_GROUP" -> groupCommandHandler.handleDeleteGroup(conn, payload, commandId);
+                case "UPDATE_GROUP_CONFIG" -> groupCommandHandler.handleUpdateGroupConfig(conn, payload, commandId);
+                case "CREATE_FLOW" -> flowCommandHandler.handleCreateFlow(conn, payload, commandId);
+                case "DELETE_FLOW" -> flowCommandHandler.handleDeleteFlow(conn, payload, commandId);
+                case "UPDATE_FLOW_CONFIG" -> flowCommandHandler.handleUpdateFlowConfig(conn, payload, commandId);
+                case "CREATE_VARIABLE" -> variableCommandHandler.handleCreateVariable(conn, payload, commandId);
+                case "DELETE_VARIABLE" -> variableCommandHandler.handleDeleteVariable(conn, payload, commandId);
+                case "UPDATE_VARIABLE" -> variableCommandHandler.handleUpdateVariable(conn, payload, commandId);
+                case "VALIDATE_PLUGIN" -> pluginCommandHandler.handleValidatePlugin(conn, payload, commandId);
+                case "INSTALL_PLUGIN" -> pluginCommandHandler.handleInstallPlugin(conn, payload, commandId);
+                case "UNINSTALL_PLUGIN" -> pluginCommandHandler.handleUninstallPlugin(conn, payload, commandId);
+                case "EXPORT_STATE" -> stateCommandHandler.handleExportState(conn, commandId, payload);
+                case "IMPORT_STATE" -> stateCommandHandler.handleImportState(conn, commandId, payload);
+                case "CONVERT_MESSAGE_FORMAT" -> handleConvertMessageFormat(conn, payload, commandId);
+                case "UPDATE_SETTINGS" -> settingsCommandHandler.handleUpdateSettings(conn, payload, commandId);
                 default -> sendError(conn, commandId, "UNSUPPORTED_COMMAND", "Unsupported command: " + type, Map.of(
                     "command", type
                 ));
@@ -445,7 +349,33 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         }
     }
 
-    private String requireTextField(WebSocket conn, String commandId, JsonNode payload, String fieldName, String code, String commandName) {
+    public void handleConvertMessageFormat(WebSocket conn, JsonNode payload, String commandId) {
+        if (payload == null || !payload.isObject()) {
+            sendError(conn, commandId, "INVALID_PAYLOAD", "CONVERT_MESSAGE_FORMAT requires a JSON object payload", null);
+            return;
+        }
+
+        String content = payload.path("content").asText("");
+        String sourceFormat = payload.path("sourceFormat").asText("json");
+        String targetFormat = payload.path("targetFormat").asText("xml");
+        String clientRequestId = payload.path("clientRequestId").asText(null);
+
+        String converted = com.gensynth.core.flow.MessageFormatConverter.convert(content, sourceFormat, targetFormat);
+
+        Map<String, Object> respPayload = new LinkedHashMap<>();
+        respPayload.put("status", "ok");
+        respPayload.put("result", "format_converted");
+        respPayload.put("sourceFormat", sourceFormat);
+        respPayload.put("targetFormat", targetFormat);
+        respPayload.put("convertedContent", converted);
+        if (clientRequestId != null) {
+            respPayload.put("clientRequestId", clientRequestId);
+        }
+
+        sendMessage(conn, "CONNECTION_STATUS", commandId, respPayload);
+    }
+
+    public String requireTextField(WebSocket conn, String commandId, JsonNode payload, String fieldName, String code, String commandName) {
         if (payload == null || !payload.isObject()) {
             sendError(conn, commandId, code, commandName + " requires a JSON object payload", Map.of(
                 "field", fieldName
@@ -464,748 +394,63 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         return value;
     }
 
-    private void handleCreateGroup(WebSocket conn, String commandId, JsonNode payload) {
-        String name = requireTextField(conn, commandId, payload, "name", "INVALID_PAYLOAD", "CREATE_GROUP");
-        if (name == null) {
-            return;
-        }
-        
-        String clientRequestId = payload.path("clientRequestId").asText(null);
 
-        synchronized (stateLock) {
-            for (GroupRuntime group : groupsById.values()) {
-                if (group.name.equalsIgnoreCase(name)) {
-                    sendError(conn, commandId, clientRequestId, "INVALID_PAYLOAD", "Group name already exists", Map.of("name", name));
-                    return;
-                }
-            }
 
-            String id = payload.path("groupId").asText("");
-            if (id.isBlank()) {
-                id = UUID.randomUUID().toString();
-            }
-            String description = payload.path("description").asText("");
-            int threads = Math.max(1, payload.path("threads").asInt(1));
-            String outputMode = payload.path("outputMode").asText("parallel");
 
-            groupsById.put(id, new GroupRuntime(id, name, "stopped", description, threads, outputMode));
-            persistState();
-        }
 
-        sendAck(conn, commandId, clientRequestId, "group_created");
-        logToBackend("info", "GROUPS", "Created group '" + name + "'", commandId);
-        broadcastGroupsUpdate();
-    }
+    // ============ Plugin Management Handlers ============
 
-    private void handleDeleteGroup(WebSocket conn, String commandId, JsonNode payload) {
-        String groupId = requireTextField(conn, commandId, payload, "groupId", "INVALID_PAYLOAD", "DELETE_GROUP");
-        if (groupId == null) {
-            return;
-        }
 
-        String groupName;
-        synchronized (stateLock) {
-            GroupRuntime group = groupsById.remove(groupId);
-            if (group == null) {
-                sendError(conn, commandId, "NOT_FOUND", "Group not found: " + groupId, Map.of("groupId", groupId));
-                return;
-            }
-            groupName = group.name;
 
-            stopGroupInternal(group);
-            persistState();
-            systemRunning = hasAnyRunningGroup();
-        }
-
-        sendAck(conn, commandId, "group_deleted");
-        // We removed it from the map, but we saved the name
-        logToBackend("info", "GROUPS", "Deleted group '" + groupName + "'", commandId);
-
-        broadcastGroupsUpdate();
-        broadcastSystemStatus();
-    }
-
-    private void handleUpdateGroupConfig(WebSocket conn, String commandId, JsonNode payload) {
-        String groupId = requireTextField(conn, commandId, payload, "groupId", "INVALID_PAYLOAD", "UPDATE_GROUP_CONFIG");
-        if (groupId == null) {
-            return;
-        }
-
-        synchronized (stateLock) {
-            GroupRuntime group = groupsById.get(groupId);
-            if (group == null) {
-                sendError(conn, commandId, "NOT_FOUND", "Group not found: " + groupId, Map.of("groupId", groupId));
-                return;
-            }
-
-            if (payload.hasNonNull("name")) {
-                String newName = payload.path("name").asText(group.name).trim();
-                if (newName.isBlank()) {
-                    sendError(conn, commandId, "INVALID_PAYLOAD", "Group name cannot be empty", Map.of("groupId", groupId));
-                    return;
-                }
-
-                for (GroupRuntime existing : groupsById.values()) {
-                    if (!existing.id.equals(groupId) && existing.name.equalsIgnoreCase(newName)) {
-                        sendError(conn, commandId, "INVALID_PAYLOAD", "Group name already exists", Map.of("name", newName));
-                        return;
-                    }
-                }
-                group.name = newName;
-            }
-
-            if (payload.hasNonNull("description")) {
-                group.description = payload.path("description").asText(group.description);
-            }
-
-            if (payload.hasNonNull("threads")) {
-                group.threads = Math.max(1, payload.path("threads").asInt(group.threads));
-            }
-
-            if (payload.hasNonNull("outputMode")) {
-                String outputMode = payload.path("outputMode").asText(group.outputMode).trim();
-                group.outputMode = outputMode.isBlank() ? group.outputMode : outputMode;
-            }
-
-            persistState();
-        }
-
-        sendAck(conn, commandId, "group_updated");
-        GroupRuntime group = groupsById.get(groupId); // It exists, otherwise would have returned early
-        logToBackend("info", "GROUPS", "Updated config for group '" + (group != null ? group.name : groupId) + "'", commandId);
-        broadcastGroupsUpdate();
-    }
-
-    private void handleCreateFlow(WebSocket conn, String commandId, JsonNode payload) {
-        String groupId = requireTextField(conn, commandId, payload, "groupId", "INVALID_PAYLOAD", "CREATE_FLOW");
-        String name = requireTextField(conn, commandId, payload, "name", "INVALID_PAYLOAD", "CREATE_FLOW");
-        String technology = requireTextField(conn, commandId, payload, "technology", "INVALID_PAYLOAD", "CREATE_FLOW");
-        String host = requireTextField(conn, commandId, payload, "host", "INVALID_PAYLOAD", "CREATE_FLOW");
-        if (groupId == null || name == null || technology == null || host == null) {
-            return;
-        }
-        
-        String clientRequestId = payload.path("clientRequestId").asText(null);
-
-        if (connectorCatalogService.findLatestConnector(technology).isEmpty()) {
-            sendError(conn, commandId, clientRequestId, "INVALID_PAYLOAD", "Connector not found for technology: " + technology, Map.of("technology", technology));
-            return;
-        }
-
-        synchronized (stateLock) {
-            GroupRuntime group = groupsById.get(groupId);
-            if (group == null) {
-                sendError(conn, commandId, clientRequestId, "NOT_FOUND", "Group not found: " + groupId, Map.of("groupId", groupId));
-                return;
-            }
-
-            String flowId = payload.path("flowId").asText("");
-            if (flowId.isBlank()) {
-                flowId = UUID.randomUUID().toString();
-            }
-
-            if (findFlowById(group, flowId) != null) {
-                sendError(conn, commandId, clientRequestId, "INVALID_PAYLOAD", "Flow already exists: " + flowId, Map.of("flowId", flowId));
-                return;
-            }
-
-            String topic = payload.path("topic").asText("gensynth.data");
-            int port = payload.path("port").asInt(5672);
-            int interval = Math.max(50, payload.path("interval").asInt(1000));
-            int burst = Math.max(1, payload.path("burst").asInt(1));
-            String template = payload.path("template").asText("{\"eventId\":\"{{uuid}}\",\"timestamp\":\"{{ts}}\",\"source\":\"gen-synth\",\"value\":{{n}}}");
-            String format = payload.path("format").asText(technology.equalsIgnoreCase("file") ? "plain" : "json");
-            Map<String, Object> connectorConfig = parseConnectorConfig(payload.path("connectorConfig"));
-
-            group.flows.add(new FlowRuntime(
-                flowId,
-                name,
-                technology,
-                "disconnected",
-                0,
-                0,
-                false,
-                null,
-                interval,
-                burst,
-                topic,
-                host,
-                port,
-                template,
-                format,
-                connectorConfig
-            ));
-
-            persistState();
-        }
-
-        sendAck(conn, commandId, clientRequestId, "flow_created");
-        logToBackend("info", "FLOWS", "Created flow '" + name + "'", commandId);
-        broadcastGroupsUpdate();
-    }
-
-    private void handleDeleteFlow(WebSocket conn, String commandId, JsonNode payload) {
-        String groupId = requireTextField(conn, commandId, payload, "groupId", "INVALID_PAYLOAD", "DELETE_FLOW");
-        String flowId = requireTextField(conn, commandId, payload, "flowId", "INVALID_PAYLOAD", "DELETE_FLOW");
-        if (groupId == null || flowId == null) {
-            return;
-        }
-
-        synchronized (stateLock) {
-            GroupRuntime group = groupsById.get(groupId);
-            if (group == null) {
-                sendError(conn, commandId, "NOT_FOUND", "Group not found: " + groupId, Map.of("groupId", groupId));
-                return;
-            }
-
-            FlowRuntime flow = findFlowById(group, flowId);
-            if (flow == null) {
-                sendError(conn, commandId, "NOT_FOUND", "Flow not found: " + flowId, Map.of("flowId", flowId));
-                return;
-            }
-
-            stopPublisherTask(flowId);
-            ConnectorPlugin connector = connectorByFlowId.remove(flowId);
-            if (connector != null) {
-                try {
-                    connector.stop();
-                } catch (Exception ignored) {
-                    totalErrors.incrementAndGet();
-                }
-            }
-
-            logToBackend("info", "FLOWS", "Deleted flow '" + flow.name + "'", commandId);
-            group.flows.remove(flow);
-            persistState();
-        }
-
-        sendAck(conn, commandId, "flow_deleted");
-        broadcastGroupsUpdate();
-    }
-
-    private void handleUpdateFlowConfig(WebSocket conn, String commandId, JsonNode payload) {
-        String groupId = requireTextField(conn, commandId, payload, "groupId", "INVALID_PAYLOAD", "UPDATE_FLOW_CONFIG");
-        String flowId = requireTextField(conn, commandId, payload, "flowId", "INVALID_PAYLOAD", "UPDATE_FLOW_CONFIG");
-        if (groupId == null || flowId == null) {
-            return;
-        }
-
-        String updatedFlowName;
-        synchronized (stateLock) {
-            GroupRuntime group = groupsById.get(groupId);
-            if (group == null) {
-                sendError(conn, commandId, "NOT_FOUND", "Group not found: " + groupId, Map.of("groupId", groupId));
-                return;
-            }
-
-            FlowRuntime flow = findFlowById(group, flowId);
-            if (flow == null) {
-                sendError(conn, commandId, "NOT_FOUND", "Flow not found: " + flowId, Map.of("flowId", flowId));
-                return;
-            }
-
-            boolean wasRunning = "connected".equals(flow.connectionStatus);
-            if (payload.hasNonNull("name")) {
-                flow.name = payload.path("name").asText(flow.name);
-            }
-            if (payload.hasNonNull("technology")) {
-                String technology = payload.path("technology").asText(flow.technology);
-                if (connectorCatalogService.findLatestConnector(technology).isEmpty()) {
-                    sendError(conn, commandId, "INVALID_PAYLOAD", "Connector not found for technology: " + technology, Map.of("technology", technology));
-                    return;
-                }
-                flow.technology = technology;
-            }
-            if (payload.hasNonNull("host")) {
-                flow.host = payload.path("host").asText(flow.host);
-            }
-            if (payload.hasNonNull("port")) {
-                flow.port = payload.path("port").asInt(flow.port);
-            }
-            if (payload.hasNonNull("topic")) {
-                flow.topic = payload.path("topic").asText(flow.topic);
-            }
-            if (payload.hasNonNull("interval")) {
-                flow.interval = Math.max(50, payload.path("interval").asInt(flow.interval));
-            }
-            if (payload.hasNonNull("burst")) {
-                flow.burst = Math.max(1, payload.path("burst").asInt(flow.burst));
-            }
-            if (payload.hasNonNull("template")) {
-                flow.template = payload.path("template").asText(flow.template);
-            }
-            if (payload.hasNonNull("format")) {
-                flow.format = payload.path("format").asText(flow.format);
-            }
-            if (payload.hasNonNull("connectorConfig") && payload.get("connectorConfig").isObject()) {
-                flow.connectorConfig = parseConnectorConfig(payload.get("connectorConfig"));
-            }
-
-            if (wasRunning) {
-                stopPublisherTask(flow.id);
-            }
-
-            persistState();
-            updatedFlowName = flow.name;
-        }
-
-        sendAck(conn, commandId, "flow_updated");
-        logToBackend("info", "FLOWS", "Updated config for flow '" + updatedFlowName + "'", commandId);
-        broadcastGroupsUpdate();
-    }
-
-    private void handleCreateVariable(WebSocket conn, String commandId, JsonNode payload) {
-        String name = requireTextField(conn, commandId, payload, "name", "INVALID_PAYLOAD", "CREATE_VARIABLE");
-        String type = requireTextField(conn, commandId, payload, "type", "INVALID_PAYLOAD", "CREATE_VARIABLE");
-        String scope = requireTextField(conn, commandId, payload, "scope", "INVALID_PAYLOAD", "CREATE_VARIABLE");
-        if (name == null || type == null || scope == null) {
-            return;
-        }
-        
-        String clientRequestId = payload.path("clientRequestId").asText(null);
-
-        String coreType = normalizeVariableTypeForCore(type);
-        Object defaultValue = payload.has("config") ? payload.get("config").toString() : "";
-        Map<String, Object> config = Map.of();
-        Variable createdVariable;
-
-        
-        synchronized (stateLock) {
-            String variableId = payload.path("variableId").asText("");
-            if (variableId.isBlank()) {
-                variableId = UUID.randomUUID().toString();
-            }
-            try {
-                createdVariable = new Variable(variableId, name, scope.toUpperCase(), coreType, defaultValue, config);
-                variablesById.put(variableId, createdVariable);
-                persistState();
-            } catch (IllegalArgumentException ex) {
-                sendError(conn, commandId, clientRequestId, "INVALID_PAYLOAD", ex.getMessage(), Map.of("name", name, "type", type, "scope", scope));
-                return;
-            }
-        }
-
-        Map<String, Object> response = new LinkedHashMap<>(createdVariable.toPayload());
-        response.put("commandId", commandId);
-        if (clientRequestId != null) {
-            response.put("clientRequestId", clientRequestId);
-        }
-        response.put("status", "ok");
-        response.put("result", "variable_created");
-        response.put("type", type);
-        response.put("scope", scope.toLowerCase());
-        sendMessage(conn, "CONNECTION_STATUS", commandId, response);
-        logToBackend("info", "VARIABLES", "Created variable '" + name + "'", commandId);
-        sendVariablesUpdate();
-    }
-
-    private void handleDeleteVariable(WebSocket conn, String commandId, JsonNode payload) {
-        String variableId = requireTextField(conn, commandId, payload, "variableId", "INVALID_PAYLOAD", "DELETE_VARIABLE");
-        if (variableId == null) {
-            return;
-        }
-        
-        String clientRequestId = payload.path("clientRequestId").asText(null);
-
-        synchronized (stateLock) {
-            Variable removed = variablesById.remove(variableId);
-            if (removed == null) {
-                sendError(conn, commandId, clientRequestId, "NOT_FOUND", "Variable not found: " + variableId, Map.of("variableId", variableId));
-                return;
-            }
-            logToBackend("info", "VARIABLES", "Deleted variable '" + removed.getName() + "'", commandId);
-            persistState();
-        }
-
-        sendAck(conn, commandId, clientRequestId, "variable_deleted");
-        sendVariablesUpdate();
-    }
-
-    private void handleUpdateVariable(WebSocket conn, String commandId, JsonNode payload) {
-        String variableId = requireTextField(conn, commandId, payload, "variableId", "INVALID_PAYLOAD", "UPDATE_VARIABLE");
-        if (variableId == null) {
-            return;
-        }
-
-        String updatedVariableName;
-        synchronized (stateLock) {
-            Variable existing = variablesById.get(variableId);
-            if (existing == null) {
-                sendError(conn, commandId, "NOT_FOUND", "Variable not found: " + variableId, Map.of("variableId", variableId));
-                return;
-            }
-
-            String name = payload.path("name").asText(existing.getName());
-            updatedVariableName = name;
-            String type = normalizeVariableTypeForCore(payload.path("type").asText(existing.getType()));
-            String scope = payload.path("scope").asText(existing.getScope()).toUpperCase();
-            Object defaultValue = payload.has("config") ? payload.get("config").toString() : existing.getDefaultValue();
-
-            try {
-                Variable updated = new Variable(variableId, name, scope, type, defaultValue, existing.getConfig());
-                variablesById.put(variableId, updated);
-                persistState();
-            } catch (IllegalArgumentException ex) {
-                sendError(conn, commandId, "INVALID_PAYLOAD", ex.getMessage(), Map.of("variableId", variableId));
-                return;
-            }
-        }
-
-        sendAck(conn, commandId, "variable_updated");
-        logToBackend("info", "VARIABLES", "Updated variable '" + updatedVariableName + "'", commandId);
-        sendVariablesUpdate();
-    }
-
-    private FlowRuntime findFlowById(GroupRuntime group, String flowId) {
-        for (FlowRuntime flow : group.flows) {
-            if (flow.id.equals(flowId)) {
-                return flow;
-            }
-        }
-        return null;
-    }
-
-    private void startGroupInternal(GroupRuntime group) {
-        if ("running".equals(group.status)) {
-            return;
-        }
-
-        for (FlowRuntime flow : group.flows) {
-            stopPublisherTask(flow.id);
-
-            try {
-                ConnectorPluginDescriptor descriptor = connectorCatalogService
-                    .findLatestConnector(flow.technology)
-                    .orElseThrow(() -> new IllegalStateException("No connector found for " + flow.technology));
-
-                Map<String, Object> connectorConfig = buildFlowConnectorConfig(group, flow);
-                ConnectorPlugin plugin = connectorCatalogService.createAndInitialize(
-                    descriptor.getPluginId(),
-                    descriptor.getPluginVersion(),
-                    connectorConfig
-                );
-
-                plugin.start();
-                connectorByFlowId.put(flow.id, plugin);
-
-                flow.connectionStatus = "connected";
-                flow.hasError = false;
-                flow.errorMessage = null;
-
-                ScheduledFuture<?> task = scheduler.scheduleAtFixedRate(
-                    () -> publishBurst(group, flow),
-                    0,
-                    Math.max(50L, flow.interval),
-                    TimeUnit.MILLISECONDS
-                );
-                publisherTasksByFlowId.put(flow.id, task);
-            } catch (Exception ex) {
-                flow.connectionStatus = "error";
-                flow.hasError = true;
-                flow.errorMessage = ex.getMessage();
-                totalErrors.incrementAndGet();
-            }
-        }
-
-        group.status = "running";
-    }
-
-    private void stopGroupInternal(GroupRuntime group) {
-        for (FlowRuntime flow : group.flows) {
-            stopPublisherTask(flow.id);
-
-            ConnectorPlugin connector = connectorByFlowId.remove(flow.id);
-            if (connector != null) {
-                try {
-                    connector.stop();
-                } catch (Exception ignored) {
-                    totalErrors.incrementAndGet();
-                }
-            }
-
-            flow.connectionStatus = "disconnected";
-            flow.throughput = 0;
-            flow.hasError = false;
-            flow.errorMessage = null;
-        }
-
-        group.status = "stopped";
-    }
-
-    private void publishBurst(GroupRuntime group, FlowRuntime flow) {
-        ConnectorPlugin connector = connectorByFlowId.get(flow.id);
-        if (connector == null) {
-            return;
-        }
-
-        long startedAt = System.nanoTime();
-        int sent = 0;
-        String lastPayload = null;
-
-        try {
-            for (int i = 0; i < Math.max(1, flow.burst); i++) {
-                String payload = buildPayload(flow, i);
-                connector.publish(flow.topic, payload.getBytes(StandardCharsets.UTF_8), Map.of("content-type", "application/json"));
-                sent++;
-                lastPayload = payload;
-            }
-
-            long elapsedNanos = System.nanoTime() - startedAt;
-            flow.latency = (int) Math.max(1L, TimeUnit.NANOSECONDS.toMillis(elapsedNanos));
-            flow.throughput = Math.max(1, (int) Math.round((sent * 1000.0) / Math.max(1, flow.interval)));
-            flow.connectionStatus = "connected";
-            flow.hasError = false;
-            flow.errorMessage = null;
-
-            totalMessages.addAndGet(sent);
-            messagesLastWindow.addAndGet(sent);
-            
-            int burstBytes = 0;
-            if (lastPayload != null) {
-                // Approximate burst bytes using the last payload size multiplied by 'sent'
-                // For exact accuracy, we should sum sizes inside the loop.
-                burstBytes = lastPayload.getBytes(StandardCharsets.UTF_8).length * sent;
-            }
-            bytesSentLastWindow.addAndGet(burstBytes);
-
-            if (lastPayload != null) {
-                String preview = lastPayload.length() > 250 ? lastPayload.substring(0, 250) + "..." : lastPayload;
-                sendLogToAll("data", flow.id, "[" + group.name + " - " + flow.name + "] ==> " + preview);
-            }
-
-            broadcastFlowUpdate(flow);
-        } catch (Exception ex) {
-            flow.connectionStatus = "error";
-            flow.hasError = true;
-            flow.errorMessage = ex.getMessage();
-            totalErrors.incrementAndGet();
-            sendLogToAll("error", flow.id, "Publish failed: " + ex.getMessage());
-            broadcastFlowUpdate(flow);
-        }
-    }
-
-    private String buildPayload(FlowRuntime flow, int indexInBurst) {
-        long sequence = totalMessages.get() + indexInBurst + 1;
-        return templateEngine.evaluate(flow.template, sequence, variablesById);
-    }
-
-    private Map<String, Object> buildFlowConnectorConfig(GroupRuntime group, FlowRuntime flow) {
-        Map<String, Object> config = new LinkedHashMap<>();
-        if (flow.connectorConfig != null && !flow.connectorConfig.isEmpty()) {
-            config.putAll(flow.connectorConfig);
-        }
-
-        if ("file".equalsIgnoreCase(flow.technology)) {
-            config.putIfAbsent("outputDir", currentOutputDir == null ? "OUTPUT_FILES" : currentOutputDir);
-            config.putIfAbsent("groupName", group.name);
-            // Default to json if not set
-            config.putIfAbsent("format", "json");
-            config.putIfAbsent("fileName", sanitizeFileName(flow.name));
-            return config;
-        }
-
-        config.putIfAbsent("host", flow.host);
-        config.putIfAbsent("port", flow.port);
-        config.putIfAbsent("username", "guest");
-        config.putIfAbsent("password", "guest");
-        config.putIfAbsent("virtualHost", "/");
-        config.putIfAbsent("exchange", "gensynth.exchange");
-        config.putIfAbsent("exchangeType", "topic");
-        config.putIfAbsent("exchangeDurable", true);
-        config.putIfAbsent("routingKey", flow.topic);
-        return config;
-    }
-
-    private Map<String, Object> parseConnectorConfig(JsonNode connectorConfigNode) {
-        if (connectorConfigNode == null || connectorConfigNode.isMissingNode() || connectorConfigNode.isNull() || !connectorConfigNode.isObject()) {
-            return Map.of();
-        }
-        return objectMapper.convertValue(connectorConfigNode, MAP_TYPE);
-    }
-
-    private String sanitizeFileName(String value) {
-        if (value == null || value.isBlank()) {
-            return "flow";
-        }
-        return value.replaceAll("[^a-zA-Z0-9._-]", "_");
-    }
-
-    private boolean hasAnyRunningGroup() {
-        for (GroupRuntime group : groupsById.values()) {
-            if ("running".equals(group.status)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private void stopPublisherTask(String flowId) {
-        ScheduledFuture<?> current = publisherTasksByFlowId.remove(flowId);
-        if (current != null) {
-            current.cancel(false);
-        }
-    }
-
-    private void emitMetricsTick() {
-        try {
-            messagesPerSecond = messagesLastWindow.getAndSet(0);
-            networkUpPerSecond = bytesSentLastWindow.getAndSet(0);
-            if (metricSubscribers.isEmpty()) {
-                return;
-            }
-
-            for (WebSocket subscriber : metricSubscribers) {
-                if (subscriber != null && subscriber.isOpen()) {
-                    sendMetrics(subscriber, null);
-                }
-            }
-        } catch (Exception ex) {
-            totalErrors.incrementAndGet();
-        }
-    }
-
-    private void emitGroupsHeartbeat() {
-        if (getConnections().isEmpty()) {
-            return;
-        }
-        broadcastGroupsUpdate();
-    }
-
-    private void sendMetrics(WebSocket conn, String commandId) {
-        Map<String, Object> payload = buildMetricsPayload(commandId);
-        sendMessage(conn, "METRICS_UPDATE", commandId, payload);
-    }
-
-    private static long bytesToMb(long bytes) {
-        return Math.max(1, bytes / (1024 * 1024));
-    }
-
-    private void sendSystemStatus(WebSocket conn, String commandId) {
-        sendMessage(conn, "SYSTEM_STATUS", commandId, buildSystemStatusPayload(commandId));
-    }
-
-    private Map<String, Object> buildSystemStatusPayload(String commandId) {
-        Map<String, Object> payload = new LinkedHashMap<>();
-        if (commandId != null) {
-            payload.put("commandId", commandId);
-        }
-        payload.put("status", systemRunning ? "running" : "stopped");
-        long uptime = systemRunning ? Math.max(0, (System.currentTimeMillis() - systemStartedAt) / 1000) : 0;
-        payload.put("uptime", uptime);
-        payload.put("totalMessages", totalMessages.get());
-        payload.put("messagesPerSecond", messagesPerSecond);
-        return payload;
-    }
-
-    private Map<String, Object> buildMetricsPayload(String commandId) {
-        Map<String, Object> payload = new LinkedHashMap<>();
-        if (commandId != null) {
-            payload.put("commandId", commandId);
-        }
-
-        Runtime runtime = Runtime.getRuntime();
-        long usedMemory = runtime.totalMemory() - runtime.freeMemory();
-        
-        double cpuLoad = 0.0;
-        try {
-            java.lang.management.OperatingSystemMXBean osBean = java.lang.management.ManagementFactory.getOperatingSystemMXBean();
-            if (osBean instanceof com.sun.management.OperatingSystemMXBean) {
-                com.sun.management.OperatingSystemMXBean sunOsBean = (com.sun.management.OperatingSystemMXBean) osBean;
-                cpuLoad = sunOsBean.getProcessCpuLoad();
-                if (cpuLoad < 0.0) {
-                    cpuLoad = 0.0;
-                }
-            }
-        } catch (Exception ignored) {
-            // Fallback to 0 if not available
-        }
-
-        payload.put("cpu", cpuLoad * 100.0);
-        payload.put("memory", bytesToMb(usedMemory));
-        payload.put("heap", bytesToMb(runtime.totalMemory()));
-        payload.put("threads", Thread.activeCount());
-        payload.put("messagesPerSecond", messagesPerSecond);
-        payload.put("totalMessages", totalMessages.get());
-        payload.put("networkUp", networkUpPerSecond);
-        payload.put("networkDown", 0.0);
-        long uptime = systemRunning ? Math.max(0, (System.currentTimeMillis() - systemStartedAt) / 1000) : 0;
-        payload.put("uptime", uptime);
-        payload.put("activeConnections", getConnections().size());
-        payload.put("errorCount", totalErrors.get());
-        return payload;
-    }
-
-    private Map<String, Object> buildInitialStatePayload(String commandId) {
-        Map<String, Object> payload = new LinkedHashMap<>();
-        if (commandId != null) {
-            payload.put("commandId", commandId);
-        }
-
-        payload.put("systemStatus", buildSystemStatusPayload(null));
-        payload.put("groups", toGroupsPayload());
-
-        List<Map<String, Object>> variablesPayload = new ArrayList<>();
-        synchronized (stateLock) {
-            for (Variable variable : variablesById.values()) {
-                variablesPayload.add(normalizeVariablePayloadForUi(variable.toPayload()));
-            }
-        }
-        payload.put("variables", variablesPayload);
-        payload.put("metrics", buildMetricsPayload(null));
-        payload.put("connectorCatalog", connectorCatalogService.listAvailableConnectors());
-        return payload;
-    }
-
-    private void sendInitialState(WebSocket conn, String commandId) {
-        sendMessage(conn, "INITIAL_STATE", commandId, buildInitialStatePayload(commandId));
-    }
-
-    private void sendGroupsUpdate(WebSocket conn) {
-        sendMessage(conn, "GROUPS_UPDATE", toGroupsPayload());
-    }
-
-    private void sendVariablesUpdate() {
+    /**
+     * Replaces the current runtime state with a complete state provided by the UI.
+     * This is typically used after loading a project file from the UI in desktop mode.
+     *
+     * @param conn The WebSocket connection
+     * @param commandId The ID of the command
+     * @param payload The payload containing groups and variables
+     */
+    public void sendVariablesUpdate() {
         List<Map<String, Object>> payload = new ArrayList<>();
         synchronized (stateLock) {
             for (Variable variable : variablesById.values()) {
-                payload.add(normalizeVariablePayloadForUi(variable.toPayload()));
+                payload.add(VariableCommandHandler.normalizeVariablePayloadForUi(variable.toPayload()));
             }
         }
         broadcastMessage("VARIABLE_UPDATE", payload);
     }
 
-    private void broadcastGroupsUpdate() {
-        List<Map<String, Object>> payload = toGroupsPayload();
-        broadcastMessage("GROUPS_UPDATE", payload);
+    /**
+     * Sends a standardized creation response to the client.
+     *
+     * @param conn The WebSocket connection
+     * @param commandId The ID of the command being responded to
+     * @param clientRequestId The client-side request ID for optimistic UI reconciliation
+     * @param payload The entity payload (Group or Flow data)
+     * @param resultType A string identifying the result type (e.g., "group_created")
+     */
+    public void sendCreatedResponse(WebSocket conn, String commandId, String clientRequestId, Map<String, Object> payload, String resultType) {
+        Map<String, Object> responsePayload = new LinkedHashMap<>(payload);
+        responsePayload.put("status", "ok");
+        responsePayload.put("result", resultType);
+        if (clientRequestId != null) {
+            responsePayload.put("clientRequestId", clientRequestId);
+        }
+        sendMessage(conn, "CONNECTION_STATUS", commandId, responsePayload);
     }
 
-    private final Map<String, Long> lastFlowUpdateByFlowId = new ConcurrentHashMap<>();
-
-    private void broadcastFlowUpdate(FlowRuntime flow) {
-        long now = System.currentTimeMillis();
-        Long lastUpdate = lastFlowUpdateByFlowId.get(flow.id);
-        
-        // Throttle updates to 2 times per second (500ms) to avoid flooding the UI
-        if (lastUpdate != null && (now - lastUpdate) < 500) {
-            return;
-        }
-        
-        lastFlowUpdateByFlowId.put(flow.id, now);
-        
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("flowId", flow.id);
-        payload.put("throughput", flow.throughput);
-        payload.put("latency", flow.latency);
-        payload.put("errorRate", flow.hasError ? 1.0 : 0.0);
-        payload.put("connectionStatus", flow.connectionStatus);
-        if (flow.errorMessage != null) {
-            payload.put("lastError", flow.errorMessage);
-        }
-
-        broadcastMessage("FLOW_UPDATE", payload);
+    public void broadcastGroupsUpdate() {
+        systemCommandHandler.broadcastGroupsUpdate();
     }
 
-    private List<Map<String, Object>> toGroupsPayload() {
+    /**
+     * Broadcasts the live metrics of every flow (FLOWS_METRICS).
+     */
+    public void broadcastFlowsMetrics() {
+        systemCommandHandler.broadcastFlowsMetrics();
+    }
+
+    public List<Map<String, Object>> toGroupsPayload() {
         synchronized (stateLock) {
             List<Map<String, Object>> groupsPayload = new ArrayList<>();
             for (GroupRuntime group : groupsById.values()) {
@@ -1215,21 +460,33 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         }
     }
 
-    private void broadcastSystemStatus() {
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("status", systemRunning ? "running" : "stopped");
-        long uptime = systemRunning ? Math.max(0, (System.currentTimeMillis() - systemStartedAt) / 1000) : 0;
-        payload.put("uptime", uptime);
-        payload.put("totalMessages", totalMessages.get());
-        payload.put("messagesPerSecond", messagesPerSecond);
-        broadcastMessage("SYSTEM_STATUS", payload);
+    public void broadcastSystemStatus() {
+        systemCommandHandler.broadcastSystemStatus();
     }
 
-    private void sendAck(WebSocket conn, String commandId, String result) {
+    public void sendAck(WebSocket conn, String commandId, String result) {
         sendAck(conn, commandId, null, result);
     }
 
-    private void sendAck(WebSocket conn, String commandId, String clientRequestId, String result) {
+    public void sendAck(WebSocket conn, String commandId, String clientRequestId, String result) {
+        sendAck(conn, commandId, clientRequestId, result, Map.of());
+    }
+
+    /**
+     * Sends a successful acknowledgement including additional result fields
+     * (e.g. the file path written by EXPORT_STATE).
+     *
+     * @param conn the WebSocket connection
+     * @param commandId the command identifier
+     * @param result the result code
+     * @param extraFields additional fields merged into the ack payload
+     */
+    public void sendAck(WebSocket conn, String commandId, String result, Map<String, Object> extraFields) {
+        sendAck(conn, commandId, null, result, extraFields);
+    }
+
+    private void sendAck(WebSocket conn, String commandId, String clientRequestId, String result,
+            Map<String, Object> extraFields) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("commandId", commandId);
         if (clientRequestId != null) {
@@ -1237,14 +494,17 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         }
         payload.put("status", "ok");
         payload.put("result", result);
+        payload.putAll(extraFields);
         sendMessage(conn, "CONNECTION_STATUS", commandId, payload);
     }
 
-    private void sendError(WebSocket conn, String commandId, String code, String message, Map<String, Object> details) {
+
+
+    public void sendError(WebSocket conn, String commandId, String code, String message, Map<String, Object> details) {
         sendError(conn, commandId, null, code, message, details);
     }
 
-    private void sendError(WebSocket conn, String commandId, String clientRequestId, String code, String message, Map<String, Object> details) {
+    public void sendError(WebSocket conn, String commandId, String clientRequestId, String code, String message, Map<String, Object> details) {
         Map<String, Object> payload = new LinkedHashMap<>();
         if (commandId != null) {
             payload.put("commandId", commandId);
@@ -1261,24 +521,9 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         sendMessage(conn, "ERROR", commandId, payload);
     }
 
-    private String normalizeVariableTypeForCore(String type) {
-        return "temporal".equalsIgnoreCase(type) ? "date" : type;
-    }
 
-    private Map<String, Object> normalizeVariablePayloadForUi(Map<String, Object> payload) {
-        Map<String, Object> normalized = new LinkedHashMap<>(payload);
-        Object type = normalized.get("type");
-        if (type instanceof String && "date".equalsIgnoreCase((String) type)) {
-            normalized.put("type", "temporal");
-        }
-        Object scope = normalized.get("scope");
-        if (scope instanceof String) {
-            normalized.put("scope", ((String) scope).toLowerCase());
-        }
-        return normalized;
-    }
 
-    private void logToBackend(String level, String source, String message, String commandId) {
+    public void logToBackend(String level, String source, String message, String commandId) {
         if (commandId != null) {
             MDC.put("commandId", commandId);
         }
@@ -1294,11 +539,11 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         }
     }
 
-    private void sendLog(WebSocket conn, String level, String source, String message) {
+    public void sendLog(WebSocket conn, String level, String source, String message) {
         sendLog(conn, level, source, message, MDC.get("commandId"));
     }
 
-    private void sendLog(WebSocket conn, String level, String source, String message, String commandId) {
+    public void sendLog(WebSocket conn, String level, String source, String message, String commandId) {
         logToBackend(level, source, message, commandId);
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("id", UUID.randomUUID().toString());
@@ -1312,11 +557,11 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         sendMessage(conn, "LOG_ENTRY", commandId, payload);
     }
 
-    private void sendLogToAll(String level, String source, String message) {
+    public void sendLogToAll(String level, String source, String message) {
         sendLogToAll(level, source, message, MDC.get("commandId"));
     }
 
-    private void sendLogToAll(String level, String source, String message, String commandId) {
+    public void sendLogToAll(String level, String source, String message, String commandId) {
         logToBackend(level, source, message, commandId);
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("id", UUID.randomUUID().toString());
@@ -1348,23 +593,26 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
     }
 
 
-    private void broadcastMessage(String type, Object payload) {
+    public void broadcastMessage(String type, Object payload) {
         broadcastMessage(type, null, payload);
     }
 
-    private void broadcastMessage(String type, String commandId, Object payload) {
+    public void broadcastMessage(String type, String commandId, Object payload) {
         for (WebSocket connection : getConnections()) {
             if (connection != null && connection.isOpen()) {
                 sendMessage(connection, type, commandId, payload);
             }
         }
+        if (desktopSocket != null) {
+            sendMessage(desktopSocket, type, commandId, payload);
+        }
     }
 
-    private void sendMessage(WebSocket conn, String type, Object payload) {
+    public void sendMessage(WebSocket conn, String type, Object payload) {
         sendMessage(conn, type, null, payload);
     }
 
-    private void sendMessage(WebSocket conn, String type, String commandId, Object payload) {
+    public void sendMessage(WebSocket conn, String type, String commandId, Object payload) {
         if (conn == null || !conn.isOpen()) {
             return;
         }
@@ -1382,185 +630,6 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         } catch (Exception ex) {
             totalErrors.incrementAndGet();
             logger.error("Failed to send message: {}", ex.getMessage());
-        }
-    }
-
-    private static final class GroupRuntime {
-        private final String id;
-        private String name;
-        private String status;
-        private String description;
-        private int threads;
-        private String outputMode;
-        private final List<FlowRuntime> flows = new ArrayList<>();
-
-        private GroupRuntime(String id, String name, String status, String description, int threads, String outputMode) {
-            this.id = id;
-            this.name = name;
-            this.status = status;
-            this.description = description;
-            this.threads = threads;
-            this.outputMode = outputMode;
-        }
-
-        private static GroupRuntime fromDefinition(GroupDefinition definition) {
-            GroupRuntime runtime = new GroupRuntime(
-                definition.getGroupId(),
-                definition.getName(),
-                "stopped",
-                definition.getDescription(),
-                definition.getThreads(),
-                definition.getOutputMode()
-            );
-
-            for (FlowDefinition flowDefinition : definition.getAllFlows().values()) {
-                runtime.flows.add(FlowRuntime.fromDefinition(flowDefinition));
-            }
-
-            return runtime;
-        }
-
-        private GroupDefinition toDefinition() {
-            GroupDefinition definition = new GroupDefinition(id, name, description, threads, outputMode);
-            for (FlowRuntime flow : flows) {
-                definition.addFlow(flow.toDefinition(id));
-            }
-            return definition;
-        }
-
-        private Map<String, Object> toPayload() {
-            Map<String, Object> payload = new LinkedHashMap<>();
-            payload.put("id", id);
-            payload.put("name", name);
-            payload.put("status", status);
-            payload.put("throughput", flows.stream().mapToInt(flow -> flow.throughput).sum());
-            payload.put("description", description);
-            payload.put("threads", threads);
-            payload.put("outputMode", outputMode);
-
-            List<Map<String, Object>> flowPayload = new ArrayList<>();
-            for (FlowRuntime flow : flows) {
-                flowPayload.add(flow.toPayload());
-            }
-            payload.put("flows", flowPayload);
-            return payload;
-        }
-    }
-
-    private static final class FlowRuntime {
-        private final String id;
-        private String name;
-        private String technology;
-        private String connectionStatus;
-        private int throughput;
-        private int latency;
-        private boolean hasError;
-        private String errorMessage;
-        private int interval;
-        private int burst;
-        private String topic;
-        private String host;
-        private int port;
-        private String template;
-        private String format;
-        private Map<String, Object> connectorConfig;
-
-        private FlowRuntime(
-            String id,
-            String name,
-            String technology,
-            String connectionStatus,
-            int throughput,
-            int latency,
-            boolean hasError,
-            String errorMessage,
-            int interval,
-            int burst,
-            String topic,
-            String host,
-            int port,
-            String template,
-            String format,
-            Map<String, Object> connectorConfig
-        ) {
-            this.id = id;
-            this.name = name;
-            this.technology = technology;
-            this.connectionStatus = connectionStatus;
-            this.throughput = throughput;
-            this.latency = latency;
-            this.hasError = hasError;
-            this.errorMessage = errorMessage;
-            this.interval = interval;
-            this.burst = burst;
-            this.topic = topic;
-            this.host = host;
-            this.port = port;
-            this.template = template;
-            this.format = format != null ? format : "json";
-            this.connectorConfig = connectorConfig != null ? new LinkedHashMap<>(connectorConfig) : new LinkedHashMap<>();
-        }
-
-        private static FlowRuntime fromDefinition(FlowDefinition definition) {
-            return new FlowRuntime(
-                definition.getFlowId(),
-                definition.getName(),
-                definition.getTechnology(),
-                "disconnected",
-                0,
-                0,
-                false,
-                null,
-                definition.getInterval(),
-                definition.getBurst(),
-                definition.getTopic(),
-                definition.getHost(),
-                definition.getPort(),
-                definition.getTemplate(),
-                definition.getFormat(),
-                definition.getConnectorConfig()
-            );
-        }
-
-        private FlowDefinition toDefinition(String groupId) {
-            return new FlowDefinition(
-                id,
-                groupId,
-                name,
-                technology,
-                host,
-                port,
-                topic,
-                interval,
-                burst,
-                template,
-                format,
-                technology,
-                connectorConfig
-            );
-        }
-
-        private Map<String, Object> toPayload() {
-            Map<String, Object> payload = new LinkedHashMap<>();
-            payload.put("id", id);
-            payload.put("name", name);
-            payload.put("technology", technology);
-            payload.put("connectionStatus", connectionStatus);
-            payload.put("throughput", throughput);
-            payload.put("latency", latency);
-            payload.put("hasError", hasError);
-            if (errorMessage != null) {
-                payload.put("errorMessage", errorMessage);
-            }
-            payload.put("interval", interval);
-            payload.put("burst", burst);
-            payload.put("topic", topic);
-            payload.put("host", host);
-            payload.put("port", port);
-            payload.put("template", template);
-            payload.put("format", format);
-            payload.put("connectorConfig", connectorConfig);
-            return payload;
         }
     }
 }

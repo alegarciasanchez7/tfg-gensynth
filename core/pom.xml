@@ -7,7 +7,7 @@
 
     <groupId>com.gensynth</groupId>
     <artifactId>core</artifactId>
-    <version>1.0-SNAPSHOT</version>
+    <version>1.0.0</version>
     <packaging>jar</packaging>
 
     <name>Gen-Synth Core</name>
@@ -19,9 +19,25 @@
         <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <benchmark.mainClass>com.gensynth.core.flow.variables.config.VariableConfigBenchmark</benchmark.mainClass>
+        <jacoco.version>0.8.15</jacoco.version>
+        <!-- Installers (-Dinstaller): built with jpackage on the OS they target -->
+        <installer.dir>${project.build.directory}/installer</installer.dir>
+        <installer.input>${installer.dir}/input</installer.input>
+        <installer.packaging>${project.basedir}/../packaging</installer.packaging>
+        <!-- Skips the .rpm on Linux machines without rpmbuild (-Dinstaller.skipRpm=true) -->
+        <installer.skipRpm>false</installer.skipRpm>
+        <!-- Skips the npm build and the UI copy (-DskipUi=true), for environments without Node such as GitLab CI -->
+        <skipUi>false</skipUi>
     </properties>
 
     <dependencies>
+        <!-- Contract implemented by connector plugins (shared with external plugin JARs) -->
+        <dependency>
+            <groupId>com.gensynth</groupId>
+            <artifactId>gensynth-plugin-api</artifactId>
+            <version>1.0.0</version>
+        </dependency>
+
         <!-- JUnit for testing -->
         <dependency>
             <groupId>junit</groupId>
@@ -36,11 +52,23 @@
             <scope>test</scope>
         </dependency>
 
+        <!-- Shared Libraries (Provided at runtime by the core/lib/shared folder) -->
+        <!-- These are NOT bundled in the core.jar to keep it slim and secure -->
+        
         <!-- MQTT -->
         <dependency>
             <groupId>org.eclipse.paho</groupId>
             <artifactId>org.eclipse.paho.client.mqttv3</artifactId>
             <version>1.2.5</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- Kafka -->
+        <dependency>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>kafka-clients</artifactId>
+            <version>3.9.0</version>
+            <scope>provided</scope>
         </dependency>
 
         <!-- RabbitMQ -->
@@ -48,13 +76,39 @@
             <groupId>com.rabbitmq</groupId>
             <artifactId>amqp-client</artifactId>
             <version>5.18.0</version>
+            <scope>provided</scope>
         </dependency>
 
-        <!-- Kafka -->
+        <!-- ActiveMQ -->
         <dependency>
-            <groupId>org.apache.kafka</groupId>
-            <artifactId>kafka-clients</artifactId>
-            <version>3.7.0</version>
+            <groupId>org.apache.activemq</groupId>
+            <artifactId>activemq-client</artifactId>
+            <version>6.2.5</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- Pulsar -->
+        <dependency>
+            <groupId>org.apache.pulsar</groupId>
+            <artifactId>pulsar-client</artifactId>
+            <version>4.0.10</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- NATS -->
+        <dependency>
+            <groupId>io.nats</groupId>
+            <artifactId>jnats</artifactId>
+            <version>2.25.2</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- Redis (Jedis) -->
+        <dependency>
+            <groupId>redis.clients</groupId>
+            <artifactId>jedis</artifactId>
+            <version>7.2.0</version>
+            <scope>provided</scope>
         </dependency>
 
         <!-- WebSocket server -->
@@ -91,10 +145,97 @@
             <artifactId>datafaker</artifactId>
             <version>2.0.2</version>
         </dependency>
+
+        <!-- Math Expressions -->
+        <dependency>
+            <groupId>net.objecthunter</groupId>
+            <artifactId>exp4j</artifactId>
+            <version>0.4.8</version>
+        </dependency>
+
+        <!-- Regex string generator -->
+        <dependency>
+            <groupId>com.github.curious-odd-man</groupId>
+            <artifactId>rgxgen</artifactId>
+            <version>1.4</version>
+        </dependency>
+
+        <!-- ASM for bytecode analysis (plugin security validation) -->
+        <dependency>
+            <groupId>org.ow2.asm</groupId>
+            <artifactId>asm</artifactId>
+            <version>9.7</version>
+        </dependency>
+
+        <!-- Multiplatform JCEF Support -->
+        <dependency>
+            <groupId>me.friwi</groupId>
+            <artifactId>jcefmaven</artifactId>
+            <version>146.0.10</version>
+        </dependency>
     </dependencies>
 
     <build>
         <plugins>
+            <!-- 1. Build React UI -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.5.0</version>
+                <configuration>
+                    <skip>${skipUi}</skip>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>npm-install</id>
+                        <phase>generate-resources</phase>
+                        <goals><goal>exec</goal></goals>
+                        <configuration>
+                            <executable>npm</executable>
+                            <arguments><argument>install</argument></arguments>
+                            <workingDirectory>../simulator-ui</workingDirectory>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>npm-build</id>
+                        <phase>generate-resources</phase>
+                        <goals><goal>exec</goal></goals>
+                        <configuration>
+                            <executable>npm</executable>
+                            <arguments><argument>run</argument><argument>build</argument></arguments>
+                            <workingDirectory>../simulator-ui</workingDirectory>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- 2. Copy UI to resources (Using Antrun to avoid 'outside base directory' warnings) -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <version>3.1.0</version>
+                <configuration>
+                    <skip>${skipUi}</skip>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>copy-ui-resources</id>
+                        <phase>generate-resources</phase>
+                        <goals><goal>run</goal></goals>
+                        <configuration>
+                            <target>
+                                <echo message="Copying UI distribution from simulator-ui/dist to core resources..." />
+                                <!-- Start clean so hashed bundles from previous builds do not pile up in the JAR -->
+                                <delete dir="${project.basedir}/src/main/resources/ui" />
+                                <mkdir dir="${project.basedir}/src/main/resources/ui" />
+                                <copy todir="${project.basedir}/src/main/resources/ui">
+                                    <fileset dir="${project.basedir}/../simulator-ui/dist" />
+                                </copy>
+                            </target>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
@@ -103,7 +244,137 @@
                     <release>${maven.compiler.release}</release>
                 </configuration>
             </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>3.6.1</version>
+                <executions>
+                    <execution>
+                        <id>copy-shared-libs</id>
+                        <phase>compile</phase>
+                        <goals>
+                            <goal>copy-dependencies</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.basedir}/lib/shared</outputDirectory>
+                            <includeScope>provided</includeScope>
+                            <!-- Only copy the libraries we want to share with plugins -->
+                            <includeArtifactIds>
+                                kafka-clients,amqp-client,org.eclipse.paho.client.mqttv3,activemq-client,pulsar-client,jnats,jedis
+                            </includeArtifactIds>
+                            <overWriteReleases>false</overWriteReleases>
+                            <overWriteSnapshots>false</overWriteSnapshots>
+                            <overWriteIfNewer>true</overWriteIfNewer>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>copy-dependencies</id>
+                        <phase>prepare-package</phase>
+                        <goals>
+                            <goal>copy-dependencies</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/dependency</outputDirectory>
+                            <overWriteReleases>false</overWriteReleases>
+                            <overWriteSnapshots>false</overWriteSnapshots>
+                            <overWriteIfNewer>true</overWriteIfNewer>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <!-- Test coverage report (target/site/jacoco/jacoco.xml), consumed by SonarQube -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>${jacoco.version}</version>
+                <executions>
+                    <execution>
+                        <id>prepare-agent</id>
+                        <goals><goal>prepare-agent</goal></goals>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>verify</phase>
+                        <goals><goal>report</goal></goals>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
+        <pluginManagement>
+            <plugins>
+                <!-- This is to avoid Eclipse M2E warnings about exec-maven-plugin -->
+                <plugin>
+                    <groupId>org.eclipse.m2e</groupId>
+                    <artifactId>lifecycle-mapping</artifactId>
+                    <version>1.0.0</version>
+                    <configuration>
+                        <lifecycleMappingMetadata>
+                            <pluginExecutions>
+                                <pluginExecution>
+                                    <pluginExecutionFilter>
+                                        <groupId>org.codehaus.mojo</groupId>
+                                        <artifactId>exec-maven-plugin</artifactId>
+                                        <versionRange>[3.5.0,)</versionRange>
+                                        <goals><goal>exec</goal></goals>
+                                    </pluginExecutionFilter>
+                                    <action><ignore/></action>
+                                </pluginExecution>
+                                <pluginExecution>
+                                    <pluginExecutionFilter>
+                                        <groupId>org.apache.maven.plugins</groupId>
+                                        <artifactId>maven-antrun-plugin</artifactId>
+                                        <versionRange>[3.1.0,)</versionRange>
+                                        <goals><goal>run</goal></goals>
+                                    </pluginExecutionFilter>
+                                    <action><ignore/></action>
+                                </pluginExecution>
+                                <!-- The IDE resolves plugin-api as a workspace project (no JAR), which copy-dependencies
+                                     cannot copy (MDEP-187). The copies are only needed by the command-line build. -->
+                                <pluginExecution>
+                                    <pluginExecutionFilter>
+                                        <groupId>org.apache.maven.plugins</groupId>
+                                        <artifactId>maven-dependency-plugin</artifactId>
+                                        <versionRange>[3.6.1,)</versionRange>
+                                        <goals><goal>copy-dependencies</goal></goals>
+                                    </pluginExecutionFilter>
+                                    <action><ignore/></action>
+                                </pluginExecution>
+                            </pluginExecutions>
+                        </lifecycleMappingMetadata>
+                    </configuration>
+                </plugin>
+                <!-- Settings shared by the installers of every OS (see the installer-* profiles) -->
+                <plugin>
+                    <groupId>org.panteleyev</groupId>
+                    <artifactId>jpackage-maven-plugin</artifactId>
+                    <version>1.8.0</version>
+                    <configuration>
+                        <name>GenSynth</name>
+                        <appVersion>${project.version}</appVersion>
+                        <vendor>Alejandro Garcia Sanchez</vendor>
+                        <copyright>Copyright 2026 Alejandro Garcia Sanchez</copyright>
+                        <description>Synthetic data generator for IoT and messaging systems. The first start downloads the embedded browser (about 150 MB) and needs an internet connection.</description>
+                        <aboutUrl>https://github.com/alegarciasanchez7/tfg-gensynth</aboutUrl>
+                        <input>${installer.input}</input>
+                        <!-- Installed next to $APPDIR, outside the classpath: only the plugins load them -->
+                        <appContentPaths>
+                            <appContentPath>${installer.dir}/shared</appContentPath>
+                        </appContentPaths>
+                        <mainJar>${project.build.finalName}.jar</mainJar>
+                        <mainClass>com.gensynth.core.App</mainClass>
+                        <destination>${installer.dir}/dist</destination>
+                        <!-- Default arguments of the launcher: passing any argument replaces them -->
+                        <arguments>
+                            <argument>--desktop</argument>
+                        </arguments>
+                        <!-- $APPDIR is expanded by the launcher: the folder of the installed application files -->
+                        <javaOptions>
+                            <option>-Dgensynth.appdir=$APPDIR</option>
+                        </javaOptions>
+                    </configuration>
+                </plugin>
+            </plugins>
+        </pluginManagement>
     </build>
 
     <profiles>
@@ -119,6 +390,169 @@
                             <mainClass>${benchmark.mainClass}</mainClass>
                             <classpathScope>test</classpathScope>
                         </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <!--
+          Installers: ./mvnw -B -Dinstaller -DskipTests package (from the root, on the target OS).
+          This profile gathers the application files in target/installer/input; the installer-<os>
+          profile of the running OS turns them into an installer in target/installer/dist.
+          A future CLI launcher only needs a <launchers> entry in the jpackage configuration.
+        -->
+        <profile>
+            <id>installer</id>
+            <activation>
+                <property><name>installer</name></property>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-dependency-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>installer-dependencies</id>
+                                <phase>package</phase>
+                                <goals><goal>copy-dependencies</goal></goals>
+                                <configuration>
+                                    <outputDirectory>${installer.input}</outputDirectory>
+                                    <!-- Only what the application needs at runtime: no test or provided libraries -->
+                                    <includeScope>runtime</includeScope>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-antrun-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>installer-input</id>
+                                <phase>package</phase>
+                                <goals><goal>run</goal></goals>
+                                <configuration>
+                                    <skip>false</skip>
+                                    <target>
+                                        <copy file="${project.build.directory}/${project.build.finalName}.jar" todir="${installer.input}"/>
+                                        <!-- Client libraries shared with the plugins: app content, not on the classpath -->
+                                        <copy todir="${installer.dir}/shared">
+                                            <fileset dir="${project.basedir}/lib/shared" includes="*.jar"/>
+                                        </copy>
+                                    </target>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <profile>
+            <id>installer-windows</id>
+            <activation>
+                <property><name>installer</name></property>
+                <os><family>windows</family></os>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.panteleyev</groupId>
+                        <artifactId>jpackage-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>installer-msi</id>
+                                <phase>package</phase>
+                                <goals><goal>jpackage</goal></goals>
+                                <configuration>
+                                    <type>MSI</type>
+                                    <icon>${installer.packaging}/icons/gensynth.ico</icon>
+                                    <winMenu>true</winMenu>
+                                    <winMenuGroup>GenSynth</winMenuGroup>
+                                    <winShortcut>true</winShortcut>
+                                    <winDirChooser>true</winDirChooser>
+                                    <!-- Fixed forever: lets a newer version replace the installed one -->
+                                    <winUpgradeUuid>5c2b9d1e-7f4a-4c3e-9b8d-2e6f1a0c4d73</winUpgradeUuid>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <profile>
+            <id>installer-linux</id>
+            <activation>
+                <property><name>installer</name></property>
+                <os><family>unix</family><name>Linux</name></os>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.panteleyev</groupId>
+                        <artifactId>jpackage-maven-plugin</artifactId>
+                        <configuration>
+                            <icon>${installer.packaging}/icons/gensynth.png</icon>
+                            <linuxPackageName>gensynth</linuxPackageName>
+                            <linuxShortcut>true</linuxShortcut>
+                            <linuxMenuGroup>Development</linuxMenuGroup>
+                            <linuxAppCategory>devel</linuxAppCategory>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>installer-deb</id>
+                                <phase>package</phase>
+                                <goals><goal>jpackage</goal></goals>
+                                <configuration>
+                                    <type>DEB</type>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>installer-rpm</id>
+                                <phase>package</phase>
+                                <goals><goal>jpackage</goal></goals>
+                                <configuration>
+                                    <type>RPM</type>
+                                    <skip>${installer.skipRpm}</skip>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <profile>
+            <id>installer-mac</id>
+            <activation>
+                <property><name>installer</name></property>
+                <os><family>mac</family></os>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.panteleyev</groupId>
+                        <artifactId>jpackage-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>installer-dmg</id>
+                                <phase>package</phase>
+                                <goals><goal>jpackage</goal></goals>
+                                <configuration>
+                                    <type>DMG</type>
+                                    <icon>${installer.packaging}/icons/gensynth.icns</icon>
+                                    <macPackageIdentifier>com.gensynth.desktop</macPackageIdentifier>
+                                    <macPackageName>GenSynth</macPackageName>
+                                    <!-- Shown next to the app in the disk image: how to open an unsigned app -->
+                                    <macDmgContentPaths>
+                                        <!-- No spaces in the name: jpackage splits this option on whitespace -->
+                                        <macDmgContentPath>${installer.packaging}/macos/READ_ME_FIRST.txt</macDmgContentPath>
+                                    </macDmgContentPaths>
+                                </configuration>
+                            </execution>
+                        </executions>
                     </plugin>
                 </plugins>
             </build>

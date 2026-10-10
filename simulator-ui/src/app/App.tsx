@@ -5,51 +5,193 @@ import { Workspace } from './components/workspace/Workspace';
 import { RightPanel } from './components/layout/panels/right/RightPanel';
 import { BottomPanel } from './components/layout/panels/bottom/BottomPanel';
 import { useApp } from './context';
-import { Toaster } from 'sonner';
+import { Toaster, toast } from 'sonner';
+import { RestartOverlay } from './components/layout/header/RestartOverlay';
+import {
+  CloseConfigurationDialog,
+  type CloseConfigurationReason,
+} from './components/dialogs/CloseConfigurationDialog';
+import { pickProjectFile, type PickedProjectFile } from './core/fileStorage';
+import { useEffect, useRef, useState } from 'react';
+import { useDocumentTheme } from './context/hooks/useDocumentTheme';
+import { resolveDiscardTarget, useKeyboardShortcuts } from './context/hooks/useKeyboardShortcuts';
+import { ConfirmDeleteDialog } from './components/common/ConfirmDeleteDialog';
+import { reportUiErrorToCore } from './core/uiErrorReporter';
+
+/** Project switch waiting for the user to confirm closing the current configuration. */
+interface PendingProjectAction {
+  reason: CloseConfigurationReason;
+  /** File already picked for 'load' (browser mode). Desktop mode picks it after confirming. */
+  file?: PickedProjectFile | null;
+}
 
 export default function App() {
   const { state, actions } = useApp();
+  const [pendingAction, setPendingAction] = useState<PendingProjectAction | null>(null);
+  const [isDiscardAllOpen, setIsDiscardAllOpen] = useState(false);
+  const isSavingRef = useRef(false);
 
   const {
     isDark,
     systemStatus,
-    projectName,
+    currentFileName,
+    isDirty,
+    connectionMode,
     selection,
     groups,
     variables,
     bottomTab,
     formatTemplates,
-    connectorCatalog,
     latestConnectors,
     connectorHealthSummary,
+    isRestarting,
   } = state;
+
+  useEffect(() => {
+    const handleError = (event: ErrorEvent) => {
+      void reportUiErrorToCore(`[UI CRASH] ${event.message} at ${event.filename}:${event.lineno}`);
+    };
+
+    const handleRejection = (event: PromiseRejectionEvent) => {
+      void reportUiErrorToCore(`[UI UNHANDLED REJECTION] ${event.reason}`);
+    };
+
+    window.addEventListener('error', handleError);
+    window.addEventListener('unhandledrejection', handleRejection);
+    return () => {
+      window.removeEventListener('error', handleError);
+      window.removeEventListener('unhandledrejection', handleRejection);
+    };
+  }, []);
+
+  // Window unload guard against accidental tab closing with unsaved changes
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isDirty) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isDirty]);
+
+  // "New" always asks for confirmation since it closes the current configuration
+  const handleNewProjectRequest = () => {
+    setPendingAction({ reason: 'new' });
+  };
+
+  const handleLoadProjectRequest = async () => {
+    if (!isDirty) {
+      await actions.loadProjectState();
+      return;
+    }
+    if (connectionMode === 'jcef') {
+      setPendingAction({ reason: 'load' });
+      return;
+    }
+    // Pick the file first, while the click still counts as a user gesture for the file picker
+    const file = await pickProjectFile();
+    if (file) {
+      setPendingAction({ reason: 'load', file });
+    }
+  };
+
+  const handleCloseConfirm = async (saveFirst: boolean) => {
+    const action = pendingAction;
+    if (!action) return;
+    // Keep the dialog open if saving was cancelled or failed, so nothing is lost
+    if (saveFirst && !(await actions.saveProjectState())) return;
+
+    setPendingAction(null);
+    if (action.reason === 'new') {
+      await actions.newProjectState();
+    } else {
+      await actions.loadProjectState(action.file);
+    }
+  };
 
   // Usar templates del estado directamente
   const mergedTemplates = formatTemplates;
 
+  useDocumentTheme(isDark);
+
+  // Ctrl+S: same as the Save button (ignored while a save is still running)
+  const handleSaveShortcut = async () => {
+    if (isSavingRef.current) return;
+    isSavingRef.current = true;
+    try {
+      await actions.saveProjectState();
+    } finally {
+      isSavingRef.current = false;
+    }
+  };
+
+  // Ctrl+Z: same as the Discard button of the selected group/flow/variable, or a confirmed
+  // general discard when nothing is selected
+  const handleDiscardShortcut = () => {
+    const target = resolveDiscardTarget(selection, state.dirtyItems, isDirty);
+    if (target === 'all') {
+      setIsDiscardAllOpen(true);
+      return;
+    }
+    if (!target) {
+      toast.info(selection.type === 'none' ? 'No unsaved changes to discard' : `No unsaved changes in the selected ${selection.type}`);
+      return;
+    }
+    const name = target.type === 'variable'
+      ? variables.find((variable) => variable.id === target.id)?.name
+      : target.type === 'group'
+        ? groups.find((group) => group.id === target.id)?.name
+        : groups.flatMap((group) => group.flows).find((flow) => flow.id === target.id)?.name;
+    void actions.discardItemChanges(target.type, target.id);
+    toast.info(`Changes discarded for ${target.type} "${name ?? target.id}"`);
+  };
+
+  useKeyboardShortcuts({ onSave: handleSaveShortcut, onDiscard: handleDiscardShortcut });
+
+  const handleDiscardAllConfirm = async () => {
+    setIsDiscardAllOpen(false);
+    await actions.discardAllChanges();
+    toast.info('All unsaved changes discarded');
+  };
+
   return (
     <div
-      className={`h-screen w-screen flex flex-col overflow-hidden ${isDark ? 'dark' : ''}`}
+      className="h-screen w-screen flex flex-col overflow-hidden"
       style={{
         background: 'var(--c-bg3)',
         color: 'var(--c-tx2)',
         fontFamily: 'JetBrains Mono, monospace',
       }}
     >
-      {/* ── Header ─────────────────────────────────── */}
+      <RestartOverlay isVisible={isRestarting} />
+
+      <CloseConfigurationDialog
+        isOpen={Boolean(pendingAction)}
+        reason={pendingAction?.reason ?? 'new'}
+        fileName={currentFileName}
+        hasUnsavedChanges={isDirty}
+        onConfirm={handleCloseConfirm}
+        onCancel={() => setPendingAction(null)}
+      />
+
+      {/* ── Header ────────────────────────────────── */}
       <Header
         systemStatus={systemStatus}
         onStatusToggle={actions.toggleSystem}
-        onLoadProject={actions.loadProjectState}
+        onNewProject={handleNewProjectRequest}
+        onLoadProject={handleLoadProjectRequest}
         onSaveProject={actions.saveProjectState}
-        projectName={projectName}
-        isDark={isDark}
-        onThemeToggle={actions.toggleTheme}
+        onSaveAsProject={actions.saveProjectStateAs}
+        currentFileName={currentFileName}
+        isDirty={isDirty}
         latestConnectors={latestConnectors}
         connectorHealthSummary={connectorHealthSummary}
+        variables={variables}
       />
 
-      {/* ── Resource monitor bar ────────────────────── */}
+      {/* ── Compact telemetry bar ───────────────────── */}
       <ResourceBar />
 
       {/* ── Main 3-column layout ────────────────────── */}
@@ -57,6 +199,7 @@ export default function App() {
         {/* Left: Groups & Flows */}
         <LeftPanel
           groups={groups}
+          variables={variables}
           selection={selection}
           formatTemplate={mergedTemplates}
           latestConnectors={latestConnectors}
@@ -66,6 +209,11 @@ export default function App() {
           onCreateGroup={actions.createGroup}
           onDeleteGroup={actions.deleteGroup}
           onCreateFlow={actions.createFlow}
+          onUpdateGroupConfig={actions.updateGroupConfig}
+          onUpdateFlowConfig={actions.updateFlowConfig}
+          onCloneGroup={actions.cloneGroup}
+          onCloneFlow={actions.cloneFlow}
+          onDeleteFlow={actions.deleteFlow}
         />
 
         {/* Center: Dynamic Workspace */}
@@ -73,10 +221,13 @@ export default function App() {
           selection={selection}
           groups={groups}
           variables={variables}
+          onSelectGroup={actions.selectGroup}
+          onSelectFlow={actions.selectFlow}
           onSelectVariable={actions.selectVariable}
           formatTemplate={mergedTemplates}
           onFormatChange={actions.setFormatTemplate}
           onClearVariableSelection={actions.clearVariableSelection}
+          onClearSelection={actions.clearSelection}
         />
 
         {/* Right: Variables */}
@@ -95,7 +246,16 @@ export default function App() {
         systemStatus={systemStatus}
       />
 
-      <Toaster position="top-right" richColors closeButton />
+      <ConfirmDeleteDialog
+        open={isDiscardAllOpen}
+        onOpenChange={setIsDiscardAllOpen}
+        title="Discard all changes?"
+        description="Every unsaved change (groups, flows, variables and settings) will be lost and the configuration will return to its last saved state. This cannot be undone."
+        confirmLabel="Discard all"
+        onConfirm={handleDiscardAllConfirm}
+      />
+
+      <Toaster position="top-right" richColors closeButton theme={isDark ? 'dark' : 'light'} />
     </div>
   );
 }
