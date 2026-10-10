@@ -186,7 +186,7 @@ function OfflineGridOverlay() {
     const updateGrid = () => {
       const b = map.getBounds();
       const z = map.getZoom();
-      let step = 1.0;
+      let step: number;
       if (z >= 13) step = 0.01;
       else if (z >= 11) step = 0.05;
       else if (z >= 9) step = 0.1;

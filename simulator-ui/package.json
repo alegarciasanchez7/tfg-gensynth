@@ -6,8 +6,14 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",
@@ -80,6 +86,7 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^4.7.0",
+    "@vitest/coverage-v8": "^4.1.4",
     "eslint": "^10.3.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
@@ -87,6 +94,7 @@
     "jsdom": "^29.0.2",
     "tailwindcss": "4.1.12",
     "typescript": "^6.0.3",
+    "typescript-eslint": "^8.71.1",
     "vite": "^6.4.3",
     "vitest": "^4.1.4"
   },
