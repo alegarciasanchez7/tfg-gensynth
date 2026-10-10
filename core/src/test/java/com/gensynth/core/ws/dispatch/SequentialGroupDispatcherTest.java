@@ -82,6 +82,19 @@ public class SequentialGroupDispatcherTest {
     }
 
     @Test
+    public void aMessageThatFailsToGenerateIsNotQueued() throws Exception {
+        handler.failingFlows.add("A");
+        dispatcher = new SequentialGroupDispatcher(group, handler, 100);
+
+        assertFalse("nothing generated", dispatcher.dispatch(List.of(a)));
+        assertTrue(dispatcher.dispatch(List.of(a, b)));
+
+        await("the other flow is still sent", () -> handler.published.size() == 1);
+        assertEquals(List.of("B1"), handler.published);
+        assertEquals(0, handler.skipped("A"));
+    }
+
+    @Test
     public void aFailingPublishDoesNotStopTheSender() throws Exception {
         handler.failNextPublish = true;
         dispatcher = new SequentialGroupDispatcher(group, handler, 100);
