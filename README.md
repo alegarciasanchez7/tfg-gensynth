@@ -238,7 +238,7 @@ Every push and pull request runs the [CI workflow](.github/workflows/ci.yml) on 
 |---|---|
 | **Frontend** | `npm run lint`, `npm run typecheck`, `npm run test:coverage` and `npm run build` in `simulator-ui/`. |
 | **Backend** | `./mvnw verify` (build, tests and JaCoCo coverage) on Linux, Windows and macOS. |
-| **SonarQube analysis** | Analyses the Java and TypeScript code on [SonarQube Cloud](https://sonarcloud.io/summary/new_code?id=alegarciasanchez7_tfg-gensynth) and fails when the Quality Gate fails. |
+| **SonarQube analysis** | Only on `main`: analyses the Java and TypeScript code on [SonarQube Cloud](https://sonarcloud.io/summary/new_code?id=alegarciasanchez7_tfg-gensynth) and fails when the Quality Gate fails. |
 
 Run the same checks locally before pushing:
 
