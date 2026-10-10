@@ -17,8 +17,10 @@ import java.io.InputStream;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.DirectoryStream;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -61,6 +63,9 @@ public class PluginSandboxValidator {
 
     /** SPI service file path inside the JAR. */
     private static final String SPI_SERVICE_FILE = PluginApi.SERVICE_FILE;
+
+    /** Prefix of the temporary copy of the plugin JAR loaded by the sandbox. */
+    private static final String TEMP_JAR_PREFIX = "gensynth-plugin-validate-";
 
     /** Service file of plugins built for the legacy pre-release plugin API. */
     private static final String LEGACY_SERVICE_FILE =
@@ -291,7 +296,7 @@ public class PluginSandboxValidator {
     LoadedPlugin loadDescriptorInSandbox(byte[] jarBytes, PluginValidationResult.Builder builder) {
         Path tempFile = null;
         try {
-            tempFile = Files.createTempFile("gensynth-plugin-validate-", ".jar");
+            tempFile = createPrivateTempJar();
             Files.write(tempFile, jarBytes);
 
             List<URL> urls = new ArrayList<>();
@@ -325,6 +330,10 @@ public class PluginSandboxValidator {
         } catch (TimeoutException e) {
             builder.log(PluginValidationResult.ValidationLevel.ERROR, "Loading timeout: plugin took too long to respond (> " + DESCRIPTOR_LOAD_TIMEOUT_SECONDS + "s)");
             return null;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            builder.log(PluginValidationResult.ValidationLevel.ERROR, "Plugin validation was interrupted.");
+            return null;
         } catch (Exception e) {
             logger.debug("Error loading plugin descriptor in sandbox", e);
             String message = (e.getCause() != null) ? e.getCause().getMessage() : e.getMessage();
@@ -340,12 +349,32 @@ public class PluginSandboxValidator {
     }
 
     /**
+     * Creates the temporary file the plugin JAR is copied to before loading it. Only its owner
+     * can read or write it, so another local user cannot swap the JAR between validation and
+     * loading.
+     *
+     * @return the new, empty temporary file
+     * @throws IOException if the file cannot be created
+     */
+    static Path createPrivateTempJar() throws IOException {
+        if (FileSystems.getDefault().supportedFileAttributeViews().contains("posix")) {
+            return Files.createTempFile(TEMP_JAR_PREFIX, ".jar",
+                PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------")));
+        }
+        // Windows: the temporary directory is already private to the user
+        return Files.createTempFile(TEMP_JAR_PREFIX, ".jar");
+    }
+
+    /**
      * Loads the first ConnectorPlugin of the JAR using ServiceLoader within the given
      * ClassLoader, with a timeout to prevent blocking code. Reading its info and fields is
      * the dry run: it executes the plugin's constructor and static initialization.
      */
     private LoadedPlugin loadWithTimeout(URLClassLoader classLoader)
             throws TimeoutException, ExecutionException, InterruptedException {
+        // Not try-with-resources: close() waits for the task, so a plugin that hangs while loading
+        // would block the validation forever. shutdownNow() in the finally block interrupts it instead.
+        @SuppressWarnings("java:S2095")
         ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
             Thread t = new Thread(r, "plugin-sandbox-loader");
             t.setDaemon(true);

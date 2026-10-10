@@ -62,7 +62,7 @@ export function useBridgeSubscriptions({
       }
     };
 
-    initConnection();
+    void initConnection();
   }, [useMockData, dispatch]);
 
   // Health logging

@@ -5,11 +5,16 @@ import org.junit.Before;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.file.FileSystems;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.util.Set;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
 
 import static org.junit.Assert.*;
+import static org.junit.Assume.assumeTrue;
 
 /**
  * Unit tests for the PluginSandboxValidator.
@@ -127,6 +132,17 @@ public class PluginSandboxValidatorTest {
         // Minimal JAR with no classes should pass
         assertTrue(result);
         assertTrue(builder.build().getErrors().isEmpty());
+    }
+
+    @Test
+    public void testTempJarIsPrivateToItsOwner() throws IOException {
+        assumeTrue("POSIX permissions only", FileSystems.getDefault().supportedFileAttributeViews().contains("posix"));
+        Path tempJar = PluginSandboxValidator.createPrivateTempJar();
+        try {
+            assertEquals("rw-------", PosixFilePermissions.toString(Files.getPosixFilePermissions(tempJar)));
+        } finally {
+            Files.deleteIfExists(tempJar);
+        }
     }
 
     // ─── Helper methods ─────────────────────────────────────────
