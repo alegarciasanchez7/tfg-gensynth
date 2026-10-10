@@ -1,5 +1,6 @@
 package com.gensynth.core.ws.handler;
 
+import com.gensynth.core.config.AppPaths;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gensynth.core.model.GroupDefinition;
@@ -13,7 +14,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -286,7 +286,7 @@ public class StateCommandHandler implements CommandHandler {
         payload.put("connectorCatalog", ctx.getConnectorCatalogService().listAvailableConnectors());
 
         try {
-            Path reportPath = Paths.get("plugins", ".rollback_report.json");
+            Path reportPath = AppPaths.current().rollbackReport();
             if (java.nio.file.Files.exists(reportPath)) {
                 String content = java.nio.file.Files.readString(reportPath, java.nio.charset.StandardCharsets.UTF_8);
                 // Strip UTF-8 BOM if present
@@ -300,7 +300,7 @@ public class StateCommandHandler implements CommandHandler {
         } catch (Exception e) {
             logger.error("Failed to include rollback report in initial state", e);
             try {
-                java.nio.file.Files.deleteIfExists(Paths.get("plugins", ".rollback_report.json"));
+                java.nio.file.Files.deleteIfExists(AppPaths.current().rollbackReport());
             } catch (Exception ignored) {}
         }
 
