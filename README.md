@@ -30,7 +30,7 @@ Everything GenSynth needs is included: you do not need to install Java.
 >   Click **More info → Run anyway**.
 > - **macOS:** the first time, right-click GenSynth in *Applications* and choose **Open** (or
 >   *System Settings → Privacy & Security → Open Anyway*). The disk image includes a
->   *READ ME FIRST* file with these steps.
+>   `READ_ME_FIRST.txt` file with these steps.
 > - **First start:** GenSynth downloads its embedded browser (about 150 MB), so it needs an
 >   internet connection. A window shows the progress; it only happens once.
 

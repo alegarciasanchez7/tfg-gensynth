@@ -547,7 +547,8 @@
                                     <macPackageName>GenSynth</macPackageName>
                                     <!-- Shown next to the app in the disk image: how to open an unsigned app -->
                                     <macDmgContentPaths>
-                                        <macDmgContentPath>${installer.packaging}/macos/READ ME FIRST.txt</macDmgContentPath>
+                                        <!-- No spaces in the name: jpackage splits this option on whitespace -->
+                                        <macDmgContentPath>${installer.packaging}/macos/READ_ME_FIRST.txt</macDmgContentPath>
                                     </macDmgContentPaths>
                                 </configuration>
                             </execution>
