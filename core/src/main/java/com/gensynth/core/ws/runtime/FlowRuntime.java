@@ -4,21 +4,33 @@ import com.gensynth.core.model.FlowDefinition;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Represents the runtime state of a data flow.
+ *
+ * Status and metric fields are written by the flow's sender thread and read by the
+ * metrics and bridge threads, so they are volatile or atomic.
  */
 public class FlowRuntime {
     public final String id;
     public String name;
     public String technology;
-    public String connectionStatus;
-    public int throughput;
-    public int latency;
-    public boolean hasError;
-    public String errorMessage;
+    public volatile String connectionStatus;
+    /** Measured messages per second (see {@link ThroughputMeter}). */
+    public volatile double throughput;
+    public volatile int latency;
+    public volatile boolean hasError;
+    public volatile String errorMessage;
+    /**
+     * Legacy publish interval in milliseconds. Ignored by the engine since message generation
+     * is driven by the global tick clock; kept so existing project files round-trip.
+     */
     public int interval;
+    /** Legacy number of messages per send; ignored by the engine (one message per send). */
     public int burst;
+    /** Number of global ticks between two messages of this flow (at least 1). */
+    public volatile int everyTicks = 1;
     public String topic;
     public String host;
     public int port;
@@ -26,6 +38,14 @@ public class FlowRuntime {
     public String format;
     public boolean enabled;
     public Map<String, Object> connectorConfig;
+    /** Messages generated since the group was started (runtime only, never persisted). */
+    public final AtomicLong generated = new AtomicLong();
+    /** Messages whose publish completed without error since the group was started. */
+    public final AtomicLong sent = new AtomicLong();
+    /** Messages that could not be sent since the group was started (generation or publish error). */
+    public final AtomicLong failed = new AtomicLong();
+    /** Send rate meter of this flow. */
+    public final ThroughputMeter meter = new ThroughputMeter();
 
     public FlowRuntime(
         String id,
@@ -84,7 +104,42 @@ public class FlowRuntime {
         boolean enabled = definition.isEnabled();
         Map<String, Object> config = definition.getConnectorConfig();
 
-        return new FlowRuntime(id, name, technology, status, throughput, latency, hasError, errorMessage, interval, burst, topic, host, port, template, format, enabled, config);
+        FlowRuntime runtime = new FlowRuntime(id, name, technology, status, throughput, latency, hasError, errorMessage, interval, burst, topic, host, port, template, format, enabled, config);
+        runtime.everyTicks = definition.getEveryTicks();
+        return runtime;
+    }
+
+    /**
+     * Whether this flow sends a message on the given tick. The first tick of the group
+     * ({@code tickNumber == startTick}) always sends.
+     *
+     * @param tickNumber current global tick
+     * @param startTick  first tick seen by the group since it started
+     * @return true if the flow is due on this tick
+     */
+    public boolean isDueOn(long tickNumber, long startTick) {
+        return Math.floorMod(tickNumber - startTick, (long) Math.max(1, everyTicks)) == 0;
+    }
+
+    /**
+     * Records a successful send.
+     *
+     * @param nowNanos {@link System#nanoTime()} of the send
+     */
+    public void recordSent(long nowNanos) {
+        sent.incrementAndGet();
+        meter.recordSend(nowNanos);
+    }
+
+    /**
+     * Resets the message counters and the rate meter (when the group starts from stopped).
+     */
+    public void resetCounters() {
+        generated.set(0);
+        sent.set(0);
+        failed.set(0);
+        meter.reset();
+        throughput = 0;
     }
 
     public FlowDefinition toDefinition(String groupId) {
@@ -104,6 +159,7 @@ public class FlowRuntime {
             connectorConfig
         );
         def.setEnabled(enabled);
+        def.setEveryTicks(everyTicks);
         return def;
     }
 
@@ -121,6 +177,7 @@ public class FlowRuntime {
         }
         payload.put("interval", interval);
         payload.put("burst", burst);
+        payload.put("everyTicks", everyTicks);
         payload.put("topic", topic);
         payload.put("host", host);
         payload.put("port", port);

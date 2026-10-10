@@ -196,6 +196,7 @@ export function useCrudActions({
     burst?: number,
     template?: string,
     connectorConfig?: Record<string, unknown>,
+    everyTicks?: number,
   ) => {
     const optimisticId = generateOptimisticId('flow');
     const optimisticFlow = createOptimisticFlow(
@@ -206,7 +207,8 @@ export function useCrudActions({
       port,
       topic,
       interval,
-      burst
+      burst,
+      everyTicks
     );
 
     try {
@@ -262,7 +264,8 @@ export function useCrudActions({
               burst,
               template,
               connectorConfig,
-              onResponse
+              onResponse,
+              everyTicks
             ),
           reconcileId: (serverFlow) => {
             const mappedFlow = mapFlowFromCore(serverFlow as FlowState);

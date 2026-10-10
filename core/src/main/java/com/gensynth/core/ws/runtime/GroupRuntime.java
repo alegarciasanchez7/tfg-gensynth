@@ -1,7 +1,9 @@
 package com.gensynth.core.ws.runtime;
 
+import com.gensynth.core.api.IGroupDispatcher;
 import com.gensynth.core.model.FlowDefinition;
 import com.gensynth.core.model.GroupDefinition;
+import com.gensynth.core.model.OutputMode;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -16,10 +18,16 @@ public class GroupRuntime {
     public String name;
     public String status;
     public String description;
+    /** Legacy number of threads; ignored by the engine. */
     public int threads;
+    /** Output mode wire value ("parallel" or "sequential"); applied when the group starts. */
     public String outputMode;
     public boolean enabled;
     public final List<FlowRuntime> flows = new ArrayList<>();
+    /** Sends the messages of the group while it runs; null while stopped or paused. Guarded by the state lock. */
+    public IGroupDispatcher dispatcher;
+    /** First tick seen since the group started (0 = not seen yet). Guarded by the state lock. */
+    public long startTick;
 
     public GroupRuntime(String id, String name, String status, String description, int threads, String outputMode, boolean enabled) {
         this.id = id;
@@ -27,7 +35,7 @@ public class GroupRuntime {
         this.status = status;
         this.description = description;
         this.threads = threads;
-        this.outputMode = outputMode;
+        this.outputMode = OutputMode.fromValue(outputMode).wireValue();
         this.enabled = enabled;
     }
 
@@ -63,7 +71,7 @@ public class GroupRuntime {
         payload.put("id", id);
         payload.put("name", name);
         payload.put("status", status);
-        payload.put("throughput", flows.stream().mapToInt(flow -> flow.throughput).sum());
+        payload.put("throughput", flows.stream().mapToDouble(flow -> flow.throughput).sum());
         payload.put("description", description);
         payload.put("threads", threads);
         payload.put("outputMode", outputMode);

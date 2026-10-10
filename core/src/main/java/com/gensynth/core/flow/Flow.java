@@ -186,7 +186,7 @@ public class Flow {
     /**
      * Get device ID (alias for getFlowId for backwards compatibility).
      */
-    @Deprecated(since = "1.1", forRemoval = true)
+    @Deprecated(since = "1.0.0", forRemoval = true)
     public String getDeviceId() {
         return flowId;
     }

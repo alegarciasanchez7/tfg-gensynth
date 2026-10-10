@@ -10,7 +10,8 @@ import type {
   InitialStatePayload,
   TracePayload,
 } from '../../core/types';
-import type { Variable } from '../../types';
+import type { Variable, ProjectSettings } from '../../types';
+import { normalizeProjectSettings } from '../../core/tickSettings';
 import type { AppState, AppAction } from '../reducer';
 import { mapGroupsFromCore } from '../helpers/groupHelpers';
 import { formatConnectorHealthMessage } from '../helpers/connectorHelpers';
@@ -140,6 +141,7 @@ export function useBridgeSubscriptions({
           payload: {
             groups: serverGroups,
             variables: serverVariables,
+            settings: snapshot.settings ? normalizeProjectSettings(snapshot.settings) : undefined,
             connectorCatalog: snapshot.connectorCatalog,
             metrics: snapshot.metrics,
             systemStatus: snapshot.systemStatus.status,
@@ -209,8 +211,12 @@ export function useBridgeSubscriptions({
         dispatch({ type: 'SET_VARIABLES', payload: reconciliation.variablesToUpdate });
       }),
       
-      bridge.on('flow-update', (flowMetrics: FlowMetricsPayload) => {
-        dispatch({ type: 'SET_FLOW_METRICS', payload: flowMetrics });
+      bridge.on('settings-update', (settings: ProjectSettings) => {
+        dispatch({ type: 'SET_SETTINGS', payload: normalizeProjectSettings(settings) });
+      }),
+
+      bridge.on('flows-metrics', (flowsMetrics: FlowMetricsPayload[]) => {
+        dispatch({ type: 'SET_FLOWS_METRICS', payload: flowsMetrics });
       }),
 
       bridge.on('error', ({ error, commandId, code, details, recoverable }) => {

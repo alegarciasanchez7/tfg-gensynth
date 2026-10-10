@@ -686,7 +686,7 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
                 className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors cursor-pointer ${
                   isActive
                     ? 'bg-violet-600 text-white shadow-sm'
-                    : 'bg-[var(--c-bg4)] text-[var(--c-tx3)] hover:text-white hover:bg-white/10'
+                    : 'bg-[var(--c-bg4)] text-[var(--c-tx3)] hover:text-[var(--c-tx1)] hover:bg-[var(--c-bg5)]'
                 }`}
               >
                 <IconComp size={13} />
@@ -705,8 +705,8 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
             onClick={() => setOrbitView(!orbitView)}
             className={`h-7 text-xs gap-1 cursor-pointer transition-colors ${
               orbitView
-                ? 'border-cyan-500 bg-cyan-500/20 text-cyan-300'
-                : 'border-[var(--c-br1)] text-[var(--c-tx3)] hover:bg-white/5'
+                ? 'border-cyan-500 bg-cyan-500/20 text-cyan-600 dark:text-cyan-300'
+                : 'border-[var(--c-br1)] text-[var(--c-tx3)] hover:bg-[var(--c-bg5)]'
             }`}
           >
             <Rotate3d size={13} />
@@ -716,7 +716,7 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
           <button
             type="button"
             onClick={() => setZoom((z) => Math.min(2.5, z + 0.15))}
-            className="p-1.5 rounded border border-[var(--c-br1)] bg-[var(--c-bg4)] text-[var(--c-tx3)] hover:text-white cursor-pointer"
+            className="p-1.5 rounded border border-[var(--c-br1)] bg-[var(--c-bg4)] text-[var(--c-tx3)] hover:text-[var(--c-tx1)] cursor-pointer"
             title="Zoom In"
           >
             <ZoomIn size={13} />
@@ -725,7 +725,7 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
           <button
             type="button"
             onClick={() => setZoom((z) => Math.max(0.4, z - 0.15))}
-            className="p-1.5 rounded border border-[var(--c-br1)] bg-[var(--c-bg4)] text-[var(--c-tx3)] hover:text-white cursor-pointer"
+            className="p-1.5 rounded border border-[var(--c-br1)] bg-[var(--c-bg4)] text-[var(--c-tx3)] hover:text-[var(--c-tx1)] cursor-pointer"
             title="Zoom Out"
           >
             <ZoomOut size={13} />
@@ -739,7 +739,7 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
               setZoom(1.0);
               setPanOffset({ x: 0, y: 0 });
             }}
-            className="p-1.5 rounded border border-[var(--c-br1)] bg-[var(--c-bg4)] text-[var(--c-tx3)] hover:text-white cursor-pointer"
+            className="p-1.5 rounded border border-[var(--c-br1)] bg-[var(--c-bg4)] text-[var(--c-tx3)] hover:text-[var(--c-tx1)] cursor-pointer"
             title="Reset Camera View"
           >
             <RefreshCw size={13} />

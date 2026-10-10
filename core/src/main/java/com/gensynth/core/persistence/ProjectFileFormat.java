@@ -16,8 +16,14 @@ import java.util.Locale;
  *
  * A project file is a JSON document with the following shape:
  * <pre>
- * { "format": "gensynth-project", "version": "1.0.0", "exportedAt": "...", "groups": [...], "variables": [...] }
+ * { "format": "gensynth-project", "version": "1.0.0", "exportedAt": "...", "groups": [...], "variables": [...],
+ *   "settings": { "tick": { "mode": "FIXED_RATE", "value": 1, "unit": "SECONDS" } } }
  * </pre>
+ * The {@code settings} section and the flow field {@code everyTicks} (one message every N ticks)
+ * are optional: files without them load with the default settings and {@code everyTicks} 1.
+ * The flow fields {@code burst} and {@code interval} and the group field {@code threads} are
+ * legacy and ignored, and the group {@code outputMode} is "parallel" or "sequential" (other
+ * values load as "parallel").
  * The extension makes file dialogs show only project files, and the {@code format} marker
  * guarantees that a file renamed to ".gsynth" is still rejected when it is not a GenSynth project.
  */
@@ -73,6 +79,9 @@ public final class ProjectFileFormat {
         }
         if (!root.path("groups").isArray() || !root.path("variables").isArray()) {
             throw new IllegalArgumentException("Invalid GenSynth project file: 'groups' and 'variables' must be arrays");
+        }
+        if (root.has("settings") && !root.path("settings").isObject()) {
+            throw new IllegalArgumentException("Invalid GenSynth project file: 'settings' must be an object");
         }
     }
 

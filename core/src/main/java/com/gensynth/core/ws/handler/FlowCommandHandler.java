@@ -2,8 +2,9 @@ package com.gensynth.core.ws.handler;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.gensynth.core.connectors.spi.ConnectorPlugin;
-import com.gensynth.core.connectors.spi.ConnectorPluginDescriptor;
+import com.gensynth.plugin.api.ConnectorConfigException;
+import com.gensynth.plugin.api.ConnectorContext;
+import com.gensynth.plugin.api.ConnectorSession;
 import com.gensynth.core.model.Variable;
 import com.gensynth.core.ws.BridgeContext;
 import com.gensynth.core.ws.UiBridgeWebSocketServer;
@@ -11,10 +12,14 @@ import com.gensynth.core.ws.runtime.FlowRuntime;
 import com.gensynth.core.ws.runtime.GroupRuntime;
 import org.java_websocket.WebSocket;
 
-import java.nio.charset.StandardCharsets;
 import java.util.*;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
+import com.gensynth.core.api.IFlowMessageHandler;
+import com.gensynth.core.api.IGroupDispatcher;
+import com.gensynth.core.api.ITickListener;
+import com.gensynth.core.model.OutputMode;
+import com.gensynth.core.ws.dispatch.FlowMessagePublisher;
+import com.gensynth.core.ws.dispatch.ParallelGroupDispatcher;
+import com.gensynth.core.ws.dispatch.SequentialGroupDispatcher;
 import com.gensynth.core.flow.variables.VariableConfiguration;
 import com.gensynth.core.flow.variables.VariableFactory;
 import com.gensynth.core.flow.variables.DependencyResolver;
@@ -22,13 +27,20 @@ import com.gensynth.core.flow.variables.CyclicDependencyException;
 
 /**
  * Handles logic for CRUD and execution of simulation Flows.
+ *
+ * Message generation is driven by the global tick clock: on every tick ({@link #onTick(long)})
+ * each enabled flow of every running group that is due (one message every {@code everyTicks}
+ * ticks) is handed to its group's {@link IGroupDispatcher}, which sends it following the
+ * group's output mode.
  */
-public class FlowCommandHandler implements CommandHandler {
+public class FlowCommandHandler implements CommandHandler, ITickListener {
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
     private final BridgeContext ctx;
+    private final IFlowMessageHandler messageHandler;
 
     public FlowCommandHandler(BridgeContext ctx) {
         this.ctx = ctx;
+        this.messageHandler = new FlowMessagePublisher(ctx);
     }
 
     @Override
@@ -41,10 +53,11 @@ public class FlowCommandHandler implements CommandHandler {
         String groupId = server.requireTextField(conn, commandId, payload, "groupId", "INVALID_PAYLOAD", "CREATE_FLOW");
         String name = server.requireTextField(conn, commandId, payload, "name", "INVALID_PAYLOAD", "CREATE_FLOW");
         String technology = server.requireTextField(conn, commandId, payload, "technology", "INVALID_PAYLOAD", "CREATE_FLOW");
-        String host = server.requireTextField(conn, commandId, payload, "host", "INVALID_PAYLOAD", "CREATE_FLOW");
-        if (groupId == null || name == null || technology == null || host == null) {
+        if (groupId == null || name == null || technology == null) {
             return;
         }
+        // Legacy connection fields: the destination is now part of the connector configuration
+        String host = payload.path("host").asText("");
 
         String clientRequestId = payload.path("clientRequestId").asText(null);
 
@@ -74,6 +87,7 @@ public class FlowCommandHandler implements CommandHandler {
             int port = payload.path("port").asInt(5672);
             int interval = Math.max(50, payload.path("interval").asInt(1000));
             int burst = Math.max(1, payload.path("burst").asInt(1));
+            int everyTicks = Math.max(1, payload.path("everyTicks").asInt(1));
             String template = payload.path("template").asText("{\"eventId\":\"{{uuid}}\",\"timestamp\":\"{{ts}}\",\"source\":\"gen-synth\",\"value\":{{n}}}");
             String format = payload.path("format").asText(technology.equalsIgnoreCase("file") ? "plain" : "json");
             Map<String, Object> connectorConfig = parseConnectorConfig(payload.path("connectorConfig"));
@@ -98,9 +112,12 @@ public class FlowCommandHandler implements CommandHandler {
                 connectorConfig
             ));
 
+            FlowRuntime flow = findFlowById(group, flowId);
+            if (flow != null) {
+                flow.everyTicks = everyTicks;
+            }
             server.persistState();
 
-            FlowRuntime flow = findFlowById(group, flowId);
             if (flow != null) {
                 server.sendCreatedResponse(conn, commandId, clientRequestId, flow.toPayload(), "flow_created");
             }
@@ -131,15 +148,7 @@ public class FlowCommandHandler implements CommandHandler {
                 return;
             }
 
-            stopPublisherTask(flowId);
-            ConnectorPlugin connector = ctx.getConnectorByFlowId().remove(flowId);
-            if (connector != null) {
-                try {
-                    connector.stop();
-                } catch (Exception ignored) {
-                    ctx.getTotalErrors().incrementAndGet();
-                }
-            }
+            closeSession(flowId);
 
             server.logToBackend("info", "FLOWS", "Deleted flow '" + flow.name + "'", commandId);
             group.flows.remove(flow);
@@ -172,7 +181,8 @@ public class FlowCommandHandler implements CommandHandler {
                 return;
             }
 
-            boolean wasRunning = "connected".equals(flow.connectionStatus);
+            // Generation fields (everyTicks, template, format) apply on the next tick.
+            // Connection fields (technology, host, port, connectorConfig) apply when the group is restarted.
             if (payload.hasNonNull("name")) {
                 flow.name = payload.path("name").asText(flow.name);
             }
@@ -199,6 +209,9 @@ public class FlowCommandHandler implements CommandHandler {
             if (payload.hasNonNull("burst")) {
                 flow.burst = Math.max(1, payload.path("burst").asInt(flow.burst));
             }
+            if (payload.hasNonNull("everyTicks")) {
+                flow.everyTicks = Math.max(1, payload.path("everyTicks").asInt(flow.everyTicks));
+            }
             if (payload.hasNonNull("template")) {
                 flow.template = payload.path("template").asText(flow.template);
             }
@@ -217,10 +230,6 @@ public class FlowCommandHandler implements CommandHandler {
                 if (enabled) {
                     group.enabled = true;
                 }
-            }
-
-            if (wasRunning) {
-                stopPublisherTask(flow.id);
             }
 
             server.persistState();
@@ -278,6 +287,7 @@ public class FlowCommandHandler implements CommandHandler {
                     original.enabled,
                     original.connectorConfig
                 );
+                clone.everyTicks = original.everyTicks;
                 group.flows.add(clone);
 
                 // Clone variables for this flow
@@ -311,10 +321,19 @@ public class FlowCommandHandler implements CommandHandler {
         server.sendVariablesUpdate();
     }
 
+    /**
+     * Starts (or resumes) a group: validates its variables and templates, starts one
+     * connector per flow and creates the dispatcher of its output mode. Counters are reset
+     * when the group starts from stopped, and kept when it resumes from paused.
+     *
+     * @param group the group to start
+     * @throws IllegalStateException on cyclic or broken variable references
+     */
     public void startGroupInternal(GroupRuntime group) {
         if ("running".equals(group.status)) {
             return;
         }
+        boolean resuming = "paused".equals(group.status);
 
         // Validate all variables in the group and perform cycle detection fail-fast
         Map<String, VariableConfiguration> configs = new HashMap<>();
@@ -391,60 +410,90 @@ public class FlowCommandHandler implements CommandHandler {
         }
 
         ctx.getTemplateEngine().clearVariableCache();
+        shutdownDispatcher(group);
 
         for (FlowRuntime flow : group.flows) {
-            stopPublisherTask(flow.id);
+            if (!resuming) {
+                flow.resetCounters();
+            }
+            flow.meter.reset();
+            flow.throughput = 0;
+
+            // Release a session left over from a previous start (e.g. restarting a paused group)
+            closeSession(flow.id);
 
             try {
-                ConnectorPluginDescriptor descriptor = ctx.getConnectorCatalogService()
-                    .findLatestConnector(flow.technology)
-                    .orElseThrow(() -> new IllegalStateException("No connector found for " + flow.technology));
-
-                Map<String, Object> connectorConfig = buildFlowConnectorConfig(group, flow);
-                ConnectorPlugin plugin = ctx.getConnectorCatalogService().createAndInitialize(
-                    descriptor.getPluginId(),
-                    descriptor.getPluginVersion(),
-                    connectorConfig
-                );
-
-                plugin.start();
-                ctx.getConnectorByFlowId().put(flow.id, plugin);
+                ConnectorContext context = new ConnectorContext(flow.name, group.name, ctx.getCurrentOutputDir());
+                ConnectorSession session = ctx.getConnectorCatalogService()
+                    .openSession(flow.technology, flow.connectorConfig, context);
+                ctx.getConnectorByFlowId().put(flow.id, session);
 
                 flow.connectionStatus = "connected";
                 flow.hasError = false;
                 flow.errorMessage = null;
-
-                ScheduledFuture<?> task = ctx.getScheduler().scheduleAtFixedRate(
-                    () -> publishBurst(group, flow),
-                    0,
-                    Math.max(50L, flow.interval),
-                    TimeUnit.MILLISECONDS
-                );
-                ctx.getPublisherTasksByFlowId().put(flow.id, task);
-            } catch (Exception ex) {
-                flow.connectionStatus = "error";
-                flow.hasError = true;
-                flow.errorMessage = ex.getMessage();
-                ctx.getTotalErrors().incrementAndGet();
+            } catch (ConnectorConfigException ex) {
+                markConnectorError(flow, "Invalid connector configuration: " + ex.getMessage());
+            } catch (Exception | LinkageError ex) {
+                markConnectorError(flow, ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage());
             }
         }
 
+        group.dispatcher = createDispatcher(group);
+        group.startTick = 0;
         group.status = "running";
     }
 
+    /**
+     * Creates the dispatcher of the group's output mode for the flows whose connector started.
+     *
+     * @param group the group being started
+     * @return a parallel or sequential dispatcher
+     */
+    public IGroupDispatcher createDispatcher(GroupRuntime group) {
+        if (OutputMode.fromValue(group.outputMode) == OutputMode.SEQUENTIAL) {
+            return new SequentialGroupDispatcher(group, messageHandler, SequentialGroupDispatcher.DEFAULT_QUEUE_CAPACITY);
+        }
+        List<FlowRuntime> sendingFlows = new ArrayList<>();
+        for (FlowRuntime flow : group.flows) {
+            if (ctx.getConnectorByFlowId().containsKey(flow.id)) {
+                sendingFlows.add(flow);
+            }
+        }
+        return new ParallelGroupDispatcher(group, sendingFlows, messageHandler);
+    }
+
+    private void shutdownDispatcher(GroupRuntime group) {
+        if (group.dispatcher != null) {
+            group.dispatcher.shutdown();
+            group.dispatcher = null;
+        }
+    }
+
+    /**
+     * Pauses a group: no more messages are generated and pending ones are dropped (they stay
+     * generated but not sent). Connectors and counters are kept; START_GROUP resumes it.
+     *
+     * @param group the group to pause
+     */
+    public void pauseGroupInternal(GroupRuntime group) {
+        shutdownDispatcher(group);
+        for (FlowRuntime flow : group.flows) {
+            flow.throughput = 0;
+        }
+        group.status = "paused";
+    }
+
+    /**
+     * Stops a group: shuts down its dispatcher and connectors. Counters are kept so the
+     * final numbers stay visible until the group starts again.
+     *
+     * @param group the group to stop
+     */
     public void stopGroupInternal(GroupRuntime group) {
+        shutdownDispatcher(group);
         ctx.getTemplateEngine().clearVariableCache();
         for (FlowRuntime flow : group.flows) {
-            stopPublisherTask(flow.id);
-
-            ConnectorPlugin connector = ctx.getConnectorByFlowId().remove(flow.id);
-            if (connector != null) {
-                try {
-                    connector.stop();
-                } catch (Exception ignored) {
-                    ctx.getTotalErrors().incrementAndGet();
-                }
-            }
+            closeSession(flow.id);
 
             flow.connectionStatus = "disconnected";
             flow.throughput = 0;
@@ -455,98 +504,71 @@ public class FlowCommandHandler implements CommandHandler {
         group.status = "stopped";
     }
 
-    public void publishBurst(GroupRuntime group, FlowRuntime flow) {
-        ConnectorPlugin connector = ctx.getConnectorByFlowId().get(flow.id);
-        if (connector == null || !flow.enabled) {
+    /**
+     * Dispatches one global tick: for every running group, the enabled flows that are due on
+     * this tick (one message every {@code everyTicks} ticks, counted from the group's first
+     * tick) are handed to the group's dispatcher. Dispatchers never block on network I/O, so
+     * a slow group does not delay the others. Paused and stopped groups are skipped.
+     *
+     * @param tickNumber sequential tick number
+     * @return true if at least one message was generated or handed to a sender
+     */
+    @Override
+    public boolean onTick(long tickNumber) {
+        Map<IGroupDispatcher, List<FlowRuntime>> work = new LinkedHashMap<>();
+        synchronized (ctx.getStateLock()) {
+            // Snapshot under the lock; generating and publishing happen outside it
+            for (GroupRuntime group : ctx.getGroupsById().values()) {
+                if (!"running".equals(group.status) || group.dispatcher == null) {
+                    continue;
+                }
+                if (group.startTick == 0) {
+                    group.startTick = tickNumber;
+                }
+                List<FlowRuntime> due = new ArrayList<>();
+                for (FlowRuntime flow : group.flows) {
+                    if (flow.enabled
+                        && ctx.getConnectorByFlowId().containsKey(flow.id)
+                        && flow.isDueOn(tickNumber, group.startTick)) {
+                        due.add(flow);
+                    }
+                }
+                if (!due.isEmpty()) {
+                    work.put(group.dispatcher, due);
+                }
+            }
+        }
+
+        boolean dispatched = false;
+        for (Map.Entry<IGroupDispatcher, List<FlowRuntime>> entry : work.entrySet()) {
+            dispatched |= entry.getKey().dispatch(entry.getValue());
+        }
+        return dispatched;
+    }
+
+    private void markConnectorError(FlowRuntime flow, String message) {
+        flow.connectionStatus = "error";
+        flow.hasError = true;
+        flow.errorMessage = message;
+        ctx.getTotalErrors().incrementAndGet();
+        ctx.getServer().sendLogToAll("error", flow.id, "[" + flow.name + "] " + message);
+    }
+
+    /**
+     * Closes the connector session of a flow, if open.
+     *
+     * @param flowId the flow
+     */
+    public void closeSession(String flowId) {
+        ConnectorSession session = ctx.getConnectorByFlowId().remove(flowId);
+        if (session == null) {
             return;
         }
-
-        long startedAt = System.nanoTime();
-        int sent = 0;
-        String lastPayload = null;
-
         try {
-            for (int i = 0; i < Math.max(1, flow.burst); i++) {
-                String payload = buildPayload(flow, i);
-                connector.publish(flow.topic, payload.getBytes(StandardCharsets.UTF_8), Map.of("content-type", "application/json"));
-                sent++;
-                lastPayload = payload;
-            }
-
-            long elapsedNanos = System.nanoTime() - startedAt;
-            flow.latency = (int) Math.max(1L, TimeUnit.NANOSECONDS.toMillis(elapsedNanos));
-            flow.throughput = Math.max(1, (int) Math.round((sent * 1000.0) / Math.max(1, flow.interval)));
-            flow.connectionStatus = "connected";
-            flow.hasError = false;
-            flow.errorMessage = null;
-
-            ctx.getTotalMessages().addAndGet(sent);
-            ctx.getMessagesLastWindow().addAndGet(sent);
-
-            int burstBytes = 0;
-            if (lastPayload != null) {
-                burstBytes = lastPayload.getBytes(StandardCharsets.UTF_8).length * sent;
-            }
-            ctx.getBytesSentLastWindow().addAndGet(burstBytes);
-
-            if (lastPayload != null) {
-                String preview = lastPayload.length() > 250 ? lastPayload.substring(0, 250) + "..." : lastPayload;
-                ctx.getServer().sendLogToAll("data", flow.id, "[" + group.name + " - " + flow.name + "] ==> " + preview);
-            }
-
-            ctx.getServer().broadcastFlowUpdate(flow);
+            session.close();
         } catch (Exception ex) {
-            flow.connectionStatus = "error";
-            flow.hasError = true;
-            flow.errorMessage = ex.getMessage();
             ctx.getTotalErrors().incrementAndGet();
-            ctx.getServer().sendLogToAll("error", flow.id, "Publish failed: " + ex.getMessage());
-            ctx.getServer().broadcastFlowUpdate(flow);
-        }
-    }
-
-    public String buildPayload(FlowRuntime flow, int indexInBurst) {
-        long sequence = ctx.getTotalMessages().get() + indexInBurst + 1;
-        String groupId = null;
-        for (GroupRuntime g : ctx.getGroupsById().values()) {
-            if (g.flows.contains(flow)) {
-                groupId = g.id;
-                break;
-            }
-        }
-        return ctx.getTemplateEngine().evaluate(flow.template, sequence, ctx.getVariablesById(), flow.id, groupId);
-    }
-
-    public Map<String, Object> buildFlowConnectorConfig(GroupRuntime group, FlowRuntime flow) {
-        Map<String, Object> config = new LinkedHashMap<>();
-        if (flow.connectorConfig != null && !flow.connectorConfig.isEmpty()) {
-            config.putAll(flow.connectorConfig);
-        }
-
-        if ("file".equalsIgnoreCase(flow.technology)) {
-            config.putIfAbsent("outputDir", ctx.getCurrentOutputDir() == null ? "OUTPUT_FILES" : ctx.getCurrentOutputDir());
-            config.putIfAbsent("groupName", group.name);
-            config.putIfAbsent("format", "json");
-            config.putIfAbsent("fileName", sanitizeFileName(flow.name));
-            return config;
-        }
-
-        config.putIfAbsent("host", flow.host);
-        config.putIfAbsent("port", flow.port);
-        config.putIfAbsent("username", "guest");
-        config.putIfAbsent("password", "guest");
-        config.putIfAbsent("virtualHost", "/");
-        config.putIfAbsent("exchange", "gensynth.exchange");
-        config.putIfAbsent("exchangeType", "topic");
-        config.putIfAbsent("exchangeDurable", true);
-        config.putIfAbsent("routingKey", flow.topic);
-        return config;
-    }
-
-    public void stopPublisherTask(String flowId) {
-        ScheduledFuture<?> current = ctx.getPublisherTasksByFlowId().remove(flowId);
-        if (current != null) {
-            current.cancel(false);
+            ctx.getServer().logToBackend("warn", "CONNECTORS", "Failed to close connector of flow " + flowId + ": " + ex.getMessage(), null);
         }
     }
 
@@ -557,13 +579,6 @@ public class FlowCommandHandler implements CommandHandler {
             }
         }
         return null;
-    }
-
-    private String sanitizeFileName(String value) {
-        if (value == null || value.isBlank()) {
-            return "flow";
-        }
-        return value.replaceAll("[^a-zA-Z0-9._-]", "_");
     }
 
     private Map<String, Object> parseConnectorConfig(JsonNode connectorConfigNode) {

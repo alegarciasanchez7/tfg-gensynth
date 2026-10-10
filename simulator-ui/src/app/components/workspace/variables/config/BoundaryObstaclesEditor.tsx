@@ -125,21 +125,21 @@ export const BoundaryObstaclesEditor: React.FC<BoundaryObstaclesEditorProps> = (
                 onClick={() => onSelectObstacle?.(isSelected ? null : obs.id)}
                 className={`flex items-center justify-between p-2 rounded border cursor-pointer transition-all ${
                   isSelected
-                    ? 'border-amber-400 bg-amber-500/15 ring-1 ring-amber-400/40 text-amber-200 shadow-sm'
+                    ? 'border-amber-400 bg-amber-500/15 ring-1 ring-amber-400/40 text-amber-700 dark:text-amber-200 shadow-sm'
                     : obs.enabled
                     ? 'border-amber-500/30 bg-amber-500/5 text-[var(--c-tx2)] hover:border-amber-400/50'
                     : 'border-[var(--c-br1)] bg-[var(--c-bg2)] text-[var(--c-tx4)] opacity-60'
                 }`}
               >
                 <div className="flex items-center gap-2 text-xs">
-                  <Layers size={13} className={isSelected ? 'text-amber-300' : (obs.type === 'WALL_SEGMENT' ? 'text-red-400' : 'text-amber-400')} />
+                  <Layers size={13} className={isSelected ? 'text-amber-600 dark:text-amber-300' : (obs.type === 'WALL_SEGMENT' ? 'text-red-400' : 'text-amber-400')} />
                   <div>
                     <span className="font-semibold">{obs.name || 'Obstacle'}</span>
                     <span className="text-[10px] font-mono text-[var(--c-tx4)] ml-2">
                       [{obs.type === 'WALL_SEGMENT' ? 'Wall Line' : 'Forbidden Zone'}, {obs.points.length} Pts]
                     </span>
                     {isSelected && (
-                      <span className="ml-2 px-1.5 py-0.2 text-[9px] font-bold rounded bg-amber-500/30 text-amber-300 border border-amber-400/40 uppercase">
+                      <span className="ml-2 px-1.5 py-0.2 text-[9px] font-bold rounded bg-amber-500/30 text-amber-600 dark:text-amber-300 border border-amber-400/40 uppercase">
                         Selected
                       </span>
                     )}
@@ -150,7 +150,7 @@ export const BoundaryObstaclesEditor: React.FC<BoundaryObstaclesEditorProps> = (
                   <button
                     type="button"
                     onClick={(e) => handleToggleEnabled(obs.id, e)}
-                    className="p-1 rounded hover:bg-white/10 text-[var(--c-tx3)] hover:text-white transition-colors cursor-pointer"
+                    className="p-1 rounded hover:bg-[var(--c-bg5)] text-[var(--c-tx3)] hover:text-[var(--c-tx1)] transition-colors cursor-pointer"
                     title={obs.enabled ? 'Disable Barrier' : 'Enable Barrier'}
                   >
                     {obs.enabled ? <Eye size={13} className="text-emerald-400" /> : <EyeOff size={13} />}

@@ -1,5 +1,7 @@
 import type { GroupState, FlowState } from '../../core/types';
 import type { Group, Flow } from '../../types';
+import { formatRate } from '../../core/metricsFormat';
+import { normalizeOutputMode } from '../../core/outputMode';
 
 /**
  * Maps a raw Flow object from the Java Core to a UI-compatible Flow object.
@@ -11,12 +13,13 @@ export function mapFlowFromCore(flow: FlowState): Flow {
     name: flow.name || 'Unnamed Flow',
     technology: flow.technology || 'Generic',
     connectionStatus: flow.connectionStatus || 'disconnected',
-    throughput: `${flow.throughput || 0} msg/s`,
+    throughput: `${formatRate(flow.throughput || 0)} msg/s`,
     latency: flow.latency || 0,
     hasError: flow.hasError ?? false,
     errorMessage: flow.errorMessage,
     interval: flow.interval ?? 1000,
     burst: flow.burst ?? 1,
+    everyTicks: flow.everyTicks ?? 1,
     topic: flow.topic || '',
     host: flow.host || 'localhost',
     port: flow.port || 80,
@@ -36,10 +39,10 @@ export function mapGroupFromCore(group: GroupState, previousGroup?: Group): Grou
     id: group.id || 'unknown',
     name: group.name || 'Unnamed Group',
     status: group.status || 'stopped',
-    throughput: `${group.throughput || 0} msg/s`,
+    throughput: `${formatRate(group.throughput || 0)} msg/s`,
     description: group.description || '',
     threads: group.threads || 1,
-    outputMode: group.outputMode || 'serial',
+    outputMode: normalizeOutputMode(group.outputMode),
     enabled: group.enabled ?? true,
     expanded: previousGroup?.expanded ?? true,
     flows: (group.flows || []).map(mapFlowFromCore),

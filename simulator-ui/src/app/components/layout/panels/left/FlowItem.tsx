@@ -26,6 +26,7 @@ import type { Flow, ConnectionStatus } from '../../../../types';
 import { CloneDialog } from './CloneDialog';
 import { ConfirmDeleteDialog } from '../../../common/ConfirmDeleteDialog';
 import { StatusDot } from '../../../common/StatusDot';
+import { formatCount, formatRate } from '../../../../core/metricsFormat';
 
 interface FlowItemProps {
   flow: Flow;
@@ -91,6 +92,8 @@ export function FlowItem({
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   
   const connCfg = connColor[flow.connectionStatus];
+  const liveMetrics = state?.flowMetrics?.[flow.id];
+  const fails = liveMetrics?.failed ?? 0;
   const template = formatTemplate[flow.id] ?? '';
   const usedVars = parseTemplateVars(template);
 
@@ -207,11 +210,26 @@ export function FlowItem({
         />
       </div>
 
-      {/* Row 2: status dot + throughput + error */}
-      <div className={`flex items-center gap-2 pl-0.5 transition-opacity ${!flow.enabled ? 'opacity-40' : ''}`}>
+      {/* Row 2: status dot + live metrics (msg/s · sent · fails) + error */}
+      <div
+        className={`flex items-center gap-1.5 pl-0.5 text-[10px] transition-opacity ${!flow.enabled ? 'opacity-40' : ''}`}
+        style={{ fontFamily: 'JetBrains Mono, monospace' }}
+        data-testid="flow-metrics"
+      >
         <StatusDot status={flow.connectionStatus} />
-        <span className={`text-[10px] ${connCfg}`} style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-          {flow.throughput}
+        <span className={connCfg} title="Messages sent per second">
+          {formatRate(liveMetrics?.throughput ?? 0)} <span className="text-[var(--c-tx4)]">msg/s</span>
+        </span>
+        <span className="text-[var(--c-tx5)]">·</span>
+        <span className="text-[var(--c-tx2)]" title="Messages sent (publish completed without error)">
+          {formatCount(liveMetrics?.sent ?? 0)} <span className="text-[var(--c-tx4)]">sent</span>
+        </span>
+        <span className="text-[var(--c-tx5)]">·</span>
+        <span
+          className={fails > 0 ? 'text-red-600 dark:text-red-400' : 'text-[var(--c-tx2)]'}
+          title="Messages that could not be sent (generation or publish error)"
+        >
+          {formatCount(fails)} <span className="text-[var(--c-tx4)]">fails</span>
         </span>
         {flow.hasError && (
           <AlertTriangle size={10} className="text-red-500 ml-auto" />

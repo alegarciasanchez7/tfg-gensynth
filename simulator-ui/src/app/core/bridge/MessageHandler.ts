@@ -8,7 +8,7 @@ import type {
   MetricsPayload,
   LogPayload,
   GroupState,
-  FlowMetricsPayload,
+  FlowsMetricsPayload,
   VariableState,
   TracePayload,
   PluginValidationResultPayload,
@@ -17,6 +17,7 @@ import type {
   RollbackReportPayload,
   InitialStatePayload,
 } from '../types';
+import type { ProjectSettings } from '../../types';
 
 export interface MessageHandlerOptions {
   config: BridgeConfig;
@@ -57,8 +58,8 @@ export class MessageHandler {
         case 'GROUPS_UPDATE':
           this.emit('groups-update', message.payload as GroupState[]);
           break;
-        case 'FLOW_UPDATE':
-          this.emit('flow-update', message.payload as FlowMetricsPayload);
+        case 'FLOWS_METRICS':
+          this.emit('flows-metrics', (message.payload as FlowsMetricsPayload)?.flows ?? []);
           break;
         case 'VARIABLE_UPDATE':
           this.emit('variables-update', message.payload as VariableState[]);
@@ -83,6 +84,9 @@ export class MessageHandler {
           break;
         case 'ROLLBACK_REPORT':
           this.emit('rollback-report', message.payload as RollbackReportPayload);
+          break;
+        case 'SETTINGS_UPDATE':
+          this.emit('settings-update', message.payload as ProjectSettings);
           break;
       }
 

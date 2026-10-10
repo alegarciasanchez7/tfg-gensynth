@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!--
+      Builds every Java module in dependency order:
+      the plugin API, the core (including the React UI) and the bundled connector plugins.
+      Run `mvn install` here once so the core and plugins can also be built on their own.
+    -->
+    <groupId>com.gensynth</groupId>
+    <artifactId>gensynth-build</artifactId>
+    <version>1.0.0</version>
+    <packaging>pom</packaging>
+
+    <name>GenSynth</name>
+
+    <modules>
+        <module>plugin-api</module>
+        <module>core</module>
+    </modules>
+
+    <!-- Connector plugins are built when their sources are present -->
+    <profiles>
+        <profile>
+            <id>rabbitmq-plugin</id>
+            <activation>
+                <file>
+                    <exists>${basedir}/plugins/rabbitmq_3.12.4/rabbitmq-plugin/pom.xml</exists>
+                </file>
+            </activation>
+            <modules>
+                <module>plugins/rabbitmq_3.12.4/rabbitmq-plugin</module>
+            </modules>
+        </profile>
+        <profile>
+            <id>kafka-plugin</id>
+            <activation>
+                <file>
+                    <exists>${basedir}/plugins/kafka_3.9.0/kafka-plugin/pom.xml</exists>
+                </file>
+            </activation>
+            <modules>
+                <module>plugins/kafka_3.9.0/kafka-plugin</module>
+            </modules>
+        </profile>
+    </profiles>
+</project>

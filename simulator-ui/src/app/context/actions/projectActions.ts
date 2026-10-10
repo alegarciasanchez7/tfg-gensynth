@@ -1,7 +1,7 @@
 import type React from 'react';
 import { toast } from 'sonner';
 import type { AppAction, ProjectFileInfo } from '../reducer';
-import type { Selection, Group, Variable, LogEntry } from '../../types';
+import type { Selection, Group, Variable, LogEntry, ProjectSettings } from '../../types';
 import type { ConnectorPluginDescriptor } from '../../core/types';
 import { CoreCommands } from '../../core/bridge';
 import {
@@ -16,6 +16,7 @@ import {
   PROJECT_FILE_EXTENSION,
   type PickedProjectFile,
 } from '../../core/fileStorage';
+import { DEFAULT_PROJECT_SETTINGS } from '../../core/tickSettings';
 
 type Dispatch = React.Dispatch<AppAction>;
 
@@ -32,6 +33,7 @@ export interface ProjectSaveContext {
   connectionMode: string;
   groups: Group[];
   variables: Variable[];
+  settings: ProjectSettings;
   file: ProjectFileInfo;
 }
 
@@ -116,14 +118,15 @@ export async function loadProjectState(ctx: ProjectLoadContext, picked?: PickedP
     const target = picked ?? (await pickProjectFile());
     if (!target) return false;
 
-    // loadProjectSnapshotFromFile already normalizes groups and variables
-    const { groups, variables } = await loadProjectSnapshotFromFile(target.file);
+    // loadProjectSnapshotFromFile already normalizes groups, variables and settings
+    const { groups, variables, settings } = await loadProjectSnapshotFromFile(target.file);
 
     dispatch({
       type: 'LOAD_INITIAL_STATE',
       payload: {
         groups,
         variables,
+        settings,
         connectorCatalog: ctx.connectorCatalog,
         file: { fileName: target.file.name, filePath: null, fileHandle: target.handle },
       },
@@ -132,7 +135,7 @@ export async function loadProjectState(ctx: ProjectLoadContext, picked?: PickedP
     if (ctx.isConnected) {
       try {
         await syncBaselineWithCore(dispatch, async () => {
-          await CoreCommands.importState(groups, variables);
+          await CoreCommands.importState(groups, variables, settings);
           return true;
         });
       } catch (err: unknown) {
@@ -177,7 +180,7 @@ export async function loadProjectState(ctx: ProjectLoadContext, picked?: PickedP
 function markSaved(ctx: ProjectSaveContext, file: ProjectFileInfo) {
   ctx.dispatch({
     type: 'MARK_SAVED',
-    payload: { savedState: { groups: ctx.groups, variables: ctx.variables }, file },
+    payload: { savedState: { groups: ctx.groups, variables: ctx.variables, settings: ctx.settings }, file },
   });
 }
 
@@ -200,12 +203,12 @@ export async function saveProjectStateAs(ctx: ProjectSaveContext): Promise<boole
     } else if (supportsFileSystemAccess()) {
       const handle = await pickSaveTarget(ctx.file.fileName || defaultFileName());
       if (!handle) return false;
-      await writeProjectSnapshot(handle, createProjectSnapshot(ctx.groups, ctx.variables));
+      await writeProjectSnapshot(handle, createProjectSnapshot(ctx.groups, ctx.variables, ctx.settings));
       file = { fileName: handle.name, filePath: null, fileHandle: handle };
     } else {
       // Fallback for browsers without File System Access API: download a copy
       const fileName = ctx.file.fileName || defaultFileName();
-      downloadProjectSnapshot(createProjectSnapshot(ctx.groups, ctx.variables), fileName);
+      downloadProjectSnapshot(createProjectSnapshot(ctx.groups, ctx.variables, ctx.settings), fileName);
       file = { fileName, filePath: null, fileHandle: null };
     }
 
@@ -243,7 +246,7 @@ export async function saveProjectState(ctx: ProjectSaveContext, isAutoSave = fal
     } else if (file.fileHandle) {
       // Writing to a file opened for reading needs a user gesture the first time
       if (isAutoSave && !(await hasWritePermission(file.fileHandle))) return false;
-      await writeProjectSnapshot(file.fileHandle, createProjectSnapshot(ctx.groups, ctx.variables));
+      await writeProjectSnapshot(file.fileHandle, createProjectSnapshot(ctx.groups, ctx.variables, ctx.settings));
     }
 
     markSaved(ctx, file);
@@ -273,7 +276,7 @@ export async function newProjectState(ctx: ProjectResetContext): Promise<void> {
   if (ctx.isConnected) {
     try {
       await syncBaselineWithCore(dispatch, async () => {
-        await CoreCommands.importState([], []);
+        await CoreCommands.importState([], [], DEFAULT_PROJECT_SETTINGS);
         return true;
       });
     } catch (error) {

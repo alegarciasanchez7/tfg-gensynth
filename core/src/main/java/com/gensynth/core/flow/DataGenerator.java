@@ -33,9 +33,15 @@ public class DataGenerator {
                 if (variable.getName() != null) {
                     context.put(variable.getName() + "_config", cv);
                 }
-                cv.setContext(context);
             }
-            return cv.getValue();
+            // A cached variable may be shared by flows generating on different threads
+            // (GLOBAL/GROUP scope): its context and internal state must change atomically.
+            synchronized (cv) {
+                if (context != null) {
+                    cv.setContext(context);
+                }
+                return cv.getValue();
+            }
         } catch (Exception e) {
             logger.warn("Error generating value for {}: {}", variable.getName(), e.getMessage());
             return variable.getDefaultValue();

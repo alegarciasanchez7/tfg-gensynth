@@ -1,5 +1,5 @@
 import type { Group, Variable, LogEntry } from '../types';
-import type { ConnectorPluginDescriptor } from '../core/types';
+import type { ConnectorFieldDescriptor, ConnectorPluginDescriptor } from '../core/types';
 
 export const mockGroups: Group[] = [
   {
@@ -23,6 +23,7 @@ export const mockGroups: Group[] = [
         hasError: false,
         interval: 100,
         burst: 1,
+        everyTicks: 1,
         topic: 'sensor.temperature',
         host: 'broker.local',
         port: 9092,
@@ -38,6 +39,7 @@ export const mockGroups: Group[] = [
         hasError: false,
         interval: 200,
         burst: 5,
+        everyTicks: 1,
         topic: '/api/v2/telemetry',
         host: 'ingest.srv',
         port: 443,
@@ -54,6 +56,7 @@ export const mockGroups: Group[] = [
         errorMessage: 'Connection refused: broker unreachable (timeout 5000ms)',
         interval: 500,
         burst: 1,
+        everyTicks: 1,
         topic: 'sensors/pressure',
         host: 'mqtt.local',
         port: 1883,
@@ -82,6 +85,7 @@ export const mockGroups: Group[] = [
         hasError: false,
         interval: 50,
         burst: 10,
+        everyTicks: 1,
         topic: 'ws://exchange.local/orderbook',
         host: 'exchange.local',
         port: 8080,
@@ -97,6 +101,7 @@ export const mockGroups: Group[] = [
         hasError: false,
         interval: 100,
         burst: 1,
+        everyTicks: 1,
         topic: 'TradeService/Push',
         host: 'grpc.trade.local',
         port: 50051,
@@ -125,6 +130,7 @@ export const mockGroups: Group[] = [
         hasError: false,
         interval: 10,
         burst: 20,
+        everyTicks: 1,
         topic: 'logs.access.raw',
         host: 'broker.local',
         port: 9092,
@@ -140,6 +146,7 @@ export const mockGroups: Group[] = [
         hasError: false,
         interval: 20,
         burst: 10,
+        everyTicks: 1,
         topic: 'logs.auth.events',
         host: 'broker.local',
         port: 9092,
@@ -155,6 +162,7 @@ export const mockGroups: Group[] = [
         hasError: false,
         interval: 100,
         burst: 5,
+        everyTicks: 1,
         topic: '/siem/ingest',
         host: 'siem.corp',
         port: 8514,
@@ -171,6 +179,7 @@ export const mockGroups: Group[] = [
         errorMessage: 'High latency detected: avg 230ms (threshold: 100ms)',
         interval: 50,
         burst: 1,
+        everyTicks: 1,
         topic: 'syslog',
         host: '10.0.0.45',
         port: 514,
@@ -327,99 +336,51 @@ X-Trace-Id: 550e8400-e29b-41d4-a716-446655440000
   f9: `Mar  4 14:32:08 host-42 sshd[4821]: Accepted publickey for jsmith from 192.168.1.104 port 54321 ssh2`,
 };
 
+const mockField = (
+  field: Pick<ConnectorFieldDescriptor, 'key' | 'type' | 'label'> & Partial<ConnectorFieldDescriptor>,
+): ConnectorFieldDescriptor => ({
+  tooltip: '',
+  required: false,
+  defaultValue: null,
+  placeholder: '',
+  options: [],
+  ...field,
+});
+
 export const mockConnectorCatalog: ConnectorPluginDescriptor[] = [
   {
     pluginId: 'rabbitmq',
-    displayName: 'RabbitMQ Connector',
+    displayName: 'RabbitMQ',
     pluginVersion: '1.0.0',
-    coreApiVersion: '1.0.0',
+    description: 'Publishes each message to a RabbitMQ exchange with a routing key.',
+    apiVersion: '1.0',
     external: true,
-    configSchema: {
-      type: 'object',
-      properties: {
-        host: { type: 'string' },
-        port: { type: 'number' },
-        exchange: { type: 'string' },
-        queue: { type: 'string' },
-      },
-    },
-  },
-  {
-    pluginId: 'rabbitmq',
-    displayName: 'RabbitMQ Connector',
-    pluginVersion: '1.1.0',
-    coreApiVersion: '1.0.0',
-    external: true,
-    configSchema: {
-      type: 'object',
-      properties: {
-        host: { type: 'string' },
-        port: { type: 'number' },
-        exchange: { type: 'string' },
-        queue: { type: 'string' },
-        reconnectAttempts: { type: 'number' },
-      },
-    },
-  },
-  {
-    pluginId: 'kafka',
-    displayName: 'Kafka Connector',
-    pluginVersion: '2.0.0',
-    coreApiVersion: '1.0.0',
-    external: true,
-    configSchema: {
-      type: 'object',
-      properties: {
-        bootstrapServers: { type: 'string' },
-        topic: { type: 'string' },
-        compressionType: { type: 'string' },
-      },
-    },
-  },
-  {
-    pluginId: 'mqtt',
-    displayName: 'MQTT Connector',
-    pluginVersion: '1.0.0',
-    coreApiVersion: '1.0.0',
-    external: true,
-    configSchema: {
-      type: 'object',
-      properties: {
-        host: { type: 'string' },
-        port: { type: 'number' },
-        topic: { type: 'string' },
-        qos: { type: 'number' },
-      },
-    },
-  },
-  {
-    pluginId: 'http',
-    displayName: 'HTTP Connector',
-    pluginVersion: '1.0.0',
-    coreApiVersion: '1.0.0',
-    external: false,
-    configSchema: {
-      type: 'object',
-      properties: {
-        endpoint: { type: 'string' },
-        method: { type: 'string' },
-        authType: { type: 'string' },
-      },
-    },
+    fields: [
+      mockField({ key: 'host', type: 'TEXT', label: 'Host', required: true, defaultValue: 'localhost', tooltip: 'Broker host.' }),
+      mockField({ key: 'port', type: 'INTEGER', label: 'Port', defaultValue: 5672, min: 1, max: 65535 }),
+      mockField({ key: 'username', type: 'TEXT', label: 'Username', required: true }),
+      mockField({ key: 'password', type: 'PASSWORD', label: 'Password', required: true }),
+      mockField({ key: 'exchange', type: 'TEXT', label: 'Exchange', required: true }),
+      mockField({ key: 'routingKey', type: 'TEXT', label: 'Routing key' }),
+    ],
   },
   {
     pluginId: 'file',
-    displayName: 'File Output (TXT/JSON)',
+    displayName: 'File Output',
     pluginVersion: '1.0.0',
-    coreApiVersion: '1.0.0',
+    description: 'Writes the messages of the flow to a local file.',
+    apiVersion: '1.0',
     external: false,
-    configSchema: {
-      type: 'object',
-      properties: {
-        outputDir: { type: 'string', title: 'Output Directory', default: './outputs' },
-        format: { type: 'string', title: 'Format', enum: ['json', 'txt'], default: 'json' },
-        fileName: { type: 'string', title: 'File Name (optional)', default: '' },
-      },
-    },
+    fields: [
+      mockField({
+        key: 'format',
+        type: 'SELECT',
+        label: 'File format',
+        defaultValue: 'json',
+        options: [{ value: 'json', label: 'JSON array' }, { value: 'txt', label: 'Text' }],
+      }),
+      mockField({ key: 'outputDir', type: 'TEXT', label: 'Output directory', placeholder: 'Session folder' }),
+      mockField({ key: 'fileName', type: 'TEXT', label: 'File name', placeholder: 'Flow name' }),
+    ],
   },
 ];

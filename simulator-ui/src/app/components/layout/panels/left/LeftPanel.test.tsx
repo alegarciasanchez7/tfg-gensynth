@@ -49,29 +49,28 @@ describe('LeftPanel', () => {
       pluginId: 'file',
       displayName: 'File Output (TXT/JSON)',
       pluginVersion: '1.0.0',
-      coreApiVersion: '1.0.0',
+      description: '',
+      apiVersion: '1.0',
       external: false,
-      configSchema: {
-        type: 'object',
-        properties: {
-          outputDir: { type: 'string', default: './outputs' },
-          format: { type: 'string', default: 'json' },
-          fileName: { type: 'string' },
+      fields: [
+        { key: 'outputDir', type: 'TEXT', label: 'Output directory', tooltip: '', required: false, defaultValue: './outputs', placeholder: '', options: [] },
+        {
+          key: 'format', type: 'SELECT', label: 'Format', tooltip: '', required: false, defaultValue: 'json', placeholder: '',
+          options: [{ value: 'json', label: 'JSON' }, { value: 'txt', label: 'Text' }],
         },
-      },
+        { key: 'fileName', type: 'TEXT', label: 'File name', tooltip: '', required: false, defaultValue: null, placeholder: '', options: [] },
+      ],
     },
     {
       pluginId: 'http',
       displayName: 'HTTP Connector',
       pluginVersion: '1.0.0',
-      coreApiVersion: '1.0.0',
+      description: '',
+      apiVersion: '1.0',
       external: false,
-      configSchema: {
-        type: 'object',
-        properties: {
-          endpoint: { type: 'string' },
-        },
-      },
+      fields: [
+        { key: 'endpoint', type: 'TEXT', label: 'Endpoint', tooltip: '', required: true, defaultValue: null, placeholder: '', options: [] },
+      ],
     },
   ];
 
@@ -105,6 +104,7 @@ describe('LeftPanel', () => {
       hasError: false,
       interval: 1000,
       burst: 1,
+      everyTicks: 1,
       topic: '',
       host: 'localhost',
       port: 8080,
@@ -137,17 +137,31 @@ describe('LeftPanel', () => {
       'g1',
       'Output flow',
       'file',
-      'localhost',
-      8080,
+      '', // legacy host/port/topic: the destination is part of the connector configuration
+      0,
       undefined,
-      1000,
-      1,
+      undefined, // legacy interval: pacing comes from the global tick clock
+      undefined, // legacy burst: one message every N ticks
       '{}',
       {
         outputDir: './outputs',
         format: 'json',
-        fileName: '',
       },
+      1, // everyTicks
     );
+  });
+
+  it('opens the Repeater from the group menu even when the group is collapsed', async () => {
+    const user = userEvent.setup();
+
+    render(<LeftPanel {...baseProps} groups={[{ ...group, expanded: false }]} />);
+
+    expect(screen.queryByRole('button', { name: /add flow/i })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Actions for group Orders' }));
+    await user.click(await screen.findByRole('menuitem', { name: /repeater/i }));
+
+    expect(await screen.findByRole('dialog', { name: 'Repeater' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Number of flows')).toHaveValue(2);
+    expect(screen.getByRole('button', { name: 'Create 2 flows' })).toBeDisabled();
   });
 });

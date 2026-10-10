@@ -5,13 +5,11 @@ export function metricsReducer(state: AppState, action: AppAction): AppState {
     case 'SET_METRICS':
       return { ...state, metrics: action.payload };
 
-    case 'SET_FLOW_METRICS':
+    case 'SET_FLOWS_METRICS':
+      // Each event carries every flow: replace the map so deleted flows disappear
       return {
         ...state,
-        flowMetrics: {
-          ...state.flowMetrics,
-          [action.payload.flowId]: action.payload,
-        },
+        flowMetrics: Object.fromEntries(action.payload.map((metrics) => [metrics.flowId, metrics])),
       };
 
     default:

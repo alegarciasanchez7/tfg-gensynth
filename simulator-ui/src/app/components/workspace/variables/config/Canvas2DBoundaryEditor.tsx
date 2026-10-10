@@ -1068,14 +1068,14 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
       {showToolbar ? (
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs bg-[var(--c-bg3)] p-2 rounded border border-[var(--c-br1)] shrink-0">
           {/* Selection Mode Switcher */}
-          <div className="flex items-center gap-1 border border-[var(--c-br1)] p-0.5 rounded bg-black/20">
+          <div className="flex items-center gap-1 border border-[var(--c-br1)] p-0.5 rounded bg-[var(--c-bg1)]">
             <button
               type="button"
               onClick={() => setEditMode('BOUNDARIES')}
               className={`px-2.5 py-1 rounded font-medium text-[11px] flex items-center gap-1.5 transition-colors cursor-pointer ${
                 editMode === 'BOUNDARIES'
                   ? 'bg-purple-600 text-white shadow-sm font-semibold'
-                  : 'text-[var(--c-tx3)] hover:text-white hover:bg-white/5'
+                  : 'text-[var(--c-tx3)] hover:text-[var(--c-tx1)] hover:bg-[var(--c-bg5)]'
               }`}
             >
               <Move size={12} />
@@ -1087,7 +1087,7 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
               className={`px-2.5 py-1 rounded font-medium text-[11px] flex items-center gap-1.5 transition-colors cursor-pointer ${
                 editMode === 'OBSTACLES'
                   ? 'bg-rose-600 text-white shadow-sm font-semibold'
-                  : 'text-[var(--c-tx3)] hover:text-white hover:bg-white/5'
+                  : 'text-[var(--c-tx3)] hover:text-[var(--c-tx1)] hover:bg-[var(--c-bg5)]'
               }`}
             >
               <ShieldAlert size={12} />
@@ -1101,7 +1101,7 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
             <button
               type="button"
               onClick={() => applyPresetShape('square')}
-              className="px-2 py-0.5 text-[10px] rounded border border-[var(--c-br1)] bg-white/5 hover:bg-white/10 text-slate-200 flex items-center gap-1 cursor-pointer"
+              className="px-2 py-0.5 text-[10px] rounded border border-[var(--c-br1)] bg-[var(--c-bg4)] hover:bg-[var(--c-bg5)] text-[var(--c-tx1)] flex items-center gap-1 cursor-pointer"
               title="Apply Square Geometry"
             >
               <Square size={10} className="text-violet-400" />
@@ -1110,7 +1110,7 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
             <button
               type="button"
               onClick={() => applyPresetShape('triangle')}
-              className="px-2 py-0.5 text-[10px] rounded border border-[var(--c-br1)] bg-white/5 hover:bg-white/10 text-slate-200 flex items-center gap-1 cursor-pointer"
+              className="px-2 py-0.5 text-[10px] rounded border border-[var(--c-br1)] bg-[var(--c-bg4)] hover:bg-[var(--c-bg5)] text-[var(--c-tx1)] flex items-center gap-1 cursor-pointer"
               title="Apply Triangle Geometry"
             >
               <Triangle size={10} className="text-violet-400" />
@@ -1119,7 +1119,7 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
             <button
               type="button"
               onClick={() => applyPresetShape('circle')}
-              className="px-2 py-0.5 text-[10px] rounded border border-[var(--c-br1)] bg-white/5 hover:bg-white/10 text-slate-200 flex items-center gap-1 cursor-pointer"
+              className="px-2 py-0.5 text-[10px] rounded border border-[var(--c-br1)] bg-[var(--c-bg4)] hover:bg-[var(--c-bg5)] text-[var(--c-tx1)] flex items-center gap-1 cursor-pointer"
               title="Apply Circle Geometry"
             >
               <Circle size={10} className="text-violet-400" />
@@ -1132,36 +1132,36 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
             <button
               type="button"
               onClick={() => setShowResetConfirmModal(true)}
-              className="px-2 py-0.5 text-[10px] rounded border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 flex items-center gap-1 font-semibold cursor-pointer"
+              className="px-2 py-0.5 text-[10px] rounded border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-300 flex items-center gap-1 font-semibold cursor-pointer"
               title="Reset and clear all regions & obstacles"
             >
               <RefreshCw size={10} />
               <span>New Region</span>
             </button>
-            <div className="flex items-center border border-[var(--c-br1)] rounded overflow-hidden bg-white/5 text-[9px]">
-              <button type="button" onClick={() => setZoom((z) => Math.min(20, z * 1.5))} className="px-2 py-0.5 hover:bg-white/10 text-white font-bold" title="Zoom In">+</button>
+            <div className="flex items-center border border-[var(--c-br1)] rounded overflow-hidden bg-[var(--c-bg4)] text-[9px]">
+              <button type="button" onClick={() => setZoom((z) => Math.min(20, z * 1.5))} className="px-2 py-0.5 hover:bg-[var(--c-bg5)] text-[var(--c-tx1)] font-bold" title="Zoom In">+</button>
               <span className="px-1.5 font-mono text-[var(--c-tx3)]">{zoom.toFixed(1)}x</span>
-              <button type="button" onClick={() => setZoom((z) => Math.max(0.5, z / 1.5))} className="px-2 py-0.5 hover:bg-white/10 text-white font-bold" title="Zoom Out">-</button>
+              <button type="button" onClick={() => setZoom((z) => Math.max(0.5, z / 1.5))} className="px-2 py-0.5 hover:bg-[var(--c-bg5)] text-[var(--c-tx1)] font-bold" title="Zoom Out">-</button>
             </div>
-            <button type="button" onClick={() => { setZoom(1.0); setPanOffset({ x: 0, y: 0 }); }} className="px-1.5 py-0.5 text-[9px] rounded border border-[var(--c-br1)] bg-white/5 hover:bg-white/10">Reset View</button>
+            <button type="button" onClick={() => { setZoom(1.0); setPanOffset({ x: 0, y: 0 }); }} className="px-1.5 py-0.5 text-[9px] rounded border border-[var(--c-br1)] bg-[var(--c-bg4)] hover:bg-[var(--c-bg5)]">Reset View</button>
           </div>
         </div>
       ) : (
         <div className="flex items-center justify-between text-[11px] text-[var(--c-tx4)] shrink-0">
           <span>2D Cartesian Grid ({activePolygon.length} Vertices)</span>
           <div className="flex items-center gap-1 text-[9px]">
-            <div className="flex items-center border border-[var(--c-br1)] rounded overflow-hidden bg-white/5">
-              <button type="button" onClick={() => setZoom((z) => Math.min(20, z * 1.5))} className="px-2 py-0.5 hover:bg-white/10 text-white font-bold" title="Zoom In">+</button>
+            <div className="flex items-center border border-[var(--c-br1)] rounded overflow-hidden bg-[var(--c-bg4)]">
+              <button type="button" onClick={() => setZoom((z) => Math.min(20, z * 1.5))} className="px-2 py-0.5 hover:bg-[var(--c-bg5)] text-[var(--c-tx1)] font-bold" title="Zoom In">+</button>
               <span className="px-1.5 font-mono text-[var(--c-tx3)]">{zoom.toFixed(1)}x</span>
-              <button type="button" onClick={() => setZoom((z) => Math.max(0.5, z / 1.5))} className="px-2 py-0.5 hover:bg-white/10 text-white font-bold" title="Zoom Out">-</button>
+              <button type="button" onClick={() => setZoom((z) => Math.max(0.5, z / 1.5))} className="px-2 py-0.5 hover:bg-[var(--c-bg5)] text-[var(--c-tx1)] font-bold" title="Zoom Out">-</button>
             </div>
-            <button type="button" onClick={() => { setZoom(1.0); setPanOffset({ x: 0, y: 0 }); }} className="px-1.5 py-0.5 rounded border border-[var(--c-br1)] bg-white/5 hover:bg-white/10">Fit/Reset</button>
+            <button type="button" onClick={() => { setZoom(1.0); setPanOffset({ x: 0, y: 0 }); }} className="px-1.5 py-0.5 rounded border border-[var(--c-br1)] bg-[var(--c-bg4)] hover:bg-[var(--c-bg5)]">Fit/Reset</button>
           </div>
         </div>
       )}
 
       {feedbackMsg && (
-        <div className="text-[10px] bg-violet-500/20 text-violet-300 border border-violet-500/30 rounded px-2.5 py-1 shrink-0">
+        <div className="text-[10px] bg-violet-500/20 text-violet-600 dark:text-violet-300 border border-violet-500/30 rounded px-2.5 py-1 shrink-0">
           {feedbackMsg}
         </div>
       )}
@@ -1169,12 +1169,12 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
       {/* Confirmation Modal when clicking New Region */}
       {showResetConfirmModal && (
         <div className="fixed inset-0 z-[999999] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700 rounded-lg p-5 max-w-md w-full shadow-2xl space-y-4 text-slate-200">
+          <div className="bg-[var(--c-bg2)] border border-[var(--c-br1)] rounded-lg p-5 max-w-md w-full shadow-2xl space-y-4 text-[var(--c-tx1)]">
             <div className="flex items-center gap-3 text-amber-400">
               <AlertTriangle size={22} className="shrink-0" />
               <h3 className="font-semibold text-sm">Draw New Region & Clear All Obstacles?</h3>
             </div>
-            <p className="text-xs text-slate-300 leading-relaxed">
+            <p className="text-xs text-[var(--c-tx2)] leading-relaxed">
               Creating a new region will reset your custom boundary polygon to default rectangle bounds and <strong>permanently delete all defined wall barriers and forbidden interior obstacle zones</strong>.
               <br /><br />
               Are you sure you want to proceed and start a clean new region?
@@ -1234,7 +1234,7 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
               <button
                 type="button"
                 onClick={handleInsertPointOnBoundaryEdge}
-                className="w-full text-left px-3 py-1.5 hover:bg-violet-500/20 hover:text-violet-300 transition-colors flex items-center gap-2 cursor-pointer"
+                className="w-full text-left px-3 py-1.5 hover:bg-violet-500/20 hover:text-violet-600 dark:hover:text-violet-300 transition-colors flex items-center gap-2 cursor-pointer"
               >
                 <span>+ Insert Vertex Here on Boundary Edge</span>
               </button>
@@ -1243,7 +1243,7 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
               <button
                 type="button"
                 onClick={handleInsertPointOnObstacleEdge}
-                className="w-full text-left px-3 py-1.5 hover:bg-rose-500/20 hover:text-rose-300 transition-colors flex items-center gap-2 cursor-pointer"
+                className="w-full text-left px-3 py-1.5 hover:bg-rose-500/20 hover:text-rose-600 dark:hover:text-rose-300 transition-colors flex items-center gap-2 cursor-pointer"
               >
                 <span>+ Insert Vertex Here on Obstacle</span>
               </button>
