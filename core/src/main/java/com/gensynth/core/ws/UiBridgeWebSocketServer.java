@@ -1,5 +1,6 @@
 package com.gensynth.core.ws;
 
+import com.gensynth.core.config.AppPaths;
 import com.fasterxml.jackson.core.StreamReadConstraints;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -21,7 +22,6 @@ import org.java_websocket.server.WebSocketServer;
 
 import java.net.InetSocketAddress;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -139,7 +139,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
     }
 
     public UiBridgeWebSocketServer(String host, int port) {
-        this(host, port, Paths.get("plugins"));
+        this(host, port, AppPaths.current().pluginsDir());
     }
 
     /**
@@ -151,13 +151,14 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
      */
     public UiBridgeWebSocketServer(String host, int port, Path pluginsDirectory) {
         this(new InetSocketAddress(host, port),
-             new ConnectorCatalogService(pluginsDirectory),
+             new ConnectorCatalogService(pluginsDirectory, AppPaths.current().sharedLibsDir()),
              new JsonStateRepositoryImpl(),
-             new PluginInstallerImpl(pluginsDirectory));
+             new PluginInstallerImpl(pluginsDirectory, AppPaths.current().sharedLibsDir()));
     }
 
     UiBridgeWebSocketServer(InetSocketAddress address, ConnectorCatalogService connectorCatalogService) {
-        this(address, connectorCatalogService, new JsonStateRepositoryImpl(), new PluginInstallerImpl(Paths.get("plugins")));
+        this(address, connectorCatalogService, new JsonStateRepositoryImpl(),
+             new PluginInstallerImpl(AppPaths.current().pluginsDir(), AppPaths.current().sharedLibsDir()));
     }
 
     UiBridgeWebSocketServer(

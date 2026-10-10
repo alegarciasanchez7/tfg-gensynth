@@ -39,6 +39,8 @@ public class ConnectorPluginManager {
     private final Map<String, ConnectorDescriptor> descriptorsByKey = new LinkedHashMap<>();
     private final Map<String, URLClassLoader> classLoadersByKey = new LinkedHashMap<>();
     private final List<ConnectorDescriptor> descriptors;
+    /** Client libraries shared with every external plugin; null when there are none. */
+    private final Path sharedLibsDir;
 
     /**
      * Loads the plugins of the classpath only.
@@ -48,11 +50,23 @@ public class ConnectorPluginManager {
     }
 
     /**
-     * Loads the plugins of the classpath and of the external plugins directory.
+     * Loads the plugins of the classpath and of the external plugins directory, with the shared
+     * client libraries in the {@code lib/shared} folder next to the plugins directory.
      *
      * @param pluginsDirectory directory containing external plugin JARs
      */
     public ConnectorPluginManager(Path pluginsDirectory) {
+        this(pluginsDirectory, pluginsDirectory == null ? null : pluginsDirectory.resolve("../lib/shared").normalize());
+    }
+
+    /**
+     * Loads the plugins of the classpath and of the external plugins directory.
+     *
+     * @param pluginsDirectory directory containing external plugin JARs
+     * @param sharedLibsDir    directory of the client libraries shared with the plugins
+     */
+    public ConnectorPluginManager(Path pluginsDirectory, Path sharedLibsDir) {
+        this.sharedLibsDir = sharedLibsDir;
         register(ServiceLoader.load(ConnectorPlugin.class), false, null);
         discoverExternalPlugins(pluginsDirectory);
         this.descriptors = buildSortedCatalog();
@@ -64,6 +78,7 @@ public class ConnectorPluginManager {
      * @param plugins plugin instances
      */
     public ConnectorPluginManager(Iterable<ConnectorPlugin> plugins) {
+        this.sharedLibsDir = null;
         register(plugins, false, null);
         this.descriptors = buildSortedCatalog();
     }
@@ -121,9 +136,8 @@ public class ConnectorPluginManager {
 
             List<URL> urls = new ArrayList<>();
             urls.add(jarPath.toUri().toURL());
-            Path sharedLibDir = jarPath.getParent().resolve("../lib/shared").normalize();
-            if (Files.isDirectory(sharedLibDir)) {
-                try (DirectoryStream<Path> sharedStream = Files.newDirectoryStream(sharedLibDir, "*.jar")) {
+            if (sharedLibsDir != null && Files.isDirectory(sharedLibsDir)) {
+                try (DirectoryStream<Path> sharedStream = Files.newDirectoryStream(sharedLibsDir, "*.jar")) {
                     for (Path sharedJar : sharedStream) {
                         urls.add(sharedJar.toUri().toURL());
                     }

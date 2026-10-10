@@ -1,6 +1,7 @@
 package com.gensynth.core.connectors.plugin;
 
 import com.gensynth.core.api.IPluginInstaller;
+import com.gensynth.core.config.AppPaths;
 import com.gensynth.plugin.api.ConnectorInfo;
 import com.gensynth.plugin.api.ConnectorPlugin;
 import org.slf4j.Logger;
@@ -31,6 +32,7 @@ public class PluginInstallerImpl implements IPluginInstaller {
     private static final Logger logger = LoggerFactory.getLogger(PluginInstallerImpl.class);
 
     private final Path pluginsDirectory;
+    private final Path sharedLibsDir;
     private com.gensynth.core.connectors.runtime.ConnectorPluginManager pluginManager;
 
     /**
@@ -39,7 +41,18 @@ public class PluginInstallerImpl implements IPluginInstaller {
      * @param pluginsDirectory path to the directory where plugin JARs are stored
      */
     public PluginInstallerImpl(Path pluginsDirectory) {
+        this(pluginsDirectory, pluginsDirectory.resolve("../lib/shared").normalize());
+    }
+
+    /**
+     * Constructs the installer targeting the specified plugins directory.
+     *
+     * @param pluginsDirectory path to the directory where plugin JARs are stored
+     * @param sharedLibsDir    directory of the client libraries shared with the plugins
+     */
+    public PluginInstallerImpl(Path pluginsDirectory, Path sharedLibsDir) {
         this.pluginsDirectory = pluginsDirectory;
+        this.sharedLibsDir = sharedLibsDir;
         ensurePluginsDirectoryExists();
     }
 
@@ -55,8 +68,7 @@ public class PluginInstallerImpl implements IPluginInstaller {
     public PluginValidationResult validate(byte[] jarBytes, String pluginName, String pluginVersion) {
         try {
             Set<String> existingKeys = collectExistingPluginKeys();
-            Path sharedLibDir = pluginsDirectory.resolve("../lib/shared").normalize();
-            PluginSandboxValidator validator = new PluginSandboxValidator(existingKeys, sharedLibDir);
+            PluginSandboxValidator validator = new PluginSandboxValidator(existingKeys, sharedLibsDir);
             return validator.validate(jarBytes, pluginName, pluginVersion);
         } catch (Exception e) {
             logger.error("Unexpected error during plugin validation", e);
@@ -130,7 +142,7 @@ public class PluginInstallerImpl implements IPluginInstaller {
     }
 
     private void createRollbackMarker(Path jarPath, String pluginId) {
-        Path markerPath = pluginsDirectory.resolve(".pending_install.json");
+        Path markerPath = pluginsDirectory.resolve(AppPaths.PENDING_INSTALL_MARKER);
         String json = String.format("{\"path\": \"%s\", \"pluginId\": \"%s\", \"timestamp\": %d}", 
                 jarPath.toAbsolutePath().toString().replace("\\", "\\\\"), 
                 pluginId, 
@@ -145,7 +157,7 @@ public class PluginInstallerImpl implements IPluginInstaller {
 
     private void clearRollbackMarker() {
         try {
-            Files.deleteIfExists(pluginsDirectory.resolve(".pending_install.json"));
+            Files.deleteIfExists(pluginsDirectory.resolve(AppPaths.PENDING_INSTALL_MARKER));
         } catch (IOException ignored) {}
     }
 

@@ -34,6 +34,16 @@ public class ConnectorCatalogService {
     }
 
     /**
+     * Uses the plugins of the classpath and of the external plugins directory.
+     *
+     * @param pluginsDirectory directory containing external plugin JARs
+     * @param sharedLibsDir    directory of the client libraries shared with the plugins
+     */
+    public ConnectorCatalogService(Path pluginsDirectory, Path sharedLibsDir) {
+        this(new ConnectorPluginManager(pluginsDirectory, sharedLibsDir));
+    }
+
+    /**
      * @param pluginManager the plugin manager to use
      */
     public ConnectorCatalogService(ConnectorPluginManager pluginManager) {
