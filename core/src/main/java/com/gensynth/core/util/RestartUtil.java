@@ -92,7 +92,10 @@ public class RestartUtil {
             // Give the OS 1 second to clean up socket bindings and C++ process handles
             try {
                 Thread.sleep(1000);
-            } catch (InterruptedException ignored) {}
+            } catch (InterruptedException e) {
+                // Restart anyway, but keep the interrupt status for the caller
+                Thread.currentThread().interrupt();
+            }
 
             Process child = builder.start();
             logger.info("New process started (PID {}). Terminating parent process...", child.pid());

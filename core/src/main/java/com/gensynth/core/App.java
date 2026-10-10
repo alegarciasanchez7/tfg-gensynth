@@ -236,11 +236,18 @@ public class App {
                 if (webSocketServer != null) {
                     try {
                         webSocketServer.stop(1000);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
                     } catch (Exception ignored) {
+                        // Best effort: the restart goes ahead anyway
                     }
                 }
 
                 com.gensynth.core.util.RestartUtil.restart();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                logger.error("[EMERGENCY] Emergency recovery interrupted");
+                System.exit(1);
             } catch (Exception e) {
                 logger.error("[EMERGENCY] Failed to perform emergency recovery: {}", e.getMessage());
                 System.exit(1);

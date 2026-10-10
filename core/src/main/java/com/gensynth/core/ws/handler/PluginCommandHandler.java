@@ -196,6 +196,9 @@ public class PluginCommandHandler implements CommandHandler {
             // Release the port before spawning the new process
             ctx.getServer().stop(1000);
             com.gensynth.core.util.RestartUtil.restart();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            logger.error("Restart interrupted while stopping the server", e);
         } catch (Exception e) {
             logger.error("Failed to trigger restart", e);
         }
