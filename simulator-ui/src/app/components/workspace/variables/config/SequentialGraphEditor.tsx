@@ -113,7 +113,9 @@ export const SequentialGraphEditor: React.FC<SequentialGraphEditorProps> = ({
   const handlePointerUp = (e: React.PointerEvent<SVGCircleElement>) => {
     try {
       e.currentTarget.releasePointerCapture(e.pointerId);
-    } catch (err) {}
+    } catch {
+      // Pointer capture may already be released
+    }
     setActivePointIndex(null);
   };
 

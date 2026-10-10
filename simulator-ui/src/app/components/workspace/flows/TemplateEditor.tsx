@@ -58,7 +58,7 @@ function getEffectiveListItems(v: Variable, variables: Variable[]): Array<{ id: 
     }
   }
 
-  let combined = [...inheritedItems, ...localItems];
+  const combined = [...inheritedItems, ...localItems];
 
   if (config.itemOrder && Array.isArray(config.itemOrder) && config.itemOrder.length > 0) {
     const orderMap = new Map(config.itemOrder.map((id: string, index: number) => [id, index]));
@@ -393,8 +393,8 @@ export function TemplateEditor({
     const ta = textareaRef.current;
     const currentVal = valueRef.current;
 
-    let start = ta ? ta.selectionStart : currentVal.length;
-    let end = ta ? ta.selectionEnd : currentVal.length;
+    const start = ta ? ta.selectionStart : currentVal.length;
+    const end = ta ? ta.selectionEnd : currentVal.length;
     const textBefore = currentVal.substring(0, start);
     
     // Check if we should replace a partially typed {{...

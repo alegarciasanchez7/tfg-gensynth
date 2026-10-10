@@ -82,7 +82,7 @@ export function PluginImportPanel({ onClose }: PluginImportPanelProps) {
       if (response.pluginVersion && !pluginVersion.trim()) {
         setPluginVersion(response.pluginVersion);
       }
-    } catch (err) {
+    } catch {
       setValidationState('error');
       setValidationResult({
         status: 'error',
@@ -101,7 +101,7 @@ export function PluginImportPanel({ onClose }: PluginImportPanelProps) {
       const version = pluginVersion.trim() || validationResult.pluginVersion || '1.0.0';
 
       await CoreCommands.installPlugin(jarBase64, name, version);
-    } catch (err) {
+    } catch {
       setIsInstalling(false);
       setShowRestartConfirm(false);
     }
@@ -141,7 +141,7 @@ export function PluginImportPanel({ onClose }: PluginImportPanelProps) {
           if (response.pluginVersion && !pluginVersion.trim()) {
             setPluginVersion(response.pluginVersion);
           }
-        } catch (err) {
+        } catch {
           setValidationState('error');
           setValidationResult({
             status: 'error',

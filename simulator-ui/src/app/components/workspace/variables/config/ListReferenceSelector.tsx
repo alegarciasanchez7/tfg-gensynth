@@ -30,7 +30,7 @@ export const ListReferenceSelector: React.FC<ListReferenceSelectorProps> = ({
     if (appCtx && appCtx.state) {
       state = appCtx.state;
     }
-  } catch (ignored) {
+  } catch {
     // Graceful fallback when rendered in isolated unit tests
   }
 

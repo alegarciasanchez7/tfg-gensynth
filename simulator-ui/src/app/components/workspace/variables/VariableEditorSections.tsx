@@ -241,7 +241,7 @@ export function VariableEditorConfigCard({ typeLabel, theme, draft, setDraft }: 
     if (draft.configText.trim()) {
       parsedConfig = JSON.parse(draft.configText);
     }
-  } catch (e) {
+  } catch {
     // Keep it empty if invalid while typing in JSON mode
   }
 
