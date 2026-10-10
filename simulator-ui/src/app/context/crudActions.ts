@@ -112,7 +112,7 @@ export async function createGroup(
       status: 'stopped',
       throughput: 0,
       threads: 1,
-      outputMode: 'serial',
+      outputMode: 'parallel',
       enabled: true,
       flows: [],
     };
@@ -215,15 +215,13 @@ export async function createFlow(
   template?: string,
   connectorConfig?: Record<string, unknown>,
   onResponse?: (data: FlowState) => void,
+  everyTicks?: number,
 ): Promise<FlowState> {
   // Validations
   if (!groupId?.trim()) throwValidationError('groupId', 'is required');
   if (!name?.trim()) throwValidationError('name', 'is required');
   if (!technology?.trim()) throwValidationError('technology', 'is required');
-  if (!host?.trim()) throwValidationError('host', 'is required');
-  if (typeof port !== 'number' || port <= 0 || port > 65535) {
-    throwValidationError('port', 'must be a number between 1 and 65535');
-  }
+  // host/port/topic are legacy: the destination is part of the connector configuration
 
   try {
     if (ctx.connectionMode !== 'mock') {
@@ -231,11 +229,12 @@ export async function createFlow(
         groupId: groupId.trim(),
         name: name.trim(),
         technology: technology.trim(),
-        host: host.trim(),
+        host: host?.trim() ?? '',
         port,
         topic: topic?.trim() || '',
         interval: interval ?? 1000,
         burst: burst ?? 1,
+        everyTicks: everyTicks ?? 1,
         template: template || '{}',
         ...(connectorConfig && { connectorConfig }),
       }, onResponse);
@@ -258,8 +257,9 @@ export async function createFlow(
       errorMessage: undefined,
       interval: interval ?? 1000,
       burst: burst ?? 1,
+      everyTicks: everyTicks ?? 1,
       topic: topic?.trim() || '',
-      host: host.trim(),
+      host: host?.trim() ?? '',
       port,
       enabled: true,
     };

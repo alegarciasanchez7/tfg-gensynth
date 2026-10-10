@@ -70,7 +70,9 @@ public class PluginCommandHandler implements CommandHandler {
         response.put("pluginId", result.getPluginId());
         response.put("displayName", result.getDisplayName());
         response.put("pluginVersion", result.getPluginVersion());
-        response.put("coreApiVersion", result.getCoreApiVersion());
+        response.put("apiVersion", result.getApiVersion());
+        response.put("description", result.getDescription());
+        response.put("fieldCount", result.getFieldCount());
         response.put("logs", result.getLogs());
 
         logger.info("[PLUGINS] Sending validation result for '{}': valid={}, logsCount={}",

@@ -1,8 +1,8 @@
 package com.gensynth.core.connectors.plugin;
 
 import com.gensynth.core.api.IPluginInstaller;
-import com.gensynth.core.connectors.spi.ConnectorPluginDescriptor;
-import com.gensynth.core.connectors.spi.ConnectorPluginProvider;
+import com.gensynth.plugin.api.ConnectorInfo;
+import com.gensynth.plugin.api.ConnectorPlugin;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -222,20 +222,19 @@ public class PluginInstallerImpl implements IPluginInstaller {
             URL jarUrl = jarPath.toUri().toURL();
             try (URLClassLoader loader = new URLClassLoader(
                     new URL[]{jarUrl},
-                    ConnectorPluginProvider.class.getClassLoader())) {
+                    ConnectorPlugin.class.getClassLoader())) {
 
-                ServiceLoader<ConnectorPluginProvider> sl =
-                        ServiceLoader.load(ConnectorPluginProvider.class, loader);
-                for (ConnectorPluginProvider provider : sl) {
-                    // CRITICAL: Only consider providers that are actually defined in this JAR,
+                ServiceLoader<ConnectorPlugin> sl = ServiceLoader.load(ConnectorPlugin.class, loader);
+                for (ConnectorPlugin plugin : sl) {
+                    // CRITICAL: Only consider plugins that are actually defined in this JAR,
                     // not the ones inherited from the parent classloader (like bundled connectors).
-                    if (provider.getClass().getClassLoader() == loader) {
-                        ConnectorPluginDescriptor d = provider.descriptor();
+                    if (plugin.getClass().getClassLoader() == loader) {
+                        ConnectorInfo d = plugin.info();
                         Instant modifiedAt = Files.getLastModifiedTime(jarPath).toInstant();
                         return new InstalledPluginInfo(
-                                d.getPluginId(),
-                                d.getDisplayName(),
-                                d.getPluginVersion(),
+                                d.id(),
+                                d.displayName(),
+                                d.version(),
                                 jarPath.getFileName().toString(),
                                 modifiedAt,
                                 true // always external when loaded from plugins dir
@@ -257,10 +256,8 @@ public class PluginInstallerImpl implements IPluginInstaller {
         Set<String> keys = new HashSet<>();
 
         // Classpath plugins (bundled connectors)
-        ServiceLoader<ConnectorPluginProvider> classpathLoader =
-                ServiceLoader.load(ConnectorPluginProvider.class);
-        for (ConnectorPluginProvider provider : classpathLoader) {
-            keys.add(provider.descriptor().key());
+        for (ConnectorPlugin plugin : ServiceLoader.load(ConnectorPlugin.class)) {
+            keys.add(plugin.info().id() + "@" + plugin.info().version());
         }
 
         // External plugins

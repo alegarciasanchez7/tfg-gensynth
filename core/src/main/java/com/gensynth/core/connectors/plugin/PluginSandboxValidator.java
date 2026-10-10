@@ -1,7 +1,9 @@
 package com.gensynth.core.connectors.plugin;
 
-import com.gensynth.core.connectors.spi.ConnectorPluginDescriptor;
-import com.gensynth.core.connectors.spi.ConnectorPluginProvider;
+import com.gensynth.plugin.api.ConnectorField;
+import com.gensynth.plugin.api.ConnectorInfo;
+import com.gensynth.plugin.api.ConnectorPlugin;
+import com.gensynth.plugin.api.PluginApi;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.MethodVisitor;
@@ -53,14 +55,20 @@ public class PluginSandboxValidator {
     private static final Logger logger = LoggerFactory.getLogger(PluginSandboxValidator.class);
 
     /** Current core API version for compatibility checking. */
-    private static final String CORE_API_VERSION = "1.x";
 
     /** Maximum time in seconds to load and inspect a plugin descriptor. */
     private static final int DESCRIPTOR_LOAD_TIMEOUT_SECONDS = 5;
 
     /** SPI service file path inside the JAR. */
-    private static final String SPI_SERVICE_FILE =
+    private static final String SPI_SERVICE_FILE = PluginApi.SERVICE_FILE;
+
+    /** Service file of plugins built for the legacy pre-release plugin API. */
+    private static final String LEGACY_SERVICE_FILE =
             "META-INF/services/com.gensynth.core.connectors.spi.ConnectorPluginProvider";
+
+    /** What the sandbox learns about a plugin. */
+    record LoadedPlugin(ConnectorInfo info, int fieldCount) {
+    }
 
     /**
      * Blocked method owners and names — any class invoking these will fail validation.
@@ -122,22 +130,24 @@ public class PluginSandboxValidator {
             return builder.build();
         }
 
-        // 4. Load descriptor in isolated sandbox with timeout
-        ConnectorPluginDescriptor descriptor = loadDescriptorInSandbox(jarBytes, builder);
-        if (descriptor == null) {
+        // 4. Load the plugin in an isolated sandbox with timeout
+        LoadedPlugin loaded = loadDescriptorInSandbox(jarBytes, builder);
+        if (loaded == null) {
             return builder.build();
         }
 
-        builder.pluginId(descriptor.getPluginId())
-               .displayName(descriptor.getDisplayName())
-               .pluginVersion(descriptor.getPluginVersion())
-               .coreApiVersion(descriptor.getCoreApiVersion());
+        ConnectorInfo info = loaded.info();
+        builder.pluginId(info.id())
+               .displayName(info.displayName())
+               .pluginVersion(info.version())
+               .description(info.description())
+               .fieldCount(loaded.fieldCount())
+               .apiVersion(PluginApi.VERSION);
+        builder.log(PluginValidationResult.ValidationLevel.INFO,
+            "Built for plugin API " + PluginApi.VERSION + " with " + loaded.fieldCount() + " configuration fields.");
 
-        // 5. Check API version compatibility
-        isApiVersionCompatible(descriptor.getCoreApiVersion(), builder);
-
-        // 6. Check for duplicates
-        String key = descriptor.getPluginId() + "@" + descriptor.getPluginVersion();
+        // 5. Check for duplicates
+        String key = info.id() + "@" + info.version();
         if (existingPluginKeys.contains(key)) {
             builder.log(PluginValidationResult.ValidationLevel.WARN, 
                 "A plugin with the same ID and version already exists. Installation will overwrite it.", key);
@@ -186,7 +196,27 @@ public class PluginSandboxValidator {
         } catch (IOException e) {
             logger.debug("Error scanning JAR for SPI file", e);
         }
+        if (containsEntry(jarBytes, LEGACY_SERVICE_FILE)) {
+            builder.log(PluginValidationResult.ValidationLevel.ERROR,
+                "Plugin was built for the legacy plugin API (ConnectorPluginProvider). Rebuild it with gensynth-plugin-api " + PluginApi.VERSION
+                    + " (see plugin-api/PLUGIN_DEVELOPER_GUIDE.md).");
+            return false;
+        }
         builder.log(PluginValidationResult.ValidationLevel.ERROR, "Plugin is missing service registration file: '" + SPI_SERVICE_FILE + "'");
+        return false;
+    }
+
+    private static boolean containsEntry(byte[] jarBytes, String name) {
+        try (JarInputStream jis = new JarInputStream(new ByteArrayInputStream(jarBytes))) {
+            JarEntry entry;
+            while ((entry = jis.getNextJarEntry()) != null) {
+                if (name.equals(entry.getName())) {
+                    return true;
+                }
+            }
+        } catch (IOException ignored) {
+            // Not readable: treated as absent
+        }
         return false;
     }
 
@@ -254,11 +284,11 @@ public class PluginSandboxValidator {
     }
 
     /**
-     * Loads the ConnectorPluginProvider descriptor in an isolated ClassLoader with a timeout.
+     * Loads the plugin in an isolated ClassLoader with a timeout and reads its info and fields.
      *
-     * @return the descriptor if successfully loaded, or null (with errors populated)
+     * @return what was loaded, or null (with errors populated)
      */
-    ConnectorPluginDescriptor loadDescriptorInSandbox(byte[] jarBytes, PluginValidationResult.Builder builder) {
+    LoadedPlugin loadDescriptorInSandbox(byte[] jarBytes, PluginValidationResult.Builder builder) {
         Path tempFile = null;
         try {
             tempFile = Files.createTempFile("gensynth-plugin-validate-", ".jar");
@@ -277,18 +307,18 @@ public class PluginSandboxValidator {
 
             URLClassLoader sandboxLoader = new URLClassLoader(
                     urls.toArray(new URL[0]),
-                    ConnectorPluginProvider.class.getClassLoader()
+                    ConnectorPlugin.class.getClassLoader()
             );
 
             try {
-                builder.log(PluginValidationResult.ValidationLevel.INFO, "Inspecting plugin descriptor...");
-                ConnectorPluginDescriptor descriptor = loadWithTimeout(sandboxLoader);
-                if (descriptor == null) {
-                    builder.log(PluginValidationResult.ValidationLevel.ERROR, "No ConnectorPluginProvider found in ServiceLoader.");
+                builder.log(PluginValidationResult.ValidationLevel.INFO, "Inspecting plugin...");
+                LoadedPlugin loaded = loadWithTimeout(sandboxLoader);
+                if (loaded == null) {
+                    builder.log(PluginValidationResult.ValidationLevel.ERROR, "No ConnectorPlugin found in ServiceLoader.");
                 } else {
-                    builder.log(PluginValidationResult.ValidationLevel.INFO, "Found descriptor: " + descriptor.getPluginId() + " v" + descriptor.getPluginVersion());
+                    builder.log(PluginValidationResult.ValidationLevel.INFO, "Found plugin: " + loaded.info().id() + " v" + loaded.info().version());
                 }
-                return descriptor;
+                return loaded;
             } finally {
                 sandboxLoader.close();
             }
@@ -310,10 +340,11 @@ public class PluginSandboxValidator {
     }
 
     /**
-     * Loads the first ConnectorPluginProvider's descriptor using ServiceLoader
-     * within the given ClassLoader, with a timeout to prevent blocking code.
+     * Loads the first ConnectorPlugin of the JAR using ServiceLoader within the given
+     * ClassLoader, with a timeout to prevent blocking code. Reading its info and fields is
+     * the dry run: it executes the plugin's constructor and static initialization.
      */
-    private ConnectorPluginDescriptor loadWithTimeout(URLClassLoader classLoader)
+    private LoadedPlugin loadWithTimeout(URLClassLoader classLoader)
             throws TimeoutException, ExecutionException, InterruptedException {
         ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
             Thread t = new Thread(r, "plugin-sandbox-loader");
@@ -322,53 +353,28 @@ public class PluginSandboxValidator {
         });
 
         try {
-            Callable<ConnectorPluginDescriptor> task = () -> {
-                ServiceLoader<ConnectorPluginProvider> loader =
-                        ServiceLoader.load(ConnectorPluginProvider.class, classLoader);
-                for (ConnectorPluginProvider provider : loader) {
-                    // Only validate the provider that comes from the current JAR
-                    if (provider.getClass().getClassLoader() == classLoader) {
-                        // DRY-RUN: Try to instantiate the actual plugin.
-                        // This will execute constructors and initialization logic.
+            Callable<LoadedPlugin> task = () -> {
+                ServiceLoader<ConnectorPlugin> loader = ServiceLoader.load(ConnectorPlugin.class, classLoader);
+                for (ConnectorPlugin plugin : loader) {
+                    // Only validate the plugin that comes from the current JAR
+                    if (plugin.getClass().getClassLoader() == classLoader) {
                         try {
-                            provider.create();
+                            ConnectorInfo info = plugin.info();
+                            List<ConnectorField> fields = ConnectorField.requireUniqueKeys(List.copyOf(plugin.fields()));
+                            return new LoadedPlugin(info, fields.size());
                         } catch (Throwable t) {
-                            throw new RuntimeException("Dry-run failed: Plugin could not be initialized. " + t.getMessage(), t);
+                            throw new RuntimeException("Dry-run failed: plugin info or fields are invalid. " + t.getMessage(), t);
                         }
-                        
-                        return provider.descriptor();
                     }
                 }
                 return null;
             };
 
-            Future<ConnectorPluginDescriptor> future = executor.submit(task);
+            Future<LoadedPlugin> future = executor.submit(task);
             return future.get(DESCRIPTOR_LOAD_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         } finally {
             executor.shutdownNow();
         }
-    }
-
-    /**
-     * Checks if the plugin's declared core API version is compatible with the current core.
-     */
-    boolean isApiVersionCompatible(String pluginApiVersion, PluginValidationResult.Builder builder) {
-        if (pluginApiVersion == null || pluginApiVersion.isBlank()) {
-            builder.log(PluginValidationResult.ValidationLevel.ERROR, "Plugin does not declare a core API version.");
-            return false;
-        }
-
-        String coreMajor = CORE_API_VERSION.split("\\.")[0];
-        String pluginMajor = pluginApiVersion.split("\\.")[0];
-
-        if (!coreMajor.equals(pluginMajor)) {
-            builder.log(PluginValidationResult.ValidationLevel.ERROR, 
-                "Incompatible API version. Required: " + CORE_API_VERSION + ", Found: " + pluginApiVersion);
-            return false;
-        }
-
-        builder.log(PluginValidationResult.ValidationLevel.INFO, "API version compatibility check passed: " + pluginApiVersion);
-        return true;
     }
 
     /**

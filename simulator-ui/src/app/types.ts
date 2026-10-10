@@ -261,12 +261,20 @@ export interface Flow {
   name: string;
   technology: string;
   connectionStatus: ConnectionStatus;
+  /** @deprecated Live rate comes from `state.flowMetrics` (FLOWS_METRICS). */
   throughput: string;
   latency: number;
   hasError: boolean;
   errorMessage?: string;
+  /**
+   * @deprecated Legacy publish interval in ms. Ignored by the engine since message generation
+   * is driven by the global tick clock; kept so existing project files round-trip.
+   */
   interval: number;
+  /** @deprecated Legacy messages per send; ignored by the engine (one message per send). */
   burst: number;
+  /** Number of global ticks between two messages of this flow (integer >= 1). */
+  everyTicks: number;
   topic: string;
   host: string;
   port: number;
@@ -277,14 +285,37 @@ export interface Flow {
   enabled: boolean;
 }
 
+/** Tick clock mode. Mirrors TickSettings.Mode in the Core. */
+export type TickMode = 'FIXED_RATE' | 'AS_FAST_AS_POSSIBLE';
+/** Tick period unit. Mirrors TickSettings.Unit in the Core. */
+export type TickUnit = 'MILLISECONDS' | 'SECONDS' | 'MINUTES';
+
+/** Configuration of the global simulation tick clock. Mirrors TickSettings in the Core. */
+export interface TickSettings {
+  mode: TickMode;
+  /** Period value (kept in AS_FAST_AS_POSSIBLE mode so switching back restores it). */
+  value: number;
+  unit: TickUnit;
+}
+
+/** Project-wide simulation settings, saved with the project. Mirrors ProjectSettings in the Core. */
+export interface ProjectSettings {
+  tick: TickSettings;
+}
+
+/** How the flows of a group send: one FIFO queue + one sender, or one thread per flow. Mirrors OutputMode in the Core. */
+export type OutputMode = 'parallel' | 'sequential';
+
 export interface Group {
   id: string;
   name: string;
   status: GroupStatus;
+  /** @deprecated Live rate is the sum of the flows' `state.flowMetrics`. */
   throughput: string;
   description: string;
+  /** @deprecated Legacy; ignored by the engine. */
   threads: number;
-  outputMode: string;
+  outputMode: OutputMode;
   flows: Flow[];
   expanded: boolean;
   enabled: boolean;

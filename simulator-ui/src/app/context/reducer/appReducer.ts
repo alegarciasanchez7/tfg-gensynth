@@ -4,13 +4,15 @@ import type {
   ConnectorPluginDescriptor,
   RollbackReportPayload,
 } from '../../core/types';
-import type { Selection, Group, Variable, LogEntry, SystemStatus } from '../../types';
+import type { Selection, Group, Variable, LogEntry, SystemStatus, ProjectSettings } from '../../types';
 import type { ConnectorHealthSummary } from '../../types';
 import { createEmptyDirtyItems, type DirtyItems } from '../helpers/dirtyStateHelper';
+import { DEFAULT_PROJECT_SETTINGS } from '../../core/tickSettings';
 
 export interface SavedStateSnapshot {
   groups: Group[];
   variables: Variable[];
+  settings: ProjectSettings;
 }
 
 /**
@@ -71,6 +73,8 @@ export interface AppState {
   // Data
   groups: Group[];
   variables: Variable[];
+  /** Project-wide simulation settings (tick clock), saved with the project. */
+  settings: ProjectSettings;
   logs: LogEntry[];
   formatTemplates: Record<string, string>;
   connectorCatalog: ConnectorPluginDescriptor[];
@@ -104,6 +108,7 @@ export const initialState: AppState = {
   bottomTab: 'logs',
   groups: [],
   variables: [],
+  settings: DEFAULT_PROJECT_SETTINGS,
   logs: [],
   formatTemplates: {},
   connectorCatalog: [],
@@ -126,6 +131,7 @@ export type AppAction =
   | { type: 'UPDATE_GROUP'; payload: Partial<Group> & { id: string } }
   | { type: 'TOGGLE_GROUP_EXPANDED'; payload: string }
   | { type: 'SET_VARIABLES'; payload: Variable[] }
+  | { type: 'SET_SETTINGS'; payload: ProjectSettings }
   | { type: 'ADD_LOG'; payload: LogEntry }
   | { type: 'SET_LOGS'; payload: LogEntry[] }
   | { type: 'CLEAR_LOGS' }
@@ -134,7 +140,7 @@ export type AppAction =
   | { type: 'SET_FLOW_CONNECTOR_SELECTION'; payload: { flowId: string; pluginId: string; pluginVersion: string } }
   | { type: 'SET_FLOW_CONNECTOR_CONFIG'; payload: { flowId: string; config: Record<string, unknown> } }
   | { type: 'SET_METRICS'; payload: MetricsPayload }
-  | { type: 'SET_FLOW_METRICS'; payload: FlowMetricsPayload }
+  | { type: 'SET_FLOWS_METRICS'; payload: FlowMetricsPayload[] }
   | { type: 'SET_RESTARTING'; payload: boolean }
   | { type: 'NEW_PROJECT' }
   | { type: 'MARK_SAVED'; payload: { savedState: SavedStateSnapshot; file: ProjectFileInfo } }
@@ -149,6 +155,8 @@ export type AppAction =
       payload: {
         groups: Group[];
         variables: Variable[];
+        /** Project settings; the current ones are kept when omitted (e.g. older cores). */
+        settings?: ProjectSettings;
         logs?: LogEntry[];
         connectorCatalog?: ConnectorPluginDescriptor[];
         metrics?: MetricsPayload | null;

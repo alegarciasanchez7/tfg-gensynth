@@ -2,20 +2,24 @@ import type React from 'react';
 import { toast } from 'sonner';
 import bridge, { CoreCommands } from '../../core/bridge';
 import type { UICommandPayloadMap } from '../../core/types';
-import type { Flow, Group, Variable } from '../../types';
+import type { Flow, Group, ProjectSettings, Variable } from '../../types';
 import type { AppAction, SavedStateSnapshot } from '../reducer';
-import { getFlowComparable, getGroupComparable } from '../helpers/dirtyStateHelper';
+import { getFlowComparable, getGroupComparable, getVariableComparable } from '../helpers/dirtyStateHelper';
+import { tickSettingsEqual } from '../../core/tickSettings';
 
 export type DiscardItemType = 'group' | 'flow' | 'variable';
 
 type DiscardCommandType =
+  | 'CREATE_GROUP'
   | 'UPDATE_GROUP_CONFIG'
   | 'DELETE_GROUP'
   | 'CREATE_FLOW'
   | 'UPDATE_FLOW_CONFIG'
   | 'DELETE_FLOW'
+  | 'CREATE_VARIABLE'
   | 'UPDATE_VARIABLE'
-  | 'DELETE_VARIABLE';
+  | 'DELETE_VARIABLE'
+  | 'UPDATE_SETTINGS';
 
 /** A Core command needed to bring the Core back to the saved state of an item. */
 export type DiscardCommand = {
@@ -39,6 +43,7 @@ function updateFlowCommand(groupId: string, flow: Flow): DiscardCommand {
       topic: flow.topic,
       interval: flow.interval,
       burst: flow.burst,
+      everyTicks: flow.everyTicks,
       template: flow.template,
       format: flow.format,
       connectorConfig: flow.connectorConfig,
@@ -61,6 +66,7 @@ function restoreFlowCommands(groupId: string, flow: Flow): DiscardCommand[] {
         topic: flow.topic,
         interval: flow.interval,
         burst: flow.burst,
+        everyTicks: flow.everyTicks,
         template: flow.template,
         format: flow.format,
         connectorConfig: flow.connectorConfig,
@@ -149,6 +155,90 @@ function variableCommands(savedState: SavedStateSnapshot, variables: Variable[],
   ];
 }
 
+/** Recreates a group deleted after the last save, with its id and its flows. */
+function restoreGroupCommands(savedGroup: Group): DiscardCommand[] {
+  const commands: DiscardCommand[] = [
+    {
+      type: 'CREATE_GROUP',
+      payload: {
+        groupId: savedGroup.id,
+        name: savedGroup.name,
+        description: savedGroup.description,
+        outputMode: savedGroup.outputMode,
+      },
+    },
+  ];
+  for (const flow of savedGroup.flows) {
+    commands.push(...restoreFlowCommands(savedGroup.id, flow));
+  }
+  // CREATE_GROUP does not accept the enabled flag
+  if (savedGroup.enabled === false) {
+    commands.push({ type: 'UPDATE_GROUP_CONFIG', payload: { groupId: savedGroup.id, enabled: false } });
+  }
+  return commands;
+}
+
+/** Recreates a variable deleted after the last save, with its id. */
+function restoreVariableCommand(savedVariable: Variable): DiscardCommand {
+  return {
+    type: 'CREATE_VARIABLE',
+    payload: {
+      variableId: savedVariable.id,
+      name: savedVariable.name,
+      type: savedVariable.type,
+      scope: savedVariable.scope,
+      flowId: savedVariable.flowId,
+      groupId: savedVariable.groupId,
+      config: savedVariable.config as Record<string, unknown>,
+    },
+  };
+}
+
+/**
+ * Computes the Core commands that bring the whole project back to its last saved state:
+ * groups (with their flows), variables and project settings, including items created or
+ * deleted since the save. Running groups keep running.
+ */
+export function buildDiscardAllCommands(
+  savedState: SavedStateSnapshot,
+  groups: Group[],
+  variables: Variable[],
+  settings: ProjectSettings,
+): DiscardCommand[] {
+  const commands: DiscardCommand[] = [];
+
+  // Groups first: deleting new ones frees their names before deleted ones are recreated
+  for (const group of groups) {
+    commands.push(...groupCommands(savedState.groups.find((saved) => saved.id === group.id), group));
+  }
+  const currentGroupIds = new Set(groups.map((group) => group.id));
+  for (const savedGroup of savedState.groups) {
+    if (!currentGroupIds.has(savedGroup.id)) {
+      commands.push(...restoreGroupCommands(savedGroup));
+    }
+  }
+
+  // Variables after the flows they may belong to exist again
+  const savedVariables = new Map(savedState.variables.map((variable) => [variable.id, variable]));
+  for (const variable of variables) {
+    const savedVariable = savedVariables.get(variable.id);
+    if (!savedVariable || !isSame(getVariableComparable(savedVariable), getVariableComparable(variable))) {
+      commands.push(...variableCommands(savedState, variables, variable.id));
+    }
+  }
+  const currentVariableIds = new Set(variables.map((variable) => variable.id));
+  for (const savedVariable of savedState.variables) {
+    if (!currentVariableIds.has(savedVariable.id)) {
+      commands.push(restoreVariableCommand(savedVariable));
+    }
+  }
+
+  if (!tickSettingsEqual(savedState.settings.tick, settings.tick)) {
+    commands.push({ type: 'UPDATE_SETTINGS', payload: savedState.settings });
+  }
+  return commands;
+}
+
 /**
  * Computes the Core commands that revert one item to its last saved state.
  * Mirrors the local revert done by the DISCARD_ITEM_CHANGES reducer branch.
@@ -179,22 +269,14 @@ export interface DiscardContext {
   savedState: SavedStateSnapshot | null;
   groups: Group[];
   variables: Variable[];
+  settings: ProjectSettings;
 }
 
 /**
- * Reverts an item to its last saved state in the UI and in the Core.
- * Edits are applied to the Core as they happen, so reverting only the UI would leave the
- * Core running (and later echoing back) the discarded values.
+ * Sends the revert commands to the Core in order. On failure, reports the error and resyncs
+ * with the Core so the UI shows what it actually holds (leftovers stay marked as unsaved).
  */
-export async function discardItemChanges(ctx: DiscardContext, itemType: DiscardItemType, itemId: string): Promise<void> {
-  if (!ctx.savedState) return;
-
-  // Compute the commands from the state before reverting it locally
-  const commands = buildDiscardCommands(ctx.savedState, ctx.groups, ctx.variables, itemType, itemId);
-  ctx.dispatch({ type: 'DISCARD_ITEM_CHANGES', payload: { type: itemType, id: itemId } });
-
-  if (!ctx.isConnected) return;
-
+async function sendDiscardCommands(ctx: DiscardContext, commands: DiscardCommand[]): Promise<void> {
   try {
     for (const command of commands) {
       await bridge.send(command.type, command.payload);
@@ -212,7 +294,36 @@ export async function discardItemChanges(ctx: DiscardContext, itemType: DiscardI
       },
     });
     toast.error(`Could not discard changes in Core: ${message}`);
-    // Show what the Core actually holds; the saved baseline is kept, so leftovers stay marked as unsaved
     await CoreCommands.getInitialState().catch(() => undefined);
   }
+}
+
+/**
+ * Reverts the whole project to its last saved state in the UI and in the Core.
+ */
+export async function discardAllChanges(ctx: DiscardContext): Promise<void> {
+  if (!ctx.savedState) return;
+
+  // Compute the commands from the state before reverting it locally
+  const commands = buildDiscardAllCommands(ctx.savedState, ctx.groups, ctx.variables, ctx.settings);
+  ctx.dispatch({ type: 'DISCARD_ALL_CHANGES' });
+
+  if (!ctx.isConnected) return;
+  await sendDiscardCommands(ctx, commands);
+}
+
+/**
+ * Reverts an item to its last saved state in the UI and in the Core.
+ * Edits are applied to the Core as they happen, so reverting only the UI would leave the
+ * Core running (and later echoing back) the discarded values.
+ */
+export async function discardItemChanges(ctx: DiscardContext, itemType: DiscardItemType, itemId: string): Promise<void> {
+  if (!ctx.savedState) return;
+
+  // Compute the commands from the state before reverting it locally
+  const commands = buildDiscardCommands(ctx.savedState, ctx.groups, ctx.variables, itemType, itemId);
+  ctx.dispatch({ type: 'DISCARD_ITEM_CHANGES', payload: { type: itemType, id: itemId } });
+
+  if (!ctx.isConnected) return;
+  await sendDiscardCommands(ctx, commands);
 }

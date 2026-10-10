@@ -110,39 +110,12 @@ public class PluginSandboxValidatorTest {
     }
 
     @Test
-    public void testApiVersionCompatibleSameMajor() {
+    public void testLegacyApiPluginIsRejectedWithAClearMessage() throws IOException {
+        byte[] jar = createJarWithServiceFile("META-INF/services/com.gensynth.core.connectors.spi.ConnectorPluginProvider");
         PluginValidationResult.Builder builder = new PluginValidationResult.Builder();
-        boolean result = validator.isApiVersionCompatible("1.x", builder);
 
-        assertTrue(result);
-        assertTrue(builder.build().getErrors().isEmpty());
-    }
-
-    @Test
-    public void testApiVersionIncompatibleDifferentMajor() {
-        PluginValidationResult.Builder builder = new PluginValidationResult.Builder();
-        boolean result = validator.isApiVersionCompatible("2.0", builder);
-
-        assertFalse(result);
-        assertFalse(builder.build().getErrors().isEmpty());
-    }
-
-    @Test
-    public void testApiVersionNullFails() {
-        PluginValidationResult.Builder builder = new PluginValidationResult.Builder();
-        boolean result = validator.isApiVersionCompatible(null, builder);
-
-        assertFalse(result);
-        assertFalse(builder.build().getErrors().isEmpty());
-    }
-
-    @Test
-    public void testApiVersionBlankFails() {
-        PluginValidationResult.Builder builder = new PluginValidationResult.Builder();
-        boolean result = validator.isApiVersionCompatible("", builder);
-
-        assertFalse(result);
-        assertFalse(builder.build().getErrors().isEmpty());
+        assertFalse(validator.containsSpiServiceFile(jar, builder));
+        assertTrue(builder.build().getErrors().get(0).contains("legacy plugin API"));
     }
 
     @Test
@@ -180,13 +153,16 @@ public class PluginSandboxValidatorTest {
      * Creates a JAR containing the SPI service registration file.
      */
     private byte[] createJarWithSpiFile() throws IOException {
+        return createJarWithServiceFile(com.gensynth.plugin.api.PluginApi.SERVICE_FILE);
+    }
+
+    private byte[] createJarWithServiceFile(String spiPath) throws IOException {
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         try (JarOutputStream jos = new JarOutputStream(baos)) {
             jos.putNextEntry(new JarEntry("META-INF/MANIFEST.MF"));
             jos.write("Manifest-Version: 1.0\n".getBytes());
             jos.closeEntry();
 
-            String spiPath = "META-INF/services/com.gensynth.core.connectors.spi.ConnectorPluginProvider";
             jos.putNextEntry(new JarEntry(spiPath));
             jos.write("com.example.TestProvider\n".getBytes());
             jos.closeEntry();

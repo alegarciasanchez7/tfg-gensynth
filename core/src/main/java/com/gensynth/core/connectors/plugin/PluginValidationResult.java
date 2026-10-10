@@ -52,7 +52,9 @@ public final class PluginValidationResult {
     private final String pluginId;
     private final String displayName;
     private final String pluginVersion;
-    private final String coreApiVersion;
+    private final String apiVersion;
+    private final String description;
+    private final int fieldCount;
     private final List<ValidationEntry> logs;
 
     private PluginValidationResult(Builder builder) {
@@ -60,7 +62,9 @@ public final class PluginValidationResult {
         this.pluginId = builder.pluginId;
         this.displayName = builder.displayName;
         this.pluginVersion = builder.pluginVersion;
-        this.coreApiVersion = builder.coreApiVersion;
+        this.apiVersion = builder.apiVersion;
+        this.description = builder.description;
+        this.fieldCount = builder.fieldCount;
         this.logs = Collections.unmodifiableList(new ArrayList<>(builder.logs));
     }
 
@@ -81,8 +85,19 @@ public final class PluginValidationResult {
         return pluginVersion;
     }
 
-    public String getCoreApiVersion() {
-        return coreApiVersion;
+    /** @return plugin API version the plugin was built for */
+    public String getApiVersion() {
+        return apiVersion;
+    }
+
+    /** @return plugin description */
+    public String getDescription() {
+        return description;
+    }
+
+    /** @return number of configuration fields declared by the plugin */
+    public int getFieldCount() {
+        return fieldCount;
     }
 
     /** @return unmodifiable list of validation logs. */
@@ -113,7 +128,9 @@ public final class PluginValidationResult {
         private String pluginId;
         private String displayName;
         private String pluginVersion;
-        private String coreApiVersion;
+        private String apiVersion;
+        private String description;
+        private int fieldCount;
         private final List<ValidationEntry> logs = new ArrayList<>();
 
         public Builder valid(boolean valid) {
@@ -136,8 +153,18 @@ public final class PluginValidationResult {
             return this;
         }
 
-        public Builder coreApiVersion(String coreApiVersion) {
-            this.coreApiVersion = coreApiVersion;
+        public Builder apiVersion(String apiVersion) {
+            this.apiVersion = apiVersion;
+            return this;
+        }
+
+        public Builder description(String description) {
+            this.description = description;
+            return this;
+        }
+
+        public Builder fieldCount(int fieldCount) {
+            this.fieldCount = fieldCount;
             return this;
         }
 

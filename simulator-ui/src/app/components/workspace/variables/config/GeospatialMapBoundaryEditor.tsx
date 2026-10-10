@@ -636,7 +636,7 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
               key={preset}
               type="button"
               onClick={() => applyPreset(preset)}
-              className="px-2 py-0.5 rounded text-[10px] bg-violet-500/10 text-violet-300 hover:bg-violet-500/20 transition-colors border border-violet-500/20 cursor-pointer"
+              className="px-2 py-0.5 rounded text-[10px] bg-violet-500/10 text-violet-600 dark:text-violet-300 hover:bg-violet-500/20 transition-colors border border-violet-500/20 cursor-pointer"
             >
               {preset}
             </button>
@@ -656,12 +656,12 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
       {/* Confirmation Modal when replacing existing region */}
       {showConfirmDrawModal && (
         <div className="fixed inset-0 z-[99999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700 rounded-lg p-5 max-w-md w-full shadow-2xl space-y-4 text-slate-200">
+          <div className="bg-[var(--c-bg2)] border border-[var(--c-br1)] rounded-lg p-5 max-w-md w-full shadow-2xl space-y-4 text-[var(--c-tx1)]">
             <div className="flex items-center gap-3 text-amber-400">
               <AlertTriangle size={20} className="shrink-0" />
               <h3 className="font-semibold text-sm">Draw New Geofence Region?</h3>
             </div>
-            <p className="text-xs text-slate-300 leading-relaxed">
+            <p className="text-xs text-[var(--c-tx2)] leading-relaxed">
               Creating a new selection box will replace your current {activePolygon.length}-vertex geofence region.
               Are you sure you want to delete the existing region and draw a new region box?
             </p>
@@ -697,7 +697,7 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
               <button
                 type="button"
                 onClick={handleToggleExpandMap}
-                className="w-7 h-7 bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 rounded shadow-md flex items-center justify-center text-slate-200 hover:text-cyan-400 transition-colors cursor-pointer"
+                className="w-7 h-7 bg-[var(--c-bg2)]/90 hover:bg-[var(--c-bg5)] border border-[var(--c-br1)] rounded shadow-md flex items-center justify-center text-[var(--c-tx1)] hover:text-cyan-400 transition-colors cursor-pointer"
                 aria-label={isMapExpanded ? 'Restore Normal Map View' : 'Expand Full Map View'}
               >
                 {isMapExpanded ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
@@ -715,8 +715,8 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
           onClick={handleToggleDrawMode}
           className={`absolute bottom-2 left-2 z-[1000] px-2 py-1 rounded text-[9px] font-medium flex items-center gap-1 transition-all cursor-pointer border backdrop-blur shadow-md ${
             isDrawMode
-              ? 'bg-rose-950/90 text-rose-300 border-rose-500/50 animate-pulse'
-              : 'bg-slate-900/85 text-cyan-300 hover:bg-slate-800 border-slate-700/80 hover:border-cyan-500/40'
+              ? 'bg-rose-100 dark:bg-rose-950/90 text-rose-600 dark:text-rose-300 border-rose-500/50 animate-pulse'
+              : 'bg-[var(--c-bg2)]/85 text-cyan-600 dark:text-cyan-300 hover:bg-[var(--c-bg5)] border-[var(--c-br1)] hover:border-cyan-500/40'
           }`}
         >
           <BoxSelect size={10} />
@@ -725,14 +725,14 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
 
         {/* Active Drawing Mode Banner Overlay */}
         {isDrawMode && (
-          <div className="absolute top-2 left-2 z-[1000] bg-rose-950/90 border border-rose-500/50 text-rose-200 text-[10px] font-mono px-3 py-1.5 rounded shadow-lg flex items-center gap-2 animate-pulse">
+          <div className="absolute top-2 left-2 z-[1000] bg-rose-100 dark:bg-rose-950/90 border border-rose-500/50 text-rose-700 dark:text-rose-200 text-[10px] font-mono px-3 py-1.5 rounded shadow-lg flex items-center gap-2 animate-pulse">
             <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
             <span className="font-semibold uppercase tracking-wider">BOX DRAWING MODE ACTIVE</span>
-            <span className="text-[9px] text-rose-300 opacity-90">• Drag selection box on map</span>
+            <span className="text-[9px] text-rose-600 dark:text-rose-300 opacity-90">• Drag selection box on map</span>
             <button
               type="button"
               onClick={() => setIsDrawMode(false)}
-              className="ml-2 underline hover:text-white font-sans text-[10px] cursor-pointer"
+              className="ml-2 underline hover:text-[var(--c-tx1)] font-sans text-[10px] cursor-pointer"
             >
               Cancel
             </button>
@@ -741,14 +741,14 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
 
         {/* Offline Mode Automatic Fallback Banner */}
         {isOffline && (
-          <div className="absolute top-2 left-2 z-[1000] bg-amber-950/90 border border-amber-500/50 text-amber-200 text-[10px] font-mono px-3 py-1.5 rounded shadow-lg flex items-center gap-2">
+          <div className="absolute top-2 left-2 z-[1000] bg-amber-100 dark:bg-amber-950/90 border border-amber-500/50 text-amber-700 dark:text-amber-200 text-[10px] font-mono px-3 py-1.5 rounded shadow-lg flex items-center gap-2">
             <WifiOff size={12} className="text-amber-400 shrink-0" />
             <span className="font-semibold uppercase tracking-wider">OFFLINE MODE ACTIVE</span>
-            <span className="text-[9px] text-amber-300 opacity-90">• Technical Lat/Lon Grid Canvas Active</span>
+            <span className="text-[9px] text-amber-600 dark:text-amber-300 opacity-90">• Technical Lat/Lon Grid Canvas Active</span>
             <button
               type="button"
               onClick={() => setIsOffline(false)}
-              className="ml-2 underline hover:text-white font-sans text-[10px] cursor-pointer"
+              className="ml-2 underline hover:text-[var(--c-tx1)] font-sans text-[10px] cursor-pointer"
             >
               Retry Online Map
             </button>
@@ -756,9 +756,9 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
         )}
 
         {/* Real-Time Live Cursor & Dragging Node Coordinates HUD Badge Overlay */}
-        <div className="absolute top-2 right-2 z-[1000] bg-slate-900/90 backdrop-blur border border-slate-700/80 text-[10px] font-mono px-2.5 py-1.5 rounded shadow-lg pointer-events-none text-slate-200 flex items-center gap-3">
+        <div className="absolute top-2 right-2 z-[1000] bg-[var(--c-bg2)]/90 backdrop-blur border border-[var(--c-br1)] text-[10px] font-mono px-2.5 py-1.5 rounded shadow-lg pointer-events-none text-[var(--c-tx1)] flex items-center gap-3">
           {activeDragIndex !== null ? (
-            <div className="flex items-center gap-1.5 text-amber-300">
+            <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-300">
               <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
               <span className="font-semibold text-[9px] uppercase tracking-wider text-amber-400">MOVING POINT #{activeDragIndex + 1}:</span>
               <span>
@@ -767,19 +767,19 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
             </div>
           ) : cursorPos ? (
             <>
-              <div className="flex items-center gap-1.5 text-cyan-300">
+              <div className="flex items-center gap-1.5 text-cyan-600 dark:text-cyan-300">
                 <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
                 <span className="font-semibold text-[9px] uppercase tracking-wider text-cyan-400">CURSOR:</span>
                 <span>
                   {cursorPos.lat.toFixed(4)}° {cursorPos.lat >= 0 ? 'N' : 'S'}, {cursorPos.lon.toFixed(4)}° {cursorPos.lon >= 0 ? 'E' : 'W'}
                 </span>
               </div>
-              <div className="text-[9px] text-slate-400 border-l border-slate-700 pl-2">
+              <div className="text-[9px] text-[var(--c-tx4)] border-l border-[var(--c-br1)] pl-2">
                 {formatDmsHelper(cursorPos.lat, true)}, {formatDmsHelper(cursorPos.lon, false)}
               </div>
             </>
           ) : (
-            <div className="text-slate-400 italic text-[9px]">Hover or drag point markers for live coordinates</div>
+            <div className="text-[var(--c-tx4)] italic text-[9px]">Hover or drag point markers for live coordinates</div>
           )}
         </div>
 
@@ -857,7 +857,7 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
                   <div>
                     {(pt.x ?? 0).toFixed(4)}° {(pt.x ?? 0) >= 0 ? 'N' : 'S'}, {(pt.y ?? pt.x ?? 0).toFixed(4)}° {(pt.y ?? pt.x ?? 0) >= 0 ? 'E' : 'W'}
                   </div>
-                  <div className="text-[9px] text-slate-400">
+                  <div className="text-[9px] text-[var(--c-tx4)]">
                     {formatDmsHelper(pt.x ?? 0, true)}, {formatDmsHelper(pt.y ?? pt.x ?? 0, false)}
                   </div>
                 </div>
@@ -868,12 +868,12 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
       </div>
 
       {isMapExpanded ? (
-        <div className="flex items-center justify-between p-2.5 rounded border border-cyan-500/30 bg-cyan-950/30 text-[11px] text-cyan-300">
+        <div className="flex items-center justify-between p-2.5 rounded border border-cyan-500/30 bg-cyan-100 dark:bg-cyan-950/30 text-[11px] text-cyan-600 dark:text-cyan-300">
           <span>Full Map View Active — Altitude settings are hidden to maximize map area.</span>
           <button
             type="button"
             onClick={handleToggleExpandMap}
-            className="underline hover:text-white cursor-pointer font-medium text-xs"
+            className="underline hover:text-[var(--c-tx1)] cursor-pointer font-medium text-xs"
           >
             Restore Altitude Settings &amp; Normal View
           </button>
@@ -892,7 +892,7 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
                 </button>
               </TooltipTrigger>
               <TooltipContent className="max-w-[340px] space-y-1.5 p-3 text-[11px] leading-relaxed">
-                <p className="font-semibold text-violet-300">Altitude & Elevation Dynamics Workflow:</p>
+                <p className="font-semibold text-violet-600 dark:text-violet-300">Altitude & Elevation Dynamics Workflow:</p>
                 <p>1. Pattern: Select how elevation Z varies independently from 2D map movement.</p>
                 <p>2. Dynamic Inputs: Configure single fixed height or min/max elevation range & step limits.</p>
                 <p>3. Unit & Reference: Select measurement unit and physical datum baseline (MSL / AGL / Ellipsoid).</p>
@@ -912,7 +912,7 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
                 </button>
               </TooltipTrigger>
               <TooltipContent className="max-w-[300px] p-2 text-[10px] leading-relaxed space-y-1">
-                <p className="font-semibold text-emerald-300">Vertical (Z) Generation Dynamics:</p>
+                <p className="font-semibold text-emerald-600 dark:text-emerald-300">Vertical (Z) Generation Dynamics:</p>
                 <p>• Follow Primary XY: Inherits motion from 2D plane.</p>
                 <p>• Fixed Altitude: Constant fixed elevation height.</p>
                 <p>• Random Elevation: Uniform random value in [Min Alt, Max Alt] per tick.</p>
@@ -925,7 +925,7 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
             id="geo-alt-pattern"
             value={altitudePattern}
             onChange={(e) => handlePatternChange(e.target.value as AltitudePattern)}
-            className="h-8 w-full rounded border border-input bg-input-background dark:bg-input/30 px-2 py-1 text-xs text-[var(--c-tx2)] outline-none hover:bg-white/5 cursor-pointer"
+            className="h-8 w-full rounded border border-input bg-input-background dark:bg-input/30 px-2 py-1 text-xs text-[var(--c-tx2)] outline-none hover:bg-[var(--c-bg5)] cursor-pointer"
           >
             <option value="FOLLOW_XY">Follow Primary XY Pattern</option>
             <option value="FIXED_ALTITUDE">Fixed Altitude (Constant Height)</option>
@@ -1134,7 +1134,7 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
               id="geo-alt-unit"
               value={altitudeUnit}
               onChange={(e) => handleUnitChange(e.target.value as AltitudeUnit)}
-              className="h-8 w-full rounded border border-input bg-input-background dark:bg-input/30 px-2 py-1 text-xs text-[var(--c-tx2)] outline-none hover:bg-white/5 cursor-pointer"
+              className="h-8 w-full rounded border border-input bg-input-background dark:bg-input/30 px-2 py-1 text-xs text-[var(--c-tx2)] outline-none hover:bg-[var(--c-bg5)] cursor-pointer"
             >
               <option value="METERS">Meters (m)</option>
               <option value="FEET">Feet (ft)</option>
@@ -1162,7 +1162,7 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
               id="geo-alt-ref"
               value={altitudeReference}
               onChange={(e) => handleReferenceChange(e.target.value as AltitudeReference)}
-              className="h-8 w-full rounded border border-input bg-input-background dark:bg-input/30 px-2 py-1 text-xs text-[var(--c-tx2)] outline-none hover:bg-white/5 cursor-pointer"
+              className="h-8 w-full rounded border border-input bg-input-background dark:bg-input/30 px-2 py-1 text-xs text-[var(--c-tx2)] outline-none hover:bg-[var(--c-bg5)] cursor-pointer"
             >
               <option value="MSL">MSL (Mean Sea Level / ASL)</option>
               <option value="AGL">AGL (Above Ground Level)</option>

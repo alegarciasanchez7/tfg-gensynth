@@ -13,6 +13,7 @@ import {
   Copy,
   MoreVertical,
   AlertCircle,
+  Repeat,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useApp } from '../../../../context';
@@ -37,6 +38,7 @@ import { CloneDialog } from './CloneDialog';
 import { ConfirmDeleteDialog } from '../../../common/ConfirmDeleteDialog';
 import { FlowItem } from './FlowItem';
 import { CreateFlowDialog } from './CreateFlowDialog';
+import { formatRate, groupRate } from '../../../../core/metricsFormat';
 
 interface GroupItemProps {
   group: Group;
@@ -57,6 +59,7 @@ interface GroupItemProps {
     burst?: number,
     template?: string,
     connectorConfig?: Record<string, unknown>,
+    everyTicks?: number,
   ) => Promise<Flow>;
   onUpdateGroupConfig: (groupId: string, config: any, name?: string) => Promise<void>;
   onUpdateFlowConfig: (groupId: string, flowId: string, config: any, name?: string) => Promise<void>;
@@ -95,6 +98,7 @@ export function GroupItem({
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [isCloneOpen, setIsCloneOpen] = useState(false);
   const [isCreateFlowOpen, setIsCreateFlowOpen] = useState(false);
+  const [isRepeaterOpen, setIsRepeaterOpen] = useState(false);
 
   const handleDeleteConfirm = async () => {
     try {
@@ -154,6 +158,7 @@ export function GroupItem({
                   <DropdownMenuTrigger asChild>
                     <button
                       onClick={(e) => e.stopPropagation()}
+                      aria-label={`Actions for group ${group.name}`}
                       className="ml-auto p-1 rounded text-[var(--c-tx4)] hover:text-[var(--c-tx2)] hover:bg-black/10 transition-colors"
                     >
                       <MoreVertical size={14} />
@@ -180,6 +185,16 @@ export function GroupItem({
                       <Copy size={12} className="mr-2" />
                       Clone group
                     </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsRepeaterOpen(true);
+                      }}
+                      className="text-xs text-[var(--c-tx2)] focus:bg-cyan-500/10 focus:text-cyan-400"
+                    >
+                      <Repeat size={12} className="mr-2" />
+                      Repeater
+                    </DropdownMenuItem>
                     <DropdownMenuSeparator className="bg-[var(--c-br1)]" />
                     <DropdownMenuItem
                       onClick={(e) => {
@@ -204,7 +219,7 @@ export function GroupItem({
               </div>
               <div className="flex items-center gap-2 pl-3">
                 <span className={`text-[10px] ${gCfg.color}`} style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-                  {group.throughput}
+                  {formatRate(groupRate(group, state?.flowMetrics))} msg/s
                 </span>
                 <span className="text-[10px] text-[var(--c-tx4)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
                   {group.flows.length} flows
@@ -225,6 +240,17 @@ export function GroupItem({
           </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>
+
+      {/* Outside the expanded list so the Repeater also works on a collapsed group */}
+      <CreateFlowDialog
+        repeat
+        open={isRepeaterOpen}
+        onOpenChange={setIsRepeaterOpen}
+        groupId={group.id}
+        latestConnectors={latestConnectors}
+        onCreateFlow={onCreateFlow}
+        onSelectFlow={onSelectFlow}
+      />
 
       <ConfirmDeleteDialog
         open={isDeleteConfirmOpen}

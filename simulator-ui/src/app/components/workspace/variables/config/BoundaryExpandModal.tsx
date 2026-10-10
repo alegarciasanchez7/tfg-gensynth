@@ -50,7 +50,7 @@ export const BoundaryExpandModal: React.FC<BoundaryExpandModalProps> = ({
               <Maximize2 size={16} className="text-violet-400" />
               <span>{title} — High-Precision Visual Boundary Editor</span>
               {isFullScreen && (
-                <span className="ml-2 px-2 py-0.5 text-[10px] font-mono uppercase bg-cyan-950 text-cyan-300 border border-cyan-500/40 rounded">
+                <span className="ml-2 px-2 py-0.5 text-[10px] font-mono uppercase bg-cyan-100 dark:bg-cyan-950 text-cyan-600 dark:text-cyan-300 border border-cyan-500/40 rounded">
                   Full Screen Window Active
                 </span>
               )}
@@ -61,7 +61,7 @@ export const BoundaryExpandModal: React.FC<BoundaryExpandModalProps> = ({
                   <button
                     type="button"
                     onClick={toggleFullScreen}
-                    className="p-1.5 rounded text-[var(--c-tx4)] hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                    className="p-1.5 rounded text-[var(--c-tx4)] hover:text-[var(--c-tx1)] hover:bg-[var(--c-bg5)] transition-colors cursor-pointer"
                     aria-label={isFullScreen ? 'Restore Standard Window' : 'Expand to Full Screen Window'}
                   >
                     {isFullScreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
@@ -76,7 +76,7 @@ export const BoundaryExpandModal: React.FC<BoundaryExpandModalProps> = ({
                   <button
                     type="button"
                     onClick={onClose}
-                    className="p-1.5 rounded text-[var(--c-tx4)] hover:text-rose-300 hover:bg-rose-500/20 transition-colors cursor-pointer"
+                    className="p-1.5 rounded text-[var(--c-tx4)] hover:text-rose-600 dark:hover:text-rose-300 hover:bg-rose-500/20 transition-colors cursor-pointer"
                     aria-label="Close Editor Modal"
                   >
                     <X size={18} />

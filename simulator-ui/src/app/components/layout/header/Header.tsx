@@ -3,9 +3,10 @@ import { Power, Square, FolderOpen, Save, Settings, Package, Plus, FilePlus } fr
 import type { SystemStatus, ConnectorHealthSummary, Variable } from '../../../types';
 import type { ConnectorPluginDescriptor } from '../../../core/types';
 import { PluginImportPanel } from './PluginImportPanel';
-import { ConnectorCatalogPanel } from './ConnectorCatalogPanel';
-import { SettingsPanel } from './SettingsPanel';
+import { ConnectorCatalogDialog } from './ConnectorCatalogDialog';
+import { SettingsDialog } from './settings/SettingsDialog';
 import { PROJECT_FILE_EXTENSION } from '../../../core/fileStorage';
+import { APP_VERSION } from '../../../core/appInfo';
 
 interface HeaderProps {
   systemStatus: SystemStatus;
@@ -16,8 +17,6 @@ interface HeaderProps {
   onSaveAsProject: () => Promise<unknown>;
   currentFileName: string | null;
   isDirty: boolean;
-  isDark: boolean;
-  onThemeToggle: () => void;
   latestConnectors: ConnectorPluginDescriptor[];
   connectorHealthSummary: ConnectorHealthSummary[];
   variables: Variable[];
@@ -54,8 +53,6 @@ export function Header({
   onSaveAsProject,
   currentFileName,
   isDirty,
-  isDark,
-  onThemeToggle,
   latestConnectors,
   connectorHealthSummary,
   variables = [],
@@ -256,7 +253,7 @@ export function Header({
             }
           }}
           disabled={loadingState}
-          title="Save changes to configuration file"
+          title="Save changes to configuration file (Ctrl+S)"
           className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-[var(--c-br1)] text-xs text-[var(--c-tx3)] hover:text-[var(--c-tx1)] hover:border-[var(--c-br3)] hover:bg-[var(--c-bg5)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Save size={12} /> Save
@@ -295,11 +292,17 @@ export function Header({
         >
           <Package size={12} /> Connectors ({latestConnectors.length})
         </button>
+        {/* Mounted only while open, so the dialog always starts on the first connector */}
         {showCatalog && (
-          <ConnectorCatalogPanel
+          <ConnectorCatalogDialog
+            open
+            onOpenChange={setShowCatalog}
             latestConnectors={latestConnectors}
             connectorHealthSummary={connectorHealthSummary}
-            onClose={() => setShowCatalog(false)}
+            onImportPlugin={() => {
+              setShowCatalog(false);
+              setShowPluginImport(true);
+            }}
           />
         )}
       </div>
@@ -327,13 +330,15 @@ export function Header({
 
       {/* Version badge */}
       <div className="text-[10px] text-[var(--c-tx5)] tracking-wider shrink-0 mr-1" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-        GenSynth 0.5.0-alpha
+        GenSynth {APP_VERSION}
       </div>
 
       {/* Settings */}
       <div className="relative shrink-0">
         <button
-          onClick={() => setShowSettings(s => !s)}
+          onClick={() => setShowSettings(true)}
+          aria-label="Settings"
+          title="Settings"
           className={`flex items-center justify-center w-7 h-7 rounded border transition-all ${showSettings
               ? 'border-cyan-500/50 bg-cyan-500/10 text-cyan-400'
               : 'border-[var(--c-br1)] text-[var(--c-tx3)] hover:text-[var(--c-tx1)] hover:border-[var(--c-br3)] hover:bg-[var(--c-bg5)]'
@@ -341,13 +346,8 @@ export function Header({
         >
           <Settings size={13} />
         </button>
-        {showSettings && (
-          <SettingsPanel
-            isDark={isDark}
-            onThemeToggle={onThemeToggle}
-            onClose={() => setShowSettings(false)}
-          />
-        )}
+        {/* Mounted only while open, so the dialog always starts on its first category */}
+        {showSettings && <SettingsDialog open onOpenChange={setShowSettings} />}
       </div>
     </div>
   );

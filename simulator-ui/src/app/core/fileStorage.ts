@@ -3,13 +3,19 @@
  * Handles serialization/deserialization of project state to/from local files
  */
 
-import { Group, Variable, Flow } from '../types';
+import { Group, Variable, Flow, ProjectSettings } from '../types';
+import { normalizeProjectSettings } from './tickSettings';
+import { normalizeOutputMode } from './outputMode';
 
 /** Extension of GenSynth project files. Must match ProjectFileFormat.EXTENSION in the Core. */
 export const PROJECT_FILE_EXTENSION = '.gsynth';
 /** Marker stored in every project file. Must match ProjectFileFormat.FORMAT_ID in the Core. */
 export const PROJECT_FORMAT_ID = 'gensynth-project';
-/** Current project file format version. Must match ProjectFileFormat.VERSION in the Core. */
+/**
+ * Current project file format version. Must match ProjectFileFormat.VERSION in the Core.
+ * The `settings` section and the flow field `everyTicks` are optional (defaults apply);
+ * `burst`, `interval` and `threads` are legacy.
+ */
 export const PROJECT_FORMAT_VERSION = '1.0.0';
 
 export interface ProjectSnapshot {
@@ -18,6 +24,7 @@ export interface ProjectSnapshot {
   exportedAt: string;
   groups: Group[];
   variables: Variable[];
+  settings: ProjectSettings;
 }
 
 /**
@@ -76,6 +83,7 @@ export function normalizeFlowFromSnapshot(flow: Partial<Flow>): Flow {
     errorMessage: flow.errorMessage,
     interval: typeof flow.interval === 'number' ? flow.interval : 1000,
     burst: typeof flow.burst === 'number' ? flow.burst : 1,
+    everyTicks: Number.isInteger(flow.everyTicks) && (flow.everyTicks as number) >= 1 ? (flow.everyTicks as number) : 1,
     topic: flow.topic ?? '',
     host: flow.host ?? 'localhost',
     port: typeof flow.port === 'number' ? flow.port : 5672,
@@ -99,7 +107,7 @@ export function normalizeGroupFromSnapshot(group: Partial<Group>): Group {
     throughput: group.throughput ?? '0 msg/s',
     description: group.description ?? '',
     threads: typeof group.threads === 'number' ? group.threads : 1,
-    outputMode: group.outputMode ?? 'TEXT',
+    outputMode: normalizeOutputMode(group.outputMode),
     expanded: group.expanded ?? false,
     enabled: group.enabled ?? true,
     // Ensure flows is an array and normalize each flow
@@ -126,13 +134,14 @@ export function normalizeVariableFromSnapshot(variable: Partial<Variable>): Vari
 /**
  * Serialize current state to a project snapshot
  */
-export function createProjectSnapshot(groups: Group[], variables: Variable[]): ProjectSnapshot {
+export function createProjectSnapshot(groups: Group[], variables: Variable[], settings: ProjectSettings): ProjectSnapshot {
   return {
     format: PROJECT_FORMAT_ID,
     version: PROJECT_FORMAT_VERSION,
     exportedAt: new Date().toISOString(),
     groups,
     variables,
+    settings,
   };
 }
 
@@ -206,6 +215,7 @@ export async function loadProjectSnapshotFromFile(file: File): Promise<ProjectSn
           exportedAt: snapshot.exportedAt,
           groups: snapshot.groups.map(normalizeGroupFromSnapshot),
           variables: snapshot.variables.map(normalizeVariableFromSnapshot),
+          settings: normalizeProjectSettings((snapshot as { settings?: unknown }).settings),
         };
 
         resolve(normalizedSnapshot);

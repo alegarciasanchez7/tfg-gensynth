@@ -1,5 +1,6 @@
-import { Cpu, MemoryStick, ArrowUpRight, ArrowDownLeft, Server, Clock4 } from 'lucide-react';
+import { Cpu, MemoryStick, ArrowUpRight, ArrowDownLeft, Server, Clock4, Timer } from 'lucide-react';
 import { useSystemStatus, useMetrics } from '../../../context';
+import { formatTickRate } from '../../../core/tickSettings';
 
 interface Metric {
   icon: React.ReactNode;
@@ -52,6 +53,8 @@ export function ResourceBar() {
   const msgs = metrics?.messagesPerSecond ?? 0;
   const totalMsgs = metrics?.totalMessages ?? 0;
   const uptime = metrics?.uptime ?? 0;
+  const ticksPerSecond = metrics?.ticksPerSecond ?? 0;
+  const totalTicks = metrics?.totalTicks ?? 0;
 
   const formattedNetUp = formatBytes(networkUp);
   const formattedNetDown = formatBytes(networkDown);
@@ -95,6 +98,13 @@ export function ResourceBar() {
       value: running ? `${msgs.toLocaleString()}` : '0',
       unit: running ? `(${formatShortNumber(totalMsgs)} total)` : '',
       color: running ? 'text-amber-500' : 'text-slate-400',
+    },
+    {
+      icon: <Timer size={11} />,
+      label: 'TICK',
+      value: running ? formatTickRate(ticksPerSecond) : '0',
+      unit: running ? `/s (${formatShortNumber(totalTicks)} total)` : '',
+      color: running ? 'text-fuchsia-500' : 'text-slate-400',
     },
     {
       icon: <Clock4 size={11} />,

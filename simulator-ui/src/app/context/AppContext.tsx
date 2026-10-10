@@ -20,6 +20,7 @@ import type {
   VariableType,
   VariableScope,
   Variable,
+  TickSettings,
 } from '../types';
 
 import { toast } from 'sonner';
@@ -33,6 +34,7 @@ import * as systemActions from './actions/systemActions';
 import * as projectActions from './actions/projectActions';
 import * as templateActions from './actions/templateActions';
 import * as discardActions from './actions/discardActions';
+import * as settingsActions from './actions/settingsActions';
 
 // Hooks
 import { useCrudActions } from './hooks/useCrudActions';
@@ -56,9 +58,12 @@ interface AppContextValue {
     saveProjectState: (isAutoSave?: boolean) => Promise<boolean>;
     saveProjectStateAs: () => Promise<boolean>;
     discardItemChanges: (type: 'group' | 'flow' | 'variable', id: string) => Promise<void>;
-    discardAllChanges: () => void;
+    discardAllChanges: () => Promise<void>;
     setAutoSave: (enabled: boolean) => void;
     setAutoSaveInterval: (seconds: number) => void;
+
+    // Project settings
+    updateTickSettings: (tick: TickSettings) => Promise<void>;
     
     // Selection
     selectGroup: (groupId: string) => void;
@@ -90,6 +95,7 @@ interface AppContextValue {
       burst?: number,
       template?: string,
       connectorConfig?: Record<string, unknown>,
+      everyTicks?: number,
     ) => Promise<Flow>;
     deleteFlow: (groupId: string, flowId: string) => Promise<void>;
     updateFlowConfig: (
@@ -367,6 +373,7 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
       connectionMode: current.connectionMode,
       groups: current.groups,
       variables: current.variables,
+      settings: current.settings,
       file: {
         fileName: current.currentFileName,
         filePath: current.currentFilePath,
@@ -401,6 +408,7 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
         savedState: current.savedState,
         groups: current.groups,
         variables: current.variables,
+        settings: current.settings,
       },
       type,
       id,
@@ -408,7 +416,15 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
   }, []);
 
   const discardAllChanges = useCallback(() => {
-    dispatch({ type: 'DISCARD_ALL_CHANGES' });
+    const current = stateRef.current;
+    return discardActions.discardAllChanges({
+      dispatch,
+      isConnected: current.isConnected,
+      savedState: current.savedState,
+      groups: current.groups,
+      variables: current.variables,
+      settings: current.settings,
+    });
   }, []);
 
   const setAutoSave = useCallback((enabled: boolean) => {
@@ -418,6 +434,17 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
   const setAutoSaveInterval = useCallback((seconds: number) => {
     dispatch({ type: 'SET_AUTO_SAVE_INTERVAL', payload: seconds });
   }, []);
+
+  const updateTickSettings = useCallback(
+    (tick: TickSettings) =>
+      settingsActions.updateTickSettings({
+        dispatch,
+        getConnectionMode: () => stateRef.current.connectionMode,
+        getSettings: () => stateRef.current.settings,
+        reportCommandError,
+      })(tick),
+    [reportCommandError]
+  );
 
   // UI / Logs
   const setBottomTab = useCallback((tab: 'logs' | 'stats' | 'preview') => {
@@ -457,6 +484,7 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
     discardAllChanges,
     setAutoSave,
     setAutoSaveInterval,
+    updateTickSettings,
     selectGroup,
     selectFlow,
     selectVariable,

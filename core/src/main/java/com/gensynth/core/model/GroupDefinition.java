@@ -1,7 +1,6 @@
 package com.gensynth.core.model;
 
 import java.time.Instant;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -11,8 +10,8 @@ import java.util.Objects;
  *
  * A Group is a logical container for multiple Flows with shared configuration:
  * - Name and description
- * - Number of threads for execution
- * - Output mode (parallel, sequential, etc.)
+ * - Output mode ({@link OutputMode}: parallel or sequential)
+ * - Number of threads (legacy: kept for file compatibility, ignored by the engine)
  * - Enabled/disabled state
  *
  * GroupDefinition captures the persistent configuration, while runtime state
@@ -35,8 +34,8 @@ public class GroupDefinition {
      * @param groupId Unique identifier (UUID format)
      * @param name Human-readable name
      * @param description Group description
-     * @param threads Number of threads for execution
-     * @param outputMode Execution mode (parallel, sequential, etc.)
+     * @param threads Legacy number of threads (ignored by the engine)
+     * @param outputMode Output mode; normalized with {@link OutputMode#fromValue(String)}
      */
     public GroupDefinition(String groupId, String name, String description, int threads, String outputMode) {
         this.groupId = Objects.requireNonNull(groupId, "groupId cannot be null");
@@ -44,8 +43,9 @@ public class GroupDefinition {
         this.description = description != null ? description : "";
         this.enabled = true;
         this.threads = Math.max(1, threads);
-        this.outputMode = Objects.requireNonNull(outputMode, "outputMode cannot be null");
-        this.flows = new HashMap<>();
+        this.outputMode = OutputMode.fromValue(outputMode).wireValue();
+        // Insertion order matters: sequential groups generate messages in flow order
+        this.flows = new LinkedHashMap<>();
         this.createdAt = Instant.now();
         this.updatedAt = Instant.now();
     }
@@ -79,7 +79,7 @@ public class GroupDefinition {
     }
 
     public Map<String, FlowDefinition> getFlows() {
-        return new HashMap<>(flows);
+        return new LinkedHashMap<>(flows);
     }
 
     public int getFlowCount() {
@@ -138,7 +138,7 @@ public class GroupDefinition {
     }
 
     public void setOutputMode(String outputMode) {
-        this.outputMode = Objects.requireNonNull(outputMode, "outputMode cannot be null");
+        this.outputMode = OutputMode.fromValue(outputMode).wireValue();
         this.updatedAt = Instant.now();
     }
 
@@ -198,10 +198,10 @@ public class GroupDefinition {
     /**
      * Gets all flows in this group.
      *
-     * @return Map of flowId -> FlowDefinition
+     * @return Map of flowId -> FlowDefinition, in insertion order
      */
     public Map<String, FlowDefinition> getAllFlows() {
-        return new HashMap<>(flows);
+        return new LinkedHashMap<>(flows);
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -243,8 +243,10 @@ public class GroupDefinition {
         String groupId = (String) payload.get("id");
         String name = (String) payload.get("name");
         String description = (String) payload.get("description");
-        int threads = ((Number) payload.get("threads")).intValue();
-        String outputMode = (String) payload.get("outputMode");
+        Object threadsObj = payload.get("threads");
+        int threads = (threadsObj instanceof Number) ? ((Number) threadsObj).intValue() : 1;
+        Object outputModeObj = payload.get("outputMode");
+        String outputMode = outputModeObj instanceof String ? (String) outputModeObj : null;
 
         GroupDefinition group = new GroupDefinition(groupId, name, description, threads, outputMode);
         
