@@ -6,6 +6,7 @@ import com.gensynth.core.ws.runtime.GroupRuntime;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
@@ -23,10 +24,15 @@ class FakeMessageHandler implements IFlowMessageHandler {
     final Map<String, AtomicInteger> generatedByFlow = new ConcurrentHashMap<>();
     final Map<String, AtomicInteger> skippedByFlow = new ConcurrentHashMap<>();
     final Map<String, CountDownLatch> blockedFlows = new ConcurrentHashMap<>();
+    /** Flows whose message generation fails (generate returns null, like a broken template). */
+    final Set<String> failingFlows = ConcurrentHashMap.newKeySet();
     volatile boolean failNextPublish;
 
     @Override
     public String generate(GroupRuntime group, FlowRuntime flow) {
+        if (failingFlows.contains(flow.id)) {
+            return null;
+        }
         int n = generatedByFlow.computeIfAbsent(flow.id, id -> new AtomicInteger()).incrementAndGet();
         flow.generated.incrementAndGet();
         return flow.id + n;
