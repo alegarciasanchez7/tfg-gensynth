@@ -1,5 +1,8 @@
 # Weekly dependency updates, grouped to keep the number of pull requests low.
 # Pull requests target dev, the integration branch.
+# Major updates are ignored until after the TFG delivery (2026-10-25): they need manual testing,
+# because CI does not build the private connector plugins nor run the embedded browser.
+# Security updates are not affected by these ignore rules.
 version: 2
 updates:
   - package-ecosystem: maven
@@ -10,6 +13,9 @@ updates:
     groups:
       maven-minor-and-patch:
         update-types: [minor, patch]
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
 
   - package-ecosystem: npm
     directory: /simulator-ui
@@ -19,6 +25,9 @@ updates:
     groups:
       npm-minor-and-patch:
         update-types: [minor, patch]
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
 
   - package-ecosystem: github-actions
     directory: /
