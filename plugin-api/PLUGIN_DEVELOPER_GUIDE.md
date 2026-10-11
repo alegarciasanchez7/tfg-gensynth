@@ -330,9 +330,10 @@ moved to `core/plugins/backup/`.
 
 ## 10. Versioning
 
-`PluginApi.VERSION` (currently **1.0**) is the version of the plugin API. Within a major version
-the API only grows backward-compatibly (new default methods, new field types), so a plugin built
-for 1.0 keeps working with any 1.x GenSynth. Plugins built for the legacy pre-release API
+`PluginApi.VERSION` (currently **1.0**) is the version of the plugin API, independent of the
+version of GenSynth itself. Within a major version the API only grows backward-compatibly (new
+default methods, new field types), so a plugin built for API 1.0 keeps working with any GenSynth
+that provides API 1.x. Plugins built for the legacy pre-release API
 (`ConnectorPluginProvider`) are rejected with a message asking to rebuild them.
 
 ## 11. Testing
