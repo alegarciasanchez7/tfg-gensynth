@@ -228,7 +228,9 @@ as the resource bar of the window:
 - The command line uses the plugins installed from the application, never changes its autosave
   and opens no network port, so it can run while the window is open.
 - Its log goes to `logs/cli.log` inside the data folder (see
-  [Where GenSynth keeps its files](#where-gensynth-keeps-its-files)).
+  [Where GenSynth keeps its files](#where-gensynth-keeps-its-files)). Each session is added at
+  the end of the file and starts with a `command line started` line, so the errors of a past
+  session can still be checked.
 
 ### Making `gensynth` available in the terminal
 

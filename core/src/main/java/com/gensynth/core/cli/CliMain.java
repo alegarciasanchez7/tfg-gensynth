@@ -7,9 +7,12 @@ import org.slf4j.LoggerFactory;
 
 import java.io.BufferedReader;
 import java.io.Console;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.PrintStream;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -50,11 +53,13 @@ public final class CliMain {
         }
 
         // Must run before the first logger is created: slf4j-simple reads its settings once
-        redirectLogToFile();
+        PrintStream console = redirectLogToFile();
 
-        SimulationManager manager = new SimulationManager();
         Path workingDir = Paths.get(System.getProperty("user.dir"));
         Path userHome = Paths.get(System.getProperty("user.home"));
+        // Marks where each session starts, as the log keeps the previous ones
+        LoggerFactory.getLogger(CliMain.class).info("GenSynth {} command line started in {}", version, workingDir);
+        SimulationManager manager = new SimulationManager();
         Terminal systemTerminal = openTerminal();
         TerminalInput terminal = null;
         StatusPanel panel = null;
@@ -90,7 +95,7 @@ public final class CliMain {
         try {
             shell.run();
         } catch (IOException e) {
-            System.err.println("Error reading the input: " + e.getMessage());
+            console.println("Error reading the input: " + e.getMessage());
             exitCode = 1;
         } finally {
             if (panel != null) {
@@ -140,24 +145,42 @@ public final class CliMain {
 
     /**
      * Sends the log to {@code <data folder>/logs/cli.log} so it does not mix with the shell,
-     * unless a log file is already configured.
+     * unless a log file is already configured. Each session is added at the end of the file.
+     * <p>
+     * slf4j-simple can only overwrite a log file, so the file is opened here in append mode and
+     * becomes the standard error stream, which slf4j-simple then writes to. Whatever a library
+     * prints to the standard error also ends up in the log instead of in the shell.
+     *
+     * @return the original standard error, for the messages meant for the user
      */
-    private static void redirectLogToFile() {
+    private static PrintStream redirectLogToFile() {
+        PrintStream console = System.err;
         if (System.getProperty(LOG_FILE_PROPERTY) != null) {
-            return;
+            return console;
         }
         Path logFile = AppPaths.current().dataHome().resolve("logs").resolve("cli.log");
         try {
-            Files.createDirectories(logFile.getParent());
+            System.setErr(openAppending(logFile));
         } catch (IOException e) {
             // Keep the default (stderr) rather than failing to start
-            return;
+            return console;
         }
-        System.setProperty(LOG_FILE_PROPERTY, logFile.toString());
+        System.setProperty(LOG_FILE_PROPERTY, "System.err");
         System.setProperty("org.slf4j.simpleLogger.showDateTime", "true");
         System.setProperty("org.slf4j.simpleLogger.dateTimeFormat", "yyyy-MM-dd HH:mm:ss.SSS");
         // The engine logs message previews at INFO (up to 4 per second and flow): keep only its
         // warnings and errors, or the file would keep growing during a long simulation
         System.setProperty("org.slf4j.simpleLogger.log." + UiBridgeWebSocketServer.class.getName(), "warn");
+        return console;
+    }
+
+    /**
+     * @param logFile the log file, created with its folder if missing
+     * @return a stream that writes at the end of the file
+     * @throws IOException if the file cannot be opened
+     */
+    static PrintStream openAppending(Path logFile) throws IOException {
+        Files.createDirectories(logFile.getParent());
+        return new PrintStream(new FileOutputStream(logFile.toFile(), true), true, StandardCharsets.UTF_8);
     }
 }
