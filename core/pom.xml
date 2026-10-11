@@ -386,6 +386,13 @@
                         <javaOptions>
                             <option>-Dgensynth.appdir=$APPDIR</option>
                         </javaOptions>
+                        <!-- Second launcher: the "gensynth" command line (headless shell, see CliMain) -->
+                        <launchers>
+                            <launcher>
+                                <name>gensynth-cli</name>
+                                <file>${installer.packaging}/launchers/gensynth-cli.properties</file>
+                            </launcher>
+                        </launchers>
                     </configuration>
                 </plugin>
             </plugins>
@@ -414,7 +421,7 @@
           Installers: ./mvnw -B -Dinstaller -DskipTests package (from the root, on the target OS).
           This profile gathers the application files in target/installer/input; the installer-<os>
           profile of the running OS turns them into an installer in target/installer/dist.
-          A future CLI launcher only needs a <launchers> entry in the jpackage configuration.
+          Besides the GenSynth launcher, every installer ships the gensynth-cli launcher (command line).
         -->
         <profile>
             <id>installer</id>
@@ -489,6 +496,10 @@
                                     <winDirChooser>true</winDirChooser>
                                     <!-- Fixed forever: lets a newer version replace the installed one -->
                                     <winUpgradeUuid>5c2b9d1e-7f4a-4c3e-9b8d-2e6f1a0c4d73</winUpgradeUuid>
+                                    <!-- cli\gensynth.cmd: the folder users add to PATH to type "gensynth" -->
+                                    <appContentPaths combine.children="append">
+                                        <appContentPath>${installer.packaging}/windows/cli</appContentPath>
+                                    </appContentPaths>
                                 </configuration>
                             </execution>
                         </executions>
@@ -514,6 +525,8 @@
                             <linuxShortcut>true</linuxShortcut>
                             <linuxMenuGroup>Development</linuxMenuGroup>
                             <linuxAppCategory>devel</linuxAppCategory>
+                            <!-- jpackage templates (postinst, prerm, gensynth.spec) that link /usr/bin/gensynth -->
+                            <resourceDir>${installer.packaging}/linux</resourceDir>
                         </configuration>
                         <executions>
                             <execution>
