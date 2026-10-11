@@ -121,15 +121,16 @@ The [Release workflow](.github/workflows/release.yml) builds the installers with
 Windows (`.msi`), Linux (`.deb` and `.rpm`) and macOS (`.dmg`) and publishes them in a GitHub
 Release. Releases are always made from `main`:
 
-1. Merge `dev` into `main`.
-2. For a new version, update it in `pom.xml`, `core/pom.xml`, `plugin-api/pom.xml`,
-   `simulator-ui/package.json`, `simulator-ui/src/app/core/appInfo.ts` and
-   `sonar-project.properties` (the workflow refuses to publish if they differ).
+1. Update the version in `pom.xml`, `core/pom.xml`, `simulator-ui/package.json` (and its
+   `package-lock.json`), `simulator-ui/src/app/core/appInfo.ts` and `sonar-project.properties`
+   (the workflow refuses to publish if they differ). The plugin API (`plugin-api/pom.xml`) has its
+   own version, which only changes when its contract does.
+2. Merge `dev` into `main`.
 3. Tag `main` and push the tag:
    ```bash
    git switch main && git pull
-   git tag v1.0.0
-   git push origin v1.0.0
+   git tag v0.5.0
+   git push origin v0.5.0
    ```
 
 The workflow also refuses tags that are not on `main`. Pull requests that change the packaging
