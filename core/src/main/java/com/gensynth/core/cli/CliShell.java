@@ -14,8 +14,8 @@ import java.util.Locale;
 
 /**
  * Interactive shell of the {@code gensynth} command: reads one command per line and runs it
- * against a {@link ISimulationManager}. The streams are injected so the shell can be tested;
- * what it prints is the user interface of the command, not logging.
+ * against a {@link ISimulationManager}. The input and output are injected so the shell can be
+ * tested; what it prints is the user interface of the command, not logging.
  */
 public class CliShell {
 
@@ -29,10 +29,27 @@ public class CliShell {
           list                  Show the simulations of this session
           help                  Show this help
           exit                  Stop every simulation and leave
+        Press Tab to complete commands, ids and paths.
         """;
 
+    /**
+     * Source of the command lines: a terminal with line editing, or any reader.
+     */
+    @FunctionalInterface
+    public interface LineSource {
+
+        /**
+         * Shows the prompt and reads one line.
+         *
+         * @param prompt text shown before the line
+         * @return the line, or null at the end of the input
+         * @throws IOException if the input cannot be read
+         */
+        String readLine(String prompt) throws IOException;
+    }
+
     private final ISimulationManager manager;
-    private final BufferedReader in;
+    private final LineSource in;
     private final PrintStream out;
     private final Path workingDir;
     private final Path userHome;
@@ -40,13 +57,13 @@ public class CliShell {
 
     /**
      * @param manager    runs the simulations
-     * @param in         source of the commands
+     * @param in         source of the commands (see {@link #plainInput})
      * @param out        where the shell writes its output
      * @param workingDir folder that relative paths are resolved against
      * @param userHome   folder that {@code ~} expands to
      * @param version    application version shown in the banner
      */
-    public CliShell(ISimulationManager manager, BufferedReader in, PrintStream out,
+    public CliShell(ISimulationManager manager, LineSource in, PrintStream out,
                     Path workingDir, Path userHome, String version) {
         this.manager = manager;
         this.in = in;
@@ -54,6 +71,22 @@ public class CliShell {
         this.workingDir = workingDir;
         this.userHome = userHome;
         this.version = version;
+    }
+
+    /**
+     * Reads the lines from a plain reader, printing the prompt to {@code out}: used when the
+     * input is not a terminal (a pipe or a file) and by the tests.
+     *
+     * @param in  source of the lines
+     * @param out where the prompt is printed
+     * @return the line source
+     */
+    public static LineSource plainInput(BufferedReader in, PrintStream out) {
+        return prompt -> {
+            out.print(prompt);
+            out.flush();
+            return in.readLine();
+        };
     }
 
     /**
@@ -66,9 +99,7 @@ public class CliShell {
         out.println("GenSynth " + version + " command line. Type 'help' for the list of commands.");
         boolean keepGoing = true;
         while (keepGoing) {
-            out.print(PROMPT);
-            out.flush();
-            String line = in.readLine();
+            String line = in.readLine(PROMPT);
             if (line == null) {
                 out.println();
                 keepGoing = false;
@@ -119,7 +150,7 @@ public class CliShell {
         if (args.size() != 1) {
             throw new IllegalArgumentException("Usage: start <file.gsynth>");
         }
-        SimulationSnapshot started = manager.start(resolvePath(args.get(0)));
+        SimulationSnapshot started = manager.start(resolvePath(args.get(0), workingDir, userHome));
         out.printf("[%d] Started '%s' (%d groups, %d flows)%n", started.id(),
             started.configFile().getFileName(), started.groups(), started.flows());
         for (String error : started.connectorErrors()) {
@@ -183,8 +214,14 @@ public class CliShell {
     /**
      * Resolves a path typed by the user: {@code ~} is the user's home and relative paths start
      * at the folder where {@code gensynth} was launched.
+     *
+     * @param raw        the path as typed
+     * @param workingDir folder that relative paths are resolved against
+     * @param userHome   folder that {@code ~} expands to
+     * @return the normalized path
+     * @throws IllegalArgumentException if the text is not a valid path
      */
-    Path resolvePath(String raw) {
+    static Path resolvePath(String raw, Path workingDir, Path userHome) {
         try {
             Path path;
             if (raw.equals("~")) {

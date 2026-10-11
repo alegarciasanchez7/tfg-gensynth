@@ -17,6 +17,6 @@ No Java installation is needed: everything GenSynth needs is included.
 >
 > **First start:** GenSynth downloads its embedded browser (about 150 MB), so it needs an internet connection. A window shows the progress, and it only happens once.
 
-**Command line:** type `gensynth` in a terminal to start and stop `.gsynth` projects without the window. The Linux packages set it up automatically; on Windows and macOS it needs a one-time step described in the [User Guide](https://github.com/alegarciasanchez7/tfg-gensynth/blob/main/USER_GUIDE.md#command-line).
+**Command line:** type `gensynth` in a terminal to start and stop `.gsynth` projects without the window, with Tab completion of commands and paths. The Linux packages set it up automatically; on Windows and macOS it needs a one-time step described in the [User Guide](https://github.com/alegarciasanchez7/tfg-gensynth/blob/main/USER_GUIDE.md#command-line).
 
 `SHA256SUMS.txt` lists the checksum of every file.

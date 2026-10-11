@@ -170,7 +170,18 @@ Bye.
 | `stop all` | Stops every running simulation. |
 | `list` | Shows the simulations of the session with their status, time, messages and errors. |
 | `help` | Lists the commands. |
-| `exit` | Stops whatever is still running and closes the shell (also `Ctrl + D`; `Ctrl + C` stops everything too). |
+| `exit` | Stops whatever is still running and closes the shell (also `Ctrl + D`, or `Ctrl + C` on an empty line). |
+
+Press **Tab** to complete what you are typing, as in any terminal:
+
+- `start ` + Tab lists the files and folders of the current folder; `start ../` + Tab lists the
+  parent folder and `start documents/` + Tab that folder. Folders end in `/` (`\` on Windows), so
+  the next Tab goes on inside them, and the names with spaces are quoted for you. Hidden files
+  appear once you type the leading dot.
+- On the first word, Tab completes the command; after `stop`, it offers `all` and the ids of the
+  running simulations with their file names.
+- The up and down arrows bring back the commands of the session, and `Ctrl + C` clears the line
+  you are typing.
 
 - Each `start` gets an **id**: 1, 2, 3… in start order. A stopped simulation keeps its id, so
   ids are never reused; they start again from 1 the next time you open `gensynth`.

@@ -20,6 +20,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <benchmark.mainClass>com.gensynth.core.flow.variables.config.VariableConfigBenchmark</benchmark.mainClass>
         <jacoco.version>0.8.15</jacoco.version>
+        <jline.version>3.30.17</jline.version>
         <!-- Installers (-Dinstaller): built with jpackage on the OS they target -->
         <installer.dir>${project.build.directory}/installer</installer.dir>
         <installer.input>${installer.dir}/input</installer.input>
@@ -152,6 +153,19 @@
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-simple</artifactId>
             <version>1.7.36</version>
+        </dependency>
+
+        <!-- Line editing of the command line: Tab completion and history (see TerminalInput) -->
+        <dependency>
+            <groupId>org.jline</groupId>
+            <artifactId>jline-reader</artifactId>
+            <version>${jline.version}</version>
+        </dependency>
+        <!-- Native terminal access (bundles the libraries for Windows, macOS and Linux) -->
+        <dependency>
+            <groupId>org.jline</groupId>
+            <artifactId>jline-terminal-jni</artifactId>
+            <version>${jline.version}</version>
         </dependency>
 
         <!-- Data Faker -->

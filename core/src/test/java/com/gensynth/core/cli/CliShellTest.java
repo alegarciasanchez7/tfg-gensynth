@@ -42,7 +42,7 @@ public class CliShellTest {
     private String run(String input) throws Exception {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         PrintStream out = new PrintStream(bytes, true, StandardCharsets.UTF_8);
-        new CliShell(manager, new BufferedReader(new StringReader(input)), out, workingDir, home, "9.9.9").run();
+        new CliShell(manager, CliShell.plainInput(new BufferedReader(new StringReader(input)), out), out, workingDir, home, "9.9.9").run();
         return bytes.toString(StandardCharsets.UTF_8);
     }
 

@@ -2,6 +2,7 @@ package com.gensynth.core.cli;
 
 import com.gensynth.core.config.AppPaths;
 import com.gensynth.core.ws.UiBridgeWebSocketServer;
+import org.slf4j.LoggerFactory;
 
 import java.io.BufferedReader;
 import java.io.Console;
@@ -54,11 +55,11 @@ public final class CliMain {
         // Ctrl+C: stop the simulations so their connectors are closed cleanly
         Runtime.getRuntime().addShutdownHook(new Thread(manager::shutdown, "gensynth-cli-shutdown"));
 
-        Console console = System.console();
-        Charset charset = console != null ? console.charset() : Charset.defaultCharset();
-        BufferedReader in = new BufferedReader(new InputStreamReader(System.in, charset));
-        CliShell shell = new CliShell(manager, in, System.out,
-            Paths.get(System.getProperty("user.dir")), Paths.get(System.getProperty("user.home")), version);
+        Path workingDir = Paths.get(System.getProperty("user.dir"));
+        Path userHome = Paths.get(System.getProperty("user.home"));
+        TerminalInput terminal = openTerminal(new CliCompleter(manager, workingDir, userHome));
+        CliShell.LineSource input = terminal != null ? terminal : CliShell.plainInput(plainReader(), System.out);
+        CliShell shell = new CliShell(manager, input, System.out, workingDir, userHome, version);
         int exitCode = 0;
         try {
             shell.run();
@@ -67,9 +68,45 @@ public final class CliMain {
             exitCode = 1;
         } finally {
             manager.shutdown();
+            closeTerminal(terminal);
         }
         // Plugin client libraries may leave non-daemon threads behind
         System.exit(exitCode);
+    }
+
+    /**
+     * Opens the terminal with line editing and Tab completion.
+     *
+     * @return the terminal, or null when the input is not a terminal (a pipe or a file) or the
+     *         terminal cannot be opened; the shell then reads plain lines
+     */
+    private static TerminalInput openTerminal(CliCompleter completer) {
+        if (System.console() == null) {
+            return null;
+        }
+        try {
+            return TerminalInput.open(completer);
+        } catch (IOException | RuntimeException e) {
+            LoggerFactory.getLogger(CliMain.class).warn("Line editing not available, reading plain lines", e);
+            return null;
+        }
+    }
+
+    private static BufferedReader plainReader() {
+        Console console = System.console();
+        Charset charset = console != null ? console.charset() : Charset.defaultCharset();
+        return new BufferedReader(new InputStreamReader(System.in, charset));
+    }
+
+    private static void closeTerminal(TerminalInput terminal) {
+        if (terminal == null) {
+            return;
+        }
+        try {
+            terminal.close();
+        } catch (IOException e) {
+            LoggerFactory.getLogger(CliMain.class).warn("Could not restore the terminal", e);
+        }
     }
 
     /**
