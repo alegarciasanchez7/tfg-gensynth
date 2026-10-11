@@ -287,7 +287,6 @@ cd simulator-ui && npm run lint && npm run typecheck && npm run test:coverage
 
 `-DskipUi=true` skips the UI build in Maven, for machines without Node.js. The repository is also
 mirrored to GitLab, where [`.gitlab-ci.yml`](.gitlab-ci.yml) runs the same checks on Linux.
-Dependabot opens weekly pull requests to keep the dependencies up to date.
 
 ### Releases (continuous delivery)
 
