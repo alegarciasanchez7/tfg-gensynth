@@ -17,6 +17,13 @@ GenSynth - Read me first
    On the first start GenSynth downloads its embedded browser (Chromium,
    about 150 MB). A window shows the progress. This only happens once.
 
+4. Optional: the "gensynth" terminal command
+   GenSynth can also run projects from Terminal, without its window. After
+   opening GenSynth once (step 2), make the command available with:
+     sudo mkdir -p /usr/local/bin
+     sudo ln -sf /Applications/GenSynth.app/Contents/MacOS/gensynth-cli /usr/local/bin/gensynth
+   Then type "gensynth" in a new Terminal window.
+
 Where GenSynth keeps its files
    - Data (plugins, autosave, embedded browser):
      ~/Library/Application Support/GenSynth

@@ -9,6 +9,7 @@ How to install and use GenSynth. For a quick overview, see the [README](README.m
 - [Pace of the messages: ticks](#pace-of-the-messages-ticks)
 - [Connectors](#connectors)
 - [Saving your work](#saving-your-work)
+- [Command line](#command-line)
 - [Settings](#settings)
 - [Keyboard shortcuts](#keyboard-shortcuts)
 - [Troubleshooting](#troubleshooting)
@@ -139,6 +140,67 @@ it. Plugins can be uninstalled from there, and **Import plugin** is also availab
   seconds while there are changes.
 - Projects from older GenSynth versions still open; settings they do not have get their defaults.
 
+## Command line
+
+The `gensynth` command runs `.gsynth` projects from a terminal, without opening the window. Type
+`gensynth` in any folder to open its shell:
+
+```text
+$ gensynth
+GenSynth 0.5.0 command line. Type 'help' for the list of commands.
+gensynth> start plant.gsynth
+[1] Started 'plant.gsynth' (2 groups, 5 flows)
+gensynth> start "../other project/line 2.gsynth"
+[2] Started 'line 2.gsynth' (1 groups, 1 flows)
+gensynth> list
+ID   STATUS   UPTIME      MESSAGES  ERRORS  FILE
+1    running  00:01:12        7140       0  /home/me/plant.gsynth
+2    running  00:00:40         402       0  /home/other project/line 2.gsynth
+gensynth> stop 1
+[1] Stopped 'plant.gsynth' after 00:01:15: 7400 messages sent, 0 errors
+gensynth> exit
+[2] Stopped 'line 2.gsynth' after 00:00:44: 441 messages sent, 0 errors
+Bye.
+```
+
+| Command | What it does |
+|---|---|
+| `start <file.gsynth>` | Starts every group of the project. Relative paths start at the current folder; `~` is your user folder; quote paths with spaces. |
+| `stop <id>` | Stops that simulation and closes its connectors. |
+| `stop all` | Stops every running simulation. |
+| `list` | Shows the simulations of the session with their status, time, messages and errors. |
+| `help` | Lists the commands. |
+| `exit` | Stops whatever is still running and closes the shell (also `Ctrl + D`; `Ctrl + C` stops everything too). |
+
+- Each `start` gets an **id**: 1, 2, 3… in start order. A stopped simulation keeps its id, so
+  ids are never reused; they start again from 1 the next time you open `gensynth`.
+- Several projects can run at once, each with its own output folder
+  (`OUTPUT_FILES_<date>_sim<id>`). The same file cannot run twice at the same time.
+- If a connector cannot start, `start` shows a warning for that flow and the rest of the project
+  keeps running.
+- The command line uses the plugins installed from the application, never changes its autosave
+  and opens no network port, so it can run while the window is open.
+- Its log goes to `logs/cli.log` inside the data folder (see
+  [Where GenSynth keeps its files](#where-gensynth-keeps-its-files)).
+
+### Making `gensynth` available in the terminal
+
+- **Linux (`.deb` / `.rpm`):** nothing to do; the installer adds `/usr/bin/gensynth`.
+- **Windows:** add the `cli` folder of the installation to your `PATH` once, in PowerShell
+  (change the path if you installed GenSynth elsewhere), then open a new terminal:
+
+  ```powershell
+  [Environment]::SetEnvironmentVariable("Path", [Environment]::GetEnvironmentVariable("Path", "User") + ";C:\Program Files\GenSynth\cli", "User")
+  ```
+
+- **macOS:** open GenSynth once from *Applications* (see the first start note above), then link
+  the command in Terminal:
+
+  ```bash
+  sudo mkdir -p /usr/local/bin
+  sudo ln -sf /Applications/GenSynth.app/Contents/MacOS/gensynth-cli /usr/local/bin/gensynth
+  ```
+
 ## Settings
 
 Open them with the ⚙ icon in the top bar:
@@ -162,5 +224,6 @@ Open them with the ⚙ icon in the top bar:
 | The logs show *Invalid connector configuration…* when starting a group | A required connector field is empty or invalid; the message says which one. |
 | A plugin is rejected as "built for the legacy plugin API" | That plugin was made for an older GenSynth; it must be rebuilt by its author. |
 | *fails* keeps growing | Check the logs panel (bottom): it shows why the destination rejected the messages. |
+| The terminal says `gensynth` is not found | On Windows and macOS, follow [Making `gensynth` available in the terminal](#making-gensynth-available-in-the-terminal) and open a new terminal. |
 
 Problems when building from source are covered in [CONTRIBUTING.md](CONTRIBUTING.md#troubleshooting).

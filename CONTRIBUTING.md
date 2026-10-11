@@ -16,10 +16,10 @@ the [User Guide](USER_GUIDE.md).
 
 | Folder | Contents |
 |---|---|
-| `core/` | Simulation engine and desktop application (Java 21, Maven). |
+| `core/` | Simulation engine, desktop application and `gensynth` command line (Java 21, Maven). |
 | `simulator-ui/` | User interface (React + TypeScript, Vite, Vitest). |
 | `plugin-api/` | Public API for connector plugins: see the [Plugin Developer Guide](plugin-api/PLUGIN_DEVELOPER_GUIDE.md). |
-| `packaging/` | Icons, release notes and other resources of the installers. |
+| `packaging/` | Icons, release notes, the command line launcher and other resources of the installers. |
 
 The root `pom.xml` builds the plugin API and the engine. The engine and the interface talk through
 a WebSocket bridge on port **8765**.
@@ -87,6 +87,21 @@ Open two terminals:
 3. Open **http://localhost:5173** in your browser.
 
 The interface talks to the engine on port **8765**, which must be free.
+
+### Command line
+
+The `gensynth` shell (see the [User Guide](USER_GUIDE.md#command-line)) is started from source with
+its own main class. It opens no port, so it can run next to the two modes above:
+
+```bash
+cd core
+java -cp "target/classes:target/dependency/*" com.gensynth.core.cli.CliMain      # Windows: use ; instead of :
+```
+
+Its log goes to `core/logs/cli.log`. The installers ship it as a second jpackage launcher,
+`gensynth-cli` (configured in `packaging/launchers/`); the Linux packages link it as
+`/usr/bin/gensynth` with the scripts in `packaging/linux/`, and the Windows installer adds
+`cli\gensynth.cmd` for the `PATH`.
 
 ## Workflow
 

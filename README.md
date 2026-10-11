@@ -36,6 +36,9 @@ GenSynth is not signed, so Windows and macOS show a warning the first time. The
 [User Guide](USER_GUIDE.md#installation) explains how to open it, where GenSynth keeps its files and
 how to use the application.
 
+To run projects without opening the window, type `gensynth` in a terminal: see
+[Command line](USER_GUIDE.md#command-line).
+
 ## For developers
 
 The engine is written in Java 21 (`core/`) and the interface in React + TypeScript
