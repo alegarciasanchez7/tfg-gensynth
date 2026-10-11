@@ -23,10 +23,10 @@ other destination. It lets you test consumers, dashboards and data pipelines wit
 
    | System | File |
    |---|---|
-   | Windows 10/11 (64-bit) | `GenSynth-<version>-windows-x64.msi` |
-   | Ubuntu, Debian, Linux Mint… | `gensynth_<version>_amd64.deb` |
-   | Fedora, openSUSE, RHEL… | `gensynth-<version>.x86_64.rpm` |
-   | macOS (Apple Silicon) | `GenSynth-<version>-macos-arm64.dmg` |
+   | Windows 10/11 (64-bit) | `GenSynth-installer-<version>.msi` |
+   | Ubuntu, Debian, Linux Mint… | `GenSynth-installer-<version>.deb` |
+   | Fedora, openSUSE, RHEL… | `GenSynth-installer-<version>.rpm` |
+   | macOS (Apple Silicon) | `GenSynth-installer-<version>.dmg` |
 
 2. Run the installer. Java is included, so nothing else is needed.
 3. Start GenSynth. The first start downloads its embedded browser (about 150 MB) once, so it needs

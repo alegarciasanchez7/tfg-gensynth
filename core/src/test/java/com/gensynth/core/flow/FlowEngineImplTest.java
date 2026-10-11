@@ -527,15 +527,16 @@ public class FlowEngineImplTest {
         flowEngine.executeFlow("group-1");
 
         Thread.sleep(80);
-        long eventsBeforeDisable = flowEngine.getGeneratedEventCount();
+        assertTrue(flowEngine.getGeneratedEventCount() > 0);
 
-        // Disable the group
+        // Disable the group and let the iteration that was already past the check finish
         group.setEnabled(false);
-        Thread.sleep(100);
+        Thread.sleep(60);
         long eventsAfterDisable = flowEngine.getGeneratedEventCount();
 
-        // Should not generate new events when disabled
-        assertEquals(eventsBeforeDisable, eventsAfterDisable);
+        // Should not generate new events while disabled
+        Thread.sleep(100);
+        assertEquals(eventsAfterDisable, flowEngine.getGeneratedEventCount());
         
         flowEngine.stopFlow("group-1");
         flowEngine.onStop();

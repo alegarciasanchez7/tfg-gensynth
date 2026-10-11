@@ -21,10 +21,10 @@ Everything GenSynth needs is included: you do not need to install Java.
 
 | Your system | File | How to install |
 |---|---|---|
-| Windows 10/11 (64-bit) | `GenSynth-<version>-windows-x64.msi` | Double-click it and follow the steps. GenSynth appears in the Start menu. |
-| Ubuntu, Debian, Linux Mint… | `gensynth_<version>_amd64.deb` | Double-click it, or `sudo apt install ./gensynth_<version>_amd64.deb` |
-| Fedora, openSUSE, RHEL… | `gensynth-<version>.x86_64.rpm` | `sudo dnf install ./gensynth-<version>.x86_64.rpm` |
-| macOS (Apple Silicon) | `GenSynth-<version>-macos-arm64.dmg` | Open it and drag GenSynth into *Applications*. |
+| Windows 10/11 (64-bit) | `GenSynth-installer-<version>.msi` | Double-click it and follow the steps. GenSynth appears in the Start menu. |
+| Ubuntu, Debian, Linux Mint… | `GenSynth-installer-<version>.deb` | Double-click it, or `sudo apt install ./GenSynth-installer-<version>.deb` |
+| Fedora, openSUSE, RHEL… | `GenSynth-installer-<version>.rpm` | `sudo dnf install ./GenSynth-installer-<version>.rpm` |
+| macOS (Apple Silicon) | `GenSynth-installer-<version>.dmg` | Open it and drag GenSynth into *Applications*. |
 
 > [!IMPORTANT]
 > - **Windows:** GenSynth is not signed, so SmartScreen may show *"Windows protected your PC"*.
