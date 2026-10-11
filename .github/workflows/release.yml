@@ -132,10 +132,10 @@ jobs:
           mkdir -p dist
           for file in core/target/installer/dist/*; do
             case "$file" in
-              *.msi) cp "$file" "dist/GenSynth-$VERSION-windows-x64.msi" ;;
-              *.dmg) cp "$file" "dist/GenSynth-$VERSION-macos-arm64.dmg" ;;
-              *.deb) cp "$file" "dist/gensynth_${VERSION}_amd64.deb" ;;
-              *.rpm) cp "$file" "dist/gensynth-$VERSION.x86_64.rpm" ;;
+              *.msi) cp "$file" "dist/GenSynth-installer-$VERSION.msi" ;;
+              *.dmg) cp "$file" "dist/GenSynth-installer-$VERSION.dmg" ;;
+              *.deb) cp "$file" "dist/GenSynth-installer-$VERSION.deb" ;;
+              *.rpm) cp "$file" "dist/GenSynth-installer-$VERSION.rpm" ;;
             esac
           done
           ls -la dist
