@@ -1,6 +1,9 @@
 package com.gensynth.core.cli;
 
 import com.gensynth.core.connectors.runtime.ConnectorCatalogService;
+import org.jline.terminal.Size;
+import org.jline.terminal.Terminal;
+import org.jline.terminal.TerminalBuilder;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
@@ -8,6 +11,7 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.io.StringReader;
@@ -40,9 +44,19 @@ public class CliShellTest {
     }
 
     private String run(String input) throws Exception {
+        return run(input, null);
+    }
+
+    /** Runs the shell; with a terminal, in colors as when it is started from one. */
+    private String run(String input, Terminal terminal) throws Exception {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         PrintStream out = new PrintStream(bytes, true, StandardCharsets.UTF_8);
-        new CliShell(manager, CliShell.plainInput(new BufferedReader(new StringReader(input)), out), out, workingDir, home, "9.9.9").run();
+        CliShell shell = new CliShell(manager, CliShell.plainInput(new BufferedReader(new StringReader(input)), out),
+            out, workingDir, home, "9.9.9");
+        if (terminal != null) {
+            shell.useTerminal(CliTheme.colored(terminal), null);
+        }
+        shell.run();
         return bytes.toString(StandardCharsets.UTF_8);
     }
 
@@ -66,7 +80,7 @@ public class CliShellTest {
         assertTrue(output, output.contains("[1] Started 'a.gsynth' (1 groups, 1 flows)"));
         assertTrue(output, output.contains("[2] Started 'b.gsynth' (1 groups, 1 flows)"));
         assertTrue(output, output.contains("Error: 'a.gsynth' is already running with id 1"));
-        assertTrue(output, output.contains("ID   STATUS   UPTIME"));
+        assertTrue(output, output.contains("ID   STATUS   UPTIME      MSG/S   MESSAGES  ERRORS  FILE"));
         assertTrue(output, output.contains("[1] Stopped 'a.gsynth' after "));
         assertTrue(output, output.contains("[3] Started 'a.gsynth'"));
         assertTrue(output, output.contains("[2] Stopped 'b.gsynth'"));
@@ -127,6 +141,34 @@ public class CliShellTest {
     }
 
     @Test
+    public void plainOutputHasNoEscapeCodesAndClearRepeatsTheHeader() throws Exception {
+        String output = run("clear\nclear extra\nexit\n");
+
+        assertFalse(output, output.contains("\u001b["));
+        assertEquals(output, 2, output.split("GenSynth 9.9.9 command line", -1).length - 1);
+        assertTrue(output, output.contains("Error: Usage: clear"));
+    }
+
+    @Test
+    public void terminalOutputIsColoredAndStartsWithTheLogo() throws Exception {
+        TestProjects.fileProject(workingDir.resolve("a.gsynth"));
+        ByteArrayOutputStream screen = new ByteArrayOutputStream();
+        try (Terminal terminal = TerminalBuilder.builder().system(false).type("xterm-256color")
+                .streams(new ByteArrayInputStream(new byte[0]), screen).size(new Size(100, 30)).build()) {
+            String output = run("start a.gsynth\nstart missing.gsynth\nexit\n", terminal);
+
+            assertTrue(output, output.contains("╱╲"));
+            assertTrue(output, output.contains("GenSynth"));
+            assertFalse("the plain header is not printed", output.contains("command line. Type"));
+            assertTrue(output, output.contains("\u001b["));
+            assertTrue(output, output.contains("Started"));
+            assertTrue(output, output.contains("Error:"));
+            // The screen is cleared through the terminal before the header
+            assertTrue(screen.toString(StandardCharsets.UTF_8).contains("\u001b[2J"));
+        }
+    }
+
+    @Test
     public void tokenizeSplitsOnWhitespaceAndKeepsQuotedText() {
         assertEquals(List.of(), CliShell.tokenize("   "));
         assertEquals(List.of("stop", "all"), CliShell.tokenize("  stop   all "));
@@ -135,9 +177,4 @@ public class CliShellTest {
         assertThrows(IllegalArgumentException.class, () -> CliShell.tokenize("start \"a"));
     }
 
-    @Test
-    public void formatDurationUsesHoursMinutesAndSeconds() {
-        assertEquals("00:00:00", CliShell.formatDuration(0));
-        assertEquals("01:01:05", CliShell.formatDuration(3_665_000));
-    }
 }

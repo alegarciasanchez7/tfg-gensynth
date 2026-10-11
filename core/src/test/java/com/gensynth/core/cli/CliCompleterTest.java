@@ -73,8 +73,8 @@ public class CliCompleterTest {
 
     @Test
     public void firstWordCompletesCommands() {
-        assertEquals(Set.of("start", "stop", "list", "help", "exit"), values(""));
-        assertEquals(Set.of("start", "stop", "list", "help", "exit"), values("st"));
+        assertEquals(Set.of("start", "stop", "list", "clear", "help", "exit"), values(""));
+        assertEquals(Set.of("start", "stop", "list", "clear", "help", "exit"), values("st"));
     }
 
     @Test

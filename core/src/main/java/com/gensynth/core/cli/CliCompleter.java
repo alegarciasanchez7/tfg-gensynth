@@ -19,26 +19,44 @@ import java.util.Locale;
  * Tab completion of the shell: command names, the ids of {@code stop} and the paths of
  * {@code start}. A path lists the folder typed so far, like a terminal does: {@code start }
  * lists the current folder, {@code start ../} its parent and {@code start docs/} that folder.
- * Folders end with a separator so the next Tab goes on inside them.
+ * Folders end with a separator so the next Tab goes on inside them; in the list, folders are blue
+ * and valid project files green.
  */
 public class CliCompleter implements Completer {
 
-    private static final List<String> COMMANDS = List.of("start", "stop", "list", "help", "exit");
     private static final boolean WINDOWS = File.separatorChar == '\\';
 
     private final ISimulationManager manager;
     private final Path workingDir;
     private final Path userHome;
+    private final CliTheme theme;
+    private final ProjectFileCheck projects;
 
     /**
+     * Completer without colors.
+     *
      * @param manager    source of the ids that {@code stop} offers
      * @param workingDir folder that relative paths are resolved against
      * @param userHome   folder that {@code ~} expands to
      */
     public CliCompleter(ISimulationManager manager, Path workingDir, Path userHome) {
+        this(manager, workingDir, userHome, CliTheme.plain(), new ProjectFileCheck());
+    }
+
+    /**
+     * @param manager    source of the ids that {@code stop} offers
+     * @param workingDir folder that relative paths are resolved against
+     * @param userHome   folder that {@code ~} expands to
+     * @param theme      colors of the list: folders in blue, valid project files in green
+     * @param projects   tells which files are valid projects
+     */
+    CliCompleter(ISimulationManager manager, Path workingDir, Path userHome, CliTheme theme,
+                 ProjectFileCheck projects) {
         this.manager = manager;
         this.workingDir = workingDir;
         this.userHome = userHome;
+        this.theme = theme;
+        this.projects = projects;
     }
 
     /**
@@ -52,7 +70,7 @@ public class CliCompleter implements Completer {
     @Override
     public void complete(LineReader reader, ParsedLine line, List<Candidate> candidates) {
         if (line.wordIndex() == 0) {
-            COMMANDS.forEach(command -> candidates.add(new Candidate(command)));
+            CliHighlighter.COMMANDS.forEach(command -> candidates.add(new Candidate(command)));
             return;
         }
         if (line.wordIndex() != 1) {
@@ -104,7 +122,8 @@ public class CliCompleter implements Completer {
                 if (Files.isDirectory(entry)) {
                     addFolder(folderPart + name, name, separator, candidates);
                 } else {
-                    candidates.add(new Candidate(folderPart + name, name, null, null, null, null, true));
+                    String display = projects.isValidProject(entry) ? theme.paint(name, CliTheme.SUCCESS) : name;
+                    candidates.add(new Candidate(folderPart + name, display, null, null, null, null, true));
                 }
             }
         } catch (IOException | SecurityException e) {
@@ -116,8 +135,9 @@ public class CliCompleter implements Completer {
      * A folder is not complete: no space is added after it, so Tab can go on with its content.
      * If the user types the separator right after it, the reader drops the one it added.
      */
-    private static void addFolder(String value, String name, String separator, List<Candidate> candidates) {
-        candidates.add(new Candidate(value + separator, name + separator, null, null, separator, null, false));
+    private void addFolder(String value, String name, String separator, List<Candidate> candidates) {
+        candidates.add(new Candidate(value + separator, theme.paint(name + separator, CliTheme.INFO),
+            null, null, separator, null, false));
     }
 
     private static int lastSeparator(String typed) {

@@ -114,7 +114,15 @@ public class SimulationManagerTest {
 
         waitForMessages(1, 5);
         waitForMessages(2, 5);
+        // The rate of the last second is measured by the background tasks of the engine
+        long deadline = System.currentTimeMillis() + 5000;
+        while (manager.list().get(0).messagesPerSecond() <= 0 && System.currentTimeMillis() < deadline) {
+            Thread.sleep(50);
+        }
+        assertTrue(manager.list().get(0).messagesPerSecond() > 0);
+        assertTrue(manager.list().get(0).ticksPerSecond() > 0);
         SimulationSnapshot stopped = manager.stop(1);
+        assertEquals(0, stopped.messagesPerSecond(), 0);
         assertTrue("messages counted: " + stopped.messagesSent(), stopped.messagesSent() >= 5);
         assertEquals(0, stopped.errors());
         assertTrue(stopped.connectorErrors().isEmpty());

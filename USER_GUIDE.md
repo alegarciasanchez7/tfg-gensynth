@@ -143,19 +143,30 @@ it. Plugins can be uninstalled from there, and **Import plugin** is also availab
 ## Command line
 
 The `gensynth` command runs `.gsynth` projects from a terminal, without opening the window. Type
-`gensynth` in any folder to open its shell:
+`gensynth` in any folder to open its shell: it clears the terminal (as `clear` does, scrollback
+included) and shows the GenSynth logo with the version and the current folder.
 
 ```text
-$ gensynth
-GenSynth 0.5.0 command line. Type 'help' for the list of commands.
+╭────────────────────────────────────────────────────────────╮
+│       ▄▄▀▀▄▄                                               │
+│   ▄▄▀▀      ▀▀▄▄                                           │
+│ █▀▀            ▀▀█   GenSynth 0.5.0                        │
+│ █      ╱╲        █   Synthetic data generator              │
+│ █ ────╱  ╲  ╱─── █   ~/projects                            │
+│ █         ╲╱     █   Type 'help' · Tab completes paths     │
+│ █▄▄            ▄▄█                                         │
+│   ▀▀▄▄      ▄▄▀▀                                           │
+│       ▀▀▄▄▀▀                                               │
+╰────────────────────────────────────────────────────────────╯
+
 gensynth> start plant.gsynth
 [1] Started 'plant.gsynth' (2 groups, 5 flows)
 gensynth> start "../other project/line 2.gsynth"
 [2] Started 'line 2.gsynth' (1 groups, 1 flows)
 gensynth> list
-ID   STATUS   UPTIME      MESSAGES  ERRORS  FILE
-1    running  00:01:12        7140       0  /home/me/plant.gsynth
-2    running  00:00:40         402       0  /home/other project/line 2.gsynth
+ID   STATUS   UPTIME      MSG/S   MESSAGES  ERRORS  FILE
+1    running  00:01:12      100       7140       0  /home/me/projects/plant.gsynth
+2    running  00:00:40       10        402       0  /home/me/other project/line 2.gsynth
 gensynth> stop 1
 [1] Stopped 'plant.gsynth' after 00:01:15: 7400 messages sent, 0 errors
 gensynth> exit
@@ -168,7 +179,8 @@ Bye.
 | `start <file.gsynth>` | Starts every group of the project. Relative paths start at the current folder; `~` is your user folder; quote paths with spaces. |
 | `stop <id>` | Stops that simulation and closes its connectors. |
 | `stop all` | Stops every running simulation. |
-| `list` | Shows the simulations of the session with their status, time, messages and errors. |
+| `list` | Shows the simulations of the session with their status, time, messages per second, messages and errors. |
+| `clear` | Clears the terminal and shows the logo again. |
 | `help` | Lists the commands. |
 | `exit` | Stops whatever is still running and closes the shell (also `Ctrl + D`, or `Ctrl + C` on an empty line). |
 
@@ -182,6 +194,30 @@ Press **Tab** to complete what you are typing, as in any terminal:
   running simulations with their file names.
 - The up and down arrows bring back the commands of the session, and `Ctrl + C` clears the line
   you are typing.
+
+While you type, the line is colored with the colors of the application: commands in cyan (red if
+the command does not exist); after `start`, a valid project file in green, a folder in blue and
+any other file in amber; after `stop`, a running id in violet and an unknown one in red. In the
+list of Tab, folders are blue and valid project files green.
+
+The bottom of the terminal keeps a **live panel**, refreshed every second, with the same figures
+as the resource bar of the window:
+
+```text
+───────────────────────────────────────────────────────────────────────────────
+ ● 2 running  │ CPU 12.4%  RAM 148 MB  NET↑ 2.1 KB/s  MSG/S 110  SENT 7.5K  ERR 0
+ ● 1  plant.gsynth   00:01:12     100 msg/s    7.1K sent     0 err     10 tick/s
+ ● 2  line 2.gsynth  00:00:40      10 msg/s     402 sent     0 err      1 tick/s
+```
+
+- The first line adds up the running simulations: CPU and memory of the command line, data sent
+  per second, messages per second, messages sent and errors.
+- Then one line per running simulation: id, file, running time, messages per second, messages
+  sent, errors and ticks of its clock per second. With many simulations it lists a few and
+  `list` shows the rest.
+- The panel needs a terminal of at least 12 rows. To turn off the colors and the panel, set the
+  `NO_COLOR` environment variable (Tab still works). With the input redirected from a file or a
+  pipe, the shell prints plain text.
 
 - Each `start` gets an **id**: 1, 2, 3… in start order. A stopped simulation keeps its id, so
   ids are never reused; they start again from 1 the next time you open `gensynth`.

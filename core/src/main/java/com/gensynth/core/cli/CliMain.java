@@ -2,6 +2,7 @@ package com.gensynth.core.cli;
 
 import com.gensynth.core.config.AppPaths;
 import com.gensynth.core.ws.UiBridgeWebSocketServer;
+import org.jline.terminal.Terminal;
 import org.slf4j.LoggerFactory;
 
 import java.io.BufferedReader;
@@ -52,14 +53,39 @@ public final class CliMain {
         redirectLogToFile();
 
         SimulationManager manager = new SimulationManager();
-        // Ctrl+C: stop the simulations so their connectors are closed cleanly
-        Runtime.getRuntime().addShutdownHook(new Thread(manager::shutdown, "gensynth-cli-shutdown"));
-
         Path workingDir = Paths.get(System.getProperty("user.dir"));
         Path userHome = Paths.get(System.getProperty("user.home"));
-        TerminalInput terminal = openTerminal(new CliCompleter(manager, workingDir, userHome));
-        CliShell.LineSource input = terminal != null ? terminal : CliShell.plainInput(plainReader(), System.out);
-        CliShell shell = new CliShell(manager, input, System.out, workingDir, userHome, version);
+        Terminal systemTerminal = openTerminal();
+        TerminalInput terminal = null;
+        StatusPanel panel = null;
+        CliShell shell;
+        if (systemTerminal != null) {
+            // NO_COLOR (https://no-color.org) keeps line editing and Tab, without colors or panel
+            boolean colors = System.getenv("NO_COLOR") == null;
+            CliTheme theme = colors ? CliTheme.colored(systemTerminal) : CliTheme.plain();
+            ProjectFileCheck projects = new ProjectFileCheck();
+            terminal = new TerminalInput(systemTerminal,
+                new CliCompleter(manager, workingDir, userHome, theme, projects),
+                colors ? new CliHighlighter(manager, projects, workingDir, userHome) : null);
+            shell = new CliShell(manager, terminal, System.out, workingDir, userHome, version);
+            if (colors) {
+                panel = StatusPanel.open(systemTerminal, terminal.reader(), manager);
+                shell.useTerminal(theme, panel);
+            }
+        } else {
+            shell = new CliShell(manager, CliShell.plainInput(plainReader(), System.out), System.out,
+                workingDir, userHome, version);
+        }
+        // Ctrl+C while a command runs: restore the screen and stop the simulations so their
+        // connectors are closed cleanly
+        StatusPanel openPanel = panel;
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            if (openPanel != null) {
+                openPanel.close();
+            }
+            manager.shutdown();
+        }, "gensynth-cli-shutdown"));
+
         int exitCode = 0;
         try {
             shell.run();
@@ -67,6 +93,9 @@ public final class CliMain {
             System.err.println("Error reading the input: " + e.getMessage());
             exitCode = 1;
         } finally {
+            if (panel != null) {
+                panel.close();
+            }
             manager.shutdown();
             closeTerminal(terminal);
         }
@@ -75,17 +104,17 @@ public final class CliMain {
     }
 
     /**
-     * Opens the terminal with line editing and Tab completion.
+     * Opens the terminal for line editing, Tab completion, colors and the status panel.
      *
      * @return the terminal, or null when the input is not a terminal (a pipe or a file) or the
      *         terminal cannot be opened; the shell then reads plain lines
      */
-    private static TerminalInput openTerminal(CliCompleter completer) {
+    private static Terminal openTerminal() {
         if (System.console() == null) {
             return null;
         }
         try {
-            return TerminalInput.open(completer);
+            return TerminalInput.openSystemTerminal();
         } catch (IOException | RuntimeException e) {
             LoggerFactory.getLogger(CliMain.class).warn("Line editing not available, reading plain lines", e);
             return null;

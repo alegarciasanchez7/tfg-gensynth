@@ -2,6 +2,7 @@ package com.gensynth.core.cli;
 
 import com.gensynth.core.api.ISimulationManager;
 import com.gensynth.core.model.SimulationSnapshot;
+import org.jline.utils.AttributedStyle;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -21,16 +22,16 @@ public class CliShell {
 
     static final String PROMPT = "gensynth> ";
 
-    private static final String HELP = """
-        Commands:
-          start <file.gsynth>   Start a project file (quote paths with spaces)
-          stop <id>             Stop the simulation with that id
-          stop all              Stop every running simulation
-          list                  Show the simulations of this session
-          help                  Show this help
-          exit                  Stop every simulation and leave
-        Press Tab to complete commands, ids and paths.
-        """;
+    /** Commands of the help, with their description. */
+    private static final String[][] HELP = {
+        {"start <file.gsynth>", "Start a project file (quote paths with spaces)"},
+        {"stop <id>", "Stop the simulation with that id"},
+        {"stop all", "Stop every running simulation"},
+        {"list", "Show the simulations of this session"},
+        {"clear", "Clear the screen"},
+        {"help", "Show this help"},
+        {"exit", "Stop every simulation and leave"},
+    };
 
     /**
      * Source of the command lines: a terminal with line editing, or any reader.
@@ -54,6 +55,8 @@ public class CliShell {
     private final Path workingDir;
     private final Path userHome;
     private final String version;
+    private CliTheme theme = CliTheme.plain();
+    private StatusPanel panel;
 
     /**
      * @param manager    runs the simulations
@@ -90,16 +93,31 @@ public class CliShell {
     }
 
     /**
+     * Writes to a terminal: colors, a header with the logo that clears the screen and, if
+     * available, the status panel at the bottom.
+     *
+     * @param theme colors of the output
+     * @param panel live status panel, or null
+     */
+    void useTerminal(CliTheme theme, StatusPanel panel) {
+        this.theme = theme;
+        this.panel = panel;
+    }
+
+    /**
      * Runs the shell until {@code exit} or the end of the input, then stops every simulation
      * that is still running.
      *
      * @throws IOException if the input cannot be read
      */
     public void run() throws IOException {
-        out.println("GenSynth " + version + " command line. Type 'help' for the list of commands.");
+        printHeader();
+        String prompt = theme.isColored()
+            ? theme.paint("gensynth", CliTheme.PRIMARY.bold()) + theme.paint("> ", CliTheme.MUTED)
+            : PROMPT;
         boolean keepGoing = true;
         while (keepGoing) {
-            String line = in.readLine(PROMPT);
+            String line = in.readLine(prompt);
             if (line == null) {
                 out.println();
                 keepGoing = false;
@@ -117,6 +135,11 @@ public class CliShell {
      * @return false when the shell must end
      */
     boolean execute(String line) {
+        // The panel waits while the command prints, so their output never mixes
+        return panel == null ? runCommand(line) : panel.whilePrinting(() -> runCommand(line));
+    }
+
+    private boolean runCommand(String line) {
         List<String> tokens;
         try {
             tokens = tokenize(line);
@@ -134,7 +157,8 @@ public class CliShell {
                 case "start" -> start(args);
                 case "stop" -> stop(args);
                 case "list" -> list(args);
-                case "help" -> out.print(HELP);
+                case "clear" -> clear(args);
+                case "help" -> help();
                 case "exit" -> {
                     return false;
                 }
@@ -151,10 +175,11 @@ public class CliShell {
             throw new IllegalArgumentException("Usage: start <file.gsynth>");
         }
         SimulationSnapshot started = manager.start(resolvePath(args.get(0), workingDir, userHome));
-        out.printf("[%d] Started '%s' (%d groups, %d flows)%n", started.id(),
-            started.configFile().getFileName(), started.groups(), started.flows());
+        out.println(id(started) + theme.paint(" Started", CliTheme.SUCCESS)
+            + String.format(" '%s' (%d groups, %d flows)", started.configFile().getFileName(),
+                started.groups(), started.flows()));
         for (String error : started.connectorErrors()) {
-            out.println("    Warning: connector failed in " + error);
+            out.println("    " + theme.paint("Warning:", CliTheme.WARNING) + " connector failed in " + error);
         }
     }
 
@@ -165,7 +190,7 @@ public class CliShell {
         if ("all".equalsIgnoreCase(args.get(0))) {
             List<SimulationSnapshot> stopped = manager.stopAll();
             if (stopped.isEmpty()) {
-                out.println("No simulation is running.");
+                out.println(theme.paint("No simulation is running.", CliTheme.MUTED));
             }
             stopped.forEach(this::printStopped);
             return;
@@ -185,30 +210,93 @@ public class CliShell {
         }
         List<SimulationSnapshot> snapshots = manager.list();
         if (snapshots.isEmpty()) {
-            out.println("No simulations yet. Use 'start <file.gsynth>' to start one.");
+            out.println(theme.paint("No simulations yet. Use 'start <file.gsynth>' to start one.", CliTheme.MUTED));
             return;
         }
         long now = System.currentTimeMillis();
-        out.printf("%-4s %-8s %-9s %10s %7s  %s%n", "ID", "STATUS", "UPTIME", "MESSAGES", "ERRORS", "FILE");
+        out.println(theme.paint(String.format("%-4s %-8s %-9s %7s %10s %7s  %s", "ID", "STATUS", "UPTIME",
+            "MSG/S", "MESSAGES", "ERRORS", "FILE"), AttributedStyle.BOLD));
         for (SimulationSnapshot s : snapshots) {
-            out.printf("%-4d %-8s %-9s %10d %7d  %s%n", s.id(), s.status().name().toLowerCase(Locale.ROOT),
-                formatDuration(s.uptimeMillis(now)), s.messagesSent(), s.errors(), s.configFile());
+            boolean running = s.status() == SimulationSnapshot.Status.RUNNING;
+            out.println(theme.paint(String.format("%-4d ", s.id()), CliTheme.ACCENT)
+                + theme.paint(String.format("%-8s ", s.status().name().toLowerCase(Locale.ROOT)),
+                    running ? CliTheme.SUCCESS : CliTheme.MUTED)
+                + theme.paint(String.format("%-9s ", CliFormat.duration(s.uptimeMillis(now))), CliTheme.MUTED)
+                + theme.paint(String.format("%7s ", CliFormat.rate(s.messagesPerSecond())), CliTheme.RATE)
+                + String.format("%10d ", s.messagesSent())
+                + theme.paint(String.format("%7d", s.errors()), s.errors() > 0 ? CliTheme.ERROR : CliTheme.PLAIN)
+                + "  " + s.configFile());
         }
     }
 
+    private void clear(List<String> args) {
+        if (!args.isEmpty()) {
+            throw new IllegalArgumentException("Usage: clear");
+        }
+        printHeader();
+    }
+
+    private void help() {
+        out.println("Commands:");
+        for (String[] command : HELP) {
+            out.println("  " + theme.paint(String.format("%-22s", command[0]), CliTheme.PRIMARY) + command[1]);
+        }
+        out.println(theme.paint("Press Tab to complete commands, ids and paths.", CliTheme.MUTED));
+    }
+
+    /**
+     * Prints the header: with a terminal, clears the screen and shows the logo box; otherwise a
+     * single line.
+     */
+    private void printHeader() {
+        if (!theme.isColored()) {
+            out.println("GenSynth " + version + " command line. Type 'help' for the list of commands.");
+            return;
+        }
+        if (panel == null) {
+            printBanner();
+        } else {
+            panel.whilePrinting(() -> {
+                printBanner();
+                return null;
+            });
+        }
+    }
+
+    private void printBanner() {
+        out.flush();
+        theme.clearScreen();
+        if (panel != null) {
+            panel.redrawAfterClear();
+        }
+        Banner.lines(version, Banner.displayFolder(workingDir, userHome), theme.width())
+            .forEach(line -> out.println(theme.paint(line)));
+        out.println();
+        out.flush();
+    }
+
     private void exit() {
+        if (panel != null) {
+            // Give the whole screen back before the last messages
+            panel.close();
+        }
         manager.stopAll().forEach(this::printStopped);
-        out.println("Bye.");
+        out.println(theme.paint("Bye.", CliTheme.MUTED));
     }
 
     private void printStopped(SimulationSnapshot stopped) {
-        out.printf("[%d] Stopped '%s' after %s: %d messages sent, %d errors%n", stopped.id(),
-            stopped.configFile().getFileName(), formatDuration(stopped.uptimeMillis(stopped.stoppedAt())),
-            stopped.messagesSent(), stopped.errors());
+        out.println(id(stopped) + theme.paint(" Stopped", CliTheme.MUTED)
+            + String.format(" '%s' after %s: %d messages sent, ", stopped.configFile().getFileName(),
+                CliFormat.duration(stopped.uptimeMillis(stopped.stoppedAt())), stopped.messagesSent())
+            + theme.paint(stopped.errors() + " errors", stopped.errors() > 0 ? CliTheme.ERROR : CliTheme.PLAIN));
+    }
+
+    private String id(SimulationSnapshot simulation) {
+        return theme.paint("[" + simulation.id() + "]", CliTheme.ACCENT);
     }
 
     private void printError(String message) {
-        out.println("Error: " + message);
+        out.println(theme.paint("Error:", CliTheme.ERROR) + " " + message);
     }
 
     /**
@@ -278,10 +366,5 @@ public class CliShell {
             tokens.add(current.toString());
         }
         return tokens;
-    }
-
-    static String formatDuration(long millis) {
-        long seconds = Math.max(0, millis) / 1000;
-        return String.format("%02d:%02d:%02d", seconds / 3600, (seconds / 60) % 60, seconds % 60);
     }
 }

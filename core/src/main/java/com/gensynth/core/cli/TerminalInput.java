@@ -2,6 +2,7 @@ package com.gensynth.core.cli;
 
 import org.jline.reader.Completer;
 import org.jline.reader.EndOfFileException;
+import org.jline.reader.Highlighter;
 import org.jline.reader.LineReader;
 import org.jline.reader.LineReaderBuilder;
 import org.jline.reader.UserInterruptException;
@@ -26,7 +27,16 @@ final class TerminalInput implements CliShell.LineSource, Closeable {
      * @param completer completion of the word under the cursor when Tab is pressed
      */
     TerminalInput(Terminal terminal, Completer completer) {
-        this(terminal, newReader(terminal, completer));
+        this(terminal, newReader(terminal, completer, null));
+    }
+
+    /**
+     * @param terminal    terminal to read from; closed by {@link #close()}
+     * @param completer   completion of the word under the cursor when Tab is pressed
+     * @param highlighter colors of the line while it is typed
+     */
+    TerminalInput(Terminal terminal, Completer completer, Highlighter highlighter) {
+        this(terminal, newReader(terminal, completer, highlighter));
     }
 
     /**
@@ -38,31 +48,40 @@ final class TerminalInput implements CliShell.LineSource, Closeable {
         this.reader = reader;
     }
 
-    private static LineReader newReader(Terminal terminal, Completer completer) {
+    private static LineReader newReader(Terminal terminal, Completer completer, Highlighter highlighter) {
         DefaultParser parser = new DefaultParser();
         // No backslash escapes: the shell only understands quotes, and the backslash is the
         // Windows separator. Completed names with spaces are wrapped in quotes instead
         parser.setEscapeChars(null);
-        return LineReaderBuilder.builder()
+        LineReaderBuilder builder = LineReaderBuilder.builder()
             .terminal(terminal)
             .appName("gensynth")
             .parser(parser)
             .completer(completer)
             // "!" is a valid file name character, not a history reference
-            .option(LineReader.Option.DISABLE_EVENT_EXPANSION, true)
-            .build();
+            .option(LineReader.Option.DISABLE_EVENT_EXPANSION, true);
+        if (highlighter != null) {
+            builder.highlighter(highlighter);
+        }
+        return builder.build();
     }
 
     /**
      * Opens the terminal the process runs in.
      *
-     * @param completer completion of the word under the cursor when Tab is pressed
-     * @return the input
+     * @return the terminal
      * @throws IOException           if the terminal cannot be opened
      * @throws IllegalStateException if the process has no terminal
      */
-    static TerminalInput open(Completer completer) throws IOException {
-        return new TerminalInput(TerminalBuilder.builder().system(true).dumb(false).build(), completer);
+    static Terminal openSystemTerminal() throws IOException {
+        return TerminalBuilder.builder().system(true).dumb(false).build();
+    }
+
+    /**
+     * @return the line reader, for the status panel
+     */
+    LineReader reader() {
+        return reader;
     }
 
     /**

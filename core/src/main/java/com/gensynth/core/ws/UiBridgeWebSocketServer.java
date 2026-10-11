@@ -253,6 +253,27 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
     }
 
     /**
+     * @return messages sent during the last second (updated by the background tasks)
+     */
+    public double getMessagesPerSecond() {
+        return bridgeContext.getMessagesPerSecond();
+    }
+
+    /**
+     * @return ticks of the clock during the last second (updated by the background tasks)
+     */
+    public double getTicksPerSecond() {
+        return bridgeContext.getTicksPerSecond();
+    }
+
+    /**
+     * @return bytes sent during the last second (updated by the background tasks)
+     */
+    public double getNetworkUpPerSecond() {
+        return bridgeContext.getNetworkUpPerSecond();
+    }
+
+    /**
      * Lists the flows whose connector failed to start, as {@code "<group> / <flow>: <error>"}.
      *
      * @return one entry per flow in error, empty when every connector is up

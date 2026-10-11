@@ -99,6 +99,7 @@ class HeadlessSimulation {
     }
 
     SimulationSnapshot snapshot() {
+        // The rates keep their last value once the engine is shut down
         return new SimulationSnapshot(
             id,
             configFile,
@@ -110,7 +111,10 @@ class HeadlessSimulation {
             stoppedAt,
             engine.getTotalMessages(),
             engine.getTotalErrors(),
-            connectorErrors
+            connectorErrors,
+            running ? engine.getMessagesPerSecond() : 0,
+            running ? engine.getTicksPerSecond() : 0,
+            running ? engine.getNetworkUpPerSecond() : 0
         );
     }
 }

@@ -11,6 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.gensynth.core.model.TickSettings;
+import com.gensynth.core.monitoring.ResourceUsage;
 import com.gensynth.core.ws.runtime.ThroughputMeter;
 
 import java.util.ArrayList;
@@ -376,27 +377,11 @@ public class SystemCommandHandler implements CommandHandler {
             payload.put("commandId", commandId);
         }
 
-        Runtime runtime = Runtime.getRuntime();
-        long usedMemory = runtime.totalMemory() - runtime.freeMemory();
-
-        double cpuLoad = 0.0;
-        try {
-            java.lang.management.OperatingSystemMXBean osBean = java.lang.management.ManagementFactory.getOperatingSystemMXBean();
-            if (osBean instanceof com.sun.management.OperatingSystemMXBean) {
-                com.sun.management.OperatingSystemMXBean sunOsBean = (com.sun.management.OperatingSystemMXBean) osBean;
-                cpuLoad = sunOsBean.getProcessCpuLoad();
-                if (cpuLoad < 0.0) {
-                    cpuLoad = 0.0;
-                }
-            }
-        } catch (Exception ignored) {
-            // Fallback to 0 if not available
-        }
-
-        payload.put("cpu", cpuLoad * 100.0);
-        payload.put("memory", bytesToMb(usedMemory));
-        payload.put("heap", bytesToMb(runtime.totalMemory()));
-        payload.put("threads", Thread.activeCount());
+        ResourceUsage usage = ResourceUsage.sample();
+        payload.put("cpu", usage.cpuPercent());
+        payload.put("memory", usage.usedMemoryMb());
+        payload.put("heap", usage.heapMb());
+        payload.put("threads", usage.threads());
         payload.put("messagesPerSecond", ctx.getMessagesPerSecond());
         payload.put("totalMessages", ctx.getTotalMessages().get());
         payload.put("networkUp", ctx.getNetworkUpPerSecond());
@@ -410,7 +395,4 @@ public class SystemCommandHandler implements CommandHandler {
         return payload;
     }
 
-    private int bytesToMb(long bytes) {
-        return (int) Math.max(1L, bytes / (1024 * 1024));
-    }
 }
