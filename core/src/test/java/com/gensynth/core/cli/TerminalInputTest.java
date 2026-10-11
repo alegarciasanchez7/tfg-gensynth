@@ -13,6 +13,7 @@ import org.junit.rules.TemporaryFolder;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -62,7 +63,9 @@ public class TerminalInputTest {
     @Test
     public void tabCompletesCommandsAndFolderByFolder() throws Exception {
         try (TerminalInput input = type("sta" + TAB + "doc" + TAB + "pl" + TAB + "l" + TAB + ENTER)) {
-            assertEquals("start documents/plant/line.gsynth ", input.readLine(CliShell.PROMPT));
+            // No separator typed: folders end with the one of the system (a backslash on Windows)
+            String sep = File.separator;
+            assertEquals("start documents" + sep + "plant" + sep + "line.gsynth ", input.readLine(CliShell.PROMPT));
         }
     }
 

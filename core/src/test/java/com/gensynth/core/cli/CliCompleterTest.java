@@ -10,6 +10,7 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
+import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -20,6 +21,12 @@ import java.util.stream.Collectors;
 import static org.junit.Assert.*;
 
 public class CliCompleterTest {
+
+    /**
+     * Separator added after a folder when the user has not typed one yet: the one of the system
+     * (a backslash on Windows). Once typed, the user's own separator is kept.
+     */
+    private static final String SEP = File.separator;
 
     @Rule
     public TemporaryFolder temp = new TemporaryFolder();
@@ -72,9 +79,9 @@ public class CliCompleterTest {
 
     @Test
     public void startListsTheWorkingFolderWithoutHiddenEntries() {
-        assertEquals(Set.of("a.gsynth", "notes.txt", "docs/"), values("start "));
+        assertEquals(Set.of("a.gsynth", "notes.txt", "docs" + SEP), values("start "));
 
-        Candidate folder = complete("start ").stream().filter(c -> c.value().equals("docs/")).findFirst().orElseThrow();
+        Candidate folder = complete("start ").stream().filter(c -> c.value().equals("docs" + SEP)).findFirst().orElseThrow();
         assertFalse("a folder leaves the cursor inside it", folder.complete());
         Candidate file = complete("start ").stream().filter(c -> c.value().equals("a.gsynth")).findFirst().orElseThrow();
         assertTrue(file.complete());
@@ -91,8 +98,8 @@ public class CliCompleterTest {
 
     @Test
     public void dotsAndHiddenEntriesAppearOnceADotIsTyped() {
-        assertTrue(values("start ..").contains("../"));
-        assertTrue(values("start .").containsAll(Set.of("./", ".secret")));
+        assertTrue(values("start ..").contains(".." + SEP));
+        assertTrue(values("start .").containsAll(Set.of("." + SEP, ".secret")));
     }
 
     @Test
