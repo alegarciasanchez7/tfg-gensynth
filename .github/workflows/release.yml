@@ -33,6 +33,7 @@ jobs:
           # Full history and branches, to check that the tag is on main
           fetch-depth: 0
 
+      # plugin-api/pom.xml is not listed: the plugin API is a contract with its own version
       - name: Check that every file declares the same version
         id: check
         run: |
@@ -40,7 +41,6 @@ jobs:
           declare -A versions=(
             [pom.xml]=$(grep -m1 -oP '(?<=<version>)[^<]+' pom.xml)
             [core/pom.xml]=$(grep -m1 -oP '(?<=<version>)[^<]+' core/pom.xml)
-            [plugin-api/pom.xml]=$(grep -m1 -oP '(?<=<version>)[^<]+' plugin-api/pom.xml)
             [simulator-ui/package.json]=$(node -p "require('./simulator-ui/package.json').version")
             [simulator-ui/src/app/core/appInfo.ts]=$(grep -oP "(?<=APP_VERSION = ')[^']+" simulator-ui/src/app/core/appInfo.ts)
             [sonar-project.properties]=$(grep -oP '(?<=^sonar.projectVersion=).+' sonar-project.properties)
@@ -132,10 +132,10 @@ jobs:
           mkdir -p dist
           for file in core/target/installer/dist/*; do
             case "$file" in
-              *.msi) cp "$file" "dist/GenSynth-$VERSION-windows-x64.msi" ;;
-              *.dmg) cp "$file" "dist/GenSynth-$VERSION-macos-arm64.dmg" ;;
-              *.deb) cp "$file" "dist/gensynth_${VERSION}_amd64.deb" ;;
-              *.rpm) cp "$file" "dist/gensynth-$VERSION.x86_64.rpm" ;;
+              *.msi) cp "$file" "dist/GenSynth-installer-$VERSION.msi" ;;
+              *.dmg) cp "$file" "dist/GenSynth-installer-$VERSION.dmg" ;;
+              *.deb) cp "$file" "dist/GenSynth-installer-$VERSION.deb" ;;
+              *.rpm) cp "$file" "dist/GenSynth-installer-$VERSION.rpm" ;;
             esac
           done
           ls -la dist
