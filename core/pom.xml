@@ -26,6 +26,9 @@
         <installer.packaging>${project.basedir}/../packaging</installer.packaging>
         <!-- Skips the .rpm on Linux machines without rpmbuild (-Dinstaller.skipRpm=true) -->
         <installer.skipRpm>false</installer.skipRpm>
+        <!-- jpackage rejects macOS versions that start with 0, so the app bundle declares this one
+             while GenSynth is 0.x. From 1.0 on, set it back to ${project.version} -->
+        <installer.macAppVersion>1.0.0</installer.macAppVersion>
         <!-- Skips the npm build and the UI copy (-DskipUi=true), for environments without Node such as GitLab CI -->
         <skipUi>false</skipUi>
     </properties>
@@ -554,6 +557,7 @@
                                 <goals><goal>jpackage</goal></goals>
                                 <configuration>
                                     <type>DMG</type>
+                                    <appVersion>${installer.macAppVersion}</appVersion>
                                     <icon>${installer.packaging}/icons/gensynth.icns</icon>
                                     <macPackageIdentifier>com.gensynth.desktop</macPackageIdentifier>
                                     <macPackageName>GenSynth</macPackageName>
