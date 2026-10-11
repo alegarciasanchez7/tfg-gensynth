@@ -533,4 +533,39 @@ public class UiBridgeWebSocketServerTest {
         assertEquals("sequential", server.groupsById.get("g-mode").outputMode);
         server.shutdown();
     }
+
+    // ============ Headless engine (command line) ============
+
+    @Test
+    public void importProjectWithoutPersistLeavesTheRepositoryUntouched() throws Exception {
+        Path tempDir = Files.createTempDirectory("gensynth-ws-test-import-no-persist-");
+        StateRepository repository = new JsonStateRepositoryImpl(tempDir.toString());
+        UiBridgeWebSocketServer server = newServer(tempDir, repository);
+        JsonNode project = new ObjectMapper().readTree(
+                "{\"groups\":[{\"id\":\"g-cli\",\"name\":\"CLI\",\"flows\":[]}],\"variables\":[]}");
+
+        assertEquals(1, server.stateCommandHandler.importProject(project, false));
+
+        assertTrue(server.groupsById.containsKey("g-cli"));
+        assertTrue("nothing must be autosaved", repository.loadGroups().isEmpty());
+        assertThrows(IllegalArgumentException.class,
+                () -> server.stateCommandHandler.importProject(new ObjectMapper().readTree("{}"), false));
+        server.shutdown();
+    }
+
+    @Test
+    public void headlessEngineRunsWithoutOpeningAPort() throws Exception {
+        UiBridgeWebSocketServer server = UiBridgeWebSocketServer.createHeadless(
+                new ConnectorCatalogService(), new com.gensynth.core.persistence.NoOpStateRepository());
+
+        server.systemCommandHandler.startSystemInternal(Files.createTempDirectory("gensynth-ws-test-headless-").toString());
+        server.startBackgroundTasks();
+        assertTrue(server.tickClock.isRunning());
+        assertTrue(server.getConnectorErrors().isEmpty());
+
+        server.systemCommandHandler.stopSystemInternal();
+        assertFalse(server.tickClock.isRunning());
+        // Shutting down a server that never started must not fail
+        server.shutdown();
+    }
 }

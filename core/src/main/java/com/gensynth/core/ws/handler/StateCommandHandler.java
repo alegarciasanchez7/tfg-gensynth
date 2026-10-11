@@ -96,57 +96,8 @@ public class StateCommandHandler implements CommandHandler {
             return;
         }
 
-        ObjectMapper objectMapper = ctx.getObjectMapper();
         try {
-            List<GroupDefinition> newGroups = new ArrayList<>();
-            JsonNode groupsNode = payload.path("groups");
-            if (groupsNode.isArray()) {
-                for (JsonNode groupNode : groupsNode) {
-                    @SuppressWarnings("unchecked")
-                    Map<String, Object> groupMap = objectMapper.convertValue(groupNode, Map.class);
-                    newGroups.add(GroupDefinition.fromPayload(groupMap));
-                }
-            }
-
-            List<Variable> newVariables = new ArrayList<>();
-            JsonNode variablesNode = payload.path("variables");
-            if (variablesNode.isArray()) {
-                for (JsonNode varNode : variablesNode) {
-                    @SuppressWarnings("unchecked")
-                    Map<String, Object> varMap = objectMapper.convertValue(varNode, Map.class);
-                    Variable variable = Variable.fromPayload(varMap);
-                    if (variable.getScope().equals("LOCAL")) {
-                        logger.info("Importing LOCAL variable '{}' for flow '{}'", variable.getName(), variable.getFlowId());
-                    }
-                    newVariables.add(variable);
-                }
-            }
-
-            ProjectSettings settings = ProjectSettings.fromPayload(
-                payload.has("settings") ? objectMapper.convertValue(payload.get("settings"), Map.class) : null
-            );
-
-            synchronized (ctx.getStateLock()) {
-                // Stop everything before clearing
-                for (GroupRuntime group : ctx.getGroupsById().values()) {
-                    server.flowCommandHandler.stopGroupInternal(group);
-                }
-
-                ctx.getGroupsById().clear();
-                ctx.getVariablesById().clear();
-                ctx.getConnectorByFlowId().clear();
-
-                for (GroupDefinition def : newGroups) {
-                    ctx.getGroupsById().put(def.getGroupId(), GroupRuntime.fromDefinition(def));
-                }
-                for (Variable var : newVariables) {
-                    ctx.getVariablesById().put(var.getId(), var);
-                }
-
-                ctx.setSystemRunning(false);
-                ctx.applyProjectSettings(settings);
-                persistState();
-            }
+            int importedGroups = importProject(payload, true);
 
             // Echo the source file path (set by the desktop LOAD_STATE dialog) so the UI can track the open file
             String sourceFilePath = payload.path("sourceFilePath").asText(null);
@@ -155,7 +106,7 @@ public class StateCommandHandler implements CommandHandler {
             } else {
                 server.sendAck(conn, commandId, "state_imported");
             }
-            server.logToBackend("info", "SYSTEM", "State imported from UI (" + newGroups.size() + " groups)", commandId);
+            server.logToBackend("info", "SYSTEM", "State imported from UI (" + importedGroups + " groups)", commandId);
             server.broadcastGroupsUpdate();
             server.broadcastSystemStatus();
             server.sendVariablesUpdate();
@@ -166,6 +117,77 @@ public class StateCommandHandler implements CommandHandler {
             logger.error("Failed to import state", e);
             server.sendError(conn, commandId, "INTERNAL_ERROR", "Failed to parse imported state: " + e.getMessage(), Map.of());
         }
+    }
+
+    /**
+     * Replaces the runtime state with a complete project: stops every running group, then loads
+     * the groups, variables and settings of the payload. Used by IMPORT_STATE and by the
+     * headless command line, which does not persist the imported project.
+     *
+     * @param payload the project state ({@code groups}, {@code variables} and optional {@code settings})
+     * @param persist true to save the imported state to the state repository (autosave)
+     * @return the number of imported groups
+     * @throws IllegalArgumentException if the payload has no {@code groups} or cannot be parsed
+     */
+    public int importProject(JsonNode payload, boolean persist) {
+        if (payload == null || !payload.has("groups")) {
+            throw new IllegalArgumentException("The project requires a 'groups' array");
+        }
+        UiBridgeWebSocketServer server = ctx.getServer();
+        ObjectMapper objectMapper = ctx.getObjectMapper();
+
+        List<GroupDefinition> newGroups = new ArrayList<>();
+        JsonNode groupsNode = payload.path("groups");
+        if (groupsNode.isArray()) {
+            for (JsonNode groupNode : groupsNode) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> groupMap = objectMapper.convertValue(groupNode, Map.class);
+                newGroups.add(GroupDefinition.fromPayload(groupMap));
+            }
+        }
+
+        List<Variable> newVariables = new ArrayList<>();
+        JsonNode variablesNode = payload.path("variables");
+        if (variablesNode.isArray()) {
+            for (JsonNode varNode : variablesNode) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> varMap = objectMapper.convertValue(varNode, Map.class);
+                Variable variable = Variable.fromPayload(varMap);
+                if (variable.getScope().equals("LOCAL")) {
+                    logger.info("Importing LOCAL variable '{}' for flow '{}'", variable.getName(), variable.getFlowId());
+                }
+                newVariables.add(variable);
+            }
+        }
+
+        ProjectSettings settings = ProjectSettings.fromPayload(
+            payload.has("settings") ? objectMapper.convertValue(payload.get("settings"), Map.class) : null
+        );
+
+        synchronized (ctx.getStateLock()) {
+            // Stop everything before clearing
+            for (GroupRuntime group : ctx.getGroupsById().values()) {
+                server.flowCommandHandler.stopGroupInternal(group);
+            }
+
+            ctx.getGroupsById().clear();
+            ctx.getVariablesById().clear();
+            ctx.getConnectorByFlowId().clear();
+
+            for (GroupDefinition def : newGroups) {
+                ctx.getGroupsById().put(def.getGroupId(), GroupRuntime.fromDefinition(def));
+            }
+            for (Variable var : newVariables) {
+                ctx.getVariablesById().put(var.getId(), var);
+            }
+
+            ctx.setSystemRunning(false);
+            ctx.applyProjectSettings(settings);
+            if (persist) {
+                persistState();
+            }
+        }
+        return newGroups.size();
     }
 
     /**

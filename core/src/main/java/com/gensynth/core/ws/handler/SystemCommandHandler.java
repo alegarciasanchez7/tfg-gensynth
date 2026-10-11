@@ -50,17 +50,7 @@ public class SystemCommandHandler implements CommandHandler {
      */
     public void handleStartSystem(WebSocket conn, String commandId) {
         UiBridgeWebSocketServer server = ctx.getServer();
-        synchronized (ctx.getStateLock()) {
-            ctx.setSystemRunning(true);
-            ctx.setSystemStartedAt(System.currentTimeMillis());
-            ctx.setCurrentOutputDir(AppPaths.current().newSessionOutputDir());
-
-            for (GroupRuntime group : ctx.getGroupsById().values()) {
-                if (!"running".equals(group.status)) {
-                    server.flowCommandHandler.startGroupInternal(group);
-                }
-            }
-        }
+        startSystemInternal(AppPaths.current().newSessionOutputDir());
         server.sendAck(conn, commandId, "system_started");
         broadcastSystemStatus();
         broadcastGroupsUpdate();
@@ -76,17 +66,48 @@ public class SystemCommandHandler implements CommandHandler {
      */
     public void handleStopSystem(WebSocket conn, String commandId) {
         UiBridgeWebSocketServer server = ctx.getServer();
+        stopSystemInternal();
+        server.sendAck(conn, commandId, "system_stopped");
+        broadcastGroupsUpdate();
+        broadcastSystemStatus();
+        broadcastFlowsMetrics();
+        server.sendLog(conn, "info", "SYSTEM", "System stopped");
+    }
+
+    /**
+     * Starts the tick clock and every group that is not running, writing the session output
+     * files to the given folder. Shared by START_SYSTEM and the headless command line.
+     *
+     * @param outputDir folder of the session output files (created by the connectors that use it)
+     * @throws IllegalStateException if a group has cyclic or broken variable references
+     */
+    public void startSystemInternal(String outputDir) {
+        UiBridgeWebSocketServer server = ctx.getServer();
+        synchronized (ctx.getStateLock()) {
+            ctx.setSystemRunning(true);
+            ctx.setSystemStartedAt(System.currentTimeMillis());
+            ctx.setCurrentOutputDir(outputDir);
+
+            for (GroupRuntime group : ctx.getGroupsById().values()) {
+                if (!"running".equals(group.status)) {
+                    server.flowCommandHandler.startGroupInternal(group);
+                }
+            }
+        }
+    }
+
+    /**
+     * Stops every group (closing their connectors) and the tick clock. Shared by STOP_SYSTEM
+     * and the headless command line.
+     */
+    public void stopSystemInternal() {
+        UiBridgeWebSocketServer server = ctx.getServer();
         synchronized (ctx.getStateLock()) {
             for (GroupRuntime group : ctx.getGroupsById().values()) {
                 server.flowCommandHandler.stopGroupInternal(group);
             }
             ctx.setSystemRunning(false);
         }
-        server.sendAck(conn, commandId, "system_stopped");
-        broadcastGroupsUpdate();
-        broadcastSystemStatus();
-        broadcastFlowsMetrics();
-        server.sendLog(conn, "info", "SYSTEM", "System stopped");
     }
 
     /**

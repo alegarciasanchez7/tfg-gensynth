@@ -206,9 +206,69 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
 
     @Override
     public void onStart() {
+        startBackgroundTasks();
+        setConnectionLostTimeout(30);
+    }
+
+    /**
+     * Schedules the periodic metrics tick (throughput rates) and groups heartbeat. Called once
+     * when the network server starts, or directly by a headless engine that never opens a port.
+     */
+    public void startBackgroundTasks() {
         scheduler.scheduleAtFixedRate(systemCommandHandler::emitMetricsTick, 1, 1, TimeUnit.SECONDS);
         scheduler.scheduleAtFixedRate(systemCommandHandler::emitGroupsHeartbeat, 1, 2, TimeUnit.SECONDS);
-        setConnectionLostTimeout(30);
+    }
+
+    /**
+     * Creates an engine for the headless command line: it is never started as a network server
+     * (no port is opened), so several engines can run side by side in one process and next to
+     * the desktop application.
+     *
+     * @param connectorCatalogService the connector catalog, shared by every headless engine
+     * @param stateRepository         where imported state is persisted (a no-op repository keeps
+     *                                the desktop autosave untouched)
+     * @return a new engine; call {@link #startBackgroundTasks()} once to enable the rate metrics
+     */
+    public static UiBridgeWebSocketServer createHeadless(ConnectorCatalogService connectorCatalogService,
+                                                         StateRepository stateRepository) {
+        return new UiBridgeWebSocketServer(
+            new InetSocketAddress("localhost", 0),
+            connectorCatalogService,
+            stateRepository,
+            new PluginInstallerImpl(AppPaths.current().pluginsDir(), AppPaths.current().sharedLibsDir()));
+    }
+
+    /**
+     * @return the number of messages sent since the engine was created
+     */
+    public long getTotalMessages() {
+        return totalMessages.get();
+    }
+
+    /**
+     * @return the number of errors (failed sends, connector errors...) since the engine was created
+     */
+    public long getTotalErrors() {
+        return totalErrors.get();
+    }
+
+    /**
+     * Lists the flows whose connector failed to start, as {@code "<group> / <flow>: <error>"}.
+     *
+     * @return one entry per flow in error, empty when every connector is up
+     */
+    public List<String> getConnectorErrors() {
+        synchronized (stateLock) {
+            List<String> errors = new ArrayList<>();
+            for (GroupRuntime group : groupsById.values()) {
+                for (FlowRuntime flow : group.flows) {
+                    if (flow.hasError) {
+                        errors.add(group.name + " / " + flow.name + ": " + flow.errorMessage);
+                    }
+                }
+            }
+            return errors;
+        }
     }
 
     public void shutdown() {
