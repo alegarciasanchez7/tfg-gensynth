@@ -85,6 +85,25 @@ describe('GraphRouteCanvas', () => {
     expect(screen.getByRole('button', { name: /Exit Fullscreen/i })).toBeInTheDocument();
   });
 
+  it('renders the fullscreen editor directly in the body, so app panels cannot cover it', () => {
+    // A positioned, z-indexed ancestor (like the point config card) would trap a fixed child below the app bars
+    const { container } = render(
+      <div style={{ position: 'relative', zIndex: 0 }}>
+        <GraphRouteCanvas config={defaultConfig} onChange={vi.fn()} />
+      </div>
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Fullscreen/i }));
+
+    const exitBtn = screen.getByRole('button', { name: /Exit Fullscreen/i });
+    const panel = exitBtn.closest('.fixed');
+    expect(panel?.parentElement).toBe(document.body);
+    expect(container.contains(exitBtn)).toBe(false);
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(container.contains(screen.getByRole('button', { name: /^Fullscreen$/i }))).toBe(true);
+  });
+
   it('enforces boundary compliance when boundaryPolygon is defined', () => {
     const boundaryConfig: PointVariableConfig = {
       ...defaultConfig,

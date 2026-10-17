@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { GraphNode, GraphEdge, PointVariableConfig, BoundaryObstacle, Point3DCoord } from '../../../../types';
 import { Button } from '../../../ui/button';
 import { Label } from '../../../ui/label';
@@ -809,8 +810,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
     });
   };
 
-  return (
-    <TooltipProvider delayDuration={200}>
+  const editor = (
       <div
         className={
           isFullScreen
@@ -1335,6 +1335,13 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
           );
         })()}
       </div>
+  );
+
+  return (
+    <TooltipProvider delayDuration={200}>
+      {/* In fullscreen the editor is rendered in <body>: inside the panel it would stay in the
+          stacking context of its ancestors and the app bars and side panels would cover it */}
+      {isFullScreen ? createPortal(editor, document.body) : editor}
     </TooltipProvider>
   );
 };
