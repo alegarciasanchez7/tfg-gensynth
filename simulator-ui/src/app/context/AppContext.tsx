@@ -14,6 +14,7 @@ import React, {
   type ReactNode,
 } from 'react';
 import { CoreCommands } from '../core/bridge';
+import { isSystemPlaceholder } from '../core/templatePlaceholders';
 import type {
   Group,
   Flow,
@@ -255,7 +256,7 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
         let match;
         while ((match = regex.exec(template)) !== null) {
           const fullSpec = match[1].trim();
-          if (['uuid', 'ts', 'n'].includes(fullSpec)) continue;
+          if (isSystemPlaceholder(fullSpec)) continue;
 
           let scope: string | null = null;
           let name = fullSpec;

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useApp } from '../../../context';
 import type { Variable } from '../../../types';
+import { isSystemPlaceholder, SYSTEM_PLACEHOLDERS } from '../../../core/templatePlaceholders';
 
 interface TemplateEditorProps {
   value: string;
@@ -104,7 +105,7 @@ export function TemplateEditor({
       }
 
       const fullSpec = match[1].trim();
-      const isSystem = ['uuid', 'ts', 'n'].includes(fullSpec);
+      const isSystem = isSystemPlaceholder(fullSpec);
       
       let isValid = false;
       if (isSystem) {
@@ -231,11 +232,11 @@ export function TemplateEditor({
 
     const query = textBeforeCursor.substring(lastBraces + 2).trim().toLowerCase();
     
-    const options: Array<{ name: string; scope: string; detail?: string }> = [
-      { name: 'uuid', scope: 'system' },
-      { name: 'ts', scope: 'system' },
-      { name: 'n', scope: 'system' },
-    ];
+    const options: Array<{ name: string; scope: string; detail?: string }> = SYSTEM_PLACEHOLDERS.map(p => ({
+      name: p.name,
+      scope: 'system',
+      detail: p.detail,
+    }));
 
     const accessibleVars = variables.filter(v => {
       if (v.scope === 'global') return true;

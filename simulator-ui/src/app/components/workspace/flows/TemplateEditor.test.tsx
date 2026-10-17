@@ -122,5 +122,22 @@ describe('TemplateEditor', () => {
     expect(invalidTag).not.toBeNull();
     expect(invalidTag?.textContent).toBe('{{local.vegetables_7.item0}}');
   });
-});
 
+  it('accepts the flow.name built-in and offers it in the autocomplete', () => {
+    const { container } = render(
+      <TemplateEditor
+        value='{"id": "{{flow.name}}", "x": {{flo'
+        onChange={vi.fn()}
+        variables={mockVariables}
+        flowId="f1"
+        groupId="g1"
+      />
+    );
+
+    expect(container.querySelector('.bg-red-500\\/20')).toBeNull();
+
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+    fireEvent.keyUp(textarea, { target: { selectionStart: textarea.value.length } });
+    expect(screen.getByText(/Name of this flow/)).toBeDefined();
+  });
+});
