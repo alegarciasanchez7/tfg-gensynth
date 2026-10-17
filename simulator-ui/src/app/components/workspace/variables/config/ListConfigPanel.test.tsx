@@ -67,6 +67,45 @@ describe('ListConfigPanel', () => {
     expect(screen.getByText(/Markov Transition Probability Matrix/i)).toBeInTheDocument();
   });
 
+  it('keeps the decimal point while typing a Markov probability', () => {
+    const handleChange = vi.fn();
+    const markovConfig: ListVariableConfig = {
+      selectionStrategy: 'MARKOV_CHAIN',
+      items: [
+        { id: 'item1', value: 'State A' },
+        { id: 'item2', value: 'State B' }
+      ],
+      transitionMatrix: { item1: { item1: 0.5, item2: 0.5 }, item2: { item1: 0.5, item2: 0.5 } },
+    };
+    render(<ListConfigPanel config={markovConfig} onChange={handleChange} />);
+
+    const cell = screen.getAllByLabelText('Transition probability')[0];
+    fireEvent.focus(cell);
+    fireEvent.change(cell, { target: { value: '0.' } });
+    expect(cell).toHaveValue('0.');
+    expect(handleChange).not.toHaveBeenCalled();
+
+    fireEvent.change(cell, { target: { value: '0.7' } });
+    expect(cell).toHaveValue('0.7');
+    expect(handleChange).toHaveBeenLastCalledWith({
+      transitionMatrix: expect.objectContaining({ item1: expect.objectContaining({ item1: 0.7 }) }),
+    });
+  });
+
+  it('shows long default probabilities rounded', () => {
+    const markovConfig: ListVariableConfig = {
+      selectionStrategy: 'MARKOV_CHAIN',
+      items: [{ id: 'a', value: 'A' }, { id: 'b', value: 'B' }, { id: 'c', value: 'C' }],
+      transitionMatrix: { a: { a: 1 / 3 } },
+    };
+    render(<ListConfigPanel config={markovConfig} onChange={vi.fn()} />);
+
+    const cells = screen.getAllByLabelText('Transition probability');
+    expect(cells[0]).toHaveValue('0.333');
+    // Cells missing from the matrix are 0 for the Core, so they show 0
+    expect(cells[1]).toHaveValue('0');
+  });
+
   it('renders selection strategy info tooltip icon with accessibility label', () => {
     render(<ListConfigPanel config={defaultConfig} onChange={vi.fn()} />);
 
