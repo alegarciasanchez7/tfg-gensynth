@@ -164,6 +164,18 @@ public class TickDispatchTest {
     }
 
     @Test
+    public void flowNameBuiltInSendsTheNameOfEachFlow() throws Exception {
+        flow.template = "{\"id\":\"{{flow.name}}\"}";
+
+        assertTrue(server.flowCommandHandler.onTick(1));
+        awaitSent(flow, 1);
+
+        ArgumentCaptor<byte[]> payload = ArgumentCaptor.forClass(byte[].class);
+        verify(connector).send(payload.capture(), anyMap());
+        assertEquals("{\"id\":\"Flow f1\"}", new String(payload.getValue(), StandardCharsets.UTF_8));
+    }
+
+    @Test
     public void publishErrorCountsAsFailed() throws Exception {
         doThrow(new IllegalStateException("broker down")).when(connector).send(any(byte[].class), anyMap());
 

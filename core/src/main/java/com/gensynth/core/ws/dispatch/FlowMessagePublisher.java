@@ -50,12 +50,14 @@ public class FlowMessagePublisher implements IFlowMessageHandler {
         try {
             // Global sequence: {{n}} is unique even across flows running in parallel
             long sequence = ctx.getMessageSequence().incrementAndGet();
-            String payload = ctx.getTemplateEngine().evaluate(flow.template, sequence, ctx.getVariablesById(), flow.id, group.id);
+            String payload = ctx.getTemplateEngine().evaluate(
+                flow.template, sequence, ctx.getVariablesById(), flow.id, group.id, flow.name, null);
             flow.generated.incrementAndGet();
             return payload;
         } catch (Exception ex) {
-            flow.failed.incrementAndGet();
+            // Error state first, so whoever sees the failed counter also sees the error
             markError(flow, "Message generation failed: " + ex.getMessage());
+            flow.failed.incrementAndGet();
             return null;
         }
     }
@@ -78,8 +80,8 @@ public class FlowMessagePublisher implements IFlowMessageHandler {
                 // The group was stopped while publishing; not a real error
                 return;
             }
-            flow.failed.incrementAndGet();
             markError(flow, "Publish failed: " + ex.getMessage());
+            flow.failed.incrementAndGet();
             return;
         }
 
