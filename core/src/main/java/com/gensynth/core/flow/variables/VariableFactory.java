@@ -130,6 +130,22 @@ public class VariableFactory {
         return finalConfig;
     }
 
+    /**
+     * Pattern chosen in the editor, if the config has a valid one. Configs keep the keys of
+     * patterns used before (e.g. constantValue), so they must not decide the pattern on their own.
+     */
+    private static GenerationPattern explicitPattern(Map<String, Object> configMap) {
+        Object raw = configMap.get("pattern");
+        if (raw == null) {
+            return null;
+        }
+        try {
+            return GenerationPattern.valueOf(raw.toString().toUpperCase());
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
     private static VariableConfiguration createFromMapInternal(String id, String type, Map<String, Object> configMap) {
         if (configMap == null) {
             configMap = Map.of();
@@ -235,6 +251,11 @@ public class VariableFactory {
                 if (configMap.containsKey("spikeMultiplier") && configMap.get("spikeMultiplier") != null)
                     numConfig.spikeMultiplier(((Number) configMap.get("spikeMultiplier")).doubleValue());
 
+                // Some setters (constant) switch the pattern: the selected pattern wins over leftover keys
+                GenerationPattern numPattern = explicitPattern(configMap);
+                if (numPattern != null) {
+                    numConfig.pattern(numPattern);
+                }
                 return numConfig;
 
             case "STRING":
@@ -268,6 +289,11 @@ public class VariableFactory {
                     strConfig.corruptionMode((String) configMap.get("corruptionMode"));
                 if (configMap.containsKey("corruptionMagnitude") && configMap.get("corruptionMagnitude") != null)
                     strConfig.corruptionMagnitude(((Number) configMap.get("corruptionMagnitude")).intValue());
+                // constant/template/mask setters switch the pattern: the selected pattern wins over leftover keys
+                GenerationPattern strPattern = explicitPattern(configMap);
+                if (strPattern != null) {
+                    strConfig.pattern(strPattern);
+                }
                 return strConfig;
 
             case "LIST":
@@ -283,7 +309,9 @@ public class VariableFactory {
                             double weight = itemMap.containsKey("weight") ? ((Number) itemMap.get("weight")).doubleValue() : 1.0;
                             ListVariableConfig.ListItem item = new ListVariableConfig.ListItem(itemId, val, weight);
 
-                            if (itemMap.containsKey("embeddedConfig") && itemMap.get("embeddedConfig") instanceof Map) {
+                            // The UI keeps a default embeddedConfig on literal items: isEmbedded decides when present
+                            boolean literalItem = Boolean.FALSE.equals(itemMap.get("isEmbedded"));
+                            if (!literalItem && itemMap.containsKey("embeddedConfig") && itemMap.get("embeddedConfig") instanceof Map) {
                                 @SuppressWarnings("unchecked")
                                 Map<String, Object> subMap = (Map<String, Object>) itemMap.get("embeddedConfig");
                                 String subType = itemMap.containsKey("embeddedType") ? String.valueOf(itemMap.get("embeddedType")) : "NUMERIC";
@@ -490,8 +518,8 @@ public class VariableFactory {
                     pointConfig.altitudeOscillationSpeed(((Number) configMap.get("altitudeOscillationSpeed")).doubleValue());
                 }
 
-                // Deserialization of minPoint / maxPoint range bounds
-                double minX = 0.0, maxX = 1.0, minY = 0.0, maxY = 1.0, minZ = 0.0, maxZ = 100.0;
+                // Deserialization of minPoint / maxPoint range bounds (defaults match the UI: 0..100 on every axis)
+                double minX = 0.0, maxX = 100.0, minY = 0.0, maxY = 100.0, minZ = 0.0, maxZ = 100.0;
                 boolean rangeSet = false;
 
                 if (configMap.get("minPoint") instanceof Map<?, ?> minMap) {
@@ -501,8 +529,8 @@ public class VariableFactory {
                     rangeSet = true;
                 }
                 if (configMap.get("maxPoint") instanceof Map<?, ?> maxMap) {
-                    maxX = maxMap.containsKey("x") ? ((Number) maxMap.get("x")).doubleValue() : (maxMap.containsKey("lat") ? ((Number) maxMap.get("lat")).doubleValue() : 1.0);
-                    maxY = maxMap.containsKey("y") ? ((Number) maxMap.get("y")).doubleValue() : (maxMap.containsKey("lon") ? ((Number) maxMap.get("lon")).doubleValue() : 1.0);
+                    maxX = maxMap.containsKey("x") ? ((Number) maxMap.get("x")).doubleValue() : (maxMap.containsKey("lat") ? ((Number) maxMap.get("lat")).doubleValue() : 100.0);
+                    maxY = maxMap.containsKey("y") ? ((Number) maxMap.get("y")).doubleValue() : (maxMap.containsKey("lon") ? ((Number) maxMap.get("lon")).doubleValue() : 100.0);
                     maxZ = maxMap.containsKey("z") ? ((Number) maxMap.get("z")).doubleValue() : (maxMap.containsKey("alt") ? ((Number) maxMap.get("alt")).doubleValue() : 100.0);
                     rangeSet = true;
                 }
