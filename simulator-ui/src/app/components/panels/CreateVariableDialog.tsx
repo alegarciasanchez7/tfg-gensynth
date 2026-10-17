@@ -13,6 +13,7 @@ import { Button } from '../ui/button';
 import { CalendarClock, Binary, ListChecks, ALargeSmall, MapPin, ToggleLeft, AlertTriangle } from 'lucide-react';
 import type { Group, Variable, VariableScope, VariableType } from '../../types';
 import { useVariableValidation, type ValidationErrors } from '../../context/hooks/useVariableValidation';
+import { findVariableNameConflict } from '../../core/variableNames';
 
 interface CreateVariableDialogProps {
   open: boolean;
@@ -85,6 +86,8 @@ export function CreateVariableDialog({
     try {
       const parsedConfig = JSON.parse(state.configText);
       const errors = validateConfig(state.type, parsedConfig, variablesList);
+      const nameConflict = findVariableNameConflict(variablesList, state);
+      if (nameConflict) errors.name = nameConflict;
       
       let cycle: string[] | null = null;
       if (state.type === 'numeric' && parsedConfig.formula) {
@@ -95,7 +98,7 @@ export function CreateVariableDialog({
     } catch {
       return { errors: {}, cycle: null, jsonError: 'Invalid JSON structure' };
     }
-  }, [state.configText, state.type, state.name, variablesList]);
+  }, [state.configText, state.type, state.name, state.scope, state.flowId, state.groupId, variablesList]);
   const { jsonError } = validationResult;
 
   const hasValidationError = Object.keys(validationResult.errors).length > 0 || jsonError !== null || validationResult.cycle !== null;
