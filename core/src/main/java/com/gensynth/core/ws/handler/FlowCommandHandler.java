@@ -20,6 +20,7 @@ import com.gensynth.core.model.OutputMode;
 import com.gensynth.core.ws.dispatch.FlowMessagePublisher;
 import com.gensynth.core.ws.dispatch.ParallelGroupDispatcher;
 import com.gensynth.core.ws.dispatch.SequentialGroupDispatcher;
+import com.gensynth.core.flow.TemplateEngine;
 import com.gensynth.core.flow.variables.VariableConfiguration;
 import com.gensynth.core.flow.variables.VariableFactory;
 import com.gensynth.core.flow.variables.DependencyResolver;
@@ -264,9 +265,7 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
 
             for (int i = 1; i <= count; i++) {
                 String newFlowId = UUID.randomUUID().toString();
-                String newName = namingPattern
-                    .replace("${name}", original.name)
-                    .replace("${index}", String.valueOf(i));
+                String newName = com.gensynth.core.util.NamingPattern.apply(namingPattern, original.name, i);
 
                 FlowRuntime clone = new FlowRuntime(
                     newFlowId,
@@ -373,7 +372,8 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
                 java.util.regex.Matcher matcher = tagPattern.matcher(template);
                 while (matcher.find()) {
                     String fullSpec = matcher.group(1).trim();
-                    if ("uuid".equals(fullSpec) || "ts".equals(fullSpec) || "n".equals(fullSpec)) {
+                    if ("uuid".equals(fullSpec) || "ts".equals(fullSpec) || "n".equals(fullSpec)
+                        || TemplateEngine.FLOW_NAME_PLACEHOLDER.equals(fullSpec)) {
                         continue;
                     }
                     String scopePart = null;
