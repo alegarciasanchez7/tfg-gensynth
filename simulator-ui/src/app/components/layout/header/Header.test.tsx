@@ -18,6 +18,14 @@ vi.mock('./ConnectorCatalogDialog', () => ({
     </div>
   ),
 }));
+const feedbackAvailable = vi.fn(() => true);
+vi.mock('../../../core/feedback', () => ({
+  FEEDBACK_FORM_URL: 'https://forms.gle/example',
+  isFeedbackAvailable: () => feedbackAvailable(),
+}));
+const openExternalUrl = vi.fn((_url: string) => Promise.resolve());
+vi.mock('../../../core/jcef', () => ({ openExternalUrl: (url: string) => openExternalUrl(url) }));
+
 vi.mock('./PluginImportPanel', () => ({
   PluginImportPanel: () => <div data-testid="plugin-import-panel" />,
 }));
@@ -89,5 +97,17 @@ describe('Header', () => {
   it('shows the application version', () => {
     renderHeader(null);
     expect(screen.getByText(`GenSynth ${APP_VERSION}`)).toBeInTheDocument();
+  });
+
+  it('opens the feedback form in the browser from its button', () => {
+    renderHeader(null);
+    fireEvent.click(screen.getByRole('button', { name: /Feedback/ }));
+    expect(openExternalUrl).toHaveBeenCalledWith('https://forms.gle/example');
+  });
+
+  it('hides the feedback button when the forms are not configured', () => {
+    feedbackAvailable.mockReturnValueOnce(false);
+    renderHeader(null);
+    expect(screen.queryByRole('button', { name: /Feedback/ })).toBeNull();
   });
 });
