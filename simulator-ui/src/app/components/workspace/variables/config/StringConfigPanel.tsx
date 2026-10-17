@@ -298,7 +298,7 @@ export const StringConfigPanel: React.FC<StringConfigPanelProps> = ({
             <Input
               id="string-constant"
               type="text"
-              placeholder="e.g. {Macarrones}, active, error_log"
+              placeholder="e.g. active, error_log"
               value={config.constantValue ?? ''}
               onChange={(e) => onChange({ constantValue: e.target.value })}
               className="bg-[var(--c-bg2)] border-[var(--c-br1)] h-8 text-[11px]"

@@ -299,7 +299,8 @@ export async function updateFlowConfig(
       payload: {
         id: `flow_update_${Date.now()}`,
         timestamp: new Date().toLocaleTimeString('en-GB', { hour12: false }),
-        level: 'info',
+        // Sent on every keystroke of the flow editors: debug, so it does not flood the log
+        level: 'debug',
         source: 'FLOWS',
         message: `Flow '${flowName || flowId}' configuration updated`,
       },
