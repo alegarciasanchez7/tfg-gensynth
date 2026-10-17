@@ -168,6 +168,9 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         IPluginInstaller pluginInstaller
     ) {
         super(address);
+        // A restart (e.g. after installing a plugin) must be able to bind while old connections are
+        // in TIME_WAIT. Not on Windows, where SO_REUSEADDR would let two instances share the port.
+        setReuseAddr(!System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).startsWith("windows"));
         this.connectorCatalogService = connectorCatalogService;
         this.stateRepository = stateRepository;
         this.pluginInstaller = pluginInstaller;
