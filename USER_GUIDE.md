@@ -1,17 +1,34 @@
 # GenSynth User Guide
 
-How to install and use GenSynth. For a quick overview, see the [README](README.md).
+GenSynth generates synthetic event streams: you describe devices (temperature sensors, machines,
+vehicles…), the values they report and how often they report them, and GenSynth sends the
+messages to a file or to a message broker such as RabbitMQ. It is designed to feed complex event
+processing (CEP) engines such as Esper with realistic, repeatable data.
 
-- [Installation](#installation)
-- [The workspace](#the-workspace)
-- [Typical workflow](#typical-workflow)
-- [Groups](#groups)
-- [Pace of the messages: ticks](#pace-of-the-messages-ticks)
-- [Connectors](#connectors)
-- [Saving your work](#saving-your-work)
-- [Settings](#settings)
-- [Keyboard shortcuts](#keyboard-shortcuts)
-- [Troubleshooting](#troubleshooting)
+This guide covers GenSynth **0.5.1**. For a quick overview, see the [README](README.md).
+
+## Contents
+
+1. [Installation](#installation)
+2. [Key ideas](#key-ideas)
+3. [The workspace](#the-workspace)
+4. [Your first simulation](#your-first-simulation)
+5. [Groups](#groups)
+6. [Flows](#flows)
+7. [Connectors](#connectors)
+8. [Simulation clock and settings](#simulation-clock-and-settings)
+9. [Variables](#variables)
+   - [Creating a variable](#creating-a-variable) · [Scopes](#scopes) · [The variable editor](#the-variable-editor)
+   - [Numeric](#numeric-variables) · [String](#string-variables) · [List](#list-variables) ·
+     [Boolean](#boolean-variables) · [Temporal](#temporal-variables) · [Point](#point-variables)
+10. [Recipes for typical event patterns](#recipes-for-typical-event-patterns)
+11. [Saving and loading](#saving-and-loading)
+12. [Feedback](#feedback)
+13. [Keyboard shortcuts](#keyboard-shortcuts)
+14. [Known limitations and issues](#known-limitations-and-issues)
+15. [Troubleshooting](#troubleshooting)
+
+---
 
 ## Installation
 
@@ -26,7 +43,8 @@ Everything GenSynth needs is included: you do not need to install Java.
 | Fedora, openSUSE, RHEL… | `GenSynth-installer-<version>.rpm` | `sudo dnf install ./GenSynth-installer-<version>.rpm` |
 | macOS (Apple Silicon) | `GenSynth-installer-<version>.dmg` | Open it and drag GenSynth into *Applications*. |
 
-> [!IMPORTANT]
+> **Important:**
+>
 > - **Windows:** GenSynth is not signed, so SmartScreen may show *"Windows protected your PC"*.
 >   Click **More info → Run anyway**.
 > - **macOS:** the first time, right-click GenSynth in *Applications* and choose **Open** (or
@@ -46,56 +64,365 @@ To update, install the new version over the old one: your plugins and settings a
 
 Uninstalling GenSynth does not delete these folders.
 
+### Optional: the RabbitMQ connector
+
+GenSynth always includes the **File Output** connector. To publish to RabbitMQ, also download
+`rabbitmq-connector-1.0.0.jar` from the **Assets** of the same release page. You install it from
+inside GenSynth (see [Importing a plugin](#importing-a-plugin)); there is nothing to unpack.
+
+---
+
+## Key ideas
+
+| Concept | What it is |
+|---|---|
+| **Group** | A set of flows that start and stop together and share an output mode (parallel or sequential). Think of it as a site or a fleet. |
+| **Flow** | One stream of messages: a message format (template), a pace (*Every N ticks*) and a destination (connector). Think of it as one device. |
+| **Variable** | A value generator (number, text, list item, boolean, date/time or position) that you insert in a template with `{{name}}`. |
+| **Template** | The text of each message (JSON, XML, CSV or plain text) with `{{…}}` placeholders. |
+| **Connector** | Where messages go: a file, or a broker added with a plugin (RabbitMQ…). |
+| **Tick** | The global clock of the simulation. On every tick, each flow that is due generates one message. |
+
+---
+
 ## The workspace
 
-- **Left panel**: your **groups** and the **flows** inside them. Each flow shows its live
-  **msg/s**, **sent** (messages delivered) and **fails** (messages that could not be sent).
-- **Center**: the configuration of the selected group, flow or variable.
-- **Right panel**: the **variables** you can insert in the message format.
-- **Bottom panel**: logs, statistics and a preview of the generated messages.
-- **Top bar**: start/stop, file actions (New, Load, Save, Save as), connectors and settings.
-- **Resource bar** (just below): live CPU, RAM, network, msg/s, **TICK** (ticks per second and
-  total) and uptime.
+![Workspace overview](docs-assets/user-guide/01-workspace-overview.png)
 
-## Typical workflow
+| Area | What you find there |
+|---|---|
+| **Top bar** | Project name (a `*` means unsaved changes), status (**RUNNING** / **STOPPED**), **START** / **STOP**, **New**, **Load**, **Save**, **Save as**, **Connectors (N)** (catalog), **+** (import a plugin), **Feedback**, the version and the ⚙ **Settings** button. |
+| **Resource bar** | Live metrics, see below. |
+| **Left panel – GROUPS & FLOWS** | Your groups and the flows inside them. **+ ADD** opens a menu with **Add Group** and **Add Flow**. Each flow shows its live **msg/s**, **sent** (messages delivered) and **fails** (messages that could not be generated or sent), plus chips with the variables its template uses. The footer shows how many groups are running. |
+| **Center** | The editor of the selected group, flow or variable, with a breadcrumb at the top. |
+| **Right panel – VARIABLES** | The variables, split in **LOCAL**, **GROUP** and **GLOBAL** tabs. **+ ADD** creates a variable; the **→** button on a variable inserts it in the template you are editing. |
+| **Bottom panel** | **Logs**, **Statistics** and **Preview** of the generated messages. |
 
-1. **Create a group** (the **+** button in the left panel).
-2. **Add a flow** to the group: give it a name, choose how often it sends (*Every N ticks*) and a
-   **connector** (where messages go), then fill in the connector fields.
-3. **Write the message format** of the flow (JSON, XML, CSV or plain text) and insert variables
-   with `{{variable}}`. The built-in tags `{{uuid}}`, `{{ts}}` (timestamp) and `{{n}}` (message
-   number) are always available.
-4. **Create variables** in the right panel (global, for one group or for one flow).
-5. **Start** the system (or a single group) and watch the messages and metrics.
-6. **Save** the project as a `.gsynth` file.
+Both side panels can be collapsed and resized by dragging their inner edge.
+
+![Resource bar](docs-assets/user-guide/36-resource-bar.png)
+
+The **resource bar** shows **CPU** and **RAM** used by GenSynth, **NET↑** / **NET↓** (bytes per
+second sent and received), **MSG/S** (messages per second, with the total in brackets),
+**TICK** (ticks per second, with the total number of ticks) and **UPTIME** of the current run.
+
+---
+
+## Your first simulation
+
+This walkthrough builds three weather stations that send a JSON reading every second to a file.
+It takes about five minutes.
+
+![Add menu](docs-assets/user-guide/02-add-menu.png)
+
+1. **Create a group.** In the left panel click **+ ADD → Add Group**, type the name
+   `Weather network` and click **Create group**.
+
+   ![Create group dialog](docs-assets/user-guide/03-create-group-dialog.png)
+
+2. **Add a flow.** Click **+ add flow** under the group (or **+ ADD → Add Flow**). Name it
+   `Station 1`, keep **Every N ticks** = `1`, choose the connector **File Output** and set
+   **File format** to **Text (one message per line)**. Click **Create flow**.
+
+   ![Create flow dialog](docs-assets/user-guide/05-create-flow-dialog.png)
+
+3. **Create the variables of the station.** In the right panel, select the **LOCAL** tab, click
+   **+ ADD**, choose the type and fill in the dialog. Set **Target Flow Assignment** to
+   *Station 1*. Create:
+
+   | Name | Type | Configuration (Visual Editor) |
+   |---|---|---|
+   | `temperature` | Numeric | **Minimum** 15, **Maximum** 30, **Decimal Places** 1, pattern **Random** |
+   | `humidity` | Numeric | **Minimum** 40, **Maximum** 80, pattern **Distribution → Normal / Gaussian** |
+   | `condition` | List | Strategy **Weighted Random**, literal items `Sunny` (weight 5), `Cloudy` (3), `Rain` (1) |
+   | `readingTime` | Temporal | **Advance Mode** = **Simulated Step**, **Start Date (ISO)** `2026-01-01T00:00:00Z`, **Step Duration (ms)** `60000`, **Format Preset** `UNIX_TIMESTAMP` |
+
+4. **Write the message format.** Select the flow and type this in **Message Format** (type `{{`
+   to get suggestions):
+
+   ```json
+   {
+     "station": "{{flow.name}}",
+     "time": {{readingTime}},
+     "temperature": {{temperature}},
+     "humidity": {{humidity}},
+     "condition": "{{condition}}"
+   }
+   ```
+
+   `{{flow.name}}` is replaced by the name of the flow, so every station sends its own ID.
+   Text values go between quotes; numbers and booleans do not.
+
+5. **Clone the station.** In the left panel open the **⋮** menu of *Station 1* (or the clone
+   icon) and choose **Clone flow**. Set **Number of clones** = `2` and **Naming Pattern** =
+   `Station ${index+1}`. The live preview shows *Station 2* and *Station 3*. Each clone gets a copy
+   of the template, the connector settings and the LOCAL variables, so each station has its own
+   generators.
+
+   ![Clone dialog](docs-assets/user-guide/09-clone-dialog.png)
+
+6. **Start.** Click **START** in the top bar. The flows show `1.0 msg/s` and the **sent** counter
+   grows.
+
+7. **Watch the data.** Open **Preview** in the bottom panel to see the template and the last
+   message of a flow, or **Logs** to see every flow (filter with **only data**).
+
+8. **Stop and find the files.** Click **STOP**. The messages are in
+   `~/GenSynth/OUTPUT_FILES_<date>/Weather_network/Station_1.txt` (one file per station).
+
+9. **Save the project.** Click **Save as** and choose a name such as `weather.gsynth`.
+
+### Sending to RabbitMQ
+
+1. **Run a broker.** The quickest way is Docker:
+
+   ```bash
+   docker run -d --name rabbitmq -p 5672:5672 -p 15672:15672 rabbitmq:3-management
+   ```
+
+2. **Install the plugin.** Click **+** (Import Plugin) in the top bar, drop
+   `rabbitmq-connector-1.0.0.jar`, wait for the validation and click **Import Validated Plugin →
+   INSTALL & RESTART**. GenSynth restarts (see [Importing a plugin](#importing-a-plugin)).
+3. **Point the flows to RabbitMQ.** In each flow, change **Connector** to **RabbitMQ** and fill in
+   the fields. For a local broker only three fields need a value:
+
+   | Field | Value |
+   |---|---|
+   | **Exchange** | `weather` |
+   | **Routing key** | `weather.reading` |
+   | **Queue (optional)** | `weather-readings` |
+
+   Setting **Queue** makes GenSynth create a durable queue bound to the exchange, so messages are
+   kept until your consumer reads them. Tip: configure *Station 1* first and then clone it; clones
+   copy the connector settings.
+4. **Start** and open the management UI at <http://localhost:15672> (user `guest`, password
+   `guest`). In **Queues → weather-readings → Get messages** you can see the JSON of each reading.
+
+All the RabbitMQ fields are described in [RabbitMQ connector](#rabbitmq-connector).
+
+### Consuming the events
+
+- Each JSON key of your template becomes a property of the event in your CEP engine: declare
+  the event type (schema) with the same names and types. Keep the types stable: numbers without
+  quotes, text between quotes.
+- `{{flow.name}}` (or any LOCAL variable) identifies the device, so you can group or partition
+  by it.
+- For **event time**, do not use `{{ts}}` (the computer's clock). Use a Temporal variable in
+  **Simulated Step** mode with the **UNIX_TIMESTAMP** format: it produces epoch milliseconds that
+  advance by exactly the step you choose, independently of how fast GenSynth runs. Feed that field
+  to the engine as the event timestamp (in Esper, for example, by driving its external clock with
+  it). See [Simulated event time](#simulated-event-time).
+- RabbitMQ messages are persistent and carry the header `content-type: application/json`.
+
+---
 
 ## Groups
 
-- **Output mode** (applied the next time the group starts):
-  - **Parallel**: every flow sends on its own, as soon as it generates a message.
-  - **Sequential**: the messages of all flows are sent one after another, in the order they were
-    generated.
-- **Group menu (⋮)**: lock/unlock, clone, **Repeater** (create several flows with the same
-  configuration and a naming pattern such as `Sensor ${index}`) and delete.
-- Clicking a flow in the group panel opens its configuration.
+A group gathers flows that are started and stopped together. Create one with **+ ADD → Add
+Group**: the dialog asks for a **Name** and an optional **Description**.
 
-## Pace of the messages: ticks
+Click a group to open its workspace:
 
-All flows follow one global clock, the **tick**, configured in **Settings → Simulation**:
+![Group workspace](docs-assets/user-guide/04-group-workspace.png)
 
-- **Fixed period**: one tick every N milliseconds, seconds or minutes (default: 1 second).
-- **As Fast As You Can**: no wait between ticks, to find out the maximum speed. It can keep a CPU
-  core busy while running.
+| Element | What it does |
+|---|---|
+| Status badge | **RUNNING**, **STOPPED** or **PAUSED**. |
+| **THROUGHPUT** / **FLOWS** / **ERRORS** | Messages per second of the whole group, number of flows, and flows currently in error. |
+| **Group Name** | Name of the group. It is also the sub-folder used by File Output. |
+| **Output Mode** | **Parallel** (default) or **Sequential**, see below. Applies the next time the group starts. |
+| **Description** | Free text for your own notes. |
+| **Flows in this group** | Click a flow to open it. |
+| **Discard** / **Delete** | Revert the unsaved changes of the group / delete it with all its flows. |
 
-Each flow sends **one message every N ticks**. For example, with a tick of 1 second, a flow set to
-*Every 5 ticks* sends one message every 5 seconds. Changing the tick applies immediately, even while
-the simulation is running.
+### Output modes
+
+| Mode | Behaviour | When to use it |
+|---|---|---|
+| **Parallel** | Each flow has its own sender thread and sends as soon as it generates its message. If a flow is still sending when its next tick arrives, that tick is skipped for that flow (the log warns *"Sending is slower than the tick rate"*). | Independent devices; maximum throughput. |
+| **Sequential** | The messages of all flows go into one queue in generation order (tick order, then flow order) and a single sender publishes them one after another. If the queue (10 000 messages) is full, the whole tick is skipped for the group. | When the arrival order at the broker must match the generation order, e.g. to test rules that depend on event order across devices. |
+
+### Group menu (⋮)
+
+| Action | What it does |
+|---|---|
+| **Lock group** / **Unlock group** | Lock disables every flow of the group: while the simulation runs, they stop generating messages. Unlock enables them again. Useful to silence a site without deleting it. |
+| **Clone group** | Creates copies of the group with all its flows (same flow names), their LOCAL variables and the GROUP variables. The group names follow a [naming pattern](#naming-patterns). |
+| **Repeater** | Creates several new flows at once in this group, see below. |
+| **Delete group** | Deletes the group and its flows (also available with right-click). |
+
+### Repeater
+
+<img src="docs-assets/user-guide/06-create-flow-repeater.png" alt="Repeater" width="320">
+
+The Repeater is the **Add flow** dialog with a quantity: it creates **Number of flows** flows
+named with a **Naming Pattern** from a **Base name**, all with the same **Every N ticks** and
+connector settings. The new flows start with an empty template (`{}`) and no variables.
+
+> **Tip:** to create many identical devices, it is usually faster to configure one flow
+> completely (template, connector, LOCAL variables) and then use **Clone flow**, which copies
+> everything.
+
+### Naming patterns
+
+Clone and Repeater name the new items with a pattern:
+
+| Token | Replaced by | Example (base name `Station 1`, 3 copies) |
+|---|---|---|
+| `${name}` | The original or base name | `${name} copy` → *Station 1 copy* (×3) |
+| `${index}` | The position of the copy: 1, 2, 3… | `Station ${index}` → *Station 1, Station 2, Station 3* |
+| `${index+K}` / `${index-K}` | The position shifted by K | `Station ${index+1}` → *Station 2, Station 3, Station 4* |
+
+The default clone pattern is `${name} (Clone ${index})`; the Repeater default is
+`${name} ${index}`. Click **+ ${name}** / **+ ${index}** to append a token, and check the
+**Live Preview** before confirming. You can create 1 to 50 copies at a time.
+
+---
+
+## Flows
+
+### Creating a flow
+
+Use **+ add flow** under a group, **+ ADD → Add Flow** or the Repeater.
+
+| Field | What it does | Default / range |
+|---|---|---|
+| **Group** | Group of the flow (only shown when no group is selected). | — |
+| **Name** | Name of the flow; available in templates as `{{flow.name}}`. | Required |
+| **Every N ticks** | The flow sends one message every N ticks of the global clock. | 1 (whole number ≥ 1) |
+| **Connector** | Destination of the messages. Its fields appear below it. | Required |
+
+The flow cannot be created until every required connector field (marked with **\***) is valid.
+
+### The flow workspace
+
+![Flow workspace](docs-assets/user-guide/07-flow-workspace.png)
+
+- **Header:** name, connection status (**CONNECTED**, **DISCONNECTED**, **ERROR**, **WARNING**),
+  live msg/s, the last error message if any, **Discard** and **Delete**.
+- **Technical Configuration:** **Flow Name**, **Every N ticks**, **Connector**, **Version** (when
+  several versions of a plugin are installed), a line with the plugin id, its plugin API version
+  and its health, and the connector fields.
+- **Message Format:** the template editor, with the **JSON / XML / CSV / PLAIN** buttons.
+
+In the left panel, the **⋮** menu of a flow offers **Clone flow** (copies the template, the
+connector settings, *Every N ticks* and the LOCAL variables) and **Delete flow**.
+
+Changes to the template and to *Every N ticks* of a running flow apply live. Changes to the
+connector or its fields take effect the next time you click **START**.
+
+### Writing the template
+
+![Template editor](docs-assets/user-guide/08-template-editor.png)
+
+The template is the exact text of each message. Every `{{…}}` placeholder is replaced when the
+message is generated; everything else is copied as is.
+
+- Type `{{` to open the autocomplete: it lists the built-ins, the variables the flow can reach
+  and their sub-properties. Use the arrow keys and **Enter** or **Tab** to insert.
+- Placeholders are highlighted: green when valid, red when the variable does not exist or is not
+  reachable from this flow.
+- **Tab** outside the autocomplete inserts two spaces.
+
+**Built-in placeholders**
+
+| Placeholder | Value |
+|---|---|
+| `{{uuid}}` | A random UUID, new for every message. |
+| `{{ts}}` | The computer's current time in ISO-8601, UTC (e.g. `2026-10-17T09:15:30.123Z`). |
+| `{{n}}` | A message sequence number shared by all flows (unique across flows). It starts at 1 when GenSynth opens and keeps counting across STOP/START. |
+| `{{flow.name}}` | The name of the flow that renders the template. |
+
+**Referring to variables**
+
+| Syntax | Meaning |
+|---|---|
+| `{{temperature}}` | The variable `temperature` reachable from this flow. If several share the name, the closest scope wins: LOCAL, then GROUP, then GLOBAL. |
+| `{{local.temperature}}`, `{{group.temperature}}`, `{{global.temperature}}` | Force a scope. The autocomplete inserts this form. |
+| `{{temperature.round}}`, `{{readingTime.hour}}`… | A sub-property of the value (see the table below). |
+
+Rules worth remembering:
+
+- **One value per variable per message.** If a variable appears twice in a template, or is used
+  by a formula or a conditional rule of another variable, all of them see the same value in that
+  message. The next message gets a new value.
+- A placeholder whose variable cannot be found is left in the message unchanged (e.g.
+  `{{tempreature}}`), which makes typos easy to spot in the Preview.
+- Values are inserted as plain text, without quotes. In JSON, put text, dates and list items
+  between quotes (`"{{condition}}"`) and leave numbers, booleans and UNIX timestamps without them.
+
+**How each type is written**
+
+| Type | Inserted as |
+|---|---|
+| Numeric | The number (`23.4`, `17`). With prefix, suffix or padding it becomes text (`023 kg`) and needs quotes in JSON. |
+| String | The text. |
+| List | The selected item; with **Fixed Subset** a JSON array such as `["a", 2]`. |
+| Boolean | `true` / `false`. |
+| Temporal | The formatted date; with `UNIX_TIMESTAMP`, epoch milliseconds. |
+| Point | A JSON object such as `{"x": 12.5, "y": 40.1}` (use sub-properties to get single coordinates). |
+
+**Sub-properties by type** (names are case-insensitive)
+
+| Type | Sub-properties |
+|---|---|
+| Numeric | `.integerPart` (`.int`), `.decimalPart` (`.fraction`), `.abs`, `.round`, `.floor`, `.ceil`, `.sign` |
+| String | `.length` (`.size`), `.upper`, `.lower`, `.trim`, `.firstChar`, `.lastChar` |
+| Boolean | `.inverse` (`.not`), `.asNumber` (`1`/`0`), `.asString`, `.upper` (`TRUE`/`FALSE`) |
+| Temporal | `.year`, `.monthNumber`, `.monthText` (`January`), `.monthShort` (`Jan`), `.day`, `.dayOfWeek` (`Monday`), `.dayOfWeekNumber` (1–7), `.hour`, `.minute`, `.second`, `.timestamp` (epoch ms), `.timezone` |
+| List (Fixed Subset) | `.item0`, `.item1`… (0-based), `.size`, `.first`, `.last` |
+| Point | `.x`, `.y`, `.z` (Cartesian); `.latitude`, `.longitude`, `.altitude`, `.altitudeUnit`, `.altitudeReference`, and `.latitudeDecimal` / `.longitudeDecimal` in DMS format (Geospatial); `.nodeName`, `.nodeId`, `.targetNodeName`, `.targetNodeId`, `.isPaused` (Graph Route) |
+
+Temporal sub-properties use the instant the variable generated for this message, whatever its
+output format, so `{{readingTime}}` and `{{readingTime.hour}}` always describe the same moment.
+Hours, days and months are given in the variable's **Time Zone**, or in UTC when it is empty.
+
+### Converting the format
+
+Click **JSON**, **XML**, **CSV** or **PLAIN** above the editor to open **Convert Message Format**.
+It shows the **Source Format** (current), lets you pick the **Target Format** and previews the
+result before you apply it. The conversion rewrites the template text:
+
+- From JSON, the template must be valid JSON. A placeholder without quotes (`"t": {{temp}}`) is
+  not valid JSON, so the converter leaves the text unchanged; quote the placeholders before
+  converting and remove the quotes afterwards if needed.
+- From CSV, the first line is read as the header.
+- XML and plain text are wrapped as a single `message` field.
+
+The selected format is only a label for the editor: GenSynth sends exactly the text of the
+template, whatever button is highlighted.
+
+### Preview, logs and statistics
+
+![Logs](docs-assets/user-guide/32-bottom-logs.png)
+
+- **Logs:** messages from GenSynth and from the flows. Filter by level (**ALL**, **INFO**,
+  **WARN**, **ERROR**, **DEBUG**, **DATA**), by **Group** and by **Flow**; **only data** shows just
+  the generated messages. The trash icon clears the list, and **Connector Health** at the top shows
+  the state of each connector. To keep the interface fluid, each flow logs at most about four
+  messages per second, cut to 250 characters; the destination still receives every message.
+
+![Statistics](docs-assets/user-guide/33-bottom-statistics.png)
+
+- **Statistics:** **TOTAL SENT**, **ERRORS**, **ACTIVE FLOWS**, **AVG LATENCY** (time the
+  connector takes to confirm a message) and the throughput by technology.
+
+![Preview](docs-assets/user-guide/34-bottom-preview.png)
+
+- **Preview:** choose a **Flow** to see its **Template** next to the **Last Payload** it sent.
+
+**Counters:** a message is **sent** when the connector confirms it (for RabbitMQ, when the broker
+acknowledges it); it is a **fail** when it cannot be generated (for example an invalid variable)
+or the destination rejects it. The logs explain each failure.
+
+---
 
 ## Connectors
 
 The connector of a flow decides where its messages go. Each connector shows its own fields; hover
 the **ⓘ** icon next to a field to see what it means. Fields marked with **\*** are required, and a
-flow cannot be created until they are filled in.
+flow cannot be created until they are filled in. Password fields have an eye icon to show the
+value, and folder fields a **Browse** button.
 
 A message only counts as **sent** when the connector confirms that it was delivered; otherwise it
 counts as a **fail**.
@@ -104,48 +431,753 @@ counts as a **fail**.
 
 GenSynth includes one connector, always available, that writes the messages of each flow to a file:
 
-| Field | What it does |
-|---|---|
-| **File format** | *JSON array*, *Text* (one message per line), *XML dataset* or *CSV* (one message per line). |
-| **Output directory** | Optional. When empty, files go to the folder of the current session, `OUTPUT_FILES_<date>/` (see [Where GenSynth keeps its files](#where-gensynth-keeps-its-files)). A sub-folder with the group name is always added. |
-| **File name** | Optional. When empty, the flow name is used. The extension is added automatically. |
+| Field | What it does | Default |
+|---|---|---|
+| **File format** | *JSON array*, *Text* (one message per line), *XML dataset* or *CSV* (one message per line). | JSON array |
+| **Output directory** | Optional. When empty, files go to the folder of the current session, `OUTPUT_FILES_<date>/` (see [Where GenSynth keeps its files](#where-gensynth-keeps-its-files)). A sub-folder with the group name is always added. | Session folder |
+| **File name** | Optional. When empty, the flow name is used. The extension is added automatically. | Flow name |
 
 For example, with the Text format a flow *Sensor 1* in group *Plant A* writes to
 `~/GenSynth/OUTPUT_FILES_<date>/Plant_A/Sensor_1.txt` (characters other than letters, digits, `.`,
 `_` and `-` become `_`).
 
-### Other destinations: connector plugins
+Good to know:
 
-Any other destination is added with a **connector plugin**: a single `.jar` file that teaches
-GenSynth to send messages to a technology such as a message broker (AMQP, MQTT, Kafka…), a
-TCP/UDP socket or an HTTP endpoint. Plugins are distributed separately from GenSynth and anyone can
-implement one by following the [Plugin Developer Guide](plugin-api/PLUGIN_DEVELOPER_GUIDE.md).
+- Every **START** creates a new session folder, so each run has its own files.
+- With *JSON array* the `[` … `]` is closed when you click **STOP**. If you set an **Output
+  directory**, a new run appends a second array to the same file; use *Text* if you want a file
+  you can keep appending to (one JSON object per line).
+- *CSV* writes each message as one line and adds no header: write the header yourself if your
+  tool needs one.
 
-To install a plugin, click **Connectors → Import plugin** in the top bar, drop the `.jar` file,
-check that the validation succeeds and click **Install**. GenSynth restarts and the new connector
-appears in the connector list of every flow, with its own fields.
+### Connector catalog
 
-Click **Connectors** in the top bar to open the catalog: it lists every loaded connector with its
-description, its fields (help, default values and allowed ranges) and how many running flows use
-it. Plugins can be uninstalled from there, and **Import plugin** is also available in the catalog.
+![Connector catalog](docs-assets/user-guide/10-connector-catalog.png)
 
-## Saving your work
+Click **Connectors (N)** in the top bar to open the catalog. For each loaded connector it shows:
+
+- its name, version, description and health;
+- **Usage:** how many running **Flows** use it and how many are **Connected**, have **Warnings**
+  or **Errors**;
+- **Configuration fields:** each field, whether it is **Required** or **Optional**, its
+  **Default**, its **Range** and its **Options**, in the order a flow shows them;
+- **Uninstall** (installed plugins only): removes the plugin and restarts GenSynth. Flows that
+  used it will need another connector.
+
+**Import plugin** is also available from the catalog.
+
+### Importing a plugin
+
+![Plugin import](docs-assets/user-guide/11-plugin-import.png)
+
+Any destination other than a file is added with a **connector plugin**: a single `.jar` file that
+teaches GenSynth to send messages to a technology such as a message broker (AMQP, MQTT, Kafka…),
+a TCP/UDP socket or an HTTP endpoint. Plugins are distributed separately from GenSynth, and anyone
+can implement one by following the [Plugin Developer Guide](plugin-api/PLUGIN_DEVELOPER_GUIDE.md).
+
+1. Click **+** (Import Plugin) in the top bar, or **Import plugin** in the catalog.
+2. Drop the `.jar` file on the panel, or click it to browse your disk. **Plugin Name** and
+   **Version** are filled in from the file.
+3. GenSynth validates the plugin; the **Validation Logs** show each check.
+4. Click **Import Validated Plugin** and confirm with **INSTALL & RESTART**. GenSynth restarts
+   (running flows stop) and the new connector appears in the connector list of every flow.
+
+### RabbitMQ connector
+
+![RabbitMQ fields](docs-assets/user-guide/12-rabbitmq-fields.png)
+
+The RabbitMQ plugin publishes each message to an exchange and waits for the broker's
+confirmation before counting it as sent.
+
+| Field | What it does | Default |
+|---|---|---|
+| **Host** \* | Host name or IP address of the broker. | `localhost` |
+| **Port** | AMQP port of the broker (TLS is not supported). | `5672` (1–65535) |
+| **Virtual host** | Virtual host to connect to. Use `/` unless your broker separates environments with vhosts. | `/` |
+| **Username** \* | Broker user. The default `guest` user can only connect from `localhost`. | `guest` |
+| **Password** \* | Password of the user. | `guest` |
+| **Exchange** \* | Exchange that receives the messages. It is created if it does not exist. | — |
+| **Exchange type** | `topic` (routing key patterns with `*` and `#`), `direct` (exact routing key), `fanout` (every bound queue, key ignored) or `headers`. Must match the type of an existing exchange. | `topic` |
+| **Durable exchange** | Declares the exchange as durable so it survives a broker restart. Must match an existing exchange. | Yes |
+| **Routing key** | Routing key of every message of this flow. Required for `topic` and `direct`; ignored by `fanout` and `headers`. | — |
+| **Queue (optional)** | If set, a durable queue with this name is created and bound to the exchange with the routing key, so messages are kept until someone reads them. | Empty |
+
+Good to know:
+
+- Messages are persistent and carry the header `content-type: application/json`.
+- A message that reaches no queue (no queue bound with a matching key) is returned by the broker
+  and counted as a **fail** with the log *"Message not routed to any queue"*. Fill in **Queue
+  (optional)** or bind a queue before starting.
+- The routing key is fixed per flow. Use different keys per flow (for example
+  `weather.station1`) if your consumer needs to tell streams apart by key, or simply put the
+  device ID in the message with `{{flow.name}}`.
+
+---
+
+## Simulation clock and settings
+
+### Ticks
+
+All flows follow one global clock, the **tick**, configured in **Settings → Simulation**:
+
+- **Fixed period:** one tick every N **Milliseconds**, **Seconds** or **Minutes** (default: 1
+  second; at most 24 hours).
+- **As Fast As You Can:** the next tick starts as soon as the previous one finishes, with no
+  wait. Use it to measure the maximum throughput; it may keep a CPU core busy while running.
+
+Each flow sends **one message every N ticks** (its *Every N ticks*). For example, with a tick of
+1 second, a flow set to *Every 5 ticks* sends one message every 5 seconds. A flow always sends on
+the first tick after START. Changing the tick applies immediately, even while the simulation is
+running. While running, the settings show the measured tick rate.
+
+> **Important:** variables do not look at the global tick. They advance **once per value they
+> generate**, that is, once per message that uses them. A Sinusoidal, Drift, Sequential, Boolean
+> duty cycle or Simulated Step variable used by a flow with *Every 5 ticks* advances one step every
+> 5 ticks. A GROUP or GLOBAL variable used by three flows advances three steps per tick (see
+> [Scopes](#scopes)).
+
+### Settings
+
+Open them with the ⚙ icon in the top bar. Each category says whether its settings are *Stored on
+this device* or *Saved with the project*.
+
+![Appearance settings](docs-assets/user-guide/29-settings-appearance.png)
+
+| Category | Setting | What it does | Default |
+|---|---|---|---|
+| **Appearance** (device) | **Dark mode** | Light or dark theme. | Light |
+| **Save & Storage** (device) | **Auto-save** | Saves the open project file automatically while there are changes. It starts working once the project has been saved to a file. | Off |
+| | **Interval (seconds)** | Time between automatic saves. | 30 (5–3600) |
+| **Simulation** (project) | **Tick mode** | **Fixed period** or **As Fast As You Can**. | Fixed period |
+| | Period value and unit | Length of a tick. | 1 Seconds |
+
+![Save and storage settings](docs-assets/user-guide/30-settings-storage.png)
+
+![Simulation settings](docs-assets/user-guide/31-settings-simulation.png)
+
+---
+
+## Variables
+
+Variables generate the values of your messages. GenSynth has six types: **Numeric**, **String**,
+**List**, **Boolean**, **Temporal** and **Point**.
+
+### Creating a variable
+
+In the right panel, choose the scope tab, click **+ ADD** and pick the type.
+
+![Create variable dialog](docs-assets/user-guide/13-create-variable-dialog.png)
+
+| Field | What it does |
+|---|---|
+| **Identification Name** | The name you use in templates (`{{name}}`). It must be unique in its place (flow, group or globally); GenSynth reports a duplicate name before you create the variable. |
+| **Base Type** | Numeric, String, List, Temporal, Point or Boolean. |
+| **Accessibility Scope** | LOCAL, GROUP or GLOBAL (see below). |
+| **Description (Optional)** | A note for yourself (not saved in the project file in 0.5.1). |
+| **Target Flow Assignment** / **Target Group Assignment** | The flow (LOCAL) or group (GROUP) the variable belongs to. |
+
+> **Tip:** use names made of letters, digits and underscores (`wind_speed`, `windSpeed`). Dots
+> break template references, and spaces or hyphens break formulas. Do not use the names `uuid`,
+> `ts` or `n`: the built-ins take precedence.
+
+### Scopes
+
+| Scope | Reachable from | Use it for |
+|---|---|---|
+| **LOCAL** | Only its flow. Copied when the flow is cloned. | Anything that belongs to one device: its sensors, its state, its clock. |
+| **GROUP** | Every flow of its group. Copied when the group is cloned. | A value that the whole group must share in the same instant, such as a common setting. |
+| **GLOBAL** | Every flow. | Shared values and the lists that other variables inherit from. |
+
+> **Important:** a GROUP or GLOBAL variable is **one single generator shared by every flow that
+> uses it**. Each use takes the next value: if three stations use a GROUP `temperature`, they
+> receive three different consecutive values, and a sequence or a drift advances three steps per
+> tick. To give each device its own sensor, create LOCAL variables (or configure one flow and clone
+> it).
+
+When names clash, the closest scope wins: LOCAL, then GROUP, then GLOBAL. Use the
+`{{local.…}}` / `{{group.…}}` / `{{global.…}}` form to be explicit.
+
+### The variable editor
+
+Click a variable in the right panel to open it.
+
+- **Identity:** **Name**, **Scope**, **Target Flow** / **Target Group** and **Description**. You can
+  move a variable to another scope or flow here.
+- **Configuration:** the **Visual Editor** tab (fields of the type), the **Rules** tab
+  ([conditional rules](#conditional-rules)) and, for Point variables, **Spatial Boundaries**.
+- **Discard** reverts the unsaved changes of the variable; **Delete** removes it.
+
+Changes are applied immediately. If the simulation is running, the edited variable restarts from
+its initial state (a sequence starts again, a drift goes back to its start value).
+
+#### Inherit value from parent-scope List
+
+Numeric, String, Boolean, Temporal, Point and List variables start with the check box **Inherit
+value from parent-scope List**. When it is ticked, the variable takes its value from a GLOBAL or
+GROUP List variable instead of its own pattern:
+
+| Field | What it does |
+|---|---|
+| **Source List Variable** | The list to read from (GLOBAL lists, and GROUP lists of the same group). LOCAL lists cannot be shared. |
+| **Item Selection Mode** (non-list variables) | **Random Item:** a random item of the list on every value. **Specific Fixed:** always the item chosen in **Compatible Specific Item**. |
+| **Source List Subset** (List variables) | **Fixed Subset:** tick the items to include. **N Random:** a random selection of **Number of random items to select** items, drawn again for every value. |
+
+The item is chosen independently of the parent list's own strategy. Literal items are text (a
+Numeric variable converts them to a number, a Boolean reads `true`); dynamic items generate a new
+value each time. If the item cannot be converted, the variable falls back to its own pattern.
+
+#### Conditional rules
+
+![Conditional rules](docs-assets/user-guide/28-conditional-rules.png)
+
+In the **Rules** tab, **Add Rule** creates a rule that replaces the value of this variable when a
+condition on another variable is true.
+
+| Field | What it does |
+|---|---|
+| Variable | The variable to watch (suggestions show the ones you can reach). |
+| Operator | **EQUALS**, **NOT EQUALS**, **GREATER THAN**, **LESS THAN** or **CONTAINS**. Numbers are compared as numbers; anything else as text. |
+| Value | The value to compare with. |
+| **Overrides Configuration** | The value to send while the condition holds. |
+
+How rules work:
+
+- The watched variable is generated first, and the rule sees the same value that goes into the
+  message.
+- Rules are checked in order; the **first** rule that matches wins. When none matches, the
+  variable uses its normal pattern.
+- The **Overrides Configuration** is the same visual editor as the variable itself. While the
+  rule matches, the variable is generated from that configuration: for example a temperature that
+  is normally Random 15–30 can become **Random 40–120** while a `condition` variable equals `Rain`.
+  When the rule stops matching, the normal pattern takes over again.
+- A fixed replacement also works: choose **Constant** (Numeric) and type the **Constant Value**,
+  choose **Fixed** (String) and type the **Constant String Value**, or set **Initial State**
+  (Boolean, pattern **Constant State**).
+- If the override is left empty, the rule sends its comparison **Value** instead.
+
+> **Tip:** as soon as you change any field of the override, the pattern shown in its editor is
+> saved with it (Random for Numeric, for example), so the rule generates exactly what the editor
+> shows. In Boolean overrides the **Initial State** starts OFF, like a new Boolean variable.
+
+Typical uses: an alarm flag that is `true` when the temperature is above a threshold, a fan speed
+that jumps to its maximum when a machine is in `FAULT`, a status text that follows a numeric value.
+
+---
+
+### Numeric variables
+
+![Numeric – Random](docs-assets/user-guide/14-numeric-random.png)
+
+**Common fields** (shown for every pattern except Constant, which hides the range and precision):
+
+| Field | What it does | Default / range |
+|---|---|---|
+| **Minimum** / **Maximum** | Range of the Random, Distribution and Sequential patterns and limits of Drift. | 0 / 100 |
+| **Initial Value** | Optional. First value emitted by the **Random** and **Sequential** patterns; also the start of **Linear Drift** when its own Initial Value is empty. Must be inside the range. | Empty |
+| **Precision** | **Float** (decimals) or **Integer** (whole numbers; other patterns drop the decimals, 23.9 → 23). | Float |
+| **Decimal Places** | Rounding of Float values. | 2 (0–10) |
+| **Prefix** / **Padding** / **Suffix** | Text added before and after the number, and zero padding of the integer part (`001` turns 5 into `005`). Any of them turns the value into text. | Empty |
+| **Generation Pattern** | Random, Constant, Sequential, Distribution, Formula, Sinusoidal Wave or Linear Drift. | Random |
+| **Virtual Clock Delta (seconds / tick)** | Simulated seconds that pass between two values. Only used by Sinusoidal Wave and Linear Drift. | 1.0 |
+
+#### Random
+
+Uniform random value between Minimum and Maximum. With **Integer** precision every whole number
+from Minimum to Maximum, both included, is equally likely.
+
+| Field | What it does | Default |
+|---|---|---|
+| **Step size difference** | When greater than 0, values are Minimum + k × step (k = 0, 1, 2…, up to Maximum). Must be positive and not larger than the range; 0 disables it. | 0 |
+
+*When to use it:* noisy readings with no memory (temperature samples, ping times).
+
+#### Constant
+
+| Field | What it does | Default |
+|---|---|---|
+| **Constant Value** | The value sent every time. Type it: an untouched field sends 0. | — |
+| **Oscillation Margin (+/-)** | When greater than 0, a uniform random amount between −margin and +margin is added. The result is kept inside the (hidden) Minimum–Maximum range, so if your constant is outside 0–100 set the range first under another pattern. | 0 |
+
+*When to use it:* fixed attributes (a firmware version, a set point), or a nominal value with a
+little jitter.
+
+#### Sequential
+
+![Numeric – Sequential](docs-assets/user-guide/15-numeric-sequential.png)
+
+Plays a curve that you draw, point by point, and loops it forever.
+
+| Control | What it does | Default / range |
+|---|---|---|
+| **Ticks** | Length of the curve: points are placed at positions 0…N, so the curve has N + 1 points. | 10 (2–50) |
+| Points | Drag each point up or down to set its value (between Minimum and Maximum, rounded to 2 decimals). | Sine wave |
+| **Sine Wave**, **Ramp**, **Triangle**, **Flat Line** | Redraw the whole curve with a preset shape. | — |
+
+How it plays: every drawn point is sent once per cycle, from position 0 to position N, and then
+the curve starts again. With **Ticks** = 10 a cycle has 11 values. The **Sine Wave** and
+**Triangle** presets are drawn over those N + 1 steps, so the loop does not repeat a value at the
+joint. When **Initial Value** is set, it replaces the first value only.
+
+*When to use it:* deterministic scripted shapes that repeat exactly, such as a daily cycle or a
+staircase that crosses a threshold at known moments. For exact typed values, a
+[List with Sequential strategy](#list-variables) is even easier.
+
+#### Distribution
+
+![Numeric – Distribution](docs-assets/user-guide/16-numeric-distribution.png)
+
+| Field | What it does | Default |
+|---|---|---|
+| **Probability Distribution** | **Uniform:** every value in the range is equally likely. **Normal / Gaussian:** bell curve centred on the middle of the range, with standard deviation (Maximum − Minimum) / 6, so almost all values fall inside the range (the rare ones outside are cut to the limits). **Exponential:** many values near Minimum and fewer towards Maximum (mean Minimum + range/5, cut at Maximum). **Custom Weighted Equalizer:** you draw the shape. | Uniform |
+
+**Custom Weighted Equalizer:**
+
+| Control | What it does | Default / range |
+|---|---|---|
+| **Intervals** | Number of value ranges (bars). Changing it resets the bars to uniform. | 5 (2–15) |
+| Bar slider | Weight of each range: the probability of picking it is its weight divided by the sum of weights. | 50 (0–100) |
+| **TO** | Upper limit of a range (the next range starts there). | Equal splits |
+| **Boundary** | How the limits are included: **Right [A, B)**, **Left (A, B]** or **Split (50/50)**. | Right |
+| **Uniform**, **Normal**, **Decay**, **Skewed** | Presets for the weights. | — |
+
+*When to use it:* realistic histograms (most readings normal, a few high), bimodal data, or rare
+categories of values.
+
+#### Formula
+
+![Numeric – Formula](docs-assets/user-guide/17-numeric-formula.png)
+
+Computes the value from other variables with a mathematical expression, for example
+`{{temperature}} * 1.8 + 32` or `100 - {{temperature}} * 2`.
+
+- Reference variables with `{{name}}` (or `[name]`), using the bare name, without scope or
+  sub-property. Type `{{` to autocomplete; references are green when valid and red when the
+  variable is unknown or out of scope.
+- Operators `+ - * / ^ %`, parentheses, the constants `pi` and `e`, and functions such as `abs`,
+  `sqrt`, `pow(x, y)`, `exp`, `log`, `log10`, `sin`, `cos`, `tan`, `floor`, `ceil` and `signum`.
+- The referenced variables are generated first, and the formula sees exactly the values that go
+  into the same message. Numeric variables with prefix or suffix are read as numbers.
+- Circular references (A uses B and B uses A) are rejected. An expression that cannot be evaluated
+  gives 0 and a warning in the logs.
+- Noise and spikes are applied after the formula, so `Formula + Noise` gives a correlated but not
+  identical signal.
+
+*When to use it:* correlated sensors (dew point from temperature and humidity, fuel use from engine
+speed), unit conversions, derived alarms.
+
+#### Sinusoidal Wave
+
+![Numeric – Sinusoidal](docs-assets/user-guide/18-numeric-sinusoidal.png)
+
+value = **DC Offset Level** + **Amplitude** × sin(2π × **Frequency** × t + **Phase Shift**),
+where t = (n − 1) × **Virtual Clock Delta** for the n-th value.
+
+| Field | What it does | Default |
+|---|---|---|
+| **Frequency (Hz)** | Cycles per simulated second. The period is 1 / Frequency seconds. | 0.05 (20 s period) |
+| **Amplitude** | Half the distance between the peak and the trough. | 10.0 |
+| **Phase Shift (rad)** | Shifts the wave in time (π/2 ≈ 1.571 starts at the peak). | 0.0 |
+| **DC Offset Level** | The centre line of the wave. | 0.0 |
+
+The wave is not limited by Minimum/Maximum: it goes from Offset − Amplitude to Offset +
+Amplitude.
+
+> **Tip:** choose a period much longer than the Virtual Clock Delta. The default (0.05 Hz with
+> 1 s per value) gives a cycle of 20 values. A period equal to the delta (1 Hz with 1 s per value)
+> samples the same point of the wave every time and produces a flat line. For a cycle of 60 values
+> with a delta of 1 s, use Frequency = 1/60 ≈ `0.0167`.
+
+*When to use it:* periodic signals such as day/night temperature, tides, vibration, load cycles.
+
+#### Linear Drift
+
+![Numeric – Drift](docs-assets/user-guide/19-numeric-drift.png)
+
+value = start + **Drift Rate** × t, where t = (n − 1) × **Virtual Clock Delta**.
+
+| Field | What it does | Default |
+|---|---|---|
+| **Drift Rate (units/s)** | Change per simulated second; negative values go down. With a delta of 1 s, it is the change per value. | 0.5 |
+| **Initial Value** | Start value; when empty, the common **Initial Value**, or else **Minimum**. | Empty |
+| **Boundary Collision Mode** | What happens at Minimum/Maximum. **CLAMP:** stays at the limit. **WRAP / RESET:** jumps back to the opposite limit and keeps drifting (a sawtooth). **BOUNCE:** reverses direction at each limit, a triangle wave between Minimum and Maximum (for example 6, 8, 10, 8, 6, 4…). | CLAMP |
+
+*When to use it:* sensor degradation, slow leaks, battery discharge, wear, a creeping
+calibration error. Combine with Noise for a realistic signal.
+
+#### Noise and spikes
+
+![Numeric – Noise and spikes](docs-assets/user-guide/20-numeric-noise-spikes.png)
+
+Two optional layers, available for every pattern, are applied in this order: pattern → noise →
+spike. Neither is limited by Minimum/Maximum.
+
+**Noise Injection (Jitter / Gaussian)** — click **Disabled/Enabled** to toggle:
+
+| Field | What it does | Default |
+|---|---|---|
+| **Noise Type** | **Gaussian Noise (N(0, σ²))** adds a normally distributed amount; **Uniform Jitter (± Noise)** adds a uniform amount. | Gaussian |
+| **Standard Deviation (σ)** | Spread of the Gaussian noise (about 68 % of the values move less than σ). | 1.0 |
+| **Jitter Amplitude (±)** | Maximum amount of the uniform jitter. | 1.0 |
+
+**Anomaly Injection / Spikes** — on every value, with some probability, the value is replaced by
+an anomaly:
+
+| Field | What it does | Default |
+|---|---|---|
+| **Spike Probability (Pspike %)** | Chance of a spike on each value, in percent. | 5 (0–100) |
+| **Spike Mode** | **Fixed Offset (± Mag):** adds or subtracts **Offset Magnitude (±)** (random sign). **Critical Range (Min..Max):** replaces the value by a random value between **Min Spike Value** and **Max Spike Value**. **Multiplier (Base × K):** multiplies the value by **Multiplier Factor (K)**. | Fixed Offset |
+| **Offset Magnitude (±)** | Size of a fixed-offset spike. | 50.0 |
+| **Min Spike Value** / **Max Spike Value** | Range of critical-range spikes. | 100.0 / 200.0 |
+| **Multiplier Factor (K)** | Factor of multiplier spikes. | 2.0 |
+
+*When to use it:* threshold-crossing anomalies, glitches and outliers that your CEP rules must
+detect (or ignore).
+
+---
+
+### String variables
+
+![String](docs-assets/user-guide/21-string.png)
+
+Choose the **String Generation Mode** with the tabs:
+
+| Mode | Fields | What it produces |
+|---|---|---|
+| **Random** | **Fixed Length** (default 8, > 0) | Random letters and digits (`a-z`, `A-Z`, `0-9`). |
+| **Regex** | **Regex Pattern** | A random text that matches the regular expression, e.g. `WS-[0-9]{3}` → `WS-482`, `(OK\|WARN\|FAIL)` → `WARN`. |
+| **Fixed** | **Constant String Value** | Always the same text. |
+| **Template** | **Dynamic Template String** | A text built from other variables, e.g. `DEV-{{site}}-{{zone}}`. Use bare names (no scope, no sub-properties); type `{{` to autocomplete. |
+| **Mask/IoT** | **Preset Format Mask**, **Custom Format Pattern**, **Case Formatting** | Formatted identifiers, see below. |
+
+**Mask/IoT presets:** **MAC Address**, **IPv4 Address**, **IPv6 Address**, **UUID v4**,
+**Random Alphanumeric** and **Custom Format Mask**. The last two use the **Custom Format Pattern**:
+
+| Symbol | Replaced by |
+|---|---|
+| `#` | A digit 0–9 |
+| `X` / `x` | A hexadecimal digit, upper / lower case |
+| `A` / `a` | A letter, upper / lower case |
+| `?` | An upper-case letter or a digit |
+| Anything else | Copied as is |
+
+For example `SN-####-XXXX` → `SN-0417-9F3A`. **Case Formatting** (**Mixed Case**, **UPPERCASE**,
+**lowercase**) is applied to the whole result.
+
+**Simulate Data Corruption** (switch) damages some values on purpose:
+
+| Field | What it does | Default |
+|---|---|---|
+| **Anomaly Mode** | **Truncate end of string**, **Inject anomalous characters** (symbols), **Replace characters randomly** (with `?`), **Inject Null Byte (\0)**, or **Mixed / Random corruption** (one of them at random). | Mixed |
+| **Probability** | Chance of corrupting each value, from 0 to 1 (0.05 = 5 %). | 0.05 |
+| **Magnitude (Chars affected/Truncated)** | How many characters are removed, injected or replaced. | 1 |
+
+*When to use it:* device IDs, serial numbers, firmware strings, status texts, and malformed data
+to test the robustness of your consumers.
+
+---
+
+### List variables
+
+![List](docs-assets/user-guide/22-list.png)
+
+A list picks values from items that you define.
+
+| Field | What it does | Default |
+|---|---|---|
+| **Selection Strategy** | How the next item is chosen (see below). | Weighted Random |
+| **Add Item** | Adds an item. | — |
+| Item type | **Literal** (a fixed value you type in **Value (Literal)**) or **Dynamic Generator** (a small Numeric, String, Boolean or Temporal generator; click **Configure Item** to set it up). | Literal |
+| **Weight** | Relative probability of the item (Weighted Random only). Weights do not need to add up to 100. | 1 (≥ 0) |
+| Move Up / Move Down / Delete | Reorder or remove items. The order matters for Sequential, Markov and Fixed Subset. | — |
+
+**Selection strategies**
+
+| Strategy | What it does | When to use it |
+|---|---|---|
+| **Weighted Random (Probabilistic)** | Picks one item at random, according to the weights. | Categories with realistic frequencies (`OK` 90 %, `WARN` 9 %, `FAIL` 1 %). |
+| **Sequential (Round-Robin)** | Item 1, 2, 3… then back to item 1. | Exact scripted sequences: type the values and they come out in order, every time. |
+| **Shuffle (No repeat until exhausted)** | All items in random order, without repeating until all have been used, then reshuffles. | Visiting every value once per cycle in an unpredictable order. |
+| **Markov Chain (State Transition Matrix)** | The next item depends on the current one, with the probabilities of the matrix. | State machines (IDLE → RUNNING → FAULT…). |
+| **Fixed Subset / Entire List (Returns array of items)** | Returns all the items at once, as a JSON array. Reach single items with `{{name.item0}}`, `{{name.item1}}`… | Sending a vector of readings, or several related values that change together. |
+
+Literal items are inserted as written: in JSON, quote text items (`"{{condition}}"`) and leave
+numeric items unquoted. Dynamic items generate a new value each time they are picked. A list can
+also inherit items from a GLOBAL or GROUP list ([see above](#inherit-value-from-parent-scope-list));
+inherited items appear first, marked *Inherited*.
+
+**Markov Chain**
+
+![List – Markov](docs-assets/user-guide/23-list-markov.png)
+
+The **Markov Transition Probability Matrix** has one row per current state (**From**) and one
+column per next state (**To**). Each cell is the probability of moving from the row state to the
+column state, as a fraction between 0 and 1 (the title says **(0–1 per row)**). Cells show up to
+three decimals, and an empty cell counts as 0. Rows are normalised, so they do not need to add up
+to exactly 1.
+
+- The chain starts in the first item of the list, and the first value sent is that item.
+- A row with all zeros is a dead end: the chain stays in that state forever.
+- A high value on the diagonal makes states "sticky" (long runs of the same state).
+
+Example for a machine (rows = from, columns = to):
+
+| From \ To | IDLE | RUNNING | FAULT |
+|---|---|---|---|
+| IDLE | 0.7 | 0.3 | 0 |
+| RUNNING | 0.1 | 0.85 | 0.05 |
+| FAULT | 0.5 | 0 | 0.5 |
+
+---
+
+### Boolean variables
+
+![Boolean](docs-assets/user-guide/24-boolean.png)
+
+| Field | What it does | Default |
+|---|---|---|
+| **Generation Pattern** | See the table below. | Constant State |
+| **Initial State** | Starting value (ON = `true`). The Constant pattern always sends it; the cyclic patterns start from it. | OFF (`false`) |
+
+| Pattern | Fields | Behaviour |
+|---|---|---|
+| **Constant State (Fixed ON/OFF)** | — | Always the **Initial State**. |
+| **Probability Ratio P(true)** | **Probability P(true)** (0–1, default 0.5) | Each value is `true` with that probability, independently. |
+| **Flip Interval (Periodic Inversion)** | **Flip Interval N (cycles)** (≥ 1, default 1) | N values with the initial state, then N with the opposite one, and so on. |
+| **Burst Mode (Active Burst Cycles)** | **Burst Active (ticks)** (≥ 1, default 5), **Burst Idle (ticks)** (≥ 0, default 5) | `true` during the active values, `false` during the idle ones, repeating. Start the Initial State OFF to begin with an idle period. |
+| **Markov Chain (Digital Transitions)** | **P(TRUE → TRUE)** (default 0.8), **P(FALSE → TRUE)** (default 0.2) | Random two-state chain: high P(TRUE → TRUE) gives long `true` runs, low P(FALSE → TRUE) gives long `false` runs. |
+| **Duty Cycle (ON/OFF Durations)** | **ON Duration (ticks)**, **OFF Duration (ticks)** (≥ 1, default 1) | Same as Burst Mode, for an ON/OFF device such as a pump or heater. |
+| **Alternating Toggles** | **Alternation Interval (ticks)** (≥ 1, default 1) | Same as Flip Interval. |
+
+The durations count values of the variable, not global ticks (see [Ticks](#ticks)).
+
+*When to use it:* door open/closed, motor on/off, alarm flags, "burst" windows that drive other
+variables through [conditional rules](#conditional-rules).
+
+---
+
+### Temporal variables
+
+![Temporal](docs-assets/user-guide/25-temporal.png)
+
+**Advance Mode**
+
+| Mode | Fields | What it produces |
+|---|---|---|
+| **Wall Clock (Real System Time)** | — | The computer's current time when the message is generated. |
+| **Simulated Step (Incremental Tick)** | **Start Date (ISO)**, **Step Duration (ms)** (default 1000) | Start, start + step, start + 2 × step… one step per value. An empty start means the moment the simulation starts. |
+| **Backfill Historical (Mass Range)** | **Range Start (ISO)**, **Range End (ISO)**, **Sampling Strategy**, **Step Duration (ms)** (default 60000) | Dates inside a past range. **Sequential Step** walks from start to end in steps and wraps around; **Random Uniform in Span** picks random dates. Empty range: the last 7 days; empty end: one hour after the start. |
+| **Fixed (Constant Timestamp)** | **Fixed Date/Time (ISO)** | Always the same date. Empty: the moment the simulation starts. |
+
+Write ISO dates with a time zone, e.g. `2026-01-01T00:00:00Z` (dates without `Z` or an offset
+are ignored).
+
+**Clock Drift / Skew (NTP Jitter)** (switch) imitates imperfect device clocks:
+
+| Field | What it does | Default |
+|---|---|---|
+| **Drift Mode** | **Random Jitter (± Bounds):** adds a random amount between −max and +max ms to each value, so timestamps can arrive slightly out of order. **Constant Static Shift:** adds a fixed number of ms. **Progressive Drift / Tick:** adds n × rate ms to the n-th value, a clock that runs fast or slow. | Random Jitter |
+| **Max Jitter Bound (ms)** / **Static Shift (ms)** | Size of the jitter or of the shift. | 0 |
+| **Drift Rate (ms / tick)** | Extra ms per value for Progressive Drift. Works with Simulated Step and Backfill Sequential Step. | 1.0 |
+
+**Output Category & Formatting**
+
+| Field | What it does | Default |
+|---|---|---|
+| **Output Category** | **Date Only**, **Full Timestamp** or **Time Only**. Changing it selects the first preset of the category. | Full Timestamp |
+| **Format Preset** | Date only: `yyyy-MM-dd`, `dd/MM/yyyy`, `MM-dd-yyyy`, `yyyy.MM.dd`. Full: `yyyy-MM-dd'T'HH:mm:ss.SSSZ`, `ISO_INSTANT`, `UNIX_TIMESTAMP`, `yyyy-MM-dd HH:mm:ss`. Time only: `HH:mm:ss`, `HH:mm`, `HH:mm:ss.SSS`, `hh:mm a`. | `yyyy-MM-dd'T'HH:mm:ss.SSSZ` |
+| **Custom Format** | Any Java `DateTimeFormatter` pattern, or `UNIX_TIMESTAMP` for epoch milliseconds (a number). | — |
+| **Time Zone** | Zone used to format the date, e.g. `UTC`, `Europe/Madrid`, `-05:00`. Empty: the computer's zone. | Empty |
+
+> **Tip:** for event time, use `UNIX_TIMESTAMP` (a number, no quotes in JSON). For readable text,
+> use the `ISO_INSTANT` preset, which writes ISO-8601 in UTC (`2026-01-01T00:00:00Z`) whatever the
+> time zone.
+
+---
+
+### Point variables
+
+![Point](docs-assets/user-guide/26-point.png)
+
+Points model positions: a robot on a factory floor, a vehicle on a map, a drone in the air.
+
+**Visual Editor**
+
+| Field | What it does | Default |
+|---|---|---|
+| **Coordinate System** | **2D Cartesian (X, Y)**, **3D Cartesian (X, Y, Z)** or **Geospatial (Lat, Lon, Alt)** (WGS84 degrees and an altitude). Changing it clears the graph route. | 3D Cartesian |
+| **Geospatial Format** | **Decimal Degrees** or **Degrees, Minutes, Sec (DMS)** (text such as `40° 25' 0.48" N`). | Decimal |
+| **Boundary Behavior** | What happens when a moving point reaches the limits: **Clamp (Stop at boundary)**, **Bounce (Rebound velocity)** or **Wrap (Toroidal space)**. | Clamp |
+| **Movement Pattern** | See below. | Random Point |
+| **Position Jitter / GPS Satellite Noise** + **Random Jitter Noise Radius** | Adds Gaussian noise of that size (in coordinate units; degrees in Geospatial) to every coordinate, like a real GPS. | Off / 0 |
+
+**Movement patterns**
+
+| Pattern | Fields | Behaviour |
+|---|---|---|
+| **Fixed Point (Constant)** | X/Y/Z (Latitude/Longitude/Altitude) | Always the same position. |
+| **Random Point (Within bounds)** | — | A new random position inside the bounding box on every value, outside forbidden zones and inside the polygon if you drew one. |
+| **Random Walk (Continuous step)** | **Max Step Distance** (default 10), **Momentum / Inertia (0 to 1)** (default 0) | Moves a random step of up to Max Step Distance per coordinate from the previous position (when the step is larger than the area, 5 % of the area is used). Inertia keeps the previous direction (smooth paths with values near 1). It starts at the Fixed Point coordinates when they are set (or when Min X is 0), otherwise at a random position, and avoids walls and forbidden zones. In Geospatial mode 0.000009° ≈ 1 m, 0.00009° ≈ 10 m, 0.0009° ≈ 100 m. |
+| **Circular Orbit / Spiral** | **Orbit Radius** (default 10), **Angular Speed (rad/tick)** (default 0.1), **Spiral Rate (+/- r/tick)** (default 0) | Circles around the centre of the bounding box (or around 0,0 when Min X is exactly 0); a spiral rate grows or shrinks the radius on each value. 2π / angular speed values make a full turn. |
+| **Waypoint Navigation** | **Interpolation Steps per Segment** | Not usable in 0.5.1: there is no way to enter waypoints (see [Known limitations](#known-limitations-and-issues)). Use Graph Route with a fixed sequence instead. |
+| **Graph Route (Connected Graph Path)** | See below (2D and Geospatial only) | Moves along the edges of a graph of nodes that you draw. |
+
+**Graph Route**
+
+![Point – map and graph route](docs-assets/user-guide/27-point-map.png)
+
+Draw the graph on the canvas or map: click to place the first node, then **Add & Extend** places
+connected steps, **Connect Nodes** links two existing nodes, **Select Node** picks the origin of
+the next step; the trash button clears the graph. Selecting a node lets you rename it and edit
+its coordinates. Edges cannot cross forbidden zones.
+
+| Field | What it does | Default |
+|---|---|---|
+| **Graph Navigation Mode** | **Random Neighbor (Graph Walk):** at each node, go to a random connected node. **Fixed Sequence (Node Path):** follow the order you build in **Fixed Sequence Path Order** (pick the start node, then add neighbours; **Clear Path** empties it). | Random Neighbor |
+| **Ticks Per Edge (Interpolation)** | Number of values needed to travel an edge (1 = jump from node to node). | 1 |
+| **Pause Probability (0.0 - 1.0)** | Chance of stopping when arriving at a node. | 0 |
+| **Pause Duration (Ticks)** | How many values the stop lasts. | 0 |
+| **Prevent Cyclic Loops (Anti-Backtracking)** | Random Neighbor avoids the last visited nodes when it has another choice. | On |
+| **Loop Sequence** | Fixed Sequence starts again at the end; otherwise it stays at the last node. | On |
+
+The value then includes `nodeId`, `nodeName`, `targetNodeId`, `targetNodeName` and `isPaused`,
+handy for "vehicle arrived at depot" events.
+
+**Spatial Boundaries tab**
+
+| Element | What it does | Default |
+|---|---|---|
+| Visual editor | 2D grid, 3D view or world map. Drag to draw the area; right-click an edge to insert a vertex and a vertex to delete it. **Expand View / High-Precision Editor** opens a larger editor with presets (**Square**, **Triangle**, **Circle**, **New Region**), zoom and obstacle management. | — |
+| **Boundary Collision Action** | Same as Boundary Behavior. | Clamp |
+| **Outer Envelope Bounding Box (AABB Bounds)** | **Min/Max X, Y, Z** (Latitude, Longitude, Altitude in Geospatial): the box the point lives in. | 0–100 |
+| **Exact Individual Polygon Vertices** | The vertices of a custom polygon (3 or more), when you drew one. The box then fits the polygon. | — |
+| Barriers & obstacles | **Obstacle Name**, **Type** (**Wall Line Segment** or **Forbidden Interior Polygon**) and **Add Barrier**; each barrier can be disabled or removed. Walls block Random Walk steps; forbidden polygons are never entered. | — |
+| Altitude (Geospatial) | **Independent Altitude Dynamics Pattern**: **Follow Primary XY Pattern**, **Fixed Altitude**, **Random Elevation (Uniform in Range)**, **Continuous Climb & Descent Walk** (**Max Vertical Step (m/tick)**), **Sinusoidal Hover Oscillation** (**Oscillation Speed (rad/tick)**); **Min/Max Altitude**, **Initial Altitude (Seed)**, **Altitude Measurement Unit** (m, ft, km, mi) and **Datum / Altitude Reference** (MSL, AGL, ELLIPSOID), which are written in the output. | Follow XY, m, MSL |
+
+> **Tip:** coordinates are sent with full precision (many decimals). Adjust the bounding box to
+> your scenario; by default every axis goes from 0 to 100.
+
+---
+
+## Recipes for typical event patterns
+
+All the recipes use LOCAL variables in one flow, so they work per device after cloning.
+
+### Threshold crossings with spikes
+
+A temperature that is normally 18–24 °C and occasionally jumps above 35 °C:
+
+- Numeric `temperature`: **Random**, Minimum 18, Maximum 24, **Decimal Places** 1.
+- **Anomaly Injection / Spikes**: Spike Probability `2`, Spike Mode **Critical Range**, Min
+  Spike Value `35`, Max Spike Value `40`.
+
+About 2 % of the readings cross the threshold, at random moments. For a reading that crosses it
+at *known* moments, use the [scripted sequence](#deterministic-scripted-sequences) recipe.
+
+### Periodic signals
+
+A daily cycle between 10 and 30 °C, one reading per simulated minute:
+
+- Numeric `outdoorTemp`: **Sinusoidal Wave**, DC Offset Level `20`, Amplitude `10`,
+  Frequency `0.00001157` (1 / 86 400 s), Phase Shift `-1.571` (starts at the minimum),
+  **Virtual Clock Delta** `60`.
+- Optional: **Noise Injection**, Gaussian, σ `0.3`.
+
+With a tick of 1 second, a whole simulated day passes in 24 minutes.
+
+### Gradual drift
+
+A pressure sensor that loses 0.02 bar per hour from 6.0 bar:
+
+- Numeric `pressure`: **Linear Drift**, Drift Rate `-0.0000056` (bar per second), Initial Value
+  `6.0`, Minimum `0`, Maximum `10`, **Virtual Clock Delta** `60`, Boundary Collision Mode
+  **CLAMP**, Decimal Places 3.
+- Add Gaussian noise (σ `0.01`) so the trend is hidden in realistic readings.
+
+### State machines with Markov lists
+
+- List `machineState`: **Markov Chain**, literal items `IDLE`, `RUNNING`, `FAULT` (in this
+  order: the chain starts in `IDLE`), with the matrix shown in [List variables](#list-variables).
+- Template: `"state": "{{machineState}}"`.
+- Make another variable follow the state with a conditional rule, for example Numeric `rpm`
+  (Random 1400–1600) with the rule `machineState EQUALS IDLE` → Constant `0`.
+
+### Bursts
+
+Short bursts of high activity separated by quiet periods:
+
+- Boolean `burst`: **Burst Mode**, Burst Active `5`, Burst Idle `30`, Initial State OFF.
+- Numeric `vibration`: Random 0.1–0.5, with the rule `burst EQUALS true` whose override is
+  **Random** 8–10.
+- The pace of a flow is fixed, so a burst changes the values, not the number of messages. To
+  also raise the event rate, model the bursty source as a second flow with a smaller *Every N
+  ticks*, and use **Lock group** / **Unlock group** to switch it on and off by hand.
+
+### Correlated values
+
+- Numeric `temperature`: Random 15–30.
+- Numeric `humidity`: **Formula** `95 - {{temperature}} * 1.5` plus Gaussian noise σ `2`
+  (humidity falls when temperature rises).
+- Boolean `heatAlarm`: **Constant State** with Initial State OFF, plus the rule
+  `temperature GREATER THAN 28` whose override sets Initial State ON.
+
+Because a variable has one value per message, `temperature`, `humidity` and `heatAlarm` in the
+same message are always consistent.
+
+### Deterministic scripted sequences
+
+To test a CEP rule reliably you often need the exact same input every run.
+
+- **Exact values:** a List with strategy **Sequential (Round-Robin)** and literal items, for
+  example `20`, `21`, `23`, `27`, `31`, `33`, `29`, `24`. The values come out in that order and
+  repeat. Two lists of the same length in the same flow stay in step, so you can script several
+  fields together.
+- **Drawn shapes:** Numeric **Sequential** with the curve editor: every point you draw is sent
+  once per cycle (see [Sequential](#sequential)).
+- Combine with a Simulated Step Temporal variable so the timestamps are also identical in every
+  run.
+
+### Several devices with their own IDs
+
+1. Configure one flow completely: template, connector and LOCAL variables.
+2. Use `{{flow.name}}` (or a LOCAL String variable) as the device ID in the template.
+3. **Clone flow** with the pattern `Device ${index+1}`.
+
+Every clone has its own LOCAL generators, so each device produces its own independent stream.
+Clone the whole group to replicate a site with all its devices.
+
+### Simulated event time
+
+- Temporal `eventTime`: **Simulated Step**, Start Date `2026-01-01T00:00:00Z`, Step Duration equal
+  to the real interval between two messages of the device (for example `5000` for one reading
+  every 5 s), Format `UNIX_TIMESTAMP`.
+- Template: `"eventTime": {{eventTime}}` (no quotes).
+- For slightly out-of-order events, enable **Clock Drift** → **Random Jitter** with a Max Jitter
+  Bound smaller than the step (for example `1500`).
+- Run the simulation with **As Fast As You Can** to generate hours of event time in seconds; the
+  timestamps stay correct because they come from the variable, not from the computer clock.
+
+---
+
+## Saving and loading
 
 - Projects are saved as **`.gsynth`** files (**Save** / **Save as**), which contain the groups,
-  flows, variables and the tick settings. Open them with **Load**.
-- A `*` next to the project name means there are unsaved changes; GenSynth asks before closing
-  or opening another project.
+  flows, variables and the tick settings. Open them with **Load**; **New** starts an empty
+  project.
+- A `*` next to the project name (and next to a group, flow or variable) means there are unsaved
+  changes; GenSynth asks before closing or opening another project.
+- **Discard** (or `Ctrl + Z`) reverts the selected item to its last saved state.
 - **Auto-save** can be enabled in **Settings → Save & Storage**: it saves the open file every N
   seconds while there are changes.
 - Projects from older GenSynth versions still open; settings they do not have get their defaults.
 
-## Settings
+---
 
-Open them with the ⚙ icon in the top bar:
+## Feedback
 
-- **Appearance**: light or dark theme.
-- **Save & Storage**: auto-save and its interval.
-- **Simulation**: the tick clock (see [Pace of the messages](#pace-of-the-messages-ticks)).
+The **Feedback** button in the top bar opens a short anonymous form, in Spanish, in your web
+browser. It only takes a couple of minutes, and your opinion helps to improve the tool.
+
+---
 
 ## Keyboard shortcuts
 
@@ -154,6 +1186,39 @@ Open them with the ⚙ icon in the top bar:
 | `Ctrl + S` (`Cmd + S` on macOS) | Save the project. |
 | `Ctrl + Z` (`Cmd + Z` on macOS) | Discard the unsaved changes of the selected group, flow or variable. With nothing selected, discards all unsaved changes after asking for confirmation. Inside a text field it works as a normal text undo. |
 
+---
+
+## Known limitations and issues
+
+Limitations of the design:
+
+- **GROUP and GLOBAL variables are shared generators.** Every flow that uses them takes the next
+  value, so per-device sensors must be LOCAL ([Scopes](#scopes)).
+- **Deleting a flow keeps its LOCAL variables in the saved file.** They are no longer used and do
+  no harm.
+- **The Trend pattern is not available** for Numeric variables.
+- **Starting or stopping restarts all generators.** Sequences, drifts and simulated clocks start
+  again from their initial values on every START.
+- **The description of a variable is not saved** in the project file.
+- **Lock group disables all the flows of the group**, and **connector changes apply on the next
+  START** (template and pace changes apply live).
+- **The Statistics totals carry over between projects** until GenSynth is restarted, as does
+  `{{n}}`.
+
+Known issues in 0.5.1, with workarounds:
+
+| Issue | Workaround |
+|---|---|
+| **Progressive Drift** only works in **Simulated Step** and **Backfill Historical** (Sequential Step) modes; it has no effect in **Wall Clock** mode. | Use Simulated Step. |
+| **Waypoint Navigation** has no way to enter waypoints, so the point does not move. | Use **Graph Route** with a **Fixed Sequence**. |
+| In **3D Cartesian**, the 3D shape (cube, pyramid, cone, sphere) drawn in the 3D editor is not used: points are kept in a 100 × 100 × 100 box centred on the bounding box. | Use 2D or Geospatial when the exact limits matter. |
+| **Circular Orbit** circles around (0, 0) when Min X (or Min Latitude) is exactly 0, instead of the centre of the bounding box. | Use a bounding box whose Min X is not 0. |
+| **Random Walk** in 2D/Geospatial can leave a custom polygon (it stays inside the bounding box and avoids obstacles). | Use forbidden polygons or walls to fence it in. |
+| A node repeated in a Graph Route **Fixed Sequence** (A → B → A → C) makes the route loop back early (A → B → A → B…). | Do not repeat nodes in the sequence; use Random Neighbor or two variables. |
+| The template autocomplete offers `.size`, `.first` and `.last` for every List, but they only make sense with **Fixed Subset**: with other strategies they return the selected item. | Use them only with Fixed Subset lists. |
+
+---
+
 ## Troubleshooting
 
 | Problem | Solution |
@@ -161,6 +1226,15 @@ Open them with the ⚙ icon in the top bar:
 | The first start shows *"GenSynth could not set up its embedded browser"* | The embedded browser could not be downloaded. Check your internet connection (and proxy or firewall) and click **Retry**. |
 | The logs show *Invalid connector configuration…* when starting a group | A required connector field is empty or invalid; the message says which one. |
 | A plugin is rejected as "built for the legacy plugin API" | That plugin was made for an older GenSynth; it must be rebuilt by its author. |
-| *fails* keeps growing | Check the logs panel (bottom): it shows why the destination rejected the messages. |
+| *fails* keeps growing | Check the logs panel (bottom): it shows why the message could not be generated or why the destination rejected it. |
+| START warns about *validation errors or circular dependencies* | A formula, template variable or conditional rule refers to a variable that does not exist, or two variables refer to each other. Fix the red references. |
+| RabbitMQ: *Connection refused* | The broker is not running or Host/Port are wrong. Check `docker ps` and that port 5672 is published. |
+| RabbitMQ: *ACCESS_REFUSED* with user `guest` | `guest` only works on the same computer as the broker. Create a user in the management UI (Admin → Users, with permissions on the virtual host) and use it. |
+| RabbitMQ: *Routing key is required for a topic exchange* | Fill in **Routing key**, or use a `fanout` exchange. |
+| RabbitMQ: *Message not routed to any queue* | No queue is bound to the exchange with that routing key. Fill in **Queue (optional)** or bind a queue in the management UI. |
+| RabbitMQ: *PRECONDITION_FAILED – inequivalent arg* | The exchange already exists with another type or durability. Match **Exchange type** / **Durable exchange**, or delete the exchange in the management UI. |
+| Values look wrong (all devices share a sequence, values jump, a placeholder stays as `{{…}}`) | Check the **scope** of the variable (per-device values must be LOCAL), the name in the template (a typo leaves the placeholder unchanged) and the Preview of the flow. |
+| A variable sends a value that does not match its pattern | Check its **Rules** tab: while a rule matches, the override configuration is used instead. |
+| The JSON received is invalid | Text values need quotes (`"{{name}}"`); numbers with prefix, suffix or padding are text too. |
 
 Problems when building from source are covered in [CONTRIBUTING.md](CONTRIBUTING.md#troubleshooting).
