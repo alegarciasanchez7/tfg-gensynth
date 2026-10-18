@@ -6,6 +6,7 @@ import { WaypointEditor } from './WaypointEditor';
 import { TooltipProvider } from '../../../ui/tooltip';
 import { fitWorldWindow } from '../../../../core/worldWindow';
 import type { FullPoint } from '../../../../core/pointDefaults';
+import type { MoveCheck, PathIssues } from '../../../../core/waypointPath';
 import type { BoundaryObstacle, PointVariableConfig } from '../../../../types';
 
 // In jsdom the drawing is 320 x 300 px with its origin at (0, 0)
@@ -31,6 +32,8 @@ const renderCanvas = (waypoints: FullPoint[], overrides: Partial<React.Component
     onAppend: vi.fn(() => true),
     onMove: vi.fn(() => true),
     onDelete: vi.fn(),
+    issues: { points: [], segments: [] } as PathIssues,
+    checkMove: vi.fn((): MoveCheck => ({ error: null, pointBad: false, badSegments: [] })),
     ...overrides,
   };
   const utils = render(<WaypointCanvas2D {...props} />);
@@ -135,5 +138,110 @@ describe('WaypointCanvas2D', () => {
     expect(onChange).toHaveBeenCalledTimes(1);
     expect(onChange).toHaveBeenCalledWith({ waypoints: [{ x: 20, y: 20, z: 0 }] });
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+  it('stops a drag at the region border and commits the clamped position once', () => {
+    const { props } = renderCanvas(twoPoints);
+    const point = screen.getByTestId('waypoint-0');
+    const start = pixelOf(20, 20, twoPoints);
+    const outside = pixelOf(150, 30, twoPoints);
+
+    fireEvent.pointerDown(point, { pointerId: 1, button: 0, ...start });
+    fireEvent.pointerMove(point, { pointerId: 1, ...pixelOf(120, 25, twoPoints) });
+    fireEvent.pointerMove(point, { pointerId: 1, ...outside });
+    expect(props.checkMove).toHaveBeenLastCalledWith(0, 100, 30);
+    fireEvent.pointerUp(point, { pointerId: 1, ...outside });
+
+    expect(props.onMove).toHaveBeenCalledTimes(1);
+    expect(props.onMove).toHaveBeenCalledWith(0, 100, 30);
+  });
+
+  it('draws the dragged waypoint and its segments in red while the drop would be rejected', () => {
+    const checkMove = vi.fn((): MoveCheck => ({ error: 'Cannot draw path segment crossing forbidden wall barrier: "Wall"', pointBad: false, badSegments: [0] }));
+    const { props } = renderCanvas(twoPoints, { checkMove, onMove: vi.fn(() => false) });
+    const point = screen.getByTestId('waypoint-1');
+    const start = pixelOf(80, 60, twoPoints);
+    const end = pixelOf(60, 90, twoPoints);
+
+    fireEvent.pointerDown(point, { pointerId: 1, button: 0, ...start });
+    fireEvent.pointerMove(point, { pointerId: 1, ...end });
+    expect(screen.getByTestId('waypoint-1')).toHaveAttribute('data-state', 'rejected');
+    expect(screen.getByTestId('waypoint-bad-segment-0')).toHaveAttribute('data-state', 'rejected');
+
+    // Rejected on release: back to the stored position, no longer red
+    fireEvent.pointerUp(point, { pointerId: 1, ...end });
+    expect(props.onMove).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('waypoint-1')).not.toHaveAttribute('data-state');
+    expect(screen.queryByTestId('waypoint-bad-segment-0')).not.toBeInTheDocument();
+  });
+
+  it('snaps a click just outside the border onto it, and passes farther clicks on unchanged', () => {
+    const { props } = renderCanvas(twoPoints);
+
+    fireEvent.click(screen.getByTestId('waypoint-plane'), pixelOf(101, 50, twoPoints));
+    expect(props.onAppend).toHaveBeenLastCalledWith(100, 50);
+
+    fireEvent.click(screen.getByTestId('waypoint-plane'), pixelOf(110, 50, twoPoints));
+    expect(props.onAppend).toHaveBeenLastCalledWith(110, 50);
+  });
+
+  it('draws stored invalid waypoints and segments in rose, with the reason as tooltip', () => {
+    const three: FullPoint[] = [...twoPoints, { x: 50, y: 90, z: 0 }];
+    renderCanvas(three, {
+      issues: { points: [null, 'Cannot place waypoint outside allowed boundary limits.', null], segments: [null, null, 'Crosses "Wall"'] },
+    });
+
+    expect(screen.getByTestId('waypoint-1')).toHaveAttribute('data-state', 'invalid');
+    expect(screen.getByTestId('waypoint-1')).toHaveTextContent('Cannot place waypoint outside allowed boundary limits.');
+    expect(screen.getByTestId('waypoint-0')).not.toHaveAttribute('data-state');
+    expect(screen.getByTestId('waypoint-bad-segment-2')).toHaveAttribute('data-state', 'invalid');
+    expect(screen.queryByTestId('waypoint-bad-segment-0')).not.toBeInTheDocument();
+  });
+
+  it('fills the height of its container in fill mode', () => {
+    const { container } = renderCanvas(twoPoints, { fill: true });
+    expect((container.firstChild as HTMLElement).style.height).toBe('100%');
+    // jsdom cannot measure the container: the minimum fill height is used
+    expect(screen.getByTestId('waypoint-canvas')).toHaveAttribute('height', '240');
+  });
+
+  it('rejects dragging a waypoint into a forbidden zone in the editor, live and on release', () => {
+    const obstacle: BoundaryObstacle = {
+      id: 'obs-1',
+      name: 'Pond',
+      type: 'OBSTACLE_POLYGON',
+      enabled: true,
+      points: [{ x: 40, y: 40 }, { x: 60, y: 40 }, { x: 60, y: 60 }, { x: 40, y: 60 }],
+    };
+    const onChange = vi.fn();
+    render(
+      <TooltipProvider>
+        <WaypointEditor
+          config={{ coordinateSystem: 'CARTESIAN_2D', pattern: 'WAYPOINT_NAVIGATION', minPoint, maxPoint, obstacles: [obstacle], waypoints: twoPoints }}
+          onChange={onChange}
+        />
+      </TooltipProvider>
+    );
+    const point = screen.getByTestId('waypoint-1');
+    const start = pixelOf(80, 60, twoPoints);
+    const inPond = pixelOf(50, 50, twoPoints);
+
+    fireEvent.pointerDown(point, { pointerId: 1, button: 0, ...start });
+    fireEvent.pointerMove(point, { pointerId: 1, ...inPond });
+    expect(screen.getByTestId('waypoint-1')).toHaveAttribute('data-state', 'rejected');
+    // A rejected position also marks the segment that leads to it
+    expect(screen.getByTestId('waypoint-bad-segment-0')).toHaveAttribute('data-state', 'rejected');
+    fireEvent.pointerUp(point, { pointerId: 1, ...inPond });
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByRole('alert')).toHaveTextContent('Cannot place waypoint inside forbidden obstacle zone: "Pond"');
+
+    // Dragged past the border instead: stops on it, one change
+    const outside = pixelOf(130, 60, twoPoints);
+    fireEvent.pointerDown(point, { pointerId: 2, button: 0, ...start });
+    fireEvent.pointerMove(point, { pointerId: 2, ...outside });
+    expect(screen.getByTestId('waypoint-1')).not.toHaveAttribute('data-state');
+    fireEvent.pointerUp(point, { pointerId: 2, ...outside });
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith({ waypoints: [twoPoints[0], { x: 100, y: 60, z: 0 }] });
   });
 });

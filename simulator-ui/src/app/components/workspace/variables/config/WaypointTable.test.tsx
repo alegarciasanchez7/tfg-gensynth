@@ -90,4 +90,22 @@ describe('WaypointTable', () => {
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Add waypoint/ })).toBeInTheDocument();
   });
+  it('marks a row with a problem: red number with the reason as tooltip', () => {
+    renderTable({ rowIssues: [null, 'Cannot place waypoint outside allowed boundary limits.'] });
+    const rows = screen.getAllByRole('row').slice(1);
+
+    expect(rows[0]).not.toHaveAttribute('data-invalid');
+    expect(rows[1]).toHaveAttribute('data-invalid', 'true');
+    expect(screen.getByTitle('Cannot place waypoint outside allowed boundary limits.')).toHaveTextContent('2');
+  });
+
+  it('only scrolls inside its own 220 px box when not filling a panel', () => {
+    const { unmount } = render(
+      <WaypointTable waypoints={waypoints} showZ isGeo={false} onEditCoord={() => true} onMoveRow={vi.fn()} onDelete={vi.fn()} onAdd={vi.fn()} />
+    );
+    expect(screen.getByRole('table').parentElement).toHaveClass('max-h-[220px]');
+    unmount();
+    renderTable({ fill: true });
+    expect(screen.getByRole('table').parentElement).not.toHaveClass('max-h-[220px]');
+  });
 });
