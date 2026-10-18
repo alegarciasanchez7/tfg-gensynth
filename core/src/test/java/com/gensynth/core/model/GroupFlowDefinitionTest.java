@@ -73,4 +73,48 @@ public class GroupFlowDefinitionTest {
         payload.put("everyTicks", 0);
         assertEquals("values below 1 are clamped", 1, FlowDefinition.fromPayload(payload).getEveryTicks());
     }
+
+    @Test
+    public void eventLossSurvivesARoundTrip() {
+        FlowDefinition flow = new FlowDefinition("f", "g", "Flow", "file", "localhost", 0, "t",
+            1000, 1, "{}", "json", "file", Map.of());
+        flow.setLossPercent(7.5);
+        flow.setOutageEveryTicks(20);
+        flow.setOutageDurationTicks(3);
+
+        FlowDefinition loaded = FlowDefinition.fromPayload(flow.toPayload());
+
+        assertEquals(7.5, loaded.getLossPercent(), 0.0);
+        assertEquals(20, loaded.getOutageEveryTicks());
+        assertEquals(3, loaded.getOutageDurationTicks());
+    }
+
+    @Test
+    public void legacyFlowWithoutEventLossLoadsWithItOff() {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("id", "f");
+        payload.put("groupId", "g");
+
+        FlowDefinition flow = FlowDefinition.fromPayload(payload);
+
+        assertEquals(0.0, flow.getLossPercent(), 0.0);
+        assertEquals(0, flow.getOutageEveryTicks());
+        assertEquals(0, flow.getOutageDurationTicks());
+    }
+
+    @Test
+    public void outOfRangeEventLossValuesAreClamped() {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("id", "f");
+        payload.put("groupId", "g");
+        payload.put("lossPercent", 150);
+        payload.put("outageEveryTicks", -4);
+        payload.put("outageDurationTicks", -1);
+
+        FlowDefinition flow = FlowDefinition.fromPayload(payload);
+
+        assertEquals(100.0, flow.getLossPercent(), 0.0);
+        assertEquals(0, flow.getOutageEveryTicks());
+        assertEquals(0, flow.getOutageDurationTicks());
+    }
 }

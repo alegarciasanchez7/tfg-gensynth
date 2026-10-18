@@ -15,12 +15,14 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Test double for {@link IFlowMessageHandler}: records generated/published messages and the
- * publishing thread, and can block publishing of chosen flows until released.
+ * publishing thread and group tick, and can block publishing of chosen flows until released.
  */
 class FakeMessageHandler implements IFlowMessageHandler {
 
     final List<String> published = new CopyOnWriteArrayList<>();
     final List<String> publishThreads = new CopyOnWriteArrayList<>();
+    /** Group tick received by every publish call, in call order. */
+    final List<Long> publishedTicks = new CopyOnWriteArrayList<>();
     final Map<String, AtomicInteger> generatedByFlow = new ConcurrentHashMap<>();
     final Map<String, AtomicInteger> skippedByFlow = new ConcurrentHashMap<>();
     final Map<String, CountDownLatch> blockedFlows = new ConcurrentHashMap<>();
@@ -39,7 +41,7 @@ class FakeMessageHandler implements IFlowMessageHandler {
     }
 
     @Override
-    public void publish(GroupRuntime group, FlowRuntime flow, String payload) {
+    public void publish(GroupRuntime group, FlowRuntime flow, String payload, long groupTick) {
         CountDownLatch latch = blockedFlows.get(flow.id);
         if (latch != null) {
             try {
@@ -53,6 +55,7 @@ class FakeMessageHandler implements IFlowMessageHandler {
             throw new IllegalStateException("boom");
         }
         publishThreads.add(Thread.currentThread().getName());
+        publishedTicks.add(groupTick);
         published.add(payload);
         flow.recordSent(System.nanoTime());
     }

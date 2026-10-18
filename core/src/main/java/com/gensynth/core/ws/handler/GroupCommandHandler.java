@@ -306,7 +306,7 @@ public class GroupCommandHandler implements CommandHandler {
                         originalFlow.enabled,
                         originalFlow.connectorConfig
                     );
-                    flowClone.everyTicks = originalFlow.everyTicks;
+                    flowClone.copySendSettingsFrom(originalFlow);
                     clone.flows.add(flowClone);
 
                     // Clone variables for this flow
