@@ -43,25 +43,32 @@ describe('BoundaryExpandModal', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it('reopens in the standard window after closing from full screen', () => {
-    const onClose = vi.fn();
-    const { rerender } = renderModal(onClose);
-    fireEvent.click(screen.getByLabelText('Expand to Full Screen Window'));
+  it('always opens in fullscreen, with no maximize/restore toggle', () => {
+    renderModal(vi.fn());
     expect(screen.getByText('full screen')).toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toHaveClass('fixed', 'inset-0');
+    expect(screen.getByText('2D Spatial Boundary Grid — Fullscreen Boundary Editor')).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Expand to Full Screen Window|Restore Standard Window/)).not.toBeInTheDocument();
+  });
 
-    fireEvent.click(screen.getByText('Done & Apply'));
+  it('is rendered in <body>, outside the panel that opens it', () => {
+    const { container } = renderModal(vi.fn());
+    expect(container).not.toContainElement(screen.getByRole('dialog'));
+    expect(document.body).toContainElement(screen.getByRole('dialog'));
+  });
+
+  it('closes with Exit Fullscreen', () => {
+    const onClose = vi.fn();
+    renderModal(onClose);
+    fireEvent.click(screen.getByRole('button', { name: /Exit Fullscreen/ }));
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
 
-    const modal = (isOpen: boolean) => (
-      <TooltipProvider>
-        <BoundaryExpandModal isOpen={isOpen} onClose={onClose} title="2D Spatial Boundary Grid">
-          <FullScreenProbe />
-        </BoundaryExpandModal>
-      </TooltipProvider>
-    );
-    rerender(modal(false));
-    rerender(modal(true));
-    expect(screen.getByText('windowed')).toBeInTheDocument();
+  it('closes with Done', () => {
+    const onClose = vi.fn();
+    renderModal(onClose);
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it('closes a confirmation of the 2D editor with the first Escape and itself with the second', () => {

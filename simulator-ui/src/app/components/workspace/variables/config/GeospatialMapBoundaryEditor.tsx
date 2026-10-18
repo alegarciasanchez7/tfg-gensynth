@@ -10,7 +10,7 @@ import { Point3DCoord, AltitudeUnit, AltitudeReference, AltitudePattern } from '
 import { Input } from '../../../ui/input';
 import { Label } from '../../../ui/label';
 import { Button } from '../../../ui/button';
-import { Info, BoxSelect, AlertTriangle, WifiOff, Maximize2, Minimize2 } from 'lucide-react';
+import { Info, BoxSelect, AlertTriangle, WifiOff } from 'lucide-react';
 import { Tooltip, TooltipTrigger, TooltipContent } from '../../../ui/tooltip';
 import { useBoundaryModalContext } from './BoundaryExpandModal';
 import { centerOf, defaultBoundsFor } from '../../../../core/pointDefaults';
@@ -257,19 +257,19 @@ function MapAutoFitBounds({ polygon, fitToken }: { polygon: Point3DCoord[]; fitT
   return null;
 }
 
-// Keeps Leaflet's size in sync with its container (expand/restore, modal resizes) to avoid grey tiles
-function MapResizeHandler({ isExpanded }: { isExpanded: boolean }) {
+// Keeps Leaflet's size in sync with its container (fullscreen layout, window resizes) to avoid grey tiles
+function MapResizeHandler() {
   const map = useMap();
   useEffect(() => {
     if (typeof ResizeObserver === 'undefined') {
-      // Fallback: wait for the 300 ms height transition to finish
+      // Fallback: resize once, after the layout has settled
       const timer = setTimeout(() => map.invalidateSize(), 350);
       return () => clearTimeout(timer);
     }
     const observer = new ResizeObserver(() => map.invalidateSize());
     observer.observe(map.getContainer());
     return () => observer.disconnect();
-  }, [isExpanded, map]);
+  }, [map]);
   return null;
 }
 
@@ -490,22 +490,8 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
   onChange,
   height = 280,
 }) => {
-  const modalCtx = useBoundaryModalContext();
-  const [isMapExpanded, setIsMapExpanded] = useState(modalCtx?.isFullScreen ?? false);
-
-  useEffect(() => {
-    if (modalCtx && modalCtx.isFullScreen !== isMapExpanded) {
-      setIsMapExpanded(modalCtx.isFullScreen);
-    }
-  }, [modalCtx?.isFullScreen]);
-
-  const handleToggleExpandMap = () => {
-    const nextVal = !isMapExpanded;
-    setIsMapExpanded(nextVal);
-    if (modalCtx && modalCtx.setIsFullScreen) {
-      modalCtx.setIsFullScreen(nextVal);
-    }
-  };
+  // In the fullscreen editor the map fills the height and the altitude settings stay in the tab
+  const { isFullScreen } = useBoundaryModalContext();
 
   const [activePolygon, setActivePolygon] = useState<Point3DCoord[]>(() =>
     polygon.length >= 3
@@ -726,8 +712,8 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
   };
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between text-xs bg-[var(--c-bg2)] p-2 rounded border border-[var(--c-br1)]">
+    <div className={isFullScreen ? 'flex flex-col gap-3 flex-1 min-h-0' : 'space-y-3'}>
+      <div className="flex items-center justify-between text-xs bg-[var(--c-bg2)] p-2 rounded border border-[var(--c-br1)] shrink-0">
         <div className="flex items-center gap-1">
           <span className="text-[10px] text-[var(--c-tx4)] font-medium mr-1 uppercase">Presets:</span>
           {(['IBERIA', 'EUROPE', 'WORLD', 'NORTH_AMERICA', 'ASIA'] as const).map((preset) => (
@@ -790,26 +776,10 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
         </div>
       )}
 
-      <div className="rounded border border-[var(--c-br1)] overflow-hidden relative transition-all duration-300" style={{ height: isMapExpanded ? 'calc(100vh - 145px)' : `${height}px` }}>
-        {/* Custom Map Expand / Maximize Button Overlay (directly below +/- Leaflet zoom controls) */}
-        <div className="absolute top-[74px] left-[10px] z-[1000]">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                onClick={handleToggleExpandMap}
-                className="w-7 h-7 bg-[var(--c-bg2)]/90 hover:bg-[var(--c-bg5)] border border-[var(--c-br1)] rounded shadow-md flex items-center justify-center text-[var(--c-tx1)] hover:text-cyan-400 transition-colors cursor-pointer"
-                aria-label={isMapExpanded ? 'Restore Normal Map View' : 'Expand Full Map View'}
-              >
-                {isMapExpanded ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="right" className="text-[10px] px-2 py-1 leading-tight">
-              {isMapExpanded ? 'Restore normal view' : 'Expand full map view'}
-            </TooltipContent>
-          </Tooltip>
-        </div>
-
+      <div
+        className={`rounded border border-[var(--c-br1)] overflow-hidden relative ${isFullScreen ? 'flex-1 min-h-[300px]' : ''}`}
+        style={isFullScreen ? undefined : { height: `${height}px` }}
+      >
         {/* Compact Bottom-Left "New Box Region" Button Overlay */}
         <button
           type="button"
@@ -888,23 +858,16 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
             onMapRightClick={handleMapRightClick}
           />
           <MapAutoFitBounds polygon={activePolygon} fitToken={fitToken} />
-          <MapResizeHandler isExpanded={isMapExpanded} />
+          <MapResizeHandler />
           {/* Real-time cursor / moving-vertex coordinates HUD is rendered by GeofenceLayers */}
           <GeofenceLayers points={activePolygon} onVertexMove={handleVertexMove} onVertexDelete={handleDeleteVertex} />
         </MapContainer>
       </div>
 
-      {isMapExpanded ? (
-        <div className="flex items-center justify-between p-2.5 rounded border border-cyan-500/30 bg-cyan-100 dark:bg-cyan-950/30 text-[11px] text-cyan-600 dark:text-cyan-300">
-          <span>Full Map View Active — Altitude settings are hidden to maximize map area.</span>
-          <button
-            type="button"
-            onClick={handleToggleExpandMap}
-            className="underline hover:text-[var(--c-tx1)] cursor-pointer font-medium text-xs"
-          >
-            Restore Altitude Settings &amp; Normal View
-          </button>
-        </div>
+      {isFullScreen ? (
+        <p className="shrink-0 text-[11px] text-[var(--c-tx4)] italic">
+          Altitude settings are hidden in fullscreen; edit them in the Spatial Boundaries tab.
+        </p>
       ) : (
         <div className="rounded border border-[var(--c-br1)] bg-[var(--c-bg4)] p-3 space-y-3">
         <div className="flex items-center justify-between">

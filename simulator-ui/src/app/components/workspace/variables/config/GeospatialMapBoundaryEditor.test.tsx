@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import editorSource from './GeospatialMapBoundaryEditor.tsx?raw';
 import { GeospatialMapBoundaryEditor } from './GeospatialMapBoundaryEditor';
 import { TooltipProvider } from '../../../ui/tooltip';
+import { BoundaryModalContext } from './BoundaryExpandModal';
 import type { Point3DCoord } from '../../../../types';
 
 type Handler = (event: unknown) => void;
@@ -281,5 +282,30 @@ describe('GeospatialMapBoundaryEditor', () => {
     fireMap('mousemove', mouseEvent(40.25, -3.5));
     expect(screen.getByText(/40\.2500° N, 3\.5000° W/)).toBeInTheDocument();
     expect(screen.getByText(/Drag to pan/)).toBeInTheDocument();
+  });
+
+  it('has no map expand overlay of its own', () => {
+    renderEditor();
+    expect(screen.queryByLabelText(/Expand Full Map View/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Full Map View Active/i)).not.toBeInTheDocument();
+  });
+
+  it('shows the altitude settings in the tab', () => {
+    renderEditor();
+    expect(screen.getByLabelText(/Altitude Measurement Unit/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Altitude settings are hidden in fullscreen/i)).not.toBeInTheDocument();
+  });
+
+  it('hides the altitude settings in the fullscreen editor, with a note pointing to the tab', () => {
+    render(
+      <TooltipProvider>
+        <BoundaryModalContext.Provider value={{ isFullScreen: true }}>
+          <GeospatialMapBoundaryEditor minLat={40} maxLat={41} minLon={-4} maxLon={-3} polygon={square} onChange={vi.fn()} />
+        </BoundaryModalContext.Provider>
+      </TooltipProvider>
+    );
+    expect(screen.queryByLabelText(/Altitude Measurement Unit/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/Altitude settings are hidden in fullscreen; edit them in the Spatial Boundaries tab/)).toBeInTheDocument();
+    expect(screen.getByTestId('map')).toBeInTheDocument();
   });
 });

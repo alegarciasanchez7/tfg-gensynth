@@ -9,7 +9,7 @@ import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '../../
 import { Canvas2DBoundaryEditor } from './Canvas2DBoundaryEditor';
 import { Isometric3DBoundaryEditor } from './Isometric3DBoundaryEditor';
 import { GeospatialMapBoundaryEditor } from './GeospatialMapBoundaryEditor';
-import { BoundaryExpandModal, useBoundaryModalContext } from './BoundaryExpandModal';
+import { BoundaryExpandModal } from './BoundaryExpandModal';
 import { BoundaryObstaclesEditor } from './BoundaryObstaclesEditor';
 
 interface SpatialBoundariesTabProps {
@@ -44,7 +44,7 @@ interface BoundsUpdate {
 /** Keys of the Min/Max numeric inputs, which keep their typed text until committed. */
 type BoundFieldKey = 'minX' | 'maxX' | 'minY' | 'maxY' | 'minZ' | 'maxZ';
 
-// Modal View Component that adapts dynamically based on isFullScreen context
+/** 2D editor of the fullscreen view: canvas filling the space and the obstacles side panel. */
 const Modal2DVisualEditor: React.FC<{
   minPoint: FullPoint;
   maxPoint: FullPoint;
@@ -53,73 +53,39 @@ const Modal2DVisualEditor: React.FC<{
   updateBounds: (b: BoundsUpdate) => void;
   onChange: (newConfig: Partial<PointVariableConfig>) => void;
 }> = ({ minPoint, maxPoint, polygon, config, updateBounds, onChange }) => {
-  const { isFullScreen } = useBoundaryModalContext();
   const [selectedObstacleId, setSelectedObstacleId] = useState<string | null>(null);
 
-  if (isFullScreen) {
-    return (
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch flex-1 min-h-0 h-full w-full">
-        <div className="lg:col-span-7 xl:col-span-8 flex flex-col h-full min-h-0">
-          <Canvas2DBoundaryEditor
-            minX={minPoint.x}
-            maxX={maxPoint.x}
-            minY={minPoint.y}
-            maxY={maxPoint.y}
-            polygon={polygon}
-            obstacles={config.obstacles || []}
-            selectedObstacleId={selectedObstacleId}
-            onSelectObstacle={setSelectedObstacleId}
-            fillContainer={true}
-            showToolbar={true}
-            onChange={(b) => updateBounds({ minX: b.minX, maxX: b.maxX, minY: b.minY, maxY: b.maxY, polygon: b.polygon, obstacles: b.obstacles })}
-          />
-        </div>
-        <div className="lg:col-span-5 xl:col-span-4 flex flex-col h-full min-h-0 bg-[var(--c-bg4)] p-4 rounded-xl border border-[var(--c-br1)] overflow-y-auto space-y-4">
-          <h3 className="text-xs font-semibold uppercase text-violet-600 dark:text-violet-300 tracking-wider shrink-0">
-            2D Barriers & Obstacles Management
-          </h3>
-          <div className="flex-1 min-h-0">
-            <BoundaryObstaclesEditor
-              obstacles={config.obstacles || []}
-              minPoint={minPoint}
-              maxPoint={maxPoint}
-              selectedObstacleId={selectedObstacleId}
-              onSelectObstacle={setSelectedObstacleId}
-              onChange={(newObs) => onChange({ obstacles: newObs })}
-            />
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Standard Windowed High-Precision Editor Modal
   return (
-    <div className="space-y-4">
-      <Canvas2DBoundaryEditor
-        minX={minPoint.x}
-        maxX={maxPoint.x}
-        minY={minPoint.y}
-        maxY={maxPoint.y}
-        polygon={polygon}
-        obstacles={config.obstacles || []}
-        selectedObstacleId={selectedObstacleId}
-        onSelectObstacle={setSelectedObstacleId}
-        width={850}
-        height={420}
-        fillContainer={false}
-        showToolbar={true}
-        onChange={(b) => updateBounds({ minX: b.minX, maxX: b.maxX, minY: b.minY, maxY: b.maxY, polygon: b.polygon, obstacles: b.obstacles })}
-      />
-      <div className="bg-[var(--c-bg4)] p-4 rounded-xl border border-[var(--c-br1)]">
-        <BoundaryObstaclesEditor
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch flex-1 min-h-0 h-full w-full">
+      <div className="lg:col-span-7 xl:col-span-8 flex flex-col h-full min-h-0">
+        <Canvas2DBoundaryEditor
+          minX={minPoint.x}
+          maxX={maxPoint.x}
+          minY={minPoint.y}
+          maxY={maxPoint.y}
+          polygon={polygon}
           obstacles={config.obstacles || []}
-          minPoint={minPoint}
-          maxPoint={maxPoint}
           selectedObstacleId={selectedObstacleId}
           onSelectObstacle={setSelectedObstacleId}
-          onChange={(newObs) => onChange({ obstacles: newObs })}
+          fillContainer={true}
+          showToolbar={true}
+          onChange={(b) => updateBounds({ minX: b.minX, maxX: b.maxX, minY: b.minY, maxY: b.maxY, polygon: b.polygon, obstacles: b.obstacles })}
         />
+      </div>
+      <div className="lg:col-span-5 xl:col-span-4 flex flex-col h-full min-h-0 bg-[var(--c-bg4)] p-4 rounded-xl border border-[var(--c-br1)] overflow-y-auto space-y-4">
+        <h3 className="text-xs font-semibold uppercase text-violet-600 dark:text-violet-300 tracking-wider shrink-0">
+          2D Barriers & Obstacles Management
+        </h3>
+        <div className="flex-1 min-h-0">
+          <BoundaryObstaclesEditor
+            obstacles={config.obstacles || []}
+            minPoint={minPoint}
+            maxPoint={maxPoint}
+            selectedObstacleId={selectedObstacleId}
+            onSelectObstacle={setSelectedObstacleId}
+            onChange={(newObs) => onChange({ obstacles: newObs })}
+          />
+        </div>
       </div>
     </div>
   );
@@ -237,11 +203,12 @@ export const SpatialBoundariesTab: React.FC<SpatialBoundariesTabProps> = ({ conf
     );
   };
 
-  const renderVisualEditor = (modalMode = false) => {
-    const canvasW = modalMode ? 820 : 360;
-    const canvasH = modalMode ? 520 : (isGeo ? 180 : 200);
+  /** Visual editor of the tab, or of the fullscreen view when `fullscreen` is set. */
+  const renderVisualEditor = (fullscreen = false) => {
+    const canvasW = 360;
+    const canvasH = isGeo ? 180 : 200;
 
-    if (modalMode && is2D) {
+    if (fullscreen && is2D) {
       return (
         <Modal2DVisualEditor
           minPoint={minPoint}
@@ -290,6 +257,7 @@ export const SpatialBoundariesTab: React.FC<SpatialBoundariesTabProps> = ({ conf
             shape3DRadius={config.shape3DRadius ?? 50}
             width={canvasW}
             height={canvasH}
+            fillContainer={fullscreen}
             onChange={(b) =>
               updateBounds({
                 minX: b.minX,
@@ -371,16 +339,25 @@ export const SpatialBoundariesTab: React.FC<SpatialBoundariesTabProps> = ({ conf
               </TooltipContent>
             </Tooltip>
           </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => setIsModalOpen(true)}
-            className="h-7 text-xs gap-1.5 border-violet-500/40 text-violet-400 hover:bg-violet-500/10 cursor-pointer"
-          >
-            <Maximize2 size={12} />
-            <span>Expand View / High-Precision Editor</span>
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsModalOpen(true)}
+                  className="h-7 px-2 text-xs gap-1"
+                >
+                  <Maximize2 size={12} />
+                  <span>Fullscreen</span>
+                </Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent className="text-[11px]">
+              Open the boundary editor in fullscreen (Esc to exit)
+            </TooltipContent>
+          </Tooltip>
         </div>
 
         {/* 2. Boundary Behavior Quick Selector */}
@@ -432,7 +409,7 @@ export const SpatialBoundariesTab: React.FC<SpatialBoundariesTabProps> = ({ conf
             renderVisualEditor(false)
           ) : (
             <div className="py-8 text-center text-xs text-[var(--c-tx4)] italic">
-              Visual editor expanded in modal window...
+              Editing in fullscreen…
             </div>
           )}
         </div>
@@ -531,7 +508,7 @@ export const SpatialBoundariesTab: React.FC<SpatialBoundariesTabProps> = ({ conf
           </div>
         )}
 
-        {/* 6. Expand View Modal */}
+        {/* 6. Fullscreen Editor */}
         <BoundaryExpandModal
           isOpen={isModalOpen}
           onClose={() => setIsModalOpen(false)}

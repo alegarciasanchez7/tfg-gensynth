@@ -34,6 +34,8 @@ export interface Isometric3DBoundaryEditorProps {
   }) => void;
   width?: number;
   height?: number;
+  /** Fill the parent's height and draw the canvas at the size it gets (fullscreen editor). */
+  fillContainer?: boolean;
 }
 
 type HandleType = 'corner' | 'radius' | 'height' | null;
@@ -75,10 +77,30 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
   shape3DHeight,
   shape3DRadius,
   onChange,
-  width = 360,
-  height = 220,
+  width: baseWidth = 360,
+  height: baseHeight = 220,
+  fillContainer = false,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const canvasBoxRef = useRef<HTMLDivElement>(null);
+
+  // Filling the container: the canvas is drawn at the measured size of its column, so it is never stretched
+  const [measured, setMeasured] = useState<{ w: number; h: number } | null>(null);
+  useEffect(() => {
+    const box = canvasBoxRef.current;
+    if (!fillContainer || !box) return;
+    const updateSize = () => {
+      const rect = box.getBoundingClientRect();
+      setMeasured(rect.width > 0 && rect.height > 0 ? { w: Math.floor(rect.width), h: Math.floor(rect.height) } : null);
+    };
+    updateSize();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(box);
+    return () => observer.disconnect();
+  }, [fillContainer]);
+  const width = fillContainer && measured ? measured.w : baseWidth;
+  const height = fillContainer && measured ? measured.h : baseHeight;
 
   // Shape state: local while a handle is dragged or a field typed, reset whenever the props change.
   // Unset dimensions are derived live from the bounds with the Core rule, so what is drawn and
@@ -755,9 +777,9 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
   });
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className={`flex flex-col gap-3 ${fillContainer ? 'flex-1 min-h-0' : ''}`}>
       {/* Top Toolbar: Shape Selectors & Orbit View Toggle */}
-      <div className="flex flex-wrap items-center justify-between gap-2 p-2 rounded border border-[var(--c-br1)] bg-[var(--c-bg2)]">
+      <div className="flex flex-wrap items-center justify-between gap-2 p-2 rounded border border-[var(--c-br1)] bg-[var(--c-bg2)] shrink-0">
         <div className="flex items-center gap-1">
           {[
             { id: 'cube', label: 'Cube', icon: Box },
@@ -840,9 +862,14 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
       </div>
 
       {/* Main Container: Canvas + Side Control Panel */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div className={`grid grid-cols-1 md:grid-cols-3 gap-3 ${fillContainer ? 'flex-1 min-h-0' : ''}`}>
         {/* Canvas Column */}
-        <div className="md:col-span-2 relative rounded border border-[var(--c-br1)] bg-black overflow-hidden flex items-center justify-center">
+        <div
+          ref={canvasBoxRef}
+          className={`md:col-span-2 relative rounded border border-[var(--c-br1)] bg-black overflow-hidden flex items-center justify-center ${
+            fillContainer ? 'min-h-[300px]' : ''
+          }`}
+        >
           <canvas
             ref={canvasRef}
             width={width}
@@ -852,7 +879,7 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
             onPointerUp={handlePointerUp}
             onPointerCancel={handlePointerUp}
             onPointerLeave={() => setHoveredHandle(null)}
-            className={`w-full h-full touch-none ${
+            className={`${fillContainer ? 'absolute inset-0' : ''} w-full h-full touch-none ${
               draggingHandle
                 ? 'cursor-grabbing'
                 : hoveredHandle
@@ -865,7 +892,11 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
         </div>
 
         {/* Parametric Side Panel Column */}
-        <div className="rounded border border-[var(--c-br1)] bg-[var(--c-bg4)] p-3 space-y-3 flex flex-col justify-between">
+        <div
+          className={`rounded border border-[var(--c-br1)] bg-[var(--c-bg4)] p-3 space-y-3 flex flex-col justify-between ${
+            fillContainer ? 'min-h-0 overflow-y-auto' : ''
+          }`}
+        >
           <div className="space-y-3">
             <div className="flex items-center gap-1.5 text-xs font-semibold text-[var(--c-tx2)] border-b border-[var(--c-br1)] pb-1.5">
               <Sliders size={13} className="text-violet-400" />

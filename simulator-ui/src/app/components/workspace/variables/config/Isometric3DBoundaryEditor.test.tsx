@@ -236,4 +236,22 @@ describe('Isometric3DBoundaryEditor', () => {
       minX: 0, maxX: 100, minY: 0, maxY: 100, minZ: 20, maxZ: 120, shape3DRadius: 50,
     }));
   });
+
+  it('draws the canvas at the measured size of its column when filling the container', () => {
+    const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(
+      { width: 900, height: 600, top: 0, left: 0, right: 900, bottom: 600, x: 0, y: 0, toJSON: () => ({}) } as DOMRect
+    );
+    try {
+      const { container, rerender } = render(<Isometric3DBoundaryEditor minX={0} maxX={100} minY={0} maxY={100} minZ={0} maxZ={100} onChange={vi.fn()} />);
+      const canvas = () => container.querySelector('canvas');
+      expect(canvas()).toHaveAttribute('width', '360');
+      expect(canvas()).toHaveAttribute('height', '220');
+
+      rerender(<Isometric3DBoundaryEditor minX={0} maxX={100} minY={0} maxY={100} minZ={0} maxZ={100} fillContainer onChange={vi.fn()} />);
+      expect(canvas()).toHaveAttribute('width', '900');
+      expect(canvas()).toHaveAttribute('height', '600');
+    } finally {
+      rect.mockRestore();
+    }
+  });
 });

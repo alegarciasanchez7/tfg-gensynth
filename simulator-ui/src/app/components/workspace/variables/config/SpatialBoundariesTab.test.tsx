@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { SpatialBoundariesTab } from './SpatialBoundariesTab';
 import { PointVariableConfig } from '../../../../types';
@@ -65,13 +65,47 @@ describe('SpatialBoundariesTab', () => {
     expect(screen.getByLabelText(/Altitude Measurement Unit/i)).toBeInTheDocument();
   });
 
-  it('opens expand view modal when expand button is clicked', () => {
+  it('shows a single Fullscreen button that opens the editor in fullscreen', () => {
     render(<SpatialBoundariesTab config={defaultConfig} onChange={vi.fn()} />);
 
-    const expandBtn = screen.getByText(/Expand View \/ High-Precision Editor/i);
-    fireEvent.click(expandBtn);
+    expect(screen.getAllByRole('button', { name: /Fullscreen/i })).toHaveLength(1);
+    expect(screen.queryByText(/Expand View/i)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Fullscreen' }));
 
-    expect(screen.getByText(/High-Precision Visual Boundary Editor/i)).toBeInTheDocument();
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveClass('fixed', 'inset-0');
+    expect(screen.getByText('3D Spatial Volume Editor — Fullscreen Boundary Editor')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Exit Fullscreen/i })).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Expand to Full Screen Window|Restore Standard Window/)).not.toBeInTheDocument();
+    // The tab keeps a placeholder while the fullscreen editor is open
+    expect(screen.getByText('Editing in fullscreen…')).toBeInTheDocument();
+  });
+
+  it('closes the fullscreen editor with Exit Fullscreen and with Escape', () => {
+    render(<SpatialBoundariesTab config={defaultConfig} onChange={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Fullscreen' }));
+    fireEvent.click(screen.getByRole('button', { name: /Exit Fullscreen/i }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryByText('Editing in fullscreen…')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Fullscreen' }));
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('shows the 2D canvas and the obstacles side panel in the fullscreen editor', () => {
+    render(
+      <SpatialBoundariesTab
+        config={{ coordinateSystem: 'CARTESIAN_2D', minPoint: { x: 0, y: 0, z: 0 }, maxPoint: { x: 100, y: 100, z: 0 } }}
+        onChange={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Fullscreen' }));
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText('2D Barriers & Obstacles Management')).toBeInTheDocument();
+    expect(within(dialog).getByText('New Region')).toBeInTheDocument();
   });
 
   it('swaps min and max when a committed min is above the max', () => {
