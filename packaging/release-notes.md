@@ -5,7 +5,7 @@
 - **Clone naming offsets:** `H${index+1}` names the clones of *H1* as *H2*, *H3*…
 - **Conditional rules** can override a variable with a full generator (e.g. Random 40–120), not only with a fixed value.
 - **Event loss per flow:** lose a random share of the messages and schedule outages (the last ticks of every N); lost messages are counted as **dropped** in the flow list and in Statistics.
-- **Waypoint editor:** Waypoint Navigation is now usable, with a visual editor on the 2D plane or the map and a coordinate table.
+- **Waypoint editor:** Waypoint Navigation is now usable, with a visual editor on the 2D plane or the map (also in fullscreen) and a coordinate table; waypoints outside the region or in a forbidden zone are flagged in red.
 - **3D shapes define the generation region:** the cube, pyramid, cone or sphere drawn in the 3D view is where points are generated.
 - **Fixes:**
   - a variable has a single value per message (repeated references, formulas and conditional rules all see the same value);
@@ -18,7 +18,7 @@
   - the Initial Value of numeric variables can be left empty; duplicate variable names are reported; fast typing no longer loses characters in the variable editors;
   - progressive clock drift works in every time mode; Circular Orbit turns around the centre of the region; Random Walk stays inside custom polygons and starts inside the region;
   - Graph Route Fixed Sequences can repeat nodes; list `.size`, `.first` and `.last` work with every strategy; Fixed Altitude uses its value in Geospatial;
-  - the route editor uses the same scale on both axes; `Esc` closes the New Region and New Box Region confirmations.
+  - the route editor uses the same scale on both axes; `Esc` closes the New Region and New Box Region confirmations; the Spatial Boundaries editor opens directly in fullscreen with a single button.
 - **Behaviour changes for existing projects:**
   - Waypoint Navigation sends each waypoint once per lap, followed by Interpolation Steps − 1 points towards the next one;
   - Circular Orbit always turns around the centre of the region, unless an explicit orbit centre is set;

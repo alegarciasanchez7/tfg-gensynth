@@ -1134,6 +1134,7 @@ With the **Waypoint Navigation** pattern, the **Visual Editor** shows the waypoi
 | **Loop Path** | On: after the last waypoint the point travels back to the first and repeats the path. Off: it stops on the last waypoint. | On |
 | **Interpolation Steps** | Values per segment, a whole number of at least 1. Applied when you leave the field or press `Enter`. | 1 |
 | **Clear** | Deletes every waypoint after asking *Clear all waypoints?* (**Yes** / **No**; `Esc` cancels). | — |
+| **Fullscreen** | 2D and Geospatial: opens the editor on the whole window, with the plane or map on the left and the table on the right. **Exit Fullscreen** or `Esc` go back; the map keeps its view. | — |
 | Visual area | A plane in 2D or a map in Geospatial, see below. | — |
 | Table | One row per waypoint, see below. | — |
 
@@ -1150,9 +1151,11 @@ With the **Waypoint Navigation** pattern, the **Visual Editor** shows the waypoi
 On the 2D plane and on the map (the hint line says *Click to add · Drag to move · Right-click or
 Delete to remove*):
 
-- click empty space to append a waypoint at the end of the path;
-- drag a waypoint to move it: the move is applied when you release the mouse, and a rejected drop
-  goes back;
+- click empty space to append a waypoint at the end of the path (a click just outside the edge of
+  the region places it on the edge);
+- drag a waypoint to move it: the move is applied when you release the mouse. The waypoint stops at
+  the edge of the region, and it turns red (with its segments) while the drop would be rejected,
+  for example inside a forbidden zone; a rejected drop goes back;
 - right-click a waypoint to delete it, or click it to select it and press `Delete` or `Backspace`.
 
 ![Waypoint editor on the map](docs-assets/user-guide/40-waypoint-editor-map.png)
@@ -1160,13 +1163,19 @@ Delete to remove*):
 **Table:** columns **#**, **X**, **Y** and **Z** (**Lat**, **Lon** and **Alt** in Geospatial; no
 Z in 2D), with ↑ / ↓ on each row to move the waypoint up or down in the path and ✕ to delete it.
 **+ Add waypoint** adds one at the centre of the region (the first) or next to the last one
-(shifted 5 % of the region span, kept inside the region), with the same Z or altitude. The fields
+(shifted 5 % of the region span), with the same Z or altitude; when that place is not valid (outside
+a custom polygon, inside an obstacle) it looks for the nearest valid one. The fields
 are applied when you leave them or press `Enter`; text that is not a number is rejected, latitude
 is limited to ±90 and longitude to ±180.
 
-**Validation (2D and Geospatial):** a waypoint inside a forbidden obstacle or outside the region,
-or a segment that crosses a wall or a forbidden zone or leaves the region, is rejected: a red
-warning appears over the editor (✕ closes it) and the value goes back.
+**Validation:** in 2D and Geospatial, a waypoint inside a forbidden obstacle or outside the region,
+or a segment that crosses a wall or a forbidden zone or leaves the region, is rejected; a waypoint
+on the edge of the region, or a segment along it, is valid. In 3D, a waypoint outside the 3D shape
+is rejected. A red warning appears over the editor (✕ closes it) and the value goes back.
+
+Waypoints that were already stored and are no longer valid (for example after changing the region
+in **Spatial Boundaries**) are drawn in red, their row number turns red (hover it to see why), and a
+notice above the editor counts them. The generator follows the path as it is, so fix or move them.
 
 #### Point: graph route
 
@@ -1215,7 +1224,7 @@ The **Spatial Boundaries** tab sets the region where the point lives.
 
 | Element | What it does | Default |
 |---|---|---|
-| Visual editor | 2D canvas, 3D view or world map, depending on the Coordinate System (see below). **Expand View / High-Precision Editor** opens a larger editor with presets (**Square**, **Triangle**, **Circle**, **New Region**), zoom and obstacle management; `Esc` closes it. | — |
+| Visual editor | 2D canvas, 3D view or world map, depending on the Coordinate System (see below). **Fullscreen** opens the editor on the whole window, with presets (**Square**, **Triangle**, **Circle**, **New Region**), zoom and obstacle management (in Geospatial the altitude settings stay in the tab); **Exit Fullscreen**, **Done** or `Esc` close it. | — |
 | **Boundary Collision Action** | Same as Boundary Behavior. | Clamp |
 | **Outer Envelope Bounding Box (AABB Bounds)** | **Min/Max X, Y, Z** (Latitude, Longitude, Altitude in Geospatial): the box the point lives in. | 0–100 on every axis |
 | **Exact Individual Polygon Vertices** | 2D and Geospatial: the vertices of a custom polygon (3 or more), when you drew one. The box then fits the polygon. In 3D the polygon is not used, and the list only shows the footprint of the drawn shape. | — |
@@ -1241,8 +1250,8 @@ How editing works in every boundary and route editor:
   the menu is the one of the nearest edge within 10 px.
 - The presets (**Square**, **Triangle**, **Circle**) fill the current bounding box, so the region
   does not shrink. New obstacles appear at the centre of the region.
-- **New Region** asks for confirmation; `Esc` closes it without changes. In the expanded editor,
-  the first `Esc` closes the confirmation and the second closes the editor.
+- **New Region** asks for confirmation; `Esc` closes it without changes. In the fullscreen
+  editor, the first `Esc` closes the confirmation and the second closes the editor.
 
 **3D view:**
 
@@ -1257,7 +1266,7 @@ How editing works in every boundary and route editor:
   Min/Max fields only move it; resize it in the 3D view.
 - The height handle follows the cursor, and a negative height does not move the base.
 
-![Geofence editor on the map (Expand View)](docs-assets/user-guide/27-point-map.png)
+![Geofence editor on the map (Fullscreen)](docs-assets/user-guide/27-point-map.png)
 
 **World map (Geospatial):**
 
@@ -1265,7 +1274,7 @@ How editing works in every boundary and route editor:
   ±180°. Drag empty space to pan the map.
 - Right-click on the map to add a vertex on the nearest edge; right-click on a vertex to delete it
   (a region keeps at least 3).
-- **New Box Region** asks for confirmation first (`Esc` closes it without changes; in the expanded
+- **New Box Region** asks for confirmation first (`Esc` closes it without changes; in the fullscreen
   editor, the first `Esc` closes the confirmation and the second the editor), and keeps the current
   region until you finish drawing the new box (releasing the mouse outside the map also finishes
   it). The presets and a new box zoom the map to the region.
