@@ -67,6 +67,21 @@ describe('FlowItem', () => {
     expect(screen.queryByText('99 msg/s')).not.toBeInTheDocument();
   });
 
+  it('shows the dropped messages in amber only when there are some', () => {
+    renderItem({ f1: { ...metrics, dropped: 1500 } });
+    const dropped = screen.getByTitle('Generated but lost on purpose (event loss)');
+    expect(dropped).toHaveTextContent('1.5K dropped');
+    expect(dropped.className).toContain('text-amber-600');
+    cleanup();
+
+    renderItem({ f1: { ...metrics, dropped: 0 } });
+    expect(screen.getByTestId('flow-metrics')).not.toHaveTextContent('dropped');
+    cleanup();
+
+    renderItem({ f1: metrics });
+    expect(screen.getByTestId('flow-metrics')).not.toHaveTextContent('dropped');
+  });
+
   it('shows zeros before any metrics arrive', () => {
     renderItem(undefined);
     const row = screen.getByTestId('flow-metrics');

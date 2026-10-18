@@ -73,6 +73,31 @@ describe('buildDiscardCommands', () => {
     expect(commands[0].payload).toMatchObject({ groupId: 'g1', flowId: 'f1', port: 5672, template: '{"v":1}' });
   });
 
+  it('restores the saved event loss of a flow (missing = 0)', () => {
+    const savedWithLoss: SavedStateSnapshot = {
+      ...saved,
+      groups: [group('g1', [flow('f1', { lossPercent: 10, outageEveryTicks: 8 }), flow('f2', { enabled: false })])],
+    };
+    const groups = [group('g1', [flow('f1', { lossPercent: 50, outageEveryTicks: 4, outageDurationTicks: 2 }), flow('f2', { enabled: false })])];
+
+    const commands = buildDiscardCommands(savedWithLoss, groups, saved.variables, 'flow', 'f1');
+
+    expect(commands[0].payload).toMatchObject({ lossPercent: 10, outageEveryTicks: 8, outageDurationTicks: 0 });
+  });
+
+  it('recreates a deleted flow with its event loss', () => {
+    const savedWithLoss: SavedStateSnapshot = {
+      ...saved,
+      groups: [group('g1', [flow('f1'), flow('f2', { lossPercent: 5, outageEveryTicks: 6, outageDurationTicks: 1 })])],
+    };
+    const groups = [group('g1', [flow('f1')])];
+
+    const commands = buildDiscardCommands(savedWithLoss, groups, saved.variables, 'group', 'g1');
+    const create = commands.find((c) => c.type === 'CREATE_FLOW');
+
+    expect(create?.payload).toMatchObject({ flowId: 'f2', lossPercent: 5, outageEveryTicks: 6, outageDurationTicks: 1 });
+  });
+
   it('deletes a flow created after the last save', () => {
     const groups = [group('g1', [...saved.groups[0].flows, flow('f3')])];
 

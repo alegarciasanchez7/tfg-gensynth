@@ -112,6 +112,8 @@ export interface FlowMetricsPayload {
   sent: number;
   /** Messages that could not be sent (generation or publish error). */
   failed: number;
+  /** Messages generated but lost on purpose by the flow's event loss (never sent). */
+  dropped?: number;
   latency: number;
   errorRate: number;
   connectionStatus: 'connected' | 'disconnected' | 'error' | 'warning';
@@ -259,6 +261,12 @@ export interface CreateFlowCommandPayload {
   interval?: number;
   burst?: number;
   everyTicks?: number;
+  /** Event loss: percentage (0-100) of generated messages dropped at random (0 = off). */
+  lossPercent?: number;
+  /** Event loss: outage cycle length in ticks (integer >= 0, 0 = off). */
+  outageEveryTicks?: number;
+  /** Event loss: ticks lost at the end of every outage cycle (integer >= 0, 0 = off). */
+  outageDurationTicks?: number;
   template?: string;
   format?: 'json' | 'xml' | 'csv' | 'plain';
   connectorConfig?: Record<string, unknown>;
@@ -293,6 +301,12 @@ export interface UpdateFlowCommandPayload {
   interval?: number;
   burst?: number;
   everyTicks?: number;
+  /** Event loss: percentage (0-100) of generated messages dropped at random (0 = off). */
+  lossPercent?: number;
+  /** Event loss: outage cycle length in ticks (integer >= 0, 0 = off). */
+  outageEveryTicks?: number;
+  /** Event loss: ticks lost at the end of every outage cycle (integer >= 0, 0 = off). */
+  outageDurationTicks?: number;
   template?: string;
   format?: 'json' | 'xml' | 'csv' | 'plain';
   connectorConfig?: Record<string, unknown>;
@@ -473,6 +487,12 @@ export interface FlowState {
   interval: number;
   burst: number;
   everyTicks?: number;
+  /** Event loss: percentage (0-100) of generated messages dropped at random (0 = off). */
+  lossPercent?: number;
+  /** Event loss: outage cycle length in ticks (integer >= 0, 0 = off). */
+  outageEveryTicks?: number;
+  /** Event loss: ticks lost at the end of every outage cycle (integer >= 0, 0 = off). */
+  outageDurationTicks?: number;
   topic: string;
   host: string;
   port: number;

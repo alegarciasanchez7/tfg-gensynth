@@ -60,6 +60,26 @@ describe('fileStorage project format', () => {
     expect(snapshot.variables[0].type).toBe('string');
   });
 
+  it('keeps a valid flow event loss and turns missing or invalid values into 0', async () => {
+    const flows = [
+      { id: 'f1', lossPercent: 12.5, outageEveryTicks: 10, outageDurationTicks: 2 },
+      { id: 'f2' },
+      { id: 'f3', lossPercent: 150, outageEveryTicks: -1, outageDurationTicks: 1.5 },
+      { id: 'f4', lossPercent: 'x', outageEveryTicks: '3' },
+    ];
+    const snapshot = await loadProjectSnapshotFromFile(
+      projectFile({ ...validProject, groups: [{ id: 'g1', name: 'Group 1', flows }] }),
+    );
+    const loss = snapshot.groups[0].flows.map((f) => [f.lossPercent, f.outageEveryTicks, f.outageDurationTicks]);
+
+    expect(loss).toEqual([
+      [12.5, 10, 2],
+      [0, 0, 0],
+      [0, 0, 0],
+      [0, 0, 0],
+    ]);
+  });
+
   it('rejects files without the project extension', async () => {
     await expect(loadProjectSnapshotFromFile(projectFile(validProject, 'project.json'))).rejects.toThrow(
       PROJECT_FILE_EXTENSION,
