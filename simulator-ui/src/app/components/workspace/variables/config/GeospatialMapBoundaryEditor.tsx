@@ -1,7 +1,11 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react';
 import { MapContainer, TileLayer, Polygon, Marker, Rectangle, Polyline, Tooltip as LeafletTooltip, useMapEvents, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+// Bundled by Vite, so vertex markers render without network access
+import markerIconUrl from 'leaflet/dist/images/marker-icon.png';
+import markerIconRetinaUrl from 'leaflet/dist/images/marker-icon-2x.png';
+import markerShadowUrl from 'leaflet/dist/images/marker-shadow.png';
 import { Point3DCoord, AltitudeUnit, AltitudeReference, AltitudePattern } from '../../../../types';
 import { Input } from '../../../ui/input';
 import { Label } from '../../../ui/label';
@@ -9,6 +13,7 @@ import { Button } from '../../../ui/button';
 import { Info, BoxSelect, AlertTriangle, WifiOff, Maximize2, Minimize2 } from 'lucide-react';
 import { Tooltip, TooltipTrigger, TooltipContent } from '../../../ui/tooltip';
 import { useBoundaryModalContext } from './BoundaryExpandModal';
+import { centerOf, defaultBoundsFor } from '../../../../core/pointDefaults';
 
 // Helper to format DMS coordinates for map tooltips & cursor HUD
 const formatDmsHelper = (val: number, isLat: boolean) => {
@@ -20,6 +25,76 @@ const formatDmsHelper = (val: number, isLat: boolean) => {
   const dir = isLat ? (val >= 0 ? 'N' : 'S') : (val >= 0 ? 'E' : 'W');
   return `${deg}° ${min}' ${sec.toFixed(2)}" ${dir}`;
 };
+
+/** Decimal "lat° N, lon° W" label (the hemisphere letter carries the sign). */
+const formatLatLon = (lat: number, lon: number) =>
+  `${Math.abs(lat).toFixed(4)}° ${lat >= 0 ? 'N' : 'S'}, ${Math.abs(lon).toFixed(4)}° ${lon >= 0 ? 'E' : 'W'}`;
+
+// Convention shared with the Core: x = latitude, y = longitude, z = altitude
+const latOf = (p: Point3DCoord) => p.x ?? 0;
+const lonOf = (p: Point3DCoord) => p.y ?? 0;
+
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+const round4 = (v: number) => Math.round(v * 10000) / 10000;
+/** Rounds to 4 decimals and keeps latitude in [-90, 90]. */
+const normLat = (v: number) => round4(clamp(v, -90, 90));
+/** Rounds to 4 decimals and keeps longitude in [-180, 180]. */
+const normLon = (v: number) => round4(clamp(v, -180, 180));
+
+/** Parses a user-typed number; empty or invalid text yields undefined (0 is a valid value). */
+const parseNumber = (text: string): number | undefined => {
+  const trimmed = text.trim();
+  if (trimmed === '') return undefined;
+  const n = Number(trimmed);
+  return Number.isFinite(n) ? n : undefined;
+};
+
+/** Consecutive tile failures needed before falling back to the offline grid. */
+const TILE_ERROR_THRESHOLD = 3;
+const NO_POLYGON: Point3DCoord[] = [];
+const WORLD_BOUNDS: L.LatLngBoundsExpression = [[-90, -180], [90, 180]];
+
+const VERTEX_ICON = L.icon({
+  iconUrl: markerIconUrl,
+  iconRetinaUrl: markerIconRetinaUrl,
+  shadowUrl: markerShadowUrl,
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  tooltipAnchor: [16, -28],
+  shadowSize: [41, 41],
+});
+
+const POLYGON_STYLE: L.PathOptions = {
+  color: '#8b5cf6',
+  fillColor: '#8b5cf6',
+  fillOpacity: 0.2,
+  weight: 2,
+  interactive: false,
+};
+
+const SELECTION_STYLE: L.PathOptions = {
+  color: '#f43f5e',
+  fillColor: '#f43f5e',
+  fillOpacity: 0.25,
+  dashArray: '5, 5',
+};
+
+const GRID_LINE_STYLE: L.PathOptions = {
+  color: '#334155',
+  weight: 1,
+  dashArray: '3, 3',
+  interactive: false,
+};
+
+/** Returns a callback with a stable identity that always runs the latest `fn`. */
+function useStableCallback<A extends unknown[]>(fn: (...args: A) => void): (...args: A) => void {
+  const fnRef = useRef(fn);
+  useLayoutEffect(() => {
+    fnRef.current = fn;
+  });
+  return useCallback((...args: A) => fnRef.current(...args), []);
+}
 
 // Technical Lat/Lon Coordinate Grid Layer for Offline Fallback Mode
 function OfflineGridOverlay() {
@@ -71,28 +146,13 @@ function OfflineGridOverlay() {
   return (
     <>
       {gridItems.map((item, idx) => (
-        <Polyline
-          key={idx}
-          positions={item.positions}
-          pathOptions={{
-            color: '#334155',
-            weight: 1,
-            dashArray: '3, 3',
-            interactive: false,
-          }}
-        />
+        <Polyline key={idx} positions={item.positions} pathOptions={GRID_LINE_STYLE} />
       ))}
     </>
   );
 }
 
-// Fix default Leaflet marker icon asset URLs for React bundler
-delete (L.Icon.Default.prototype as any)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
-  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-});
+type GeoBoundsChange = Parameters<GeospatialMapBoundaryEditorProps['onChange']>[0];
 
 interface GeospatialMapBoundaryEditorProps {
   minLat: number;
@@ -132,72 +192,102 @@ interface SelectionBounds {
   current: L.LatLng;
 }
 
-// Custom Map Selection & Event Handler
+/** Position of a vertex while it is being dragged (not yet committed). */
+interface DragPreview {
+  index: number;
+  lat: number;
+  lon: number;
+}
+
+/** Screen-space distance from `p` to the segment `a`-`b`. */
+function distanceToSegment(p: L.Point, a: L.Point, b: L.Point): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len2 = dx * dx + dy * dy;
+  const t = len2 === 0 ? 0 : clamp(((p.x - a.x) * dx + (p.y - a.y) * dy) / len2, 0, 1);
+  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+}
+
+// Box selection (draw mode) and right-click handling on the map
 function MapEventsHelper({
   isDrawMode,
-  isDraggingMarkerRef,
   onBoxSelectionComplete,
   onMapRightClick,
-  onCursorMove,
-  onCursorLeave,
 }: {
   isDrawMode: boolean;
-  isDraggingMarkerRef: React.RefObject<boolean>;
   onBoxSelectionComplete: (minLat: number, maxLat: number, minLon: number, maxLon: number) => void;
-  onMapRightClick: (lat: number, lon: number) => void;
-  onCursorMove: (lat: number, lon: number) => void;
-  onCursorLeave: () => void;
+  onMapRightClick: (lat: number, lon: number, map: L.Map) => void;
 }) {
+  const map = useMap();
   const [selection, setSelection] = useState<SelectionBounds | null>(null);
-  const isSelectingRef = useRef(false);
+  const selectionRef = useRef<SelectionBounds | null>(null);
+  const docMouseUpRef = useRef<((ev: MouseEvent) => void) | null>(null);
+  const onComplete = useStableCallback(onBoxSelectionComplete);
+  const onRightClick = useStableCallback(onMapRightClick);
 
-  const map = useMapEvents({
-    mousedown(e) {
-      if (!isDrawMode) return;
-      const target = e.originalEvent.target as HTMLElement;
-      if (target && (target.closest('.leaflet-marker-icon') || target.closest('.leaflet-interactive'))) {
-        return;
-      }
-      if (e.originalEvent.button === 0) {
-        isSelectingRef.current = true;
-        setSelection({ start: e.latlng, current: e.latlng });
-        map.dragging.disable();
-      }
+  // Panning is off while drawing so a left-drag always draws the box
+  useEffect(() => {
+    if (!isDrawMode) return undefined;
+    map.dragging.disable();
+    return () => {
+      map.dragging.enable();
+    };
+  }, [isDrawMode, map]);
+
+  // Drop a pending document listener if the editor unmounts mid-selection
+  useEffect(
+    () => () => {
+      if (docMouseUpRef.current) document.removeEventListener('mouseup', docMouseUpRef.current);
     },
-    mousemove(e) {
-      if (isDraggingMarkerRef.current) return;
-      onCursorMove(e.latlng.lat, e.latlng.lng);
-      if (isDrawMode && isSelectingRef.current && selection) {
-        setSelection((prev) => (prev ? { ...prev, current: e.latlng } : null));
-      }
-    },
-    mouseout() {
-      if (!isDraggingMarkerRef.current) {
-        onCursorLeave();
-      }
-    },
-    mouseup(e) {
-      if (isDrawMode && isSelectingRef.current && selection) {
-        isSelectingRef.current = false;
-        map.dragging.enable();
-        const lat1 = selection.start.lat;
-        const lat2 = e.latlng.lat;
-        const lon1 = selection.start.lng;
-        const lon2 = e.latlng.lng;
-        if (Math.abs(lat1 - lat2) > 0.001 || Math.abs(lon1 - lon2) > 0.001) {
-          const minLat = Math.round(Math.min(lat1, lat2) * 10000) / 10000;
-          const maxLat = Math.round(Math.max(lat1, lat2) * 10000) / 10000;
-          const minLon = Math.round(Math.min(lon1, lon2) * 10000) / 10000;
-          const maxLon = Math.round(Math.max(lon1, lon2) * 10000) / 10000;
-          onBoxSelectionComplete(minLat, maxLat, minLon, maxLon);
+    []
+  );
+
+  const handlers = useMemo<L.LeafletEventHandlerFnMap>(
+    () => ({
+      mousedown(e) {
+        if (!isDrawMode || e.originalEvent.button !== 0 || selectionRef.current) return;
+        const target = e.originalEvent.target as HTMLElement | null;
+        if (target && (target.closest('.leaflet-marker-icon') || target.closest('.leaflet-interactive'))) {
+          return;
         }
-        setSelection(null);
-      }
-    },
-    contextmenu(e) {
-      onMapRightClick(e.latlng.lat, e.latlng.lng);
-    },
-  });
+        selectionRef.current = { start: e.latlng, current: e.latlng };
+        setSelection(selectionRef.current);
+
+        // Listen on the document so releasing the button outside the map also ends the box
+        const handleMouseUp = (ev: MouseEvent) => {
+          docMouseUpRef.current = null;
+          const sel = selectionRef.current;
+          selectionRef.current = null;
+          setSelection(null);
+          if (!sel) return;
+          const releasedInside = ev.target instanceof Node && map.getContainer().contains(ev.target);
+          const end = releasedInside ? map.mouseEventToLatLng(ev) : sel.current;
+          const { lat: lat1, lng: lon1 } = sel.start;
+          const { lat: lat2, lng: lon2 } = end;
+          if (Math.abs(lat1 - lat2) > 0.001 || Math.abs(lon1 - lon2) > 0.001) {
+            onComplete(
+              normLat(Math.min(lat1, lat2)),
+              normLat(Math.max(lat1, lat2)),
+              normLon(Math.min(lon1, lon2)),
+              normLon(Math.max(lon1, lon2))
+            );
+          }
+        };
+        docMouseUpRef.current = handleMouseUp;
+        document.addEventListener('mouseup', handleMouseUp, { once: true });
+      },
+      mousemove(e) {
+        if (!selectionRef.current) return;
+        selectionRef.current = { ...selectionRef.current, current: e.latlng };
+        setSelection(selectionRef.current);
+      },
+      contextmenu(e) {
+        onRightClick(e.latlng.lat, e.latlng.lng, map);
+      },
+    }),
+    [isDrawMode, map, onComplete, onRightClick]
+  );
+  useMapEvents(handlers);
 
   return selection ? (
     <Rectangle
@@ -205,48 +295,243 @@ function MapEventsHelper({
         [selection.start.lat, selection.start.lng],
         [selection.current.lat, selection.current.lng],
       ]}
-      pathOptions={{
-        color: '#f43f5e',
-        fillColor: '#f43f5e',
-        fillOpacity: 0.25,
-        dashArray: '5, 5',
-      }}
+      pathOptions={SELECTION_STYLE}
     />
   ) : null;
 }
 
-// Helper component to automatically fit Leaflet map bounds ONLY ONCE when loading initial geofence polygon
-function MapAutoFitBounds({ polygon }: { polygon: Point3DCoord[] }) {
+// Fits the view to the polygon on first load and whenever `fitToken` changes (presets, new box).
+// Plain polygon edits such as vertex drags never move the view.
+function MapAutoFitBounds({ polygon, fitToken }: { polygon: Point3DCoord[]; fitToken: number }) {
   const map = useMap();
-  const hasFittedRef = useRef(false);
+  const fittedTokenRef = useRef<number | null>(null);
 
   useEffect(() => {
-    if (!hasFittedRef.current && polygon && polygon.length >= 3) {
-      hasFittedRef.current = true;
-      const bounds = L.latLngBounds(polygon.map((p) => [p.x ?? 0, p.y ?? p.x ?? 0]));
-      if (bounds.isValid()) {
-        map.fitBounds(bounds, {
-          padding: [30, 30],
-          maxZoom: 16,
-          animate: false,
-        });
-      }
+    if (fittedTokenRef.current === fitToken || polygon.length < 3) return;
+    fittedTokenRef.current = fitToken;
+    const bounds = L.latLngBounds(polygon.map((p) => [latOf(p), lonOf(p)] as L.LatLngTuple));
+    if (bounds.isValid()) {
+      map.fitBounds(bounds, { padding: [30, 30], maxZoom: 16, animate: false });
     }
-  }, [map, polygon]);
+  }, [map, polygon, fitToken]);
 
   return null;
 }
 
-// Leaflet Map Resize Invalidater Helper
+// Keeps Leaflet's size in sync with its container (expand/restore, modal resizes) to avoid grey tiles
 function MapResizeHandler({ isExpanded }: { isExpanded: boolean }) {
   const map = useMap();
   useEffect(() => {
-    const timer = setTimeout(() => {
-      map.invalidateSize();
-    }, 150);
-    return () => clearTimeout(timer);
+    if (typeof ResizeObserver === 'undefined') {
+      // Fallback: wait for the 300 ms height transition to finish
+      const timer = setTimeout(() => map.invalidateSize(), 350);
+      return () => clearTimeout(timer);
+    }
+    const observer = new ResizeObserver(() => map.invalidateSize());
+    observer.observe(map.getContainer());
+    return () => observer.disconnect();
   }, [isExpanded, map]);
   return null;
+}
+
+// Cursor / moving-vertex coordinates badge. Owns the cursor state so map mousemove only re-renders this badge.
+function CoordinatesHud({ movingPoint }: { movingPoint: DragPreview | null }) {
+  const [cursorPos, setCursorPos] = useState<{ lat: number; lon: number } | null>(null);
+  const handlers = useMemo<L.LeafletEventHandlerFnMap>(
+    () => ({
+      mousemove(e) {
+        setCursorPos({ lat: e.latlng.lat, lon: e.latlng.lng });
+      },
+      mouseout() {
+        setCursorPos(null);
+      },
+    }),
+    []
+  );
+  useMapEvents(handlers);
+
+  return (
+    <div className="absolute top-2 right-2 z-[1000] bg-[var(--c-bg2)]/90 backdrop-blur border border-[var(--c-br1)] text-[10px] font-mono px-2.5 py-1.5 rounded shadow-lg pointer-events-none text-[var(--c-tx1)] flex items-center gap-3">
+      {movingPoint ? (
+        <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-300">
+          <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+          <span className="font-semibold text-[9px] uppercase tracking-wider text-amber-400">MOVING POINT #{movingPoint.index + 1}:</span>
+          <span>{formatLatLon(movingPoint.lat, movingPoint.lon)}</span>
+        </div>
+      ) : cursorPos ? (
+        <>
+          <div className="flex items-center gap-1.5 text-cyan-600 dark:text-cyan-300">
+            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+            <span className="font-semibold text-[9px] uppercase tracking-wider text-cyan-400">CURSOR:</span>
+            <span>{formatLatLon(cursorPos.lat, cursorPos.lon)}</span>
+          </div>
+          <div className="text-[9px] text-[var(--c-tx4)] border-l border-[var(--c-br1)] pl-2">
+            {formatDmsHelper(cursorPos.lat, true)}, {formatDmsHelper(cursorPos.lon, false)}
+          </div>
+        </>
+      ) : (
+        <div className="text-[var(--c-tx4)] italic text-[9px]">Hover or drag point markers for live coordinates</div>
+      )}
+    </div>
+  );
+}
+
+interface VertexMarkerProps {
+  index: number;
+  lat: number;
+  lon: number;
+  onDragStart: (index: number, lat: number, lon: number) => void;
+  onDrag: (index: number, lat: number, lon: number) => void;
+  onDragEnd: (index: number, lat: number, lon: number) => void;
+  onDelete: (index: number) => void;
+}
+
+// Draggable polygon vertex. Memoised with primitive coordinates so unrelated re-renders never reset
+// (snap back) a marker that is being dragged.
+const VertexMarker = React.memo(function VertexMarker({ index, lat, lon, onDragStart, onDrag, onDragEnd, onDelete }: VertexMarkerProps) {
+  const position = useMemo<L.LatLngTuple>(() => [lat, lon], [lat, lon]);
+  const eventHandlers = useMemo<L.LeafletEventHandlerFnMap>(
+    () => ({
+      dragstart(e) {
+        const ll = (e.target as L.Marker).getLatLng();
+        onDragStart(index, ll.lat, ll.lng);
+      },
+      drag(e) {
+        const ll = (e.target as L.Marker).getLatLng();
+        onDrag(index, ll.lat, ll.lng);
+      },
+      dragend(e) {
+        const marker = e.target as L.Marker;
+        const ll = marker.getLatLng();
+        // Back to the committed position: the commit below moves it to the (rounded, clamped) result
+        marker.setLatLng(position);
+        onDragEnd(index, ll.lat, ll.lng);
+      },
+      contextmenu() {
+        onDelete(index);
+      },
+    }),
+    [index, position, onDragStart, onDrag, onDragEnd, onDelete]
+  );
+
+  return (
+    <Marker position={position} draggable={true} icon={VERTEX_ICON} eventHandlers={eventHandlers}>
+      <LeafletTooltip direction="top" offset={[0, -20]} opacity={0.95}>
+        <div className="font-mono text-[10px] leading-snug">
+          <div className="font-semibold text-violet-400">Point #{index + 1}</div>
+          <div>{formatLatLon(lat, lon)}</div>
+          <div className="text-[9px] text-[var(--c-tx4)]">
+            {formatDmsHelper(lat, true)}, {formatDmsHelper(lon, false)}
+          </div>
+        </div>
+      </LeafletTooltip>
+    </Marker>
+  );
+});
+
+// Polygon, vertex markers and HUD. Owns the drag preview so a vertex drag re-renders only these layers;
+// the editor receives a single commit on dragend.
+function GeofenceLayers({
+  points,
+  onVertexMove,
+  onVertexDelete,
+}: {
+  points: Point3DCoord[];
+  onVertexMove: (index: number, lat: number, lon: number) => void;
+  onVertexDelete: (index: number) => void;
+}) {
+  const [preview, setPreview] = useState<DragPreview | null>(null);
+  const handleDrag = useCallback((index: number, lat: number, lon: number) => setPreview({ index, lat, lon }), []);
+  const handleDragEnd = useStableCallback((index: number, lat: number, lon: number) => {
+    setPreview(null);
+    onVertexMove(index, lat, lon);
+  });
+  const handleDelete = useStableCallback(onVertexDelete);
+
+  const positions = useMemo(
+    () =>
+      points.map((p, i) =>
+        preview && preview.index === i ? ([preview.lat, preview.lon] as L.LatLngTuple) : ([latOf(p), lonOf(p)] as L.LatLngTuple)
+      ),
+    [points, preview]
+  );
+
+  return (
+    <>
+      {positions.length >= 3 && <Polygon positions={positions} pathOptions={POLYGON_STYLE} />}
+      {points.map((pt, i) => (
+        // Index keys stay stable while dragging; inserts/deletes only move the following markers
+        <VertexMarker
+          key={i}
+          index={i}
+          lat={latOf(pt)}
+          lon={lonOf(pt)}
+          onDragStart={handleDrag}
+          onDrag={handleDrag}
+          onDragEnd={handleDragEnd}
+          onDelete={handleDelete}
+        />
+      ))}
+      <CoordinatesHud movingPoint={preview} />
+    </>
+  );
+}
+
+// Text input for a number that only commits on blur or Enter (each commit reaches the Core).
+// Invalid text reverts to the current value; empty text commits `undefined` when `allowEmpty` is set.
+function CommitNumberInput({
+  id,
+  placeholder,
+  value,
+  onCommit,
+  allowEmpty = false,
+}: {
+  id: string;
+  placeholder: string;
+  value: number | undefined;
+  onCommit: (value: number | undefined) => void;
+  allowEmpty?: boolean;
+}) {
+  const shown = value === undefined ? '' : String(value);
+  const [draft, setDraft] = useState(shown);
+  const [prevShown, setPrevShown] = useState(shown);
+  if (shown !== prevShown) {
+    // The committed value changed (commit echo, swap or external update): show it
+    setPrevShown(shown);
+    setDraft(shown);
+  }
+
+  const commit = () => {
+    const parsed = parseNumber(draft);
+    if (parsed === undefined) {
+      if (allowEmpty && draft.trim() === '') {
+        if (value !== undefined) onCommit(undefined);
+      } else {
+        setDraft(shown);
+      }
+      return;
+    }
+    if (parsed !== value) onCommit(parsed);
+  };
+
+  return (
+    <Input
+      id={id}
+      type="text"
+      inputMode="decimal"
+      placeholder={placeholder}
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          commit();
+        }
+      }}
+      className="h-8 text-xs font-mono"
+    />
+  );
 }
 
 export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorProps> = ({
@@ -262,7 +547,7 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
   initialAltitude,
   maxVerticalStep = 1.0,
   altitudeOscillationSpeed = 0.1,
-  polygon = [],
+  polygon = NO_POLYGON,
   onChange,
   height = 280,
 }) => {
@@ -283,7 +568,7 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
     }
   };
 
-  const [activePolygon, setActivePolygon] = useState<Point3DCoord[]>(
+  const [activePolygon, setActivePolygon] = useState<Point3DCoord[]>(() =>
     polygon.length >= 3
       ? polygon
       : [
@@ -293,16 +578,36 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
           { x: minLat, y: maxLon, z: minAlt },
         ]
   );
+  // Follow polygon updates coming from the Core
+  const [prevPolygon, setPrevPolygon] = useState(polygon);
+  if (polygon !== prevPolygon) {
+    setPrevPolygon(polygon);
+    if (polygon.length >= 3) setActivePolygon(polygon);
+  }
 
-  const [minAltStr, setMinAltStr] = useState(String(minAlt));
-  const [maxAltStr, setMaxAltStr] = useState(String(maxAlt));
-  const [initialAltStr, setInitialAltStr] = useState(initialAltitude !== undefined ? String(initialAltitude) : '');
-  const [cursorPos, setCursorPos] = useState<{ lat: number; lon: number } | null>(null);
+  // Initial map centre only (MapContainer ignores later changes; the view is driven by MapAutoFitBounds)
+  const [initialCenter] = useState<L.LatLngTuple>(() => {
+    const lats = activePolygon.map(latOf);
+    const lons = activePolygon.map(lonOf);
+    const lat = (Math.min(...lats) + Math.max(...lats)) / 2;
+    const lon = (Math.min(...lons) + Math.max(...lons)) / 2;
+    if (Number.isFinite(lat) && Number.isFinite(lon)) return [lat, lon];
+    const { minPoint, maxPoint } = defaultBoundsFor('GEOSPATIAL');
+    const c = centerOf(minPoint, maxPoint);
+    return [c.x, c.y];
+  });
+
   const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
-  const [isOffline, setIsOffline] = useState(!navigator.onLine);
+  const feedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [isOffline, setIsOffline] = useState(() => typeof navigator !== 'undefined' && navigator.onLine === false);
+  const tileErrorCountRef = useRef(0);
+  const [fitToken, setFitToken] = useState(0);
 
   useEffect(() => {
-    const handleOnline = () => setIsOffline(false);
+    const handleOnline = () => {
+      tileErrorCountRef.current = 0;
+      setIsOffline(false);
+    };
     const handleOffline = () => setIsOffline(true);
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
@@ -312,36 +617,72 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
     };
   }, []);
 
-  useEffect(() => {
-    setMinAltStr(String(minAlt));
-    setMaxAltStr(String(maxAlt));
-    setInitialAltStr(initialAltitude !== undefined ? String(initialAltitude) : '');
-  }, [minAlt, maxAlt, initialAltitude]);
+  useEffect(
+    () => () => {
+      if (feedbackTimerRef.current) clearTimeout(feedbackTimerRef.current);
+    },
+    []
+  );
 
-  useEffect(() => {
-    if (polygon && polygon.length >= 3) {
-      setActivePolygon(polygon);
-    }
-  }, [polygon]);
+  // A single failed tile is not "offline": only switch after several consecutive failures
+  const tileEventHandlers = useMemo<L.LeafletEventHandlerFnMap>(
+    () => ({
+      tileload() {
+        tileErrorCountRef.current = 0;
+      },
+      tileerror() {
+        tileErrorCountRef.current += 1;
+        if (tileErrorCountRef.current >= TILE_ERROR_THRESHOLD) setIsOffline(true);
+      },
+    }),
+    []
+  );
+
+  const retryOnlineMap = () => {
+    tileErrorCountRef.current = 0;
+    setIsOffline(false);
+  };
 
   const showTempFeedback = (msg: string) => {
     setFeedbackMsg(msg);
-    setTimeout(() => setFeedbackMsg(null), 3000);
+    if (feedbackTimerRef.current) clearTimeout(feedbackTimerRef.current);
+    feedbackTimerRef.current = setTimeout(() => setFeedbackMsg(null), 3000);
   };
 
-  const positions = useMemo(() => {
-    return activePolygon.map((p) => [p.x ?? 0, p.y ?? p.x ?? 0] as [number, number]);
-  }, [activePolygon]);
+  /** Sends the full current configuration to the parent, overridden by `patch`. */
+  const emit = (patch: Partial<GeoBoundsChange>) => {
+    onChange({
+      minLat,
+      maxLat,
+      minLon,
+      maxLon,
+      minAlt,
+      maxAlt,
+      altitudeUnit,
+      altitudeReference,
+      altitudePattern,
+      initialAltitude,
+      maxVerticalStep,
+      altitudeOscillationSpeed,
+      polygon: activePolygon,
+      ...patch,
+    });
+  };
 
-  const centerLat = useMemo(() => {
-    const lats = activePolygon.map((p) => p.x ?? 0);
-    return (Math.min(...lats) + Math.max(...lats)) / 2 || 40.0;
-  }, [activePolygon]);
-
-  const centerLon = useMemo(() => {
-    const lons = activePolygon.map((p) => p.y ?? p.x ?? 0);
-    return (Math.min(...lons) + Math.max(...lons)) / 2 || -3.0;
-  }, [activePolygon]);
+  /** Clamps the vertices to valid lat/lon, stores them and commits them with their bounding box. */
+  const commitPolygon = (pts: Point3DCoord[]) => {
+    const normalized = pts.map((p) => ({ ...p, x: normLat(latOf(p)), y: normLon(lonOf(p)) }));
+    const lats = normalized.map((p) => p.x);
+    const lons = normalized.map((p) => p.y);
+    setActivePolygon(normalized);
+    emit({
+      minLat: Math.min(...lats),
+      maxLat: Math.max(...lats),
+      minLon: Math.min(...lons),
+      maxLon: Math.max(...lons),
+      polygon: normalized,
+    });
+  };
 
   const [isDrawMode, setIsDrawMode] = useState(false);
   const [showConfirmDrawModal, setShowConfirmDrawModal] = useState(false);
@@ -351,23 +692,16 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
       setIsDrawMode(false);
       return;
     }
-    if (activePolygon && activePolygon.length >= 3) {
+    if (activePolygon.length >= 3) {
       setShowConfirmDrawModal(true);
     } else {
       setIsDrawMode(true);
     }
   };
 
+  // The current region is kept until the new box is completed (cancelling leaves it untouched)
   const confirmStartDrawMode = () => {
     setShowConfirmDrawModal(false);
-    setActivePolygon([]);
-    onChange({
-      minLat,
-      maxLat,
-      minLon,
-      maxLon,
-      polygon: [],
-    });
     setIsDrawMode(true);
   };
 
@@ -377,74 +711,38 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
     calculatedMinLon: number,
     calculatedMaxLon: number
   ) => {
-    const currentZ = parseFloat(minAltStr) || minAlt;
-    const newPolygon: Point3DCoord[] = [
-      { x: calculatedMinLat, y: calculatedMinLon, z: currentZ },
-      { x: calculatedMaxLat, y: calculatedMinLon, z: currentZ },
-      { x: calculatedMaxLat, y: calculatedMaxLon, z: currentZ },
-      { x: calculatedMinLat, y: calculatedMaxLon, z: currentZ },
-    ];
-
-    setActivePolygon(newPolygon);
+    commitPolygon([
+      { x: calculatedMinLat, y: calculatedMinLon, z: minAlt },
+      { x: calculatedMaxLat, y: calculatedMinLon, z: minAlt },
+      { x: calculatedMaxLat, y: calculatedMaxLon, z: minAlt },
+      { x: calculatedMinLat, y: calculatedMaxLon, z: minAlt },
+    ]);
     setIsDrawMode(false);
-    onChange({
-      minLat: calculatedMinLat,
-      maxLat: calculatedMaxLat,
-      minLon: calculatedMinLon,
-      maxLon: calculatedMaxLon,
-      minAlt: parseFloat(minAltStr) || minAlt,
-      maxAlt: parseFloat(maxAltStr) || maxAlt,
-      altitudeUnit,
-      altitudeReference,
-      polygon: newPolygon,
-    });
+    setFitToken((t) => t + 1);
     showTempFeedback('Geofence boundaries updated from drag selection box!');
   };
 
-  const isDraggingMarkerRef = useRef(false);
-  const [activeDragIndex, setActiveDragIndex] = useState<number | null>(null);
-
-  const handleMarkerDragStart = (index: number) => {
-    isDraggingMarkerRef.current = true;
-    setActiveDragIndex(index);
+  const handleVertexMove = (index: number, newLat: number, newLon: number) => {
+    commitPolygon(activePolygon.map((pt, i) => (i === index ? { ...pt, x: newLat, y: newLon } : pt)));
   };
 
-  const handleMarkerDragEnd = (index: number, newLat: number, newLon: number) => {
-    isDraggingMarkerRef.current = false;
-    setActiveDragIndex(null);
-    const roundedLat = Math.round(newLat * 10000) / 10000;
-    const roundedLon = Math.round(newLon * 10000) / 10000;
-    const updated = activePolygon.map((pt, i) =>
-      i === index ? { ...pt, x: roundedLat, y: roundedLon } : pt
-    );
-    setActivePolygon(updated);
-    recalculateGeoBounds(updated);
-  };
-
-  const handleMapRightClick = (lat: number, lon: number) => {
-    const roundedLat = Math.round(lat * 10000) / 10000;
-    const roundedLon = Math.round(lon * 10000) / 10000;
-    const currentZ = parseFloat(minAltStr) || minAlt;
-    const newPt = { x: roundedLat, y: roundedLon, z: currentZ };
-
-    let bestIndex = activePolygon.length - 1;
+  // Inserts a vertex on the polygon edge closest (in screen pixels) to the right-clicked point
+  const handleMapRightClick = (lat: number, lon: number, map: L.Map) => {
+    if (isDrawMode || activePolygon.length < 3) return;
+    const clicked = map.latLngToLayerPoint([lat, lon]);
+    const pixels = activePolygon.map((p) => map.latLngToLayerPoint([latOf(p), lonOf(p)]));
+    let bestIndex = pixels.length - 1;
     let minDist = Infinity;
-    for (let i = 0; i < activePolygon.length; i++) {
-      const p1 = activePolygon[i];
-      const p2 = activePolygon[(i + 1) % activePolygon.length];
-      const dist = Math.hypot(
-        lat - ((p1.x ?? 0) + (p2.x ?? 0)) / 2,
-        lon - ((p1.y ?? p1.x ?? 0) + (p2.y ?? p2.x ?? 0)) / 2
-      );
+    for (let i = 0; i < pixels.length; i++) {
+      const dist = distanceToSegment(clicked, pixels[i], pixels[(i + 1) % pixels.length]);
       if (dist < minDist) {
         minDist = dist;
         bestIndex = i;
       }
     }
     const updated = [...activePolygon];
-    updated.splice(bestIndex + 1, 0, newPt);
-    setActivePolygon(updated);
-    recalculateGeoBounds(updated);
+    updated.splice(bestIndex + 1, 0, { x: lat, y: lon, z: minAlt });
+    commitPolygon(updated);
     showTempFeedback('Geofence vertex added.');
   };
 
@@ -453,157 +751,18 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
       showTempFeedback('A geofence polygon must have at least 3 vertices.');
       return;
     }
-    const updated = activePolygon.filter((_, i) => i !== index);
-    setActivePolygon(updated);
-    recalculateGeoBounds(updated);
+    commitPolygon(activePolygon.filter((_, i) => i !== index));
     showTempFeedback('Geofence vertex deleted.');
   };
 
-  const recalculateGeoBounds = (pts: Point3DCoord[]) => {
-    const lats = pts.map((p) => p.x ?? 0);
-    const lons = pts.map((p) => p.y ?? p.x ?? 0);
-    onChange({
-      minLat: Math.min(...lats),
-      maxLat: Math.max(...lats),
-      minLon: Math.min(...lons),
-      maxLon: Math.max(...lons),
-      minAlt: parseFloat(minAltStr) || minAlt,
-      maxAlt: parseFloat(maxAltStr) || maxAlt,
-      altitudeUnit,
-      altitudeReference,
-      polygon: pts,
-    });
-  };
-
-  const handleAltitudeChange = (newMin: number, newMax: number) => {
-    onChange({
-      minLat,
-      maxLat,
-      minLon,
-      maxLon,
-      minAlt: newMin,
-      maxAlt: newMax,
-      altitudeUnit,
-      altitudeReference,
-      altitudePattern,
-      initialAltitude: parseFloat(initialAltStr) || initialAltitude,
-      maxVerticalStep,
-      altitudeOscillationSpeed,
-      polygon: activePolygon,
-    });
-  };
-
-  const handleUnitChange = (newUnit: AltitudeUnit) => {
-    onChange({
-      minLat,
-      maxLat,
-      minLon,
-      maxLon,
-      minAlt: parseFloat(minAltStr) || minAlt,
-      maxAlt: parseFloat(maxAltStr) || maxAlt,
-      altitudeUnit: newUnit,
-      altitudeReference,
-      altitudePattern,
-      initialAltitude: parseFloat(initialAltStr) || initialAltitude,
-      maxVerticalStep,
-      altitudeOscillationSpeed,
-      polygon: activePolygon,
-    });
-  };
-
-  const handleReferenceChange = (newRef: AltitudeReference) => {
-    onChange({
-      minLat,
-      maxLat,
-      minLon,
-      maxLon,
-      minAlt: parseFloat(minAltStr) || minAlt,
-      maxAlt: parseFloat(maxAltStr) || maxAlt,
-      altitudeUnit,
-      altitudeReference: newRef,
-      altitudePattern,
-      initialAltitude: parseFloat(initialAltStr) || initialAltitude,
-      maxVerticalStep,
-      altitudeOscillationSpeed,
-      polygon: activePolygon,
-    });
-  };
-
-  const handlePatternChange = (newPattern: AltitudePattern) => {
-    onChange({
-      minLat,
-      maxLat,
-      minLon,
-      maxLon,
-      minAlt: parseFloat(minAltStr) || minAlt,
-      maxAlt: parseFloat(maxAltStr) || maxAlt,
-      altitudeUnit,
-      altitudeReference,
-      altitudePattern: newPattern,
-      initialAltitude: parseFloat(initialAltStr) || initialAltitude,
-      maxVerticalStep,
-      altitudeOscillationSpeed,
-      polygon: activePolygon,
-    });
-  };
-
-  const handleInitialAltChange = (newInitAlt?: number) => {
-    onChange({
-      minLat,
-      maxLat,
-      minLon,
-      maxLon,
-      minAlt: parseFloat(minAltStr) || minAlt,
-      maxAlt: parseFloat(maxAltStr) || maxAlt,
-      altitudeUnit,
-      altitudeReference,
-      altitudePattern,
-      initialAltitude: newInitAlt,
-      maxVerticalStep,
-      altitudeOscillationSpeed,
-      polygon: activePolygon,
-    });
-  };
-
-  const handleVerticalStepChange = (newStep: number) => {
-    onChange({
-      minLat,
-      maxLat,
-      minLon,
-      maxLon,
-      minAlt: parseFloat(minAltStr) || minAlt,
-      maxAlt: parseFloat(maxAltStr) || maxAlt,
-      altitudeUnit,
-      altitudeReference,
-      altitudePattern,
-      initialAltitude: parseFloat(initialAltStr) || initialAltitude,
-      maxVerticalStep: newStep,
-      altitudeOscillationSpeed,
-      polygon: activePolygon,
-    });
-  };
-
-  const handleOscillationSpeedChange = (newSpeed: number) => {
-    onChange({
-      minLat,
-      maxLat,
-      minLon,
-      maxLon,
-      minAlt: parseFloat(minAltStr) || minAlt,
-      maxAlt: parseFloat(maxAltStr) || maxAlt,
-      altitudeUnit,
-      altitudeReference,
-      altitudePattern,
-      initialAltitude: parseFloat(initialAltStr) || initialAltitude,
-      maxVerticalStep,
-      altitudeOscillationSpeed: newSpeed,
-      polygon: activePolygon,
-    });
+  /** Commits an altitude range, swapping the values when min > max. */
+  const handleAltitudeChange = (a: number, b: number) => {
+    emit({ minAlt: Math.min(a, b), maxAlt: Math.max(a, b) });
   };
 
   const applyPreset = (preset: 'WORLD' | 'EUROPE' | 'IBERIA' | 'NORTH_AMERICA' | 'ASIA') => {
     let pts: Point3DCoord[] = [];
-    const currentZ = parseFloat(minAltStr) || minAlt;
+    const currentZ = minAlt;
     switch (preset) {
       case 'WORLD':
         pts = [{ x: -60, y: -160, z: currentZ }, { x: 75, y: -160, z: currentZ }, { x: 75, y: 160, z: currentZ }, { x: -60, y: 160, z: currentZ }];
@@ -621,8 +780,8 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
         pts = [{ x: 5.0, y: 60.0, z: currentZ }, { x: 55.0, y: 60.0, z: currentZ }, { x: 55.0, y: 145.0, z: currentZ }, { x: 5.0, y: 145.0, z: currentZ }];
         break;
     }
-    setActivePolygon(pts);
-    recalculateGeoBounds(pts);
+    commitPolygon(pts);
+    setFitToken((t) => t + 1);
     showTempFeedback(`Applied ${preset} region geofence preset.`);
   };
 
@@ -642,28 +801,29 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
             </button>
           ))}
         </div>
-        <div className="text-[10px] text-[var(--c-tx4)]">
-          {isDrawMode ? 'Click & drag box on map' : 'Drag vertices • Right-click to add/delete • Shift to pan'}
+        {/* Feedback replaces the hint in place, so the map below never moves */}
+        <div className={`text-[10px] ${feedbackMsg ? 'text-emerald-600 dark:text-emerald-400 font-medium' : 'text-[var(--c-tx4)]'}`}>
+          {feedbackMsg ?? (isDrawMode ? 'Click & drag box on map' : 'Drag vertices • Right-click to add/delete • Drag to pan')}
         </div>
       </div>
 
-      {feedbackMsg && (
-        <div className="px-2.5 py-1 text-[10px] rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 animate-pulse">
-          {feedbackMsg}
-        </div>
-      )}
-
       {/* Confirmation Modal when replacing existing region */}
       {showConfirmDrawModal && (
-        <div className="fixed inset-0 z-[99999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="geo-draw-confirm-title"
+          aria-describedby="geo-draw-confirm-desc"
+          className="fixed inset-0 z-[99999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+        >
           <div className="bg-[var(--c-bg2)] border border-[var(--c-br1)] rounded-lg p-5 max-w-md w-full shadow-2xl space-y-4 text-[var(--c-tx1)]">
             <div className="flex items-center gap-3 text-amber-400">
               <AlertTriangle size={20} className="shrink-0" />
-              <h3 className="font-semibold text-sm">Draw New Geofence Region?</h3>
+              <h3 id="geo-draw-confirm-title" className="font-semibold text-sm">Draw New Geofence Region?</h3>
             </div>
-            <p className="text-xs text-[var(--c-tx2)] leading-relaxed">
-              Creating a new selection box will replace your current {activePolygon.length}-vertex geofence region.
-              Are you sure you want to delete the existing region and draw a new region box?
+            <p id="geo-draw-confirm-desc" className="text-xs text-[var(--c-tx2)] leading-relaxed">
+              Drawing a new selection box will replace your current {activePolygon.length}-vertex geofence region.
+              The current region is kept until you finish the new box, so cancelling the drawing leaves it unchanged.
             </p>
             <div className="flex items-center justify-end gap-2.5 pt-2">
               <Button
@@ -747,7 +907,7 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
             <span className="text-[9px] text-amber-600 dark:text-amber-300 opacity-90">• Technical Lat/Lon Grid Canvas Active</span>
             <button
               type="button"
-              onClick={() => setIsOffline(false)}
+              onClick={retryOnlineMap}
               className="ml-2 underline hover:text-[var(--c-tx1)] font-sans text-[10px] cursor-pointer"
             >
               Retry Online Map
@@ -755,39 +915,11 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
           </div>
         )}
 
-        {/* Real-Time Live Cursor & Dragging Node Coordinates HUD Badge Overlay */}
-        <div className="absolute top-2 right-2 z-[1000] bg-[var(--c-bg2)]/90 backdrop-blur border border-[var(--c-br1)] text-[10px] font-mono px-2.5 py-1.5 rounded shadow-lg pointer-events-none text-[var(--c-tx1)] flex items-center gap-3">
-          {activeDragIndex !== null ? (
-            <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-300">
-              <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
-              <span className="font-semibold text-[9px] uppercase tracking-wider text-amber-400">MOVING POINT #{activeDragIndex + 1}:</span>
-              <span>
-                {(activePolygon[activeDragIndex]?.x ?? 0).toFixed(4)}° {(activePolygon[activeDragIndex]?.x ?? 0) >= 0 ? 'N' : 'S'}, {(activePolygon[activeDragIndex]?.y ?? activePolygon[activeDragIndex]?.x ?? 0).toFixed(4)}° {(activePolygon[activeDragIndex]?.y ?? activePolygon[activeDragIndex]?.x ?? 0) >= 0 ? 'E' : 'W'}
-              </span>
-            </div>
-          ) : cursorPos ? (
-            <>
-              <div className="flex items-center gap-1.5 text-cyan-600 dark:text-cyan-300">
-                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
-                <span className="font-semibold text-[9px] uppercase tracking-wider text-cyan-400">CURSOR:</span>
-                <span>
-                  {cursorPos.lat.toFixed(4)}° {cursorPos.lat >= 0 ? 'N' : 'S'}, {cursorPos.lon.toFixed(4)}° {cursorPos.lon >= 0 ? 'E' : 'W'}
-                </span>
-              </div>
-              <div className="text-[9px] text-[var(--c-tx4)] border-l border-[var(--c-br1)] pl-2">
-                {formatDmsHelper(cursorPos.lat, true)}, {formatDmsHelper(cursorPos.lon, false)}
-              </div>
-            </>
-          ) : (
-            <div className="text-[var(--c-tx4)] italic text-[9px]">Hover or drag point markers for live coordinates</div>
-          )}
-        </div>
-
         <MapContainer
-          center={[centerLat, centerLon]}
+          center={initialCenter}
           zoom={5}
           minZoom={2}
-          maxBounds={[[-90, -180], [90, 180]]}
+          maxBounds={WORLD_BOUNDS}
           maxBoundsViscosity={1.0}
           worldCopyJump={false}
           scrollWheelZoom={true}
@@ -804,66 +936,20 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
               updateWhenZooming={false}
               updateWhenIdle={true}
               crossOrigin={true}
-              bounds={[[-90, -180], [90, 180]]}
-              eventHandlers={{
-                tileerror: () => setIsOffline(true),
-              }}
+              bounds={WORLD_BOUNDS}
+              eventHandlers={tileEventHandlers}
             />
           )}
           {isOffline && <OfflineGridOverlay />}
           <MapEventsHelper
             isDrawMode={isDrawMode}
-            isDraggingMarkerRef={isDraggingMarkerRef}
             onBoxSelectionComplete={handleBoxSelectionComplete}
             onMapRightClick={handleMapRightClick}
-            onCursorMove={(lat, lon) => setCursorPos({ lat, lon })}
-            onCursorLeave={() => setCursorPos(null)}
           />
-          <MapAutoFitBounds polygon={activePolygon} />
+          <MapAutoFitBounds polygon={activePolygon} fitToken={fitToken} />
           <MapResizeHandler isExpanded={isMapExpanded} />
-          {positions.length >= 3 && (
-            <Polygon
-              positions={positions}
-              pathOptions={{
-                color: '#8b5cf6',
-                fillColor: '#8b5cf6',
-                fillOpacity: 0.2,
-                weight: 2,
-                interactive: false,
-              }}
-            />
-          )}
-          {activePolygon.map((pt, i) => (
-            <Marker
-              key={i}
-              position={[pt.x ?? 0, pt.y ?? pt.x ?? 0]}
-              draggable={true}
-              eventHandlers={{
-                dragstart: () => {
-                  handleMarkerDragStart(i);
-                },
-                dragend: (e) => {
-                  const latLng = e.target.getLatLng();
-                  handleMarkerDragEnd(i, latLng.lat, latLng.lng);
-                },
-                contextmenu: () => {
-                  handleDeleteVertex(i);
-                },
-              }}
-            >
-              <LeafletTooltip direction="top" offset={[0, -20]} opacity={0.95}>
-                <div className="font-mono text-[10px] leading-snug">
-                  <div className="font-semibold text-violet-400">Point #{i + 1}</div>
-                  <div>
-                    {(pt.x ?? 0).toFixed(4)}° {(pt.x ?? 0) >= 0 ? 'N' : 'S'}, {(pt.y ?? pt.x ?? 0).toFixed(4)}° {(pt.y ?? pt.x ?? 0) >= 0 ? 'E' : 'W'}
-                  </div>
-                  <div className="text-[9px] text-[var(--c-tx4)]">
-                    {formatDmsHelper(pt.x ?? 0, true)}, {formatDmsHelper(pt.y ?? pt.x ?? 0, false)}
-                  </div>
-                </div>
-              </LeafletTooltip>
-            </Marker>
-          ))}
+          {/* Real-time cursor / moving-vertex coordinates HUD is rendered by GeofenceLayers */}
+          <GeofenceLayers points={activePolygon} onVertexMove={handleVertexMove} onVertexDelete={handleDeleteVertex} />
         </MapContainer>
       </div>
 
@@ -924,7 +1010,7 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
           <select
             id="geo-alt-pattern"
             value={altitudePattern}
-            onChange={(e) => handlePatternChange(e.target.value as AltitudePattern)}
+            onChange={(e) => emit({ altitudePattern: e.target.value as AltitudePattern })}
             className="h-8 w-full rounded border border-input bg-input-background dark:bg-input/30 px-2 py-1 text-xs text-[var(--c-tx2)] outline-none hover:bg-[var(--c-bg5)] cursor-pointer"
           >
             <option value="FOLLOW_XY">Follow Primary XY Pattern</option>
@@ -951,18 +1037,13 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
                 </TooltipContent>
               </Tooltip>
             </div>
-            <Input
+            <CommitNumberInput
               id="geo-fixed-alt"
-              type="text"
               placeholder="e.g. 50.0"
-              value={minAltStr}
-              onChange={(e) => {
-                setMinAltStr(e.target.value);
-                setMaxAltStr(e.target.value);
-                const fixedVal = parseFloat(e.target.value);
-                if (!isNaN(fixedVal)) handleAltitudeChange(fixedVal, fixedVal);
+              value={minAlt}
+              onCommit={(v) => {
+                if (v !== undefined) handleAltitudeChange(v, v);
               }}
-              className="h-8 text-xs font-mono"
             />
           </div>
         ) : (
@@ -981,18 +1062,13 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
                   </TooltipContent>
                 </Tooltip>
               </div>
-              <Input
+              <CommitNumberInput
                 id="geo-min-alt"
-                type="text"
                 placeholder="e.g. 0.0"
-                value={minAltStr}
-                onChange={(e) => {
-                  setMinAltStr(e.target.value);
-                  const minVal = parseFloat(e.target.value);
-                  const maxVal = parseFloat(maxAltStr) || maxAlt;
-                  if (!isNaN(minVal)) handleAltitudeChange(minVal, maxVal);
+                value={minAlt}
+                onCommit={(v) => {
+                  if (v !== undefined) handleAltitudeChange(v, maxAlt);
                 }}
-                className="h-8 text-xs font-mono"
               />
             </div>
             <div className="space-y-1">
@@ -1009,18 +1085,13 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
                   </TooltipContent>
                 </Tooltip>
               </div>
-              <Input
+              <CommitNumberInput
                 id="geo-max-alt"
-                type="text"
                 placeholder="e.g. 100.0"
-                value={maxAltStr}
-                onChange={(e) => {
-                  setMaxAltStr(e.target.value);
-                  const maxVal = parseFloat(e.target.value);
-                  const minVal = parseFloat(minAltStr) || minAlt;
-                  if (!isNaN(maxVal)) handleAltitudeChange(minVal, maxVal);
+                value={maxAlt}
+                onCommit={(v) => {
+                  if (v !== undefined) handleAltitudeChange(minAlt, v);
                 }}
-                className="h-8 text-xs font-mono"
               />
             </div>
 
@@ -1039,17 +1110,12 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
                     </TooltipContent>
                   </Tooltip>
                 </div>
-                <Input
+                <CommitNumberInput
                   id="geo-init-alt"
-                  type="text"
                   placeholder="e.g. 50.0"
-                  value={initialAltStr}
-                  onChange={(e) => {
-                    setInitialAltStr(e.target.value);
-                    const val = parseFloat(e.target.value);
-                    handleInitialAltChange(isNaN(val) ? undefined : val);
-                  }}
-                  className="h-8 text-xs font-mono"
+                  value={initialAltitude}
+                  allowEmpty
+                  onCommit={(v) => emit({ initialAltitude: v })}
                 />
               </div>
             )}
@@ -1069,16 +1135,13 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
                     </TooltipContent>
                   </Tooltip>
                 </div>
-                <Input
+                <CommitNumberInput
                   id="geo-v-step"
-                  type="text"
                   placeholder="e.g. 1.0"
-                  value={String(maxVerticalStep)}
-                  onChange={(e) => {
-                    const val = parseFloat(e.target.value);
-                    if (!isNaN(val)) handleVerticalStepChange(val);
+                  value={maxVerticalStep}
+                  onCommit={(v) => {
+                    if (v !== undefined) emit({ maxVerticalStep: v });
                   }}
-                  className="h-8 text-xs font-mono"
                 />
               </div>
             )}
@@ -1098,16 +1161,13 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
                     </TooltipContent>
                   </Tooltip>
                 </div>
-                <Input
+                <CommitNumberInput
                   id="geo-osc-speed"
-                  type="text"
                   placeholder="e.g. 0.1"
-                  value={String(altitudeOscillationSpeed)}
-                  onChange={(e) => {
-                    const val = parseFloat(e.target.value);
-                    if (!isNaN(val)) handleOscillationSpeedChange(val);
+                  value={altitudeOscillationSpeed}
+                  onCommit={(v) => {
+                    if (v !== undefined) emit({ altitudeOscillationSpeed: v });
                   }}
-                  className="h-8 text-xs font-mono"
                 />
               </div>
             )}
@@ -1133,7 +1193,7 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
             <select
               id="geo-alt-unit"
               value={altitudeUnit}
-              onChange={(e) => handleUnitChange(e.target.value as AltitudeUnit)}
+              onChange={(e) => emit({ altitudeUnit: e.target.value as AltitudeUnit })}
               className="h-8 w-full rounded border border-input bg-input-background dark:bg-input/30 px-2 py-1 text-xs text-[var(--c-tx2)] outline-none hover:bg-[var(--c-bg5)] cursor-pointer"
             >
               <option value="METERS">Meters (m)</option>
@@ -1161,7 +1221,7 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
             <select
               id="geo-alt-ref"
               value={altitudeReference}
-              onChange={(e) => handleReferenceChange(e.target.value as AltitudeReference)}
+              onChange={(e) => emit({ altitudeReference: e.target.value as AltitudeReference })}
               className="h-8 w-full rounded border border-input bg-input-background dark:bg-input/30 px-2 py-1 text-xs text-[var(--c-tx2)] outline-none hover:bg-[var(--c-bg5)] cursor-pointer"
             >
               <option value="MSL">MSL (Mean Sea Level / ASL)</option>
