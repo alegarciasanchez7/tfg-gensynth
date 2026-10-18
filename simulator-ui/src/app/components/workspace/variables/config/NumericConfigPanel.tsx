@@ -9,6 +9,8 @@ import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '../../
 import { Info } from 'lucide-react';
 
 import { ListReferenceSelector } from './ListReferenceSelector';
+import { findTemplatePlaceholders } from '../../../../core/templatePlaceholders';
+import { findFormulaMatches } from './formulaTokens';
 
 interface NumericConfigPanelProps {
   config: NumericVariableConfig;
@@ -54,7 +56,7 @@ const CustomDropdown: React.FC<CustomDropdownProps> = ({ value, onChange, option
         className="flex h-8 w-full items-center justify-between rounded-md border border-input bg-input-background dark:bg-input/30 dark:hover:bg-input/50 px-3 py-1 text-xs text-[var(--c-tx2)] outline-none hover:bg-white/5 active:bg-white/10 transition-colors cursor-pointer"
       >
         <span>{selectedOption.label}</span>
-        <svg
+        <svg aria-hidden="true"
           className={`size-3.5 opacity-60 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
           xmlns="http://www.w3.org/2000/svg"
           fill="none"
@@ -85,7 +87,7 @@ const CustomDropdown: React.FC<CustomDropdownProps> = ({ value, onChange, option
               >
                 <span>{opt.label}</span>
                 {opt.value === value && (
-                  <svg
+                  <svg aria-hidden="true"
                     className="size-3.5 text-violet-400"
                     xmlns="http://www.w3.org/2000/svg"
                     fill="none"
@@ -163,18 +165,16 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
   // Tokenize the formula for inline validation overlay
   const formulaTokens = useMemo(() => {
     const parts: Array<{ text: string; isValid?: boolean; isVariable?: boolean; isConstant?: boolean }> = [];
-    const regex = /(\{\{[^}]+\}\})|\b(pi|e)\b/gi;
     let lastIndex = 0;
-    let match;
  
-    while ((match = regex.exec(formulaValue)) !== null) {
-      if (match.index > lastIndex) {
-        parts.push({ text: formulaValue.substring(lastIndex, match.index) });
+    for (const match of findFormulaMatches(formulaValue)) {
+      if (match.start > lastIndex) {
+        parts.push({ text: formulaValue.substring(lastIndex, match.start) });
       }
  
-      if (match[1]) {
+      if (match.kind === 'reference') {
         // Wrapped in {{ }}
-        const rawToken = match[1];
+        const rawToken = match.text;
         const varName = rawToken.substring(2, rawToken.length - 2).trim();
         const lowerName = varName.toLowerCase();
         
@@ -200,14 +200,14 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
             isVariable: true
           });
         }
-      } else if (match[2]) {
+      } else {
         // Raw constant literal (e.g. pi or e)
         parts.push({
-          text: match[2],
+          text: match.text,
           isConstant: true
         });
       }
-      lastIndex = regex.lastIndex;
+      lastIndex = match.end;
     }
  
     if (lastIndex < formulaValue.length) {
@@ -220,12 +220,10 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
   // Extract seen variables to display feedback badges underneath
   const formulaVariables = useMemo(() => {
     const vars: Array<{ name: string; isValid: boolean; scope?: string }> = [];
-    const regex = /\{\{([^}]+)\}\}/g;
-    let match;
     const seen = new Set<string>();
  
-    while ((match = regex.exec(formulaValue)) !== null) {
-      const varName = match[1].trim();
+    for (const reference of findTemplatePlaceholders(formulaValue)) {
+      const varName = reference.spec.trim();
       const lowerName = varName.toLowerCase();
       if (lowerName === 'pi' || lowerName === 'e') continue;
       if (seen.has(varName)) continue;
@@ -364,28 +362,28 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
 
   // Sync state if props change externally
   useEffect(() => {
-    if (config.min !== undefined && parseFloat(minStr) !== config.min) setMinStr(String(config.min));
+    if (config.min !== undefined && Number.parseFloat(minStr) !== config.min) setMinStr(String(config.min));
   }, [config.min]);
 
   useEffect(() => {
-    if (config.max !== undefined && parseFloat(maxStr) !== config.max) setMaxStr(String(config.max));
+    if (config.max !== undefined && Number.parseFloat(maxStr) !== config.max) setMaxStr(String(config.max));
   }, [config.max]);
 
   useEffect(() => {
     if (config.initialValue === undefined || config.initialValue === null) setInitialStr('');
-    else if (parseFloat(initialStr) !== config.initialValue) setInitialStr(String(config.initialValue));
+    else if (Number.parseFloat(initialStr) !== config.initialValue) setInitialStr(String(config.initialValue));
   }, [config.initialValue]);
 
   useEffect(() => {
-    if (config.constantValue !== undefined && parseFloat(constValueStr) !== config.constantValue) setConstValueStr(String(config.constantValue));
+    if (config.constantValue !== undefined && Number.parseFloat(constValueStr) !== config.constantValue) setConstValueStr(String(config.constantValue));
   }, [config.constantValue]);
 
   useEffect(() => {
-    if (config.constantMargin !== undefined && parseFloat(constMarginStr) !== config.constantMargin) setConstMarginStr(String(config.constantMargin));
+    if (config.constantMargin !== undefined && Number.parseFloat(constMarginStr) !== config.constantMargin) setConstMarginStr(String(config.constantMargin));
   }, [config.constantMargin]);
 
   useEffect(() => {
-    if (config.step !== undefined && parseFloat(stepStr) !== config.step) setStepStr(String(config.step));
+    if (config.step !== undefined && Number.parseFloat(stepStr) !== config.step) setStepStr(String(config.step));
   }, [config.step]);
 
   useEffect(() => {
@@ -424,8 +422,8 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
   ) => {
     setter(value);
     if (value === '' || value === '-') return;
-    const parsed = parseFloat(value);
-    if (!isNaN(parsed)) {
+    const parsed = Number.parseFloat(value);
+    if (!Number.isNaN(parsed)) {
       onChange({ [field]: parsed });
     }
   };
@@ -436,8 +434,8 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
     field: keyof NumericVariableConfig,
     fallback: number
   ) => {
-    const parsed = parseFloat(value);
-    if (isNaN(parsed)) {
+    const parsed = Number.parseFloat(value);
+    if (Number.isNaN(parsed)) {
       setter(String(fallback));
       onChange({ [field]: fallback });
     } else {
@@ -499,8 +497,8 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
                   value={initialStr}
                   onChange={(e) => handleNumericChange(e.target.value, setInitialStr, 'initialValue')}
                   onBlur={(e) => {
-                    const val = parseFloat(e.target.value);
-                    if (isNaN(val)) {
+                    const val = Number.parseFloat(e.target.value);
+                    if (Number.isNaN(val)) {
                       // Optional: an empty field means "no fixed first value"
                       setInitialStr('');
                       onChange({ initialValue: undefined });
@@ -541,7 +539,7 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
                     min={0}
                     max={10}
                     value={config.decimalPlaces ?? 2}
-                    onChange={(e) => onChange({ decimalPlaces: Math.max(0, Math.min(10, parseInt(e.target.value) || 0)) })}
+                    onChange={(e) => onChange({ decimalPlaces: Math.max(0, Math.min(10, Number.parseInt(e.target.value) || 0)) })}
                     className="h-8 text-xs font-mono"
                   />
                 </div>
@@ -706,7 +704,7 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
                   value={constMarginStr}
                   onChange={(e) => handleNumericChange(e.target.value, setConstMarginStr, 'constantMargin')}
                   onBlur={(e) => {
-                    const val = Math.abs(parseFloat(e.target.value) || 0);
+                    const val = Math.abs(Number.parseFloat(e.target.value) || 0);
                     setConstMarginStr(String(val));
                     onChange({ constantMargin: val });
                   }}
@@ -856,14 +854,20 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
 
                 {/* Autocomplete Dropdown */}
                 {showAutocomplete && autocompleteOptions.length > 0 && (
-                  <div 
+                  <div
                     ref={autocompleteRef}
+                    role="listbox"
+                    aria-label="Variable suggestions"
+                    tabIndex={-1}
                     onMouseDown={(e) => e.preventDefault()} // Prevent blur when clicking scrollbar or container area
                     className="absolute left-0 right-0 bottom-full mb-1 z-50 bg-[var(--c-bg2)] border border-[var(--c-br1)] rounded shadow-xl max-h-[140px] overflow-y-auto scrollbar-thin scrollbar-thumb-[var(--c-br3)]"
                   >
                     {autocompleteOptions.map((opt, i) => (
                       <div
                         key={i}
+                        role="option"
+                        aria-selected={i === selectedIndex}
+                        tabIndex={-1}
                         onMouseDown={(e) => {
                           e.preventDefault(); // Prevent blur
                           insertOption(opt);
@@ -996,8 +1000,8 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
                     onChange={(e) => {
                       setDriftInitialStr(e.target.value);
                       if (e.target.value === '' || e.target.value === '-') return;
-                      const parsed = parseFloat(e.target.value);
-                      if (!isNaN(parsed)) onChange({ driftInitialValue: parsed });
+                      const parsed = Number.parseFloat(e.target.value);
+                      if (!Number.isNaN(parsed)) onChange({ driftInitialValue: parsed });
                     }}
                     className="h-8 text-xs font-mono"
                   />
@@ -1146,14 +1150,14 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
                     onChange={(e) => {
                       setSpikeProbStr(e.target.value);
                       if (e.target.value === '' || e.target.value === '-') return;
-                      const parsed = parseFloat(e.target.value);
-                      if (!isNaN(parsed)) {
+                      const parsed = Number.parseFloat(e.target.value);
+                      if (!Number.isNaN(parsed)) {
                         onChange({ spikeProbability: parsed > 1 ? parsed / 100.0 : parsed });
                       }
                     }}
                     onBlur={(e) => {
-                      const parsed = parseFloat(e.target.value);
-                      const valid = isNaN(parsed) ? 5 : Math.max(0, Math.min(100, parsed));
+                      const parsed = Number.parseFloat(e.target.value);
+                      const valid = Number.isNaN(parsed) ? 5 : Math.max(0, Math.min(100, parsed));
                       setSpikeProbStr(String(valid));
                       onChange({ spikeProbability: valid / 100.0 });
                     }}

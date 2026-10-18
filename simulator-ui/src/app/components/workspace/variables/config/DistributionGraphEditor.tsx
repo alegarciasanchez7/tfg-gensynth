@@ -46,7 +46,7 @@ const CustomDropdown: React.FC<CustomDropdownProps> = ({ value, onChange, option
         className="flex h-7 w-28 items-center justify-between rounded border border-[var(--c-br1)] bg-[var(--c-bg3)] px-2 py-0.5 text-[10px] text-[var(--c-tx1)] font-mono outline-none hover:bg-white/5 active:bg-white/10 transition-colors cursor-pointer"
       >
         <span>{selectedOption.label}</span>
-        <svg
+        <svg aria-hidden="true"
           className={`size-3 opacity-60 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
           xmlns="http://www.w3.org/2000/svg"
           fill="none"
@@ -77,7 +77,7 @@ const CustomDropdown: React.FC<CustomDropdownProps> = ({ value, onChange, option
               >
                 <span>{opt.label}</span>
                 {opt.value === value && (
-                  <svg
+                  <svg aria-hidden="true"
                     className="size-3.5 text-violet-400"
                     xmlns="http://www.w3.org/2000/svg"
                     fill="none"
@@ -209,7 +209,7 @@ export const DistributionGraphEditor: React.FC<DistributionGraphEditorProps> = (
             <input
               type="number"
               value={points.length}
-              onChange={(e) => handleIntervalsCountChange(parseInt(e.target.value) || 5)}
+              onChange={(e) => handleIntervalsCountChange(Number.parseInt(e.target.value) || 5)}
               className="w-12 rounded border border-[var(--c-br1)] bg-[var(--c-bg3)] px-1 py-0.5 text-center text-xs text-[var(--c-tx1)]"
               min={2}
               max={15}
@@ -264,7 +264,7 @@ export const DistributionGraphEditor: React.FC<DistributionGraphEditorProps> = (
                         min="0"
                         max="100"
                         value={pt.weight}
-                        onChange={(e) => handleWeightChange(idx, parseInt(e.target.value) || 0)}
+                        onChange={(e) => handleWeightChange(idx, Number.parseInt(e.target.value) || 0)}
                         className="absolute inset-0 w-full h-full opacity-0 cursor-row-resize"
                         style={{ transform: 'rotate(270deg)', transformOrigin: 'center' }}
                       />
@@ -287,7 +287,7 @@ export const DistributionGraphEditor: React.FC<DistributionGraphEditorProps> = (
                           <input
                             type="number"
                             value={pt.to ?? 0}
-                            onChange={(e) => handleBoundaryChange(idx, parseFloat(e.target.value) || 0)}
+                            onChange={(e) => handleBoundaryChange(idx, Number.parseFloat(e.target.value) || 0)}
                             className="w-full text-center text-[10px] text-cyan-400 font-bold bg-[var(--c-bg4)] hover:bg-[var(--c-bg2)] border border-[var(--c-br1)] rounded py-0.5 px-0.5 font-mono outline-none transition-all focus:border-cyan-400"
                             step="any"
                           />

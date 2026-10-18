@@ -60,7 +60,7 @@ const CustomDropdown: React.FC<CustomDropdownProps> = ({ id, value, onChange, op
         className="flex h-8 w-full items-center justify-between rounded-md border border-input bg-input-background dark:bg-input/30 px-3 py-1 text-xs text-[var(--c-tx2)] outline-none hover:bg-[var(--c-bg5)] transition-colors cursor-pointer"
       >
         <span>{selectedOption.label}</span>
-        <svg
+        <svg aria-hidden="true"
           className={`size-3.5 opacity-60 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
           xmlns="http://www.w3.org/2000/svg"
           fill="none"
@@ -91,7 +91,7 @@ const CustomDropdown: React.FC<CustomDropdownProps> = ({ id, value, onChange, op
               >
                 <span>{opt.label}</span>
                 {opt.value === value && (
-                  <svg className="size-3.5 text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                  <svg aria-hidden="true" className="size-3.5 text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                   </svg>
                 )}
@@ -120,7 +120,7 @@ export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onCh
 
   // Follow values changed from outside these inputs (e.g. a coordinate system switch rescales them),
   // keeping what the user is typing when it already means that value ("0." while typing "0.5")
-  const follow = (value: number) => (prev: string) => (parseFloat(prev) === value ? prev : String(value));
+  const follow = (value: number) => (prev: string) => (Number.parseFloat(prev) === value ? prev : String(value));
   useEffect(() => { setStepDistanceStr(follow(config.maxStepDistance ?? 0.1)); }, [config.maxStepDistance]);
   useEffect(() => { setOrbitRadiusStr(follow(config.orbitRadius ?? 10.0)); }, [config.orbitRadius]);
   useEffect(() => { setJitterRadiusStr(follow(config.jitterRadius ?? 0.0)); }, [config.jitterRadius]);
@@ -348,7 +348,7 @@ export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onCh
                     type="number"
                     min={1}
                     value={config.graphInterpolationSteps ?? 1}
-                    onChange={(e) => onChange({ graphInterpolationSteps: parseInt(e.target.value) || 1 })}
+                    onChange={(e) => onChange({ graphInterpolationSteps: Number.parseInt(e.target.value) || 1 })}
                     className="h-8 text-xs font-mono"
                   />
                 </div>
@@ -378,8 +378,8 @@ export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onCh
                     max="1"
                     value={config.graphStopProbability ?? 0.0}
                     onChange={(e) => {
-                      const parsed = parseFloat(e.target.value.replace(',', '.'));
-                      onChange({ graphStopProbability: isNaN(parsed) ? 0.0 : parsed });
+                      const parsed = Number.parseFloat(e.target.value.replace(',', '.'));
+                      onChange({ graphStopProbability: Number.isNaN(parsed) ? 0.0 : parsed });
                     }}
                     className="h-8 text-xs font-mono"
                   />
@@ -407,7 +407,7 @@ export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onCh
                     type="number"
                     min={0}
                     value={config.graphStopTicks ?? 0}
-                    onChange={(e) => onChange({ graphStopTicks: parseInt(e.target.value) || 0 })}
+                    onChange={(e) => onChange({ graphStopTicks: Number.parseInt(e.target.value) || 0 })}
                     className="h-8 text-xs font-mono"
                   />
                 </div>
@@ -482,7 +482,7 @@ export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onCh
                             onChange={(e) => onChange({ graphLoopSequence: e.target.checked })}
                             className="rounded border-[var(--c-br1)] bg-[var(--c-bg2)] text-cyan-500 focus:ring-0 h-3 w-3"
                           />
-                          Loop Sequence
+                          <span>Loop Sequence</span>
                         </label>
                         {sequence.length > 0 && (
                           <button
@@ -588,7 +588,7 @@ export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onCh
                   step="0.0001"
                   value={config.fixedPoint?.x ?? 0}
                   onChange={(e) => {
-                    const val = parseFloat(e.target.value) || 0;
+                    const val = Number.parseFloat(e.target.value) || 0;
                     onChange({ fixedPoint: { ...config.fixedPoint, x: val } });
                   }}
                   className="h-8 text-xs font-mono"
@@ -602,7 +602,7 @@ export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onCh
                   step="0.0001"
                   value={config.fixedPoint?.y ?? 0}
                   onChange={(e) => {
-                    const val = parseFloat(e.target.value) || 0;
+                    const val = Number.parseFloat(e.target.value) || 0;
                     onChange({ fixedPoint: { ...config.fixedPoint, y: val } });
                   }}
                   className="h-8 text-xs font-mono"
@@ -617,7 +617,7 @@ export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onCh
                     step="0.0001"
                     value={config.fixedPoint?.z ?? 0}
                     onChange={(e) => {
-                      const val = parseFloat(e.target.value) || 0;
+                      const val = Number.parseFloat(e.target.value) || 0;
                       onChange({ fixedPoint: { ...config.fixedPoint, z: val } });
                     }}
                     className="h-8 text-xs font-mono"
@@ -656,8 +656,8 @@ export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onCh
                   value={stepDistanceStr}
                   onChange={(e) => {
                     setStepDistanceStr(e.target.value);
-                    const val = parseFloat(e.target.value);
-                    if (!isNaN(val)) onChange({ maxStepDistance: val });
+                    const val = Number.parseFloat(e.target.value);
+                    if (!Number.isNaN(val)) onChange({ maxStepDistance: val });
                   }}
                   className="h-8 text-xs font-mono"
                 />
@@ -687,8 +687,8 @@ export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onCh
                   value={inertiaStr}
                   onChange={(e) => {
                     setInertiaStr(e.target.value);
-                    const val = parseFloat(e.target.value);
-                    if (!isNaN(val)) onChange({ inertia: Math.max(0, Math.min(1, val)) });
+                    const val = Number.parseFloat(e.target.value);
+                    if (!Number.isNaN(val)) onChange({ inertia: Math.max(0, Math.min(1, val)) });
                   }}
                   className="h-8 text-xs font-mono"
                 />
@@ -707,8 +707,8 @@ export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onCh
                     value={orbitRadiusStr}
                     onChange={(e) => {
                       setOrbitRadiusStr(e.target.value);
-                      const val = parseFloat(e.target.value);
-                      if (!isNaN(val)) onChange({ orbitRadius: val });
+                      const val = Number.parseFloat(e.target.value);
+                      if (!Number.isNaN(val)) onChange({ orbitRadius: val });
                     }}
                     className="h-8 text-xs font-mono"
                   />
@@ -722,8 +722,8 @@ export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onCh
                     value={angularSpeedStr}
                     onChange={(e) => {
                       setAngularSpeedStr(e.target.value);
-                      const val = parseFloat(e.target.value);
-                      if (!isNaN(val)) onChange({ angularSpeed: val });
+                      const val = Number.parseFloat(e.target.value);
+                      if (!Number.isNaN(val)) onChange({ angularSpeed: val });
                     }}
                     className="h-8 text-xs font-mono"
                   />
@@ -737,8 +737,8 @@ export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onCh
                     value={spiralRateStr}
                     onChange={(e) => {
                       setSpiralRateStr(e.target.value);
-                      const val = parseFloat(e.target.value);
-                      if (!isNaN(val)) onChange({ spiralRate: val });
+                      const val = Number.parseFloat(e.target.value);
+                      if (!Number.isNaN(val)) onChange({ spiralRate: val });
                     }}
                     className="h-8 text-xs font-mono"
                   />
@@ -791,8 +791,8 @@ export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onCh
                 value={jitterRadiusStr}
                 onChange={(e) => {
                   setJitterRadiusStr(e.target.value);
-                  const val = parseFloat(e.target.value);
-                  if (!isNaN(val)) onChange({ jitterRadius: val });
+                  const val = Number.parseFloat(e.target.value);
+                  if (!Number.isNaN(val)) onChange({ jitterRadius: val });
                 }}
                 className="h-8 text-xs font-mono"
               />

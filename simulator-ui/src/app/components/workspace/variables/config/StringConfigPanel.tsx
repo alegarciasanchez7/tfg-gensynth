@@ -10,6 +10,7 @@ import { CustomDropdown } from '../../../ui/custom-dropdown';
 import { ShieldAlert, Sparkles, Braces, Code } from 'lucide-react';
 
 import { ListReferenceSelector } from './ListReferenceSelector';
+import { findTemplatePlaceholders } from '../../../../core/templatePlaceholders';
 
 interface StringConfigPanelProps {
   config: StringVariableConfig;
@@ -59,17 +60,15 @@ export const StringConfigPanel: React.FC<StringConfigPanelProps> = ({
   // Tokenize the template for inline validation overlay
   const templateTokens = useMemo(() => {
     const parts: Array<{ text: string; isValid?: boolean; isVariable?: boolean }> = [];
-    const regex = /(\{\{[^}]+\}\})/g;
     let lastIndex = 0;
-    let match;
  
-    while ((match = regex.exec(templateValue)) !== null) {
-      if (match.index > lastIndex) {
-        parts.push({ text: templateValue.substring(lastIndex, match.index) });
+    for (const reference of findTemplatePlaceholders(templateValue)) {
+      if (reference.start > lastIndex) {
+        parts.push({ text: templateValue.substring(lastIndex, reference.start) });
       }
  
-      const rawToken = match[1];
-      const varName = rawToken.substring(2, rawToken.length - 2).trim();
+      const rawToken = templateValue.substring(reference.start, reference.end);
+      const varName = reference.spec.trim();
       
       const variable = state.variables?.find(v => {
         if (v.name !== varName) return false;
@@ -85,7 +84,7 @@ export const StringConfigPanel: React.FC<StringConfigPanelProps> = ({
         isVariable: true
       });
       
-      lastIndex = regex.lastIndex;
+      lastIndex = reference.end;
     }
  
     if (lastIndex < templateValue.length) {
@@ -98,12 +97,10 @@ export const StringConfigPanel: React.FC<StringConfigPanelProps> = ({
   // Extract seen variables to display feedback badges underneath
   const templateVariables = useMemo(() => {
     const vars: Array<{ name: string; isValid: boolean; scope?: string }> = [];
-    const regex = /\{\{([^}]+)\}\}/g;
-    let match;
     const seen = new Set<string>();
  
-    while ((match = regex.exec(templateValue)) !== null) {
-      const varName = match[1].trim();
+    for (const reference of findTemplatePlaceholders(templateValue)) {
+      const varName = reference.spec.trim();
       if (seen.has(varName)) continue;
       seen.add(varName);
  
@@ -264,7 +261,7 @@ export const StringConfigPanel: React.FC<StringConfigPanelProps> = ({
                 id="string-length"
                 type="number"
                 value={config.fixedLength ?? 8}
-                onChange={(e) => onChange({ fixedLength: parseInt(e.target.value) || 0 })}
+                onChange={(e) => onChange({ fixedLength: Number.parseInt(e.target.value) || 0 })}
                 className="bg-[var(--c-bg2)] border-[var(--c-br1)] h-8 text-[11px]"
               />
             </div>
@@ -371,14 +368,20 @@ export const StringConfigPanel: React.FC<StringConfigPanelProps> = ({
 
                 {/* Autocomplete Dropdown */}
                 {showAutocomplete && autocompleteOptions.length > 0 && (
-                  <div 
+                  <div
                     ref={autocompleteRef}
+                    role="listbox"
+                    aria-label="Variable suggestions"
+                    tabIndex={-1}
                     onMouseDown={(e) => e.preventDefault()}
                     className="absolute left-0 right-0 top-full mt-1 z-50 bg-[var(--c-bg2)] border border-[var(--c-br1)] rounded shadow-xl max-h-[140px] overflow-y-auto scrollbar-thin scrollbar-thumb-[var(--c-br3)]"
                   >
                     {autocompleteOptions.map((opt, i) => (
                       <div
                         key={i}
+                        role="option"
+                        aria-selected={i === selectedIndex}
+                        tabIndex={-1}
                         onMouseDown={(e) => {
                           e.preventDefault();
                           insertOption(opt);
@@ -450,10 +453,10 @@ export const StringConfigPanel: React.FC<StringConfigPanelProps> = ({
                   className="bg-[var(--c-bg2)] border-[var(--c-br1)] h-8 text-[11px] font-mono uppercase"
                 />
                 <p className="text-[9px] text-[var(--c-tx4)] leading-relaxed">
-                  <strong className="text-[var(--c-tx2)]">#</strong> = Digit (0-9) &nbsp;&bull;&nbsp; 
-                  <strong className="text-[var(--c-tx2)]">X</strong> = Hex (0-F) &nbsp;&bull;&nbsp; 
-                  <strong className="text-[var(--c-tx2)]">A</strong> = Letter (A-Z) &nbsp;&bull;&nbsp; 
-                  <strong className="text-[var(--c-tx2)]">?</strong> = Alphanumeric
+                  <span><strong className="text-[var(--c-tx2)]">#</strong> = Digit (0-9) &nbsp;&bull;&nbsp;</span>
+                  <span><strong className="text-[var(--c-tx2)]">X</strong> = Hex (0-F) &nbsp;&bull;&nbsp;</span>
+                  <span><strong className="text-[var(--c-tx2)]">A</strong> = Letter (A-Z) &nbsp;&bull;&nbsp;</span>
+                  <span><strong className="text-[var(--c-tx2)]">?</strong> = Alphanumeric</span>
                 </p>
                 <div className="pt-2">
                    <Label htmlFor="alpha-case" className="mb-1 block text-[9px] uppercase text-[var(--c-tx4)]">Case Formatting</Label>
@@ -511,7 +514,7 @@ export const StringConfigPanel: React.FC<StringConfigPanelProps> = ({
                   type="number"
                   min="0" max="1" step="0.01"
                   value={config.corruptionProbability ?? 0.05}
-                  onChange={(e) => onChange({ corruptionProbability: parseFloat(e.target.value) || 0 })}
+                  onChange={(e) => onChange({ corruptionProbability: Number.parseFloat(e.target.value) || 0 })}
                   className="bg-[var(--c-bg2)] border-[var(--c-br1)] h-8 text-[11px]"
                 />
               </div>
@@ -522,7 +525,7 @@ export const StringConfigPanel: React.FC<StringConfigPanelProps> = ({
                 type="number"
                 min="1" max="100"
                 value={config.corruptionMagnitude ?? 1}
-                onChange={(e) => onChange({ corruptionMagnitude: parseInt(e.target.value) || 1 })}
+                onChange={(e) => onChange({ corruptionMagnitude: Number.parseInt(e.target.value) || 1 })}
                 className="bg-[var(--c-bg2)] border-[var(--c-br1)] h-8 text-[11px] w-24"
               />
             </div>

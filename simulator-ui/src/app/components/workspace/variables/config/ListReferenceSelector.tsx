@@ -272,7 +272,7 @@ export const ListReferenceSelector: React.FC<ListReferenceSelectorProps> = ({
                         min={1}
                         max={listItems.length}
                         value={config.randomSubsetCount || 1}
-                        onChange={(e) => onChange({ randomSubsetCount: Math.max(1, parseInt(e.target.value, 10) || 1) })}
+                        onChange={(e) => onChange({ randomSubsetCount: Math.max(1, Number.parseInt(e.target.value, 10) || 1) })}
                         className="h-8 font-mono text-xs"
                       />
                     </div>

@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, act } from '@testing-library/react';
+import { render, screen, act, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { WaypointMap } from './WaypointMap';
 import type { FullPoint } from '../../../../core/pointDefaults';
@@ -163,6 +163,20 @@ describe('WaypointMap', () => {
 
     expect(props.onDelete).toHaveBeenCalledTimes(1);
     expect(props.onDelete).toHaveBeenCalledWith(2);
+  });
+
+  it('deletes the selected waypoint with the Delete key pressed inside the map', () => {
+    const props = renderMap();
+    fireEvent.keyDown(screen.getByTestId('map'), { key: 'Delete' });
+    expect(props.onDelete).not.toHaveBeenCalled();
+
+    act(() => {
+      markerAt(40.45, -3.65).click?.({});
+    });
+    fireEvent.keyDown(screen.getByTestId('map'), { key: 'Delete' });
+
+    expect(props.onDelete).toHaveBeenCalledTimes(1);
+    expect(props.onDelete).toHaveBeenCalledWith(1);
   });
   it('stops a dragged marker at the region border, paints it red while rejected and commits once', () => {
     const checkMove = vi.fn((): MoveCheck => ({ error: 'Cannot draw path segment crossing forbidden wall barrier: "Wall"', pointBad: false, badSegments: [0] }));

@@ -92,6 +92,29 @@ describe('ListConfigPanel', () => {
     });
   });
 
+  it('commits a Markov probability only once the typed text is a complete decimal', () => {
+    const handleChange = vi.fn();
+    const markovConfig: ListVariableConfig = {
+      selectionStrategy: 'MARKOV_CHAIN',
+      items: [{ id: 'item1', value: 'State A' }, { id: 'item2', value: 'State B' }],
+      transitionMatrix: { item1: { item1: 0.5, item2: 0.5 }, item2: { item1: 0.5, item2: 0.5 } },
+    };
+    render(<ListConfigPanel config={markovConfig} onChange={handleChange} />);
+    const cell = screen.getAllByLabelText('Transition probability')[0];
+    fireEvent.focus(cell);
+
+    // Same cases accepted and rejected by the former /^\d*\.?\d+$/ check
+    const cases: Array<[string, boolean]> = [
+      ['1', true], ['0.25', true], ['.5', true], [',75', true], ['10.0', true],
+      ['', false], ['0.', false], ['.', false], ['1.2.3', false], ['-1', false], ['abc', false], ['1e3', false], [' 1', false],
+    ];
+    for (const [text, commits] of cases) {
+      handleChange.mockClear();
+      fireEvent.change(cell, { target: { value: text } });
+      expect(handleChange.mock.calls.length > 0, `"${text}"`).toBe(commits);
+    }
+  });
+
   it('shows long default probabilities rounded', () => {
     const markovConfig: ListVariableConfig = {
       selectionStrategy: 'MARKOV_CHAIN',

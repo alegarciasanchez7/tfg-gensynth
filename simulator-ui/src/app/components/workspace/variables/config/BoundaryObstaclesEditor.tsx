@@ -48,7 +48,7 @@ export const BoundaryObstaclesEditor: React.FC<BoundaryObstaclesEditorProps> = (
           ];
 
     const newObs: BoundaryObstacle = {
-      id: `obs_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      id: `obs_${crypto.randomUUID()}`,
       name,
       type: newObstacleType,
       points: defaultPoints,
@@ -133,8 +133,7 @@ export const BoundaryObstaclesEditor: React.FC<BoundaryObstaclesEditorProps> = (
             return (
               <div
                 key={obs.id}
-                onClick={() => onSelectObstacle?.(isSelected ? null : obs.id)}
-                className={`flex items-center justify-between p-2 rounded border cursor-pointer transition-all ${
+                className={`flex items-center justify-between rounded border transition-all ${
                   isSelected
                     ? 'border-amber-400 bg-amber-500/15 ring-1 ring-amber-400/40 text-amber-700 dark:text-amber-200 shadow-sm'
                     : obs.enabled
@@ -142,9 +141,14 @@ export const BoundaryObstaclesEditor: React.FC<BoundaryObstaclesEditorProps> = (
                     : 'border-[var(--c-br1)] bg-[var(--c-bg2)] text-[var(--c-tx4)] opacity-60'
                 }`}
               >
-                <div className="flex items-center gap-2 text-xs">
+                <button
+                  type="button"
+                  aria-pressed={isSelected}
+                  onClick={() => onSelectObstacle?.(isSelected ? null : obs.id)}
+                  className="flex flex-1 min-w-0 items-center gap-2 p-2 text-xs text-left cursor-pointer"
+                >
                   <Layers size={13} className={isSelected ? 'text-amber-600 dark:text-amber-300' : (obs.type === 'WALL_SEGMENT' ? 'text-red-400' : 'text-amber-400')} />
-                  <div>
+                  <span>
                     <span className="font-semibold">{obs.name || 'Obstacle'}</span>
                     <span className="text-[10px] font-mono text-[var(--c-tx4)] ml-2">
                       [{obs.type === 'WALL_SEGMENT' ? 'Wall Line' : 'Forbidden Zone'}, {obs.points.length} Pts]
@@ -154,10 +158,10 @@ export const BoundaryObstaclesEditor: React.FC<BoundaryObstaclesEditorProps> = (
                         Selected
                       </span>
                     )}
-                  </div>
-                </div>
+                  </span>
+                </button>
 
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1 pr-2">
                   <button
                     type="button"
                     onClick={(e) => handleToggleEnabled(obs.id, e)}

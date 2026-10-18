@@ -63,7 +63,7 @@ const MatrixCellInput = ({ value, onCommit }: { value: number; onCommit: (val: s
       onChange={(e) => {
         const text = e.target.value.replace(',', '.');
         setDraft(text);
-        if (/^\d*\.?\d+$/.test(text)) onCommit(text);
+        if (/^(?:\d+(?:\.\d+)?|\.\d+)$/.test(text)) onCommit(text);
       }}
       onBlur={() => {
         if (draft !== null && draft.trim() !== '') onCommit(draft);
@@ -313,12 +313,12 @@ export const ListConfigPanel: React.FC<ListConfigPanelProps> = ({
   }, [items, onChange]);
 
   const handleMatrixCellChange = useCallback((fromId: string, toId: string, valStr: string) => {
-    const parsedVal = parseFloat(valStr);
+    const parsedVal = Number.parseFloat(valStr);
     const updatedMatrix = { ...transitionMatrix };
     if (!updatedMatrix[fromId]) {
       updatedMatrix[fromId] = {};
     }
-    updatedMatrix[fromId][toId] = isNaN(parsedVal) ? 0 : parsedVal;
+    updatedMatrix[fromId][toId] = Number.isNaN(parsedVal) ? 0 : parsedVal;
     onChange({ transitionMatrix: updatedMatrix });
   }, [transitionMatrix, onChange]);
 
@@ -509,7 +509,7 @@ export const ListConfigPanel: React.FC<ListConfigPanelProps> = ({
                           step="0.1"
                           placeholder="Weight"
                           value={weight}
-                          onChange={(e) => handleItemChange(localIdx, { weight: parseFloat(e.target.value) || 0 })}
+                          onChange={(e) => handleItemChange(localIdx, { weight: Number.parseFloat(e.target.value) || 0 })}
                           className="h-8 text-xs font-mono"
                         />
                       </div>

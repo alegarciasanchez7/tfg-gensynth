@@ -141,6 +141,14 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
   const dragMovedRef = useRef(false);
 
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const contextMenuOpen = contextMenu !== null;
+  // Any click (inside the editor or elsewhere on the page) closes the open context menu
+  useEffect(() => {
+    if (!contextMenuOpen) return;
+    const closeMenu = () => setContextMenu(null);
+    document.addEventListener('click', closeMenu);
+    return () => document.removeEventListener('click', closeMenu);
+  }, [contextMenuOpen]);
   const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
   const [showResetConfirmModal, setShowResetConfirmModal] = useState<boolean>(false);
   useDialogEscape(showResetConfirmModal, () => setShowResetConfirmModal(false));
@@ -1013,7 +1021,7 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
   }
 
   return (
-    <div className={`space-y-2 relative flex flex-col ${fillContainer ? 'h-full flex-1 min-h-0' : ''}`} onClick={() => setContextMenu(null)}>
+    <div className={`space-y-2 relative flex flex-col ${fillContainer ? 'h-full flex-1 min-h-0' : ''}`}>
       {/* 1. Header Toolbar */}
       {showToolbar ? (
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs bg-[var(--c-bg3)] p-2 rounded border border-[var(--c-br1)] shrink-0">
