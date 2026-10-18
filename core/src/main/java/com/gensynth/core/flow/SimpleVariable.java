@@ -2,6 +2,8 @@ package com.gensynth.core.flow;
 
 import com.gensynth.core.api.IVariable;
 
+import java.util.concurrent.atomic.AtomicReference;
+
 /**
  * Simple implementation of IVariable for basic data generation.
  *
@@ -18,7 +20,7 @@ public class SimpleVariable implements IVariable {
 
     private final String id;
     private final String type;
-    private volatile Object currentValue;
+    private final AtomicReference<Object> currentValue = new AtomicReference<>();
 
     /**
      * Constructor for SimpleVariable.
@@ -35,14 +37,14 @@ public class SimpleVariable implements IVariable {
         }
 
         this.id = id;
-        this.currentValue = initialValue;
+        this.currentValue.set(initialValue);
         this.type = inferType(initialValue);
     }
 
     @Override
     public Object getValue() {
         // Return current value (which may have been slightly varied)
-        return currentValue;
+        return currentValue.get();
     }
 
     @Override
@@ -50,7 +52,7 @@ public class SimpleVariable implements IVariable {
         if (value == null) {
             throw new IllegalArgumentException("value cannot be null");
         }
-        this.currentValue = value;
+        this.currentValue.set(value);
     }
 
     @Override
@@ -70,25 +72,23 @@ public class SimpleVariable implements IVariable {
      * Future: Will support patterns like sine(), random(), anomaly(), etc.
      */
     public Object generateNextValue() {
-        // For numeric values, add tiny variation (0.1%)
-        if (currentValue instanceof Double) {
-            double d = (Double) currentValue;
-            double variation = d * 0.001 * (Math.random() - 0.5);
-            currentValue = d + variation;
-        } else if (currentValue instanceof Float) {
-            float f = (Float) currentValue;
-            float variation = f * 0.001f * (float)(Math.random() - 0.5);
-            currentValue = f + variation;
-        } else if (currentValue instanceof Integer) {
-            // No variation for integers
-            return currentValue;
-        } else if (currentValue instanceof Long) {
-            // No variation for longs
-            return currentValue;
-        }
-        // For other types, return as-is
+        return currentValue.updateAndGet(SimpleVariable::vary);
+    }
 
-        return currentValue;
+    /**
+     * Applies the tiny random variation to a value: doubles and floats change by up to 0.1%,
+     * any other type (integers, longs, strings...) is returned as-is.
+     */
+    private static Object vary(Object value) {
+        if (value instanceof Double d) {
+            double variation = d * 0.001 * (Math.random() - 0.5);
+            return d + variation;
+        }
+        if (value instanceof Float f) {
+            float variation = f * 0.001f * (float) (Math.random() - 0.5);
+            return f + variation;
+        }
+        return value;
     }
 
     /**
@@ -107,6 +107,6 @@ public class SimpleVariable implements IVariable {
     @Override
     public String toString() {
         return String.format("SimpleVariable{id=%s, type=%s, value=%s}",
-            id, type, currentValue);
+            id, type, currentValue.get());
     }
 }

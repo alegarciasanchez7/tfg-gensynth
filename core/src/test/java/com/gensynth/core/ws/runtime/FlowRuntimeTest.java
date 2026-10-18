@@ -32,8 +32,8 @@ public class FlowRuntimeTest {
     @Test
     public void outageCoversTheLastTicksOfEveryPeriod() {
         FlowRuntime flow = newFlow();
-        flow.outageEveryTicks = 4;
-        flow.outageDurationTicks = 2;
+        flow.outageEveryTicks.set(4);
+        flow.outageDurationTicks.set(2);
 
         assertEquals(List.of(2L, 3L, 6L, 7L), outageTicks(flow, 8));
     }
@@ -41,8 +41,8 @@ public class FlowRuntimeTest {
     @Test
     public void outageLongerThanThePeriodLosesEveryTick() {
         FlowRuntime flow = newFlow();
-        flow.outageEveryTicks = 3;
-        flow.outageDurationTicks = 5;
+        flow.outageEveryTicks.set(3);
+        flow.outageDurationTicks.set(5);
 
         assertEquals(List.of(0L, 1L, 2L, 3L, 4L, 5L), outageTicks(flow, 6));
     }
@@ -52,11 +52,11 @@ public class FlowRuntimeTest {
         FlowRuntime flow = newFlow();
         assertTrue("defaults are off", outageTicks(flow, 10).isEmpty());
 
-        flow.outageEveryTicks = 4;
+        flow.outageEveryTicks.set(4);
         assertTrue("no duration", outageTicks(flow, 10).isEmpty());
 
-        flow.outageEveryTicks = 0;
-        flow.outageDurationTicks = 2;
+        flow.outageEveryTicks.set(0);
+        flow.outageDurationTicks.set(2);
         assertTrue("no period", outageTicks(flow, 10).isEmpty());
     }
 
@@ -77,8 +77,8 @@ public class FlowRuntimeTest {
     @Test
     public void shouldDropAlwaysDuringAnOutage() {
         FlowRuntime flow = newFlow();
-        flow.outageEveryTicks = 4;
-        flow.outageDurationTicks = 1;
+        flow.outageEveryTicks.set(4);
+        flow.outageDurationTicks.set(1);
 
         assertTrue(flow.shouldDrop(3, 99.0));
         assertFalse(flow.shouldDrop(2, 99.0));
@@ -87,22 +87,22 @@ public class FlowRuntimeTest {
     @Test
     public void eventLossSurvivesDefinitionRoundTripAndCopy() {
         FlowRuntime flow = newFlow();
-        flow.everyTicks = 3;
+        flow.everyTicks.set(3);
         flow.lossPercent = 12.5;
-        flow.outageEveryTicks = 10;
-        flow.outageDurationTicks = 2;
+        flow.outageEveryTicks.set(10);
+        flow.outageDurationTicks.set(2);
 
         FlowRuntime loaded = FlowRuntime.fromDefinition(flow.toDefinition("g"));
         assertEquals(12.5, loaded.lossPercent, 0.0);
-        assertEquals(10, loaded.outageEveryTicks);
-        assertEquals(2, loaded.outageDurationTicks);
+        assertEquals(10, loaded.outageEveryTicks.get());
+        assertEquals(2, loaded.outageDurationTicks.get());
 
         FlowRuntime copy = newFlow();
         copy.copySendSettingsFrom(flow);
-        assertEquals(3, copy.everyTicks);
+        assertEquals(3, copy.everyTicks.get());
         assertEquals(12.5, copy.lossPercent, 0.0);
-        assertEquals(10, copy.outageEveryTicks);
-        assertEquals(2, copy.outageDurationTicks);
+        assertEquals(10, copy.outageEveryTicks.get());
+        assertEquals(2, copy.outageDurationTicks.get());
 
         Map<String, Object> payload = flow.toPayload();
         assertEquals(12.5, payload.get("lossPercent"));

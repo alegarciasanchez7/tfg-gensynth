@@ -328,6 +328,43 @@ public class TemplateEngineTest {
     }
 
     @Test
+    public void testDecimalPartStripsOnlyTrailingZeros() {
+        variables.put("v_whole", constantNumeric("v_whole", "whole", 42.0));
+        variables.put("v_inner", constantNumeric("v_inner", "inner", 10.05));
+        variables.put("v_neg", constantNumeric("v_neg", "neg", -3.5));
+
+        String template = "{{local.whole.decimalPart}}|{{local.inner.decimalPart}}|{{local.neg.fraction}}";
+        String result = engine.evaluate(template, 1, variables, "flow-1", "group-1");
+
+        assertEquals("0|05|5", result);
+    }
+
+    @Test
+    public void testStripTrailingZerosMatchesTheOldRegex() {
+        String[] inputs = {"", "0", "000000", "456000", "050000", "100", "123", "1000001000", "0".repeat(10_000) + "1"};
+        for (String input : inputs) {
+            assertEquals(input, input.replaceAll("0+$", ""), TemplateEngine.stripTrailingZeros(input));
+        }
+    }
+
+    private static Variable constantNumeric(String id, String name, double value) {
+        return new Variable(
+                id,
+                name,
+                "LOCAL",
+                "numeric",
+                value,
+                Map.of(
+                        "pattern", "CONSTANT",
+                        "constantValue", value,
+                        "decimalPlaces", 3
+                ),
+                "flow-1",
+                "group-1"
+        );
+    }
+
+    @Test
     public void testStringVariableAttributeExtraction() {
         Variable strVar = new Variable(
                 "v_str",

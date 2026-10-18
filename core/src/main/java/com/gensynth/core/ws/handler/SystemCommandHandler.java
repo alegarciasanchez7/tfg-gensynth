@@ -207,8 +207,8 @@ public class SystemCommandHandler implements CommandHandler {
                     flow.meter.rotate();
                     flow.throughput = running
                         ? flow.meter.rate(
-                            ThroughputMeter.windowFor(tick, flow.everyTicks),
-                            ThroughputMeter.periodSeconds(tick, flow.everyTicks),
+                            ThroughputMeter.windowFor(tick, flow.everyTicks.get()),
+                            ThroughputMeter.periodSeconds(tick, flow.everyTicks.get()),
                             now)
                         : 0.0;
                 }

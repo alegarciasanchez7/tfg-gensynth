@@ -5,7 +5,12 @@ import org.slf4j.LoggerFactory;
 
 import java.awt.Desktop;
 import java.net.URI;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 
 /**
  * Opens web links from the desktop UI in the user's default browser.
@@ -17,6 +22,12 @@ import java.util.Locale;
 public final class ExternalLinkOpener {
 
     private static final Logger logger = LoggerFactory.getLogger(ExternalLinkOpener.class);
+
+    /**
+     * Fixed, root-owned locations where {@code xdg-open} is looked up. The command is never
+     * resolved through {@code PATH}, so a writable folder on it cannot shadow the opener.
+     */
+    static final List<String> XDG_OPEN_PATHS = List.of("/usr/bin/xdg-open", "/usr/local/bin/xdg-open");
 
     private ExternalLinkOpener() {
     }
@@ -51,8 +62,8 @@ public final class ExternalLinkOpener {
 
     /**
      * Opens an allowed URL in the default browser on a background thread, so the UI thread never
-     * waits for the browser to start. Falls back to {@code xdg-open} where AWT cannot browse
-     * (some Linux desktops).
+     * waits for the browser to start. Falls back to {@code xdg-open} (from {@link #XDG_OPEN_PATHS})
+     * where AWT cannot browse (some Linux desktops).
      *
      * @param url the URL to open; ignored with a warning if it is not allowed
      * @return {@code true} if the URL was allowed and handed to the operating system
@@ -75,12 +86,28 @@ public final class ExternalLinkOpener {
                 return;
             }
             if (System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("linux")) {
-                new ProcessBuilder("xdg-open", url).start();
-                return;
+                Optional<Path> xdgOpen = findExecutable(XDG_OPEN_PATHS);
+                if (xdgOpen.isPresent()) {
+                    new ProcessBuilder(xdgOpen.get().toString(), url).start();
+                    return;
+                }
             }
             logger.warn("No way to open the browser on this system: {}", url);
         } catch (Exception e) {
             logger.warn("Could not open {} in the browser: {}", url, e.getMessage());
         }
+    }
+
+    /**
+     * Returns the first candidate path that is an executable regular file.
+     *
+     * @param candidates absolute paths to check, in order of preference
+     * @return the first executable candidate, or empty if none exists
+     */
+    static Optional<Path> findExecutable(List<String> candidates) {
+        return candidates.stream()
+                .map(Paths::get)
+                .filter(path -> Files.isRegularFile(path) && Files.isExecutable(path))
+                .findFirst();
     }
 }
