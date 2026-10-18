@@ -246,8 +246,16 @@ export function VariableEditorConfigCard({ typeLabel, theme, draft, setDraft }: 
   }
 
   const handleConfigChange = (newConfig: Partial<VariableConfig>) => {
-    const updated = { ...parsedConfig, ...newConfig };
-    setDraft(current => ({ ...current, configText: JSON.stringify(updated, null, 2) }));
+    // Merge into the latest draft, not this render's copy: quick edits must not overwrite each other
+    setDraft(current => {
+      let base: VariableConfig = parsedConfig;
+      try {
+        base = current.configText.trim() ? JSON.parse(current.configText) : {};
+      } catch {
+        // Invalid JSON while typing in JSON mode: fall back to the last valid config
+      }
+      return { ...current, configText: JSON.stringify({ ...base, ...newConfig }, null, 2) };
+    });
   };
 
   const renderVisualEditor = () => {

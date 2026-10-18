@@ -34,7 +34,8 @@ public class SequentialGroupDispatcher implements IGroupDispatcher {
     private final Thread sender;
     private volatile boolean closed;
 
-    private record PendingMessage(FlowRuntime flow, String payload) {
+    /** A generated message waiting to be published, with the group tick that generated it. */
+    private record PendingMessage(FlowRuntime flow, String payload, long groupTick) {
     }
 
     /**
@@ -54,7 +55,7 @@ public class SequentialGroupDispatcher implements IGroupDispatcher {
     }
 
     @Override
-    public boolean dispatch(List<FlowRuntime> dueFlows) {
+    public boolean dispatch(List<FlowRuntime> dueFlows, long groupTick) {
         if (closed || dueFlows.isEmpty()) {
             return false;
         }
@@ -73,7 +74,7 @@ public class SequentialGroupDispatcher implements IGroupDispatcher {
             }
             // Single producer (the clock thread), so the capacity checked above is still available:
             // add() would only throw if that invariant were broken, and the clock logs it
-            queue.add(new PendingMessage(flow, payload));
+            queue.add(new PendingMessage(flow, payload, groupTick));
             generated = true;
         }
         return generated;
@@ -86,7 +87,7 @@ public class SequentialGroupDispatcher implements IGroupDispatcher {
                 if (message == null || closed) {
                     continue;
                 }
-                handler.publish(group, message.flow(), message.payload());
+                handler.publish(group, message.flow(), message.payload(), message.groupTick());
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 return;

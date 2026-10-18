@@ -69,7 +69,7 @@ export function CloneDialog({
         </div>
 
         <DialogFooter className="gap-2 sm:gap-0">
-          <Button variant="ghost" onClick={() => onOpenChange(false)} className="text-[var(--c-tx3)] hover:text-[var(--c-tx1)]">
+          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} className="text-[var(--c-tx3)] hover:text-[var(--c-tx1)]">
             Cancel
           </Button>
           <Button 
@@ -77,7 +77,7 @@ export function CloneDialog({
             onClick={handleConfirm}
             disabled={!count || parseInt(count, 10) <= 0 || !namingPattern.trim()}
           >
-            Create {count} Clones
+            Create {count} {count === '1' ? 'Clone' : 'Clones'}
           </Button>
         </DialogFooter>
       </DialogContent>

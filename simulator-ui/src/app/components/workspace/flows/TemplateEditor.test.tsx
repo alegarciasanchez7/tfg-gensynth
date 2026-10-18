@@ -122,5 +122,88 @@ describe('TemplateEditor', () => {
     expect(invalidTag).not.toBeNull();
     expect(invalidTag?.textContent).toBe('{{local.vegetables_7.item0}}');
   });
-});
 
+  it('accepts the flow.name built-in and offers it in the autocomplete', () => {
+    const { container } = render(
+      <TemplateEditor
+        value='{"id": "{{flow.name}}", "x": {{flo'
+        onChange={vi.fn()}
+        variables={mockVariables}
+        flowId="f1"
+        groupId="g1"
+      />
+    );
+
+    expect(container.querySelector('.bg-red-500\\/20')).toBeNull();
+
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+    fireEvent.keyUp(textarea, { target: { selectionStart: textarea.value.length } });
+    expect(screen.getByText(/Name of this flow/)).toBeDefined();
+  });
+  /** Opens the autocomplete for a template ending in `{{` + the given query. */
+  const openAutocomplete = (query: string, variables: Variable[]) => {
+    render(
+      <TemplateEditor
+        value={`{"x": {{${query}`}
+        onChange={vi.fn()}
+        variables={variables}
+        flowId="f1"
+        groupId="g1"
+      />
+    );
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+    fireEvent.keyUp(textarea, { target: { selectionStart: textarea.value.length } });
+  };
+
+  const listVariable = (config: Variable['config']): Variable[] => [
+    { id: 'v1', name: 'veg', scope: 'local', type: 'list', flowId: 'f1', groupId: 'g1', config },
+  ];
+
+  it('offers .size/.first/.last for a Fixed Subset list', () => {
+    openAutocomplete('veg', listVariable({ selectionStrategy: 'FIXED_SUBSET', items: [{ id: 'i1', value: 'A' }] }));
+    expect(screen.getByText('veg.size')).toBeDefined();
+    expect(screen.getByText('veg.first')).toBeDefined();
+    expect(screen.getByText('veg.last')).toBeDefined();
+    expect(screen.getByText('veg.item0')).toBeDefined();
+  });
+
+  it('does not offer .size/.first/.last for a Weighted Random list', () => {
+    openAutocomplete('veg', listVariable({ selectionStrategy: 'WEIGHTED_RANDOM', items: [{ id: 'i1', value: 'A' }] }));
+    expect(screen.getByText('veg')).toBeDefined();
+    expect(screen.queryByText('veg.size')).toBeNull();
+    expect(screen.queryByText('veg.first')).toBeNull();
+    expect(screen.queryByText('veg.last')).toBeNull();
+    expect(screen.queryByText('veg.item0')).toBeNull();
+  });
+
+  it('treats a list without a strategy as Weighted Random', () => {
+    openAutocomplete('veg', listVariable({ items: [{ id: 'i1', value: 'A' }] }));
+    expect(screen.getByText(/Single Item Selection/)).toBeDefined();
+    expect(screen.queryByText('veg.size')).toBeNull();
+    expect(screen.queryByText('veg.item0')).toBeNull();
+  });
+
+  it('marks item access as invalid on a list without a strategy', () => {
+    const { container } = render(
+      <TemplateEditor
+        value="{{local.veg.item0}} {{local.veg.size}}"
+        onChange={vi.fn()}
+        variables={listVariable({ items: [{ id: 'i1', value: 'A' }] })}
+        flowId="f1"
+        groupId="g1"
+      />
+    );
+    const invalid = container.querySelectorAll('.bg-red-500\\/20');
+    expect(invalid).toHaveLength(1);
+    expect(invalid[0].textContent).toBe('{{local.veg.item0}}');
+  });
+
+  it('offers x/y/z for a point without a coordinate system (3D default)', () => {
+    openAutocomplete('pos', [
+      { id: 'p1', name: 'pos', scope: 'local', type: 'point', flowId: 'f1', groupId: 'g1', config: {} },
+    ]);
+    expect(screen.getByText('pos.x')).toBeDefined();
+    expect(screen.getByText('pos.y')).toBeDefined();
+    expect(screen.getByText('pos.z')).toBeDefined();
+  });
+});

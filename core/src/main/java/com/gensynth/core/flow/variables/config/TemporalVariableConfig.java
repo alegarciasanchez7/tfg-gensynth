@@ -46,6 +46,10 @@ public class TemporalVariableConfig extends VariableConfiguration {
     private long rangeEndMillis;
 
     // Advanced Formatting
+    /** Output format name for ISO-8601 UTC text (e.g. 2025-06-01T08:00:00Z), offered by the UI presets. */
+    private static final String ISO_INSTANT = "ISO_INSTANT";
+    /** Instant of the last generated value. */
+    private volatile Instant lastInstant;
     private String dateFormat; // "yyyy-MM-dd'T'HH:mm:ss.SSSXXX", "UNIX_TIMESTAMP", or null (returns Instant)
     private String timeZone;   // e.g. "UTC", "Europe/Madrid"
     private String temporalType; // "DATE", "TIMESTAMP", "TIME"
@@ -230,7 +234,8 @@ public class TemporalVariableConfig extends VariableConfiguration {
     @Override
     public java.util.List<String> validate() {
         java.util.List<String> errors = new java.util.ArrayList<>();
-        if (dateFormat != null && !dateFormat.trim().isEmpty() && !"UNIX_TIMESTAMP".equalsIgnoreCase(dateFormat)) {
+        if (dateFormat != null && !dateFormat.trim().isEmpty() && !"UNIX_TIMESTAMP".equalsIgnoreCase(dateFormat)
+                && !ISO_INSTANT.equalsIgnoreCase(dateFormat)) {
             try {
                 DateTimeFormatter.ofPattern(dateFormat);
             } catch (IllegalArgumentException e) {
@@ -263,7 +268,6 @@ public class TemporalVariableConfig extends VariableConfiguration {
             }
         }
 
-        long currentSeq = sequenceIndex;
         Instant generatedInstant = computeBaseInstant();
 
         // Apply Clock Drift / Skew if enabled
@@ -280,7 +284,8 @@ public class TemporalVariableConfig extends VariableConfiguration {
                     driftOffsetMs = maxDriftMs;
                     break;
                 case PROGRESSIVE_DRIFT:
-                    driftOffsetMs = Math.round(currentSeq * driftRateMsPerTick);
+                    // Grows with the generated values in every time mode (the first value has no drift)
+                    driftOffsetMs = Math.round((tickCounter - 1) * driftRateMsPerTick);
                     break;
             }
             generatedInstant = generatedInstant.plusMillis(driftOffsetMs);
@@ -349,12 +354,26 @@ public class TemporalVariableConfig extends VariableConfiguration {
         return Instant.ofEpochMilli(rangeStartMillis + offset);
     }
 
+    /**
+     * Instant of the last value, whatever its output format, so template sub-properties
+     * ({@code .timestamp}, {@code .hour}...) never depend on parsing the formatted text.
+     *
+     * @return the last generated instant, or {@code null} before the first value
+     */
+    public Instant getLastInstant() {
+        return lastInstant;
+    }
+
     private Object formatOutput(Instant instant) {
+        lastInstant = instant;
         if (dateFormat == null || dateFormat.trim().isEmpty()) {
             return instant;
         }
         if ("UNIX_TIMESTAMP".equalsIgnoreCase(dateFormat)) {
             return instant.toEpochMilli();
+        }
+        if (ISO_INSTANT.equalsIgnoreCase(dateFormat)) {
+            return DateTimeFormatter.ISO_INSTANT.format(instant);
         }
 
         if (formatter == null) {
@@ -373,6 +392,7 @@ public class TemporalVariableConfig extends VariableConfiguration {
         isAnomalous = false;
         anomalyStartTick = 0;
         cachedWhenTicks = -1;
+        lastInstant = null;
     }
 
     @Override

@@ -3,6 +3,7 @@ import type { Flow, ConnectorHealthSummary } from '../../../types';
 import type { ConnectorPluginDescriptor } from '../../../core/types';
 import { FieldRow } from '../../common/FieldRow';
 import { ConnectorConfigForm } from '../../common/ConnectorConfigForm';
+import { EventLossSection, type EventLossPatch } from './EventLossSection';
 
 export { compareVersions } from '../../../context/helpers/connectorHelpers';
 
@@ -25,6 +26,8 @@ interface TechnicalConfigPanelProps {
   onConnectorChange: (pluginId: string) => void;
   onConnectorVersionChange: (pluginVersion: string) => void;
   onConnectorConfigChange: (nextConfig: Record<string, unknown>) => void;
+  /** Called with the changed event loss field (applied live by the Core). */
+  onEventLossChange: (patch: EventLossPatch) => void;
 }
 
 export function TechnicalConfigPanel({
@@ -45,6 +48,7 @@ export function TechnicalConfigPanel({
   onConnectorChange,
   onConnectorVersionChange,
   onConnectorConfigChange,
+  onEventLossChange,
 }: TechnicalConfigPanelProps) {
   return (
     <div
@@ -182,6 +186,15 @@ export function TechnicalConfigPanel({
           )}
         </div>
 
+        <div className="h-px bg-[var(--c-br2)]" />
+
+        {/* Event loss */}
+        <EventLossSection
+          lossPercent={flow.lossPercent ?? 0}
+          outageEveryTicks={flow.outageEveryTicks ?? 0}
+          outageDurationTicks={flow.outageDurationTicks ?? 0}
+          onChange={onEventLossChange}
+        />
       </div>
     </div>
   );

@@ -90,6 +90,9 @@ export function NamingPatternFields({
             </Badge>
           ))}
         </div>
+        <p className="text-[10px] text-[var(--c-tx4)] flex items-center gap-1">
+          <Info size={10} /> {'Use ${index+1} to start counting at 2 (e.g. H${index+1} gives H2, H3...).'}
+        </p>
       </div>
 
       {previews.length > 0 && (

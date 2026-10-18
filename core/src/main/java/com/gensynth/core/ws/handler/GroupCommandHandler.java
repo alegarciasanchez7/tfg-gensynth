@@ -271,9 +271,7 @@ public class GroupCommandHandler implements CommandHandler {
 
             for (int i = 1; i <= count; i++) {
                 String newGroupId = UUID.randomUUID().toString();
-                String newName = namingPattern
-                    .replace("${name}", original.name)
-                    .replace("${index}", String.valueOf(i));
+                String newName = com.gensynth.core.util.NamingPattern.apply(namingPattern, original.name, i);
 
                 GroupRuntime clone = new GroupRuntime(
                     newGroupId,
@@ -308,7 +306,7 @@ public class GroupCommandHandler implements CommandHandler {
                         originalFlow.enabled,
                         originalFlow.connectorConfig
                     );
-                    flowClone.everyTicks = originalFlow.everyTicks;
+                    flowClone.copySendSettingsFrom(originalFlow);
                     clone.flows.add(flowClone);
 
                     // Clone variables for this flow

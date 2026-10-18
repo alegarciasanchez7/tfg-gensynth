@@ -395,4 +395,217 @@ public class TemplateEngineTest {
 
         assertEquals("Count: 3, First: Red, Last: Blue", result);
     }
+
+    @Test
+    public void singleItemListStrategyAnswersListPropertiesAsAOneItemList() {
+        Variable listVar = new Variable(
+                "v_pick",
+                "fruit",
+                "LOCAL",
+                "list",
+                List.of(),
+                Map.of(
+                        "selectionStrategy", "WEIGHTED_RANDOM",
+                        "items", List.of("Watermelon")
+                ),
+                "flow-1",
+                "group-1"
+        );
+        variables.put(listVar.getId(), listVar);
+
+        String template = "{{fruit.size}}|{{fruit.count}}|{{fruit.first}}|{{fruit.last}}|{{fruit.length}}|{{fruit.upper}}";
+        String result = engine.evaluate(template, 1, variables, "flow-1", "group-1");
+
+        // .size/.length/.count count items (1), not characters; string properties still apply to the item
+        assertEquals("1|1|Watermelon|Watermelon|1|WATERMELON", result);
+    }
+
+    @Test
+    public void fixedSubsetItemStringPropertiesAreUnchanged() {
+        Variable listVar = new Variable(
+                "v_sub",
+                "colors",
+                "LOCAL",
+                "list",
+                List.of(),
+                Map.of(
+                        "selectionStrategy", "FIXED_SUBSET",
+                        "items", List.of("Red", "Green", "Blue")
+                ),
+                "flow-1",
+                "group-1"
+        );
+        variables.put(listVar.getId(), listVar);
+
+        String result = engine.evaluate("{{colors.item1.length}}|{{colors.item0.upper}}", 1, variables, "flow-1", "group-1");
+
+        assertEquals("5|RED", result);
+    }
+
+    @Test
+    public void variableReferencedTwiceHasOneValuePerMessage() {
+        variables.put("c", new Variable("c", "counter", "LOCAL", "numeric", 0,
+                Map.of("pattern", "SEQUENTIAL", "min", 0, "max", 100, "precision", "INTEGER",
+                        "sequentialGraph", List.of(Map.of("x", 0, "y", 0), Map.of("x", 100, "y", 100))),
+                "flow-1", "group-1"));
+
+        String first = engine.evaluate("{{counter}}|{{counter}}", 1, variables, "flow-1", "group-1");
+        String second = engine.evaluate("{{counter}}|{{counter}}", 2, variables, "flow-1", "group-1");
+
+        String[] a = first.split("\\|");
+        String[] b = second.split("\\|");
+        assertEquals(a[0], a[1]);
+        assertEquals(b[0], b[1]);
+        // The generator advances once per message, not once per reference
+        assertEquals(Long.parseLong(a[0]) + 1, Long.parseLong(b[0]));
+    }
+
+    @Test
+    public void formulaPlacedBeforeItsSourceUsesTheEmittedValue() {
+        variables.put("a", new Variable("a", "base", "LOCAL", "numeric", 0,
+                Map.of("pattern", "RANDOM", "min", 0, "max", 1000, "precision", "INTEGER"),
+                "flow-1", "group-1"));
+        variables.put("b", new Variable("b", "doubled", "LOCAL", "numeric", 0,
+                Map.of("pattern", "FORMULA", "formula", "{{base}}*2", "precision", "INTEGER"),
+                "flow-1", "group-1"));
+
+        for (int i = 0; i < 20; i++) {
+            String[] parts = engine.evaluate("{{doubled}}|{{base}}", i, variables, "flow-1", "group-1").split("\\|");
+            assertEquals(Long.parseLong(parts[1]) * 2, Long.parseLong(parts[0]));
+        }
+    }
+
+    @Test
+    public void formulaReadsNumbersWithPrefixOrSuffix() {
+        variables.put("t", new Variable("t", "temp", "LOCAL", "numeric", 0,
+                Map.of("pattern", "CONSTANT", "constantValue", 20, "suffix", " C"),
+                "flow-1", "group-1"));
+        variables.put("d", new Variable("d", "twice", "LOCAL", "numeric", 0,
+                Map.of("pattern", "FORMULA", "formula", "{{temp}}*2", "precision", "INTEGER"),
+                "flow-1", "group-1"));
+
+        assertEquals("20 C|40", engine.evaluate("{{temp}}|{{twice}}", 1, variables, "flow-1", "group-1"));
+    }
+
+    @Test
+    public void flowNameBuiltInIsReplacedWithTheFlowName() {
+        String template = "{\"id\":\"{{flow.name}}\"}";
+
+        assertEquals("{\"id\":\"Room 1\"}",
+                engine.evaluate(template, 1, variables, "flow-1", "group-1", "Room 1", null));
+        // Without a flow name (older callers) the placeholder is left as is
+        assertEquals(template, engine.evaluate(template, 1, variables, "flow-1", "group-1"));
+    }
+
+    @Test
+    public void flowNameBuiltInWinsOverAVariableNamedFlow() {
+        variables.put("f", new Variable("f", "flow", "LOCAL", "string", "x",
+                Map.of("pattern", "RANDOM_STRING"), "flow-1", "group-1"));
+
+        assertEquals("Room 2",
+                engine.evaluate("{{flow.name}}", 1, variables, "flow-1", "group-1", "Room 2", null));
+    }
+
+    @Test
+    public void closestScopeWinsWhenNamesClash() {
+        variables.put("g", new Variable("g", "level", "GLOBAL", "numeric", 0,
+                Map.of("pattern", "CONSTANT", "constantValue", 1), null, null));
+        variables.put("gr", new Variable("gr", "level", "GROUP", "numeric", 0,
+                Map.of("pattern", "CONSTANT", "constantValue", 2), null, "group-1"));
+        variables.put("l", new Variable("l", "level", "LOCAL", "numeric", 0,
+                Map.of("pattern", "CONSTANT", "constantValue", 3), "flow-1", "group-1"));
+
+        assertEquals("3", engine.evaluate("{{level}}", 1, variables, "flow-1", "group-1"));
+        assertEquals("2", engine.evaluate("{{level}}", 1, variables, "flow-2", "group-1"));
+        assertEquals("1", engine.evaluate("{{level}}", 1, variables, "flow-3", "group-2"));
+        assertEquals("1", engine.evaluate("{{global.level}}", 1, variables, "flow-1", "group-1"));
+    }
+
+    @Test
+    public void literalListItemsKeepTheirValueEvenWithADefaultGenerator() {
+        // The UI stores a default embeddedConfig on literal items; isEmbedded=false must win
+        Map<String, Object> embedded = Map.of("min", 0, "max", 100, "precision", "INTEGER");
+        variables.put("m", new Variable("m", "movement", "LOCAL", "list", List.of(), Map.of(
+                "selectionStrategy", "SEQUENTIAL",
+                "items", List.of(
+                        Map.of("id", "a", "value", "True", "weight", 1, "isEmbedded", false,
+                                "embeddedType", "numeric", "embeddedConfig", embedded),
+                        Map.of("id", "b", "value", "False", "weight", 1, "isEmbedded", false,
+                                "embeddedType", "numeric", "embeddedConfig", embedded))),
+                "flow-1", "group-1"));
+
+        String first = engine.evaluate("{{movement}}", 1, variables, "flow-1", "group-1");
+        String second = engine.evaluate("{{movement}}", 2, variables, "flow-1", "group-1");
+        assertEquals(java.util.Set.of("True", "False"), java.util.Set.of(first, second));
+    }
+
+    @Test
+    public void embeddedListItemsStillGenerateValues() {
+        variables.put("m", new Variable("m", "reading", "LOCAL", "list", List.of(), Map.of(
+                "selectionStrategy", "SEQUENTIAL",
+                "items", List.of(Map.of("id", "a", "value", "x", "weight", 1, "isEmbedded", true,
+                        "embeddedType", "numeric",
+                        "embeddedConfig", Map.of("pattern", "CONSTANT", "constantValue", 7, "precision", "INTEGER")))),
+                "flow-1", "group-1"));
+
+        assertEquals("7", engine.evaluate("{{reading}}", 1, variables, "flow-1", "group-1"));
+    }
+
+    @Test
+    public void ruleOverrideWithAFullConfigGeneratesFromThatConfig() {
+        variables.put("s", new Variable("s", "state", "LOCAL", "list", List.of(), Map.of(
+                "selectionStrategy", "SEQUENTIAL",
+                "items", List.of(Map.of("id", "a", "value", "OK", "isEmbedded", false),
+                        Map.of("id", "b", "value", "FAILURE", "isEmbedded", false))),
+                "flow-1", "group-1"));
+        variables.put("v", new Variable("v", "vibration", "LOCAL", "numeric", 0, Map.of(
+                "pattern", "CONSTANT", "constantValue", 1, "precision", "INTEGER",
+                "conditionalRules", List.of(Map.of("targetVariable", "state", "condition", "EQUALS",
+                        "value", "FAILURE",
+                        "overrides", Map.of("pattern", "RANDOM", "min", 40, "max", 120, "precision", "INTEGER")))),
+                "flow-1", "group-1"));
+
+        for (int i = 0; i < 20; i++) {
+            String[] parts = engine.evaluate("{{vibration}}|{{state}}", i, variables, "flow-1", "group-1").split("\\|");
+            long vibration = Long.parseLong(parts[0]);
+            if ("FAILURE".equals(parts[1])) {
+                assertTrue("override range: " + vibration, vibration >= 40 && vibration <= 120);
+            } else {
+                assertEquals(1, vibration);
+            }
+        }
+    }
+
+    @Test
+    public void ruleOverrideWithASingleValueStillWorks() {
+        variables.put("s", new Variable("s", "state", "LOCAL", "string", "x",
+                Map.of("pattern", "CONSTANT", "constantValue", "FAILURE"), "flow-1", "group-1"));
+        variables.put("v", new Variable("v", "vibration", "LOCAL", "numeric", 0, Map.of(
+                "pattern", "CONSTANT", "constantValue", 1,
+                "conditionalRules", List.of(Map.of("targetVariable", "state", "condition", "EQUALS",
+                        "value", "FAILURE", "overrides", Map.of("constantValue", 25)))),
+                "flow-1", "group-1"));
+
+        assertEquals("25", engine.evaluate("{{vibration}}", 1, variables, "flow-1", "group-1"));
+    }
+
+    @Test
+    public void temporalSubPropertiesUseTheGeneratedInstantWhateverTheFormat() {
+        variables.put("t", new Variable("t", "eventTime", "LOCAL", "temporal", "", Map.of(
+                "timeAdvanceMode", "SIMULATED_STEP", "startDate", "2025-06-01T08:00:00Z", "incrementMs", 4000,
+                "dateFormat", "yyyy-MM-dd'T'HH:mm:ss.SSSZ", "timeZone", "UTC"), "flow-1", "group-1"));
+
+        assertEquals("2025-06-01T08:00:00.000+0000|1748764800000|8",
+                engine.evaluate("{{eventTime}}|{{eventTime.timestamp}}|{{eventTime.hour}}", 1, variables, "flow-1", "group-1"));
+        assertEquals("1748764804000", engine.evaluate("{{eventTime.timestamp}}", 2, variables, "flow-1", "group-1"));
+    }
+
+    @Test
+    public void isoInstantFormatPresetWorks() {
+        variables.put("t", new Variable("t", "eventTime", "LOCAL", "temporal", "", Map.of(
+                "timeAdvanceMode", "SIMULATED_STEP", "startDate", "2025-06-01T08:00:00Z", "incrementMs", 1000,
+                "dateFormat", "ISO_INSTANT"), "flow-1", "group-1"));
+
+        assertEquals("2025-06-01T08:00:00Z", engine.evaluate("{{eventTime}}", 1, variables, "flow-1", "group-1"));
+    }
 }

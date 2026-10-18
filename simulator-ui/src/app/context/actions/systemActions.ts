@@ -1,6 +1,7 @@
 import type React from 'react';
 import type { AppAction } from '../reducer';
 import { CoreCommands } from '../../core/bridge';
+import { isSystemPlaceholder } from '../../core/templatePlaceholders';
 
 export const startSystem = (
   dispatch: React.Dispatch<AppAction>,
@@ -64,7 +65,7 @@ export const startSystem = (
           let match;
           while ((match = regex.exec(template)) !== null) {
             const fullSpec = match[1].trim();
-            if (['uuid', 'ts', 'n'].includes(fullSpec)) continue;
+            if (isSystemPlaceholder(fullSpec)) continue;
 
             let scope: string | null = null;
             let name = fullSpec;

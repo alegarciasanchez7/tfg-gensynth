@@ -14,6 +14,8 @@ public class TemplateEngine {
 
     private final DataGenerator dataGenerator;
     private static final Pattern VARIABLE_PATTERN = Pattern.compile("\\{\\{([^}]+)\\}\\}");
+    /** Built-in placeholder replaced by the name of the flow that renders the template. */
+    public static final String FLOW_NAME_PLACEHOLDER = "flow.name";
 
     public TemplateEngine() {
         this.dataGenerator = new DataGenerator();
@@ -24,6 +26,26 @@ public class TemplateEngine {
     }
 
     public String evaluate(String template, long sequenceNumber, Map<String, Variable> variables, String flowId, String groupId, Map<String, Object> context) {
+        return evaluate(template, sequenceNumber, variables, flowId, groupId, null, context);
+    }
+
+    /**
+     * Renders a flow template into one message.
+     *
+     * Each variable produces a single value per message: repeated references, sub-properties
+     * ({@code {{pos.x}}}, {@code {{pos.y}}}) and dependencies of formulas or conditional rules all
+     * share the value already stored in {@code context}.
+     *
+     * @param template       template with {@code {{...}}} placeholders
+     * @param sequenceNumber value of the {@code {{n}}} built-in
+     * @param variables      all variables, by id
+     * @param flowId         flow rendering the template (resolves LOCAL variables)
+     * @param groupId        group of that flow (resolves GROUP variables)
+     * @param flowName       value of the {@code {{flow.name}}} built-in; when {@code null} the placeholder is left as is
+     * @param context        values generated for this message, by variable id and name; may be {@code null}
+     * @return the rendered message, or an empty string for an empty template
+     */
+    public String evaluate(String template, long sequenceNumber, Map<String, Variable> variables, String flowId, String groupId, String flowName, Map<String, Object> context) {
         if (template == null || template.isEmpty()) {
             return "";
         }
@@ -52,6 +74,8 @@ public class TemplateEngine {
                 replacement = currentTs;
             } else if (fullVarSpec.equals("n")) {
                 replacement = currentSeq;
+            } else if (fullVarSpec.equals(FLOW_NAME_PLACEHOLDER)) {
+                replacement = flowName != null ? flowName : matcher.group(0);
             } else {
                 // User variable resolution with scope enforcement
                 String scopePart = null;
@@ -101,20 +125,26 @@ public class TemplateEngine {
                 Variable variable = findAccessibleVariable(variables, namePart, scopePart, flowId, groupId);
 
                 if (variable != null) {
-                    ensureDependenciesAvailable(
-                        variable,
-                        variables,
-                        flowId,
-                        groupId,
-                        context,
-                        new HashSet<>()
-                    );
-                    Object generatedValue = dataGenerator.generateValue(variable, context);
-                    if (variable.getId() != null) {
-                        context.put(variable.getId(), generatedValue);
-                    }
-                    if (variable.getName() != null) {
-                        context.put(variable.getName(), generatedValue);
+                    Object generatedValue;
+                    if (variable.getId() != null && context.containsKey(variable.getId())) {
+                        // Already generated for this message (repeated reference or dependency)
+                        generatedValue = context.get(variable.getId());
+                    } else {
+                        ensureDependenciesAvailable(
+                            variable,
+                            variables,
+                            flowId,
+                            groupId,
+                            context,
+                            new HashSet<>()
+                        );
+                        generatedValue = dataGenerator.generateValue(variable, context);
+                        if (variable.getId() != null) {
+                            context.put(variable.getId(), generatedValue);
+                        }
+                        if (variable.getName() != null) {
+                            context.put(variable.getName(), generatedValue);
+                        }
                     }
                     // Convert value to string representation
                     boolean isConstantPattern = false;
@@ -134,6 +164,13 @@ public class TemplateEngine {
                     }
 
                     Object targetObj = generatedValue;
+                    if (propertyPart != null && "temporal".equalsIgnoreCase(variable.getType())) {
+                        // Read date parts from the generated instant, not from the formatted text
+                        java.time.Instant instant = lastInstantOf(context.get(variable.getId() + "_config"));
+                        if (instant != null) {
+                            targetObj = instant;
+                        }
+                    }
                     if (itemIndex != null && targetObj instanceof java.util.List<?>) {
                         java.util.List<?> list = (java.util.List<?>) targetObj;
                         if (itemIndex >= 0 && itemIndex < list.size()) {
@@ -141,6 +178,12 @@ public class TemplateEngine {
                         } else {
                             targetObj = null;
                         }
+                    }
+                    if (itemIndex == null && isListCollectionProperty(propertyPart)
+                            && "list".equalsIgnoreCase(variable.getType())
+                            && !(targetObj instanceof java.util.List<?>)) {
+                        // Single-item strategies yield one item, not a list: answer as a one-item list
+                        targetObj = targetObj != null ? java.util.List.of(targetObj) : java.util.List.of();
                     }
 
                     if (propertyPart != null) {
@@ -181,6 +224,25 @@ public class TemplateEngine {
         matcher.appendTail(result);
 
         return result.toString();
+    }
+
+    /** Whether the property reads the list as a whole ({@code .size}, {@code .first}, {@code .last} and aliases). */
+    private static boolean isListCollectionProperty(String propertyPart) {
+        if (propertyPart == null) {
+            return false;
+        }
+        switch (propertyPart.toLowerCase(java.util.Locale.ROOT)) {
+            case "size":
+            case "length":
+            case "count":
+            case "first":
+            case "firstitem":
+            case "last":
+            case "lastitem":
+                return true;
+            default:
+                return false;
+        }
     }
 
     private String resolveVariableProperty(Object targetObj, String propertyPart, Variable variable) {
@@ -430,6 +492,18 @@ public class TemplateEngine {
         return targetObj != null ? targetObj.toString() : "";
     }
 
+    /**
+     * Finds the variable a flow can reach by name or id. When several reachable variables share a
+     * name, the closest scope wins (LOCAL, then GROUP, then GLOBAL), so the result never depends on
+     * map order.
+     *
+     * @param variables        all variables, by id
+     * @param variableNameOrId name or id to look for
+     * @param scopeFilter      "local", "group" or "global" to restrict the scope, or {@code null}
+     * @param flowId           flow that references the variable
+     * @param groupId          group of that flow
+     * @return the matching variable, or {@code null} if none is reachable
+     */
     public Variable findAccessibleVariable(
         Map<String, Variable> variables,
         String variableNameOrId,
@@ -437,6 +511,8 @@ public class TemplateEngine {
         String flowId,
         String groupId
     ) {
+        Variable best = null;
+        int bestRank = Integer.MAX_VALUE;
         for (Variable v : variables.values()) {
             boolean matchesName = v.getName() != null && v.getName().equals(variableNameOrId);
             boolean matchesId = v.getId() != null && v.getId().equals(variableNameOrId);
@@ -449,17 +525,25 @@ public class TemplateEngine {
             }
 
             String vScope = v.getScope().toUpperCase();
-            if ("GLOBAL".equals(vScope)) {
-                return v;
-            }
-            if ("GROUP".equals(vScope) && groupId != null && groupId.equals(v.getGroupId())) {
-                return v;
-            }
+            int rank;
             if ("LOCAL".equals(vScope) && flowId != null && flowId.equals(v.getFlowId())) {
-                return v;
+                rank = 0;
+            } else if ("GROUP".equals(vScope) && groupId != null && groupId.equals(v.getGroupId())) {
+                rank = 1;
+            } else if ("GLOBAL".equals(vScope)) {
+                rank = 2;
+            } else {
+                continue;
+            }
+            if (matchesId) {
+                return v; // an id is unique
+            }
+            if (rank < bestRank) {
+                best = v;
+                bestRank = rank;
             }
         }
-        return null;
+        return best;
     }
 
     private void ensureDependenciesAvailable(
@@ -549,6 +633,14 @@ public class TemplateEngine {
                 resolutionStack.remove(variableId);
             }
         }
+    }
+
+    private static java.time.Instant lastInstantOf(Object generator) {
+        if (generator instanceof com.gensynth.core.flow.variables.ConfigurableVariable cv
+                && cv.getConfiguration() instanceof com.gensynth.core.flow.variables.config.TemporalVariableConfig temporal) {
+            return temporal.getLastInstant();
+        }
+        return null;
     }
 
     public void clearVariableCache() {

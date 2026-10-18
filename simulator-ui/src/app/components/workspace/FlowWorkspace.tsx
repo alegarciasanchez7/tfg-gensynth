@@ -250,6 +250,7 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
           onConnectorChange={handleConnectorChange}
           onConnectorVersionChange={handleConnectorVersionChange}
           onConnectorConfigChange={handleConnectorConfigChange}
+          onEventLossChange={handleUpdateConfig}
         />
 
         {/* RIGHT: Format editor */}

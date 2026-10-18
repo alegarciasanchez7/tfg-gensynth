@@ -46,6 +46,34 @@ const EMBEDDED_TYPE_OPTIONS = [
   { value: 'temporal', label: 'Temporal' },
 ];
 
+/**
+ * Probability cell of the Markov matrix. Keeps the typed text (e.g. "0.") while it is not a full
+ * number yet, so the decimal point is not lost, and shows at most 3 decimals otherwise.
+ */
+const MatrixCellInput = ({ value, onCommit }: { value: number; onCommit: (val: string) => void }) => {
+  const [draft, setDraft] = useState<string | null>(null);
+  const rounded = String(Number(value.toFixed(3)));
+  return (
+    <Input
+      type="text"
+      inputMode="decimal"
+      aria-label="Transition probability"
+      value={draft ?? rounded}
+      onFocus={() => setDraft(rounded)}
+      onChange={(e) => {
+        const text = e.target.value.replace(',', '.');
+        setDraft(text);
+        if (/^\d*\.?\d+$/.test(text)) onCommit(text);
+      }}
+      onBlur={() => {
+        if (draft !== null && draft.trim() !== '') onCommit(draft);
+        setDraft(null);
+      }}
+      className="h-7 w-20 text-center text-xs font-mono mx-auto"
+    />
+  );
+};
+
 const EmbeddedSubGeneratorPanel = React.memo<{
   item: ListItemConfig;
   index: number;
@@ -194,7 +222,11 @@ export const ListConfigPanel: React.FC<ListConfigPanelProps> = ({
   }, [unifiedItems, transitionMatrix, onChange]);
 
   const handleAddItem = useCallback(() => {
-    const nextId = `item_${items.length + 1}`;
+    // Unique even after deletions (items.length + 1 could repeat an existing id)
+    const usedIds = new Set(unifiedItems.map((item: ListItemConfig) => item.id));
+    let nextNumber = items.length + 1;
+    while (usedIds.has(`item_${nextNumber}`)) nextNumber++;
+    const nextId = `item_${nextNumber}`;
     const newItem: ListItemConfig = {
       id: nextId,
       value: `Item ${items.length + 1}`,
@@ -529,7 +561,7 @@ export const ListConfigPanel: React.FC<ListConfigPanelProps> = ({
       {selectionStrategy === 'MARKOV_CHAIN' && unifiedItems.length > 0 && (
         <div className="space-y-2 mt-4 pt-4 border-t border-[var(--c-br1)]">
           <div className="flex items-center gap-2">
-            <Label className="text-[10px] uppercase text-[var(--c-tx4)]">Markov Transition Probability Matrix (%)</Label>
+            <Label className="text-[10px] uppercase text-[var(--c-tx4)]">Markov Transition Probability Matrix (0–1 per row)</Label>
           </div>
           <div className="overflow-x-auto border border-[var(--c-br1)] rounded bg-[var(--c-bg2)] p-2">
             <table className="w-full text-xs font-mono">
@@ -567,18 +599,14 @@ export const ListConfigPanel: React.FC<ListConfigPanelProps> = ({
                       {unifiedItems.map((target: any, targetIdx: number) => {
                         const targetId = target.id || String(target.value || `item_${targetIdx + 1}`);
                         const rawProb = transitionMatrix[sourceId] && transitionMatrix[sourceId][targetId];
-                        const prob = rawProb !== undefined ? rawProb : (1.0 / unifiedItems.length);
+                        // A missing cell is a 0 probability for the Core
+                        const prob = rawProb !== undefined ? rawProb : 0;
 
                         return (
                           <td key={`${sourceId}_${targetId}`} className="p-1 text-center">
-                            <Input
-                              type="number"
-                              step="0.05"
-                              min={0}
-                              max={1}
+                            <MatrixCellInput
                               value={prob}
-                              onChange={(e) => handleMatrixCellChange(sourceId, targetId, e.target.value)}
-                              className="h-7 w-16 text-center text-xs font-mono mx-auto"
+                              onCommit={(val) => handleMatrixCellChange(sourceId, targetId, val)}
                             />
                           </td>
                         );

@@ -13,7 +13,8 @@ export const PROJECT_FILE_EXTENSION = '.gsynth';
 export const PROJECT_FORMAT_ID = 'gensynth-project';
 /**
  * Current project file format version. Must match ProjectFileFormat.VERSION in the Core.
- * The `settings` section and the flow field `everyTicks` are optional (defaults apply);
+ * The `settings` section and the flow fields `everyTicks`, `lossPercent`, `outageEveryTicks` and
+ * `outageDurationTicks` are optional (defaults apply: 1 and 0, i.e. no event loss);
  * `burst`, `interval` and `threads` are legacy.
  */
 export const PROJECT_FORMAT_VERSION = '1.0.0';
@@ -69,6 +70,16 @@ function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'AbortError';
 }
 
+/** Whether a value is a valid event loss percentage (finite, 0-100). */
+function isLossPercent(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100;
+}
+
+/** Whether a value is a valid event loss tick count (integer >= 0). */
+function isTickCount(value: unknown): value is number {
+  return Number.isInteger(value) && (value as number) >= 0;
+}
+
 /**
  * Normalize a Flow to ensure all required fields have valid values
  */
@@ -84,6 +95,9 @@ export function normalizeFlowFromSnapshot(flow: Partial<Flow>): Flow {
     interval: typeof flow.interval === 'number' ? flow.interval : 1000,
     burst: typeof flow.burst === 'number' ? flow.burst : 1,
     everyTicks: Number.isInteger(flow.everyTicks) && (flow.everyTicks as number) >= 1 ? (flow.everyTicks as number) : 1,
+    lossPercent: isLossPercent(flow.lossPercent) ? flow.lossPercent : 0,
+    outageEveryTicks: isTickCount(flow.outageEveryTicks) ? flow.outageEveryTicks : 0,
+    outageDurationTicks: isTickCount(flow.outageDurationTicks) ? flow.outageDurationTicks : 0,
     topic: flow.topic ?? '',
     host: flow.host ?? 'localhost',
     port: typeof flow.port === 'number' ? flow.port : 5672,

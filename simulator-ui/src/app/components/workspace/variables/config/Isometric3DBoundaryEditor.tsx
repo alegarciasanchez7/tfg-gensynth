@@ -19,6 +19,10 @@ export interface Isometric3DBoundaryEditorProps {
   shape3DHeight?: number;
   shape3DRadius?: number;
   onChange: (bounds: {
+    minX: number;
+    maxX: number;
+    minY: number;
+    maxY: number;
     minZ: number;
     maxZ: number;
     polygon?: Point3DCoord[];
@@ -30,9 +34,35 @@ export interface Isometric3DBoundaryEditorProps {
   }) => void;
   width?: number;
   height?: number;
+  /** Fill the parent's height and draw the canvas at the size it gets (fullscreen editor). */
+  fillContainer?: boolean;
 }
 
 type HandleType = 'corner' | 'radius' | 'height' | null;
+
+/** Numeric inputs of the side panel; each keeps its own text while it is being typed. */
+type FieldKey = 'width' | 'length' | 'radius' | 'height' | 'elev';
+
+/**
+ * Base elevation implied by a persisted Z range: with a negative height the shape hangs down
+ * from its base, so the base is the top of the range.
+ */
+const baseElevationFor = (shape: Shape3DType | undefined, minZ: number, maxZ: number, height: number | undefined) =>
+  shape !== 'sphere' && (height ?? 0) < 0 ? maxZ : minZ;
+
+/** Side of an unset footprint dimension, like the Core: the bounds span, or 100 for a flat range. */
+const spanOr100 = (min: number, max: number) => Math.abs(max - min) || 100;
+
+/** Shape as the Core sees it: the persisted dimensions, or the ones it derives from the bounds when unset. */
+const resolveShape = (p: Pick<Isometric3DBoundaryEditorProps,
+  'minX' | 'maxX' | 'minY' | 'maxY' | 'minZ' | 'maxZ' | 'shape3DType' | 'shape3DWidth' | 'shape3DLength' | 'shape3DHeight' | 'shape3DRadius'>) => ({
+  shape: (p.shape3DType === ('custom' as Shape3DType) ? 'cube' : p.shape3DType ?? 'cube') as Shape3DType,
+  width: p.shape3DWidth ?? spanOr100(p.minX, p.maxX),
+  length: p.shape3DLength ?? spanOr100(p.minY, p.maxY),
+  height: p.shape3DHeight ?? p.maxZ - p.minZ,
+  radius: p.shape3DRadius ?? 50,
+  elev: baseElevationFor(p.shape3DType, p.minZ, p.maxZ, p.shape3DHeight),
+});
 
 export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps> = ({
   minX,
@@ -45,22 +75,57 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
   shape3DWidth,
   shape3DLength,
   shape3DHeight,
-  shape3DRadius = 50,
+  shape3DRadius,
   onChange,
-  width = 360,
-  height = 220,
+  width: baseWidth = 360,
+  height: baseHeight = 220,
+  fillContainer = false,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const canvasBoxRef = useRef<HTMLDivElement>(null);
 
-  // Shape state
-  const [activeShape, setActiveShape] = useState<Shape3DType>(
-    shape3DType === ('custom' as any) ? 'cube' : shape3DType
-  );
-  const [width3D, setWidth3D] = useState<number>(shape3DWidth ?? Math.max(20, Math.abs(maxX - minX) || 100));
-  const [length3D, setLength3D] = useState<number>(shape3DLength ?? Math.max(20, Math.abs(maxY - minY) || 100));
-  const [height3D, setHeight3D] = useState<number>(shape3DHeight ?? (maxZ - minZ || 100));
-  const [radius3D, setRadius3D] = useState<number>(shape3DRadius ?? 50);
-  const [baseElevation, setBaseElevation] = useState<number>(minZ);
+  // Filling the container: the canvas is drawn at the measured size of its column, so it is never stretched
+  const [measured, setMeasured] = useState<{ w: number; h: number } | null>(null);
+  useEffect(() => {
+    const box = canvasBoxRef.current;
+    if (!fillContainer || !box) return;
+    const updateSize = () => {
+      const rect = box.getBoundingClientRect();
+      setMeasured(rect.width > 0 && rect.height > 0 ? { w: Math.floor(rect.width), h: Math.floor(rect.height) } : null);
+    };
+    updateSize();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(box);
+    return () => observer.disconnect();
+  }, [fillContainer]);
+  const width = fillContainer && measured ? measured.w : baseWidth;
+  const height = fillContainer && measured ? measured.h : baseHeight;
+
+  // Shape state: local while a handle is dragged or a field typed, reset whenever the props change.
+  // Unset dimensions are derived live from the bounds with the Core rule, so what is drawn and
+  // emitted is the region the generator uses.
+  const resolved = resolveShape({ minX, maxX, minY, maxY, minZ, maxZ, shape3DType, shape3DWidth, shape3DLength, shape3DHeight, shape3DRadius });
+  const [activeShape, setActiveShape] = useState<Shape3DType>(resolved.shape);
+  const [width3D, setWidth3D] = useState<number>(resolved.width);
+  const [length3D, setLength3D] = useState<number>(resolved.length);
+  const [height3D, setHeight3D] = useState<number>(resolved.height);
+  const [radius3D, setRadius3D] = useState<number>(resolved.radius);
+  const [baseElevation, setBaseElevation] = useState<number>(resolved.elev);
+  const [drafts, setDrafts] = useState<Partial<Record<FieldKey, string>>>({});
+
+  // Keep state in sync with incoming props (adjusted during render, without an effect)
+  const propsKey = [shape3DType, shape3DWidth, shape3DLength, shape3DHeight, shape3DRadius, minX, maxX, minY, maxY, minZ, maxZ].join('|');
+  const [syncedKey, setSyncedKey] = useState(propsKey);
+  if (propsKey !== syncedKey) {
+    setSyncedKey(propsKey);
+    setActiveShape(resolved.shape);
+    setWidth3D(resolved.width);
+    setLength3D(resolved.length);
+    setHeight3D(resolved.height);
+    setRadius3D(resolved.radius);
+    setBaseElevation(resolved.elev);
+  }
 
   // Camera & View controls
   const [orbitView, setOrbitView] = useState<boolean>(false);
@@ -73,6 +138,9 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
   const [draggingHandle, setDraggingHandle] = useState<HandleType>(null);
   const [hoveredHandle, setHoveredHandle] = useState<HandleType>(null);
   const [isOrbiting, setIsOrbiting] = useState<boolean>(false);
+  // Projection centre Z frozen while a handle is dragged, so the shape does not shift under the cursor
+  const [frozenCenterZ, setFrozenCenterZ] = useState<number | null>(null);
+  const dragMovedRef = useRef(false);
   const [dragStart, setDragStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [initialShapeValues, setInitialShapeValues] = useState<{
     width: number;
@@ -81,32 +149,9 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
     radius: number;
   }>({ width: 100, length: 100, height: 100, radius: 50 });
 
-  // Keep state in sync with incoming props
-  useEffect(() => {
-    if (shape3DType && shape3DType !== ('custom' as any)) {
-      setActiveShape(shape3DType);
-    }
-  }, [shape3DType]);
-
-  useEffect(() => {
-    if (shape3DWidth !== undefined) setWidth3D(shape3DWidth);
-  }, [shape3DWidth]);
-
-  useEffect(() => {
-    if (shape3DLength !== undefined) setLength3D(shape3DLength);
-  }, [shape3DLength]);
-
-  useEffect(() => {
-    if (shape3DHeight !== undefined) setHeight3D(shape3DHeight);
-  }, [shape3DHeight]);
-
-  useEffect(() => {
-    if (shape3DRadius !== undefined) setRadius3D(shape3DRadius);
-  }, [shape3DRadius]);
-
-  useEffect(() => {
-    setBaseElevation(minZ);
-  }, [minZ]);
+  // Centre of the current X/Y bounds: the generated footprint stays centred there
+  const centerX = (minX + maxX) / 2;
+  const centerY = (minY + maxY) / 2;
 
   // Helper to compute polygon for bounds sync
   const computePolygonForShape = (
@@ -120,10 +165,10 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
       const hw = w / 2;
       const hl = l / 2;
       return [
-        { x: -hw, y: -hl, z: elev },
-        { x: hw, y: -hl, z: elev },
-        { x: hw, y: hl, z: elev },
-        { x: -hw, y: hl, z: elev },
+        { x: centerX - hw, y: centerY - hl, z: elev },
+        { x: centerX + hw, y: centerY - hl, z: elev },
+        { x: centerX + hw, y: centerY + hl, z: elev },
+        { x: centerX - hw, y: centerY + hl, z: elev },
       ];
     } else {
       // Cone or Sphere base circle polygon
@@ -132,8 +177,8 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
       for (let i = 0; i < numPts; i++) {
         const angle = (i / numPts) * Math.PI * 2;
         points.push({
-          x: Math.round(Math.cos(angle) * r),
-          y: Math.round(Math.sin(angle) * r),
+          x: Math.round((centerX + Math.cos(angle) * r) * 100) / 100,
+          y: Math.round((centerY + Math.sin(angle) * r) * 100) / 100,
           z: elev,
         });
       }
@@ -157,11 +202,20 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
     const nextElev = updates.elev ?? baseElevation;
 
     const computedPoly = computePolygonForShape(nextShape, nextWidth, nextLength, nextRadius, nextElev);
-    const topZ = nextElev + nextHeight;
+    // A sphere rests on its base and spans its diameter; other shapes span their (possibly negative) height
+    const topZ = nextShape === 'sphere' ? nextElev + 2 * nextRadius : nextElev + nextHeight;
     const computedMinZ = Math.min(nextElev, topZ);
     const computedMaxZ = Math.max(nextElev, topZ);
+    const halfX = nextShape === 'cube' || nextShape === 'pyramid' ? nextWidth / 2 : nextRadius;
+    const halfY = nextShape === 'cube' || nextShape === 'pyramid' ? nextLength / 2 : nextRadius;
 
+    // Rounded so float noise (e.g. -9.899999999999999) does not reach the config
+    const round6 = (v: number) => Math.round(v * 1e6) / 1e6;
     onChange({
+      minX: round6(centerX - halfX),
+      maxX: round6(centerX + halfX),
+      minY: round6(centerY - halfY),
+      maxY: round6(centerY + halfY),
       minZ: computedMinZ,
       maxZ: computedMaxZ,
       shape3DType: nextShape,
@@ -175,6 +229,7 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
 
   // Calculate shape vertical midpoint to keep figure strictly centered in canvas panel
   const getShapeCenterZ = () => {
+    if (frozenCenterZ !== null) return frozenCenterZ;
     if (activeShape === 'sphere') {
       return baseElevation + radius3D;
     }
@@ -549,6 +604,7 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
     height3D,
     radius3D,
     baseElevation,
+    frozenCenterZ,
     rotX,
     rotY,
     zoom,
@@ -560,33 +616,35 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
     height,
   ]);
 
-  // Mouse Interaction Handlers
-  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  // Pointer Interaction Handlers: handle drags stay local and are committed once, on release
+  const getCanvasPos = (e: { clientX: number; clientY: number }) => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
-    const mouseX = (e.clientX - rect.left) * (width / rect.width);
-    const mouseY = (e.clientY - rect.top) * (height / rect.height);
+    return {
+      x: (e.clientX - rect.left) * (rect.width > 0 ? width / rect.width : 1),
+      y: (e.clientY - rect.top) * (rect.height > 0 ? height / rect.height : 1),
+    };
+  };
 
+  const handleAt = (x: number, y: number): HandleType => {
     const handles = getHandleCoordinates();
+    if (handles.cornerHandle && Math.hypot(x - handles.cornerHandle.x, y - handles.cornerHandle.y) < 12) return 'corner';
+    if (handles.radiusHandle && Math.hypot(x - handles.radiusHandle.x, y - handles.radiusHandle.y) < 12) return 'radius';
+    if (handles.heightHandle && Math.hypot(x - handles.heightHandle.x, y - handles.heightHandle.y) < 12) return 'height';
+    return null;
+  };
 
-    // Check hit test for handles
-    if (handles.cornerHandle && Math.hypot(mouseX - handles.cornerHandle.x, mouseY - handles.cornerHandle.y) < 12) {
-      setDraggingHandle('corner');
-      setDragStart({ x: mouseX, y: mouseY });
-      setInitialShapeValues({ width: width3D, length: length3D, height: height3D, radius: radius3D });
-      return;
-    }
+  const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const { x: mouseX, y: mouseY } = getCanvasPos(e);
+    const handle = handleAt(mouseX, mouseY);
 
-    if (handles.radiusHandle && Math.hypot(mouseX - handles.radiusHandle.x, mouseY - handles.radiusHandle.y) < 12) {
-      setDraggingHandle('radius');
-      setDragStart({ x: mouseX, y: mouseY });
-      setInitialShapeValues({ width: width3D, length: length3D, height: height3D, radius: radius3D });
-      return;
-    }
-
-    if (handles.heightHandle && Math.hypot(mouseX - handles.heightHandle.x, mouseY - handles.heightHandle.y) < 12) {
-      setDraggingHandle('height');
+    if (handle) {
+      // Keep receiving pointer events when the cursor leaves the canvas mid-drag
+      e.currentTarget.setPointerCapture?.(e.pointerId);
+      dragMovedRef.current = false;
+      setFrozenCenterZ(getShapeCenterZ());
+      setDraggingHandle(handle);
       setDragStart({ x: mouseX, y: mouseY });
       setInitialShapeValues({ width: width3D, length: length3D, height: height3D, radius: radius3D });
       return;
@@ -594,30 +652,19 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
 
     // If Orbit View is active, clicking canvas starts camera rotation
     if (orbitView) {
+      e.currentTarget.setPointerCapture?.(e.pointerId);
       setIsOrbiting(true);
       setDragStart({ x: e.clientX, y: e.clientY });
     }
   };
 
-  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const mouseX = (e.clientX - rect.left) * (width / rect.width);
-    const mouseY = (e.clientY - rect.top) * (height / rect.height);
+  const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const { x: mouseX, y: mouseY } = getCanvasPos(e);
 
     // Hover handle detection when not dragging
     if (!draggingHandle && !isOrbiting) {
-      const handles = getHandleCoordinates();
-      if (handles.cornerHandle && Math.hypot(mouseX - handles.cornerHandle.x, mouseY - handles.cornerHandle.y) < 12) {
-        setHoveredHandle('corner');
-      } else if (handles.radiusHandle && Math.hypot(mouseX - handles.radiusHandle.x, mouseY - handles.radiusHandle.y) < 12) {
-        setHoveredHandle('radius');
-      } else if (handles.heightHandle && Math.hypot(mouseX - handles.heightHandle.x, mouseY - handles.heightHandle.y) < 12) {
-        setHoveredHandle('height');
-      } else {
-        setHoveredHandle(null);
-      }
+      setHoveredHandle(handleAt(mouseX, mouseY));
+      return;
     }
 
     // Dragging Camera Orbit
@@ -631,41 +678,108 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
     }
 
     // Dragging Shape Handles
-    if (draggingHandle) {
-      const dx = mouseX - dragStart.x;
-      const dy = mouseY - dragStart.y;
+    const dx = mouseX - dragStart.x;
+    const dy = mouseY - dragStart.y;
 
-      if (draggingHandle === 'corner') {
-        const delta = (dx - dy) * 0.8;
-        const newW = Math.max(10, Math.round(initialShapeValues.width + delta));
-        const newL = Math.max(10, Math.round(initialShapeValues.length + delta));
-        setWidth3D(newW);
-        setLength3D(newL);
-        emitChange({ width: newW, length: newL });
-      } else if (draggingHandle === 'radius') {
-        const delta = (dx - dy) * 0.8;
-        const newR = Math.max(5, Math.round(initialShapeValues.radius + delta));
-        setRadius3D(newR);
-        emitChange({ radius: newR });
-      } else if (draggingHandle === 'height') {
-        // Upwards movement on screen reduces Y, which increases Height
-        const deltaH = -dy * 1.2;
-        const newH = Math.round(initialShapeValues.height + deltaH);
-        setHeight3D(newH);
-        emitChange({ height: newH });
-      }
+    // Scale factor from the cursor movement along the screen direction centre → handle, so the
+    // handle follows the cursor whatever the camera rotation
+    const growFactor = (handle: { x: number; y: number }, center: { x: number; y: number }) => {
+      const vx = handle.x - center.x;
+      const vy = handle.y - center.y;
+      const len = Math.hypot(vx, vy);
+      if (len < 1e-3) return 1;
+      return Math.max(0, (len + (dx * vx + dy * vy) / len) / len);
+    };
+
+    if (draggingHandle === 'corner') {
+      const { width: w0, length: l0 } = initialShapeValues;
+      const factor = growFactor(project(w0 / 2, l0 / 2, baseElevation), project(0, 0, baseElevation));
+      const newW = Math.max(10, Math.round(w0 * factor));
+      const newL = Math.max(10, Math.round(l0 * factor));
+      if (newW === width3D && newL === length3D) return;
+      dragMovedRef.current = true;
+      setWidth3D(newW);
+      setLength3D(newL);
+    } else if (draggingHandle === 'radius') {
+      const r0 = initialShapeValues.radius;
+      const handleZ = activeShape === 'sphere' ? baseElevation + r0 : baseElevation;
+      const factor = growFactor(project(r0, 0, handleZ), project(0, 0, handleZ));
+      const newR = Math.max(5, Math.round(r0 * factor));
+      if (newR === radius3D) return;
+      dragMovedRef.current = true;
+      setRadius3D(newR);
+    } else if (draggingHandle === 'height') {
+      // Screen pixels per Z unit of the projection, so the top handle follows the cursor
+      const pxPerZ = (2 / 300) * Math.cos(rotX) * (Math.min(width, height) / 3.0) * 0.7 * zoom;
+      const deltaH = pxPerZ > 1e-3 ? -dy / pxPerZ : -dy * 1.2;
+      const newH = Math.round(initialShapeValues.height + deltaH);
+      if (newH === height3D) return;
+      dragMovedRef.current = true;
+      setHeight3D(newH);
     }
   };
 
-  const handleMouseUp = () => {
+  const handlePointerUp = () => {
+    if (draggingHandle && dragMovedRef.current) {
+      emitChange({});
+    }
+    dragMovedRef.current = false;
     setDraggingHandle(null);
+    setFrozenCenterZ(null);
     setIsOrbiting(false);
   };
 
+  // Side panel inputs keep the typed text and commit a finite number on blur or Enter
+  const fieldValue = (key: FieldKey, value: number) => drafts[key] ?? String(value);
+
+  const setFieldDraft = (key: FieldKey, text: string) => setDrafts((prev) => ({ ...prev, [key]: text }));
+
+  const commitField = (key: FieldKey) => {
+    const raw = drafts[key];
+    setDrafts(({ [key]: _committed, ...rest }) => rest);
+    if (raw === undefined || raw.trim() === '') return;
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed)) return;
+
+    if (key === 'width') {
+      const val = Math.max(1, parsed);
+      if (val === width3D) return;
+      setWidth3D(val);
+      emitChange({ width: val });
+    } else if (key === 'length') {
+      const val = Math.max(1, parsed);
+      if (val === length3D) return;
+      setLength3D(val);
+      emitChange({ length: val });
+    } else if (key === 'radius') {
+      const val = Math.max(1, parsed);
+      if (val === radius3D) return;
+      setRadius3D(val);
+      emitChange({ radius: val });
+    } else if (key === 'height') {
+      if (parsed === height3D) return;
+      setHeight3D(parsed);
+      emitChange({ height: parsed });
+    } else {
+      if (parsed === baseElevation) return;
+      setBaseElevation(parsed);
+      emitChange({ elev: parsed });
+    }
+  };
+
+  const fieldProps = (key: FieldKey, value: number) => ({
+    value: fieldValue(key, value),
+    onChange: (e: React.ChangeEvent<HTMLInputElement>) => setFieldDraft(key, e.target.value),
+    onBlur: () => commitField(key),
+    onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === 'Enter') commitField(key);
+    },
+  });
+
   return (
-    <div className="flex flex-col gap-3">
+    <div className={`flex flex-col gap-3 ${fillContainer ? 'flex-1 min-h-0' : ''}`}>
       {/* Top Toolbar: Shape Selectors & Orbit View Toggle */}
-      <div className="flex flex-wrap items-center justify-between gap-2 p-2 rounded border border-[var(--c-br1)] bg-[var(--c-bg2)]">
+      <div className="flex flex-wrap items-center justify-between gap-2 p-2 rounded border border-[var(--c-br1)] bg-[var(--c-bg2)] shrink-0">
         <div className="flex items-center gap-1">
           {[
             { id: 'cube', label: 'Cube', icon: Box },
@@ -748,18 +862,24 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
       </div>
 
       {/* Main Container: Canvas + Side Control Panel */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div className={`grid grid-cols-1 md:grid-cols-3 gap-3 ${fillContainer ? 'flex-1 min-h-0' : ''}`}>
         {/* Canvas Column */}
-        <div className="md:col-span-2 relative rounded border border-[var(--c-br1)] bg-black overflow-hidden flex items-center justify-center">
+        <div
+          ref={canvasBoxRef}
+          className={`md:col-span-2 relative rounded border border-[var(--c-br1)] bg-black overflow-hidden flex items-center justify-center ${
+            fillContainer ? 'min-h-[300px]' : ''
+          }`}
+        >
           <canvas
             ref={canvasRef}
             width={width}
             height={height}
-            onMouseDown={handleMouseDown}
-            onMouseMove={handleMouseMove}
-            onMouseUp={handleMouseUp}
-            onMouseLeave={handleMouseUp}
-            className={`w-full h-full touch-none ${
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerUp}
+            onPointerLeave={() => setHoveredHandle(null)}
+            className={`${fillContainer ? 'absolute inset-0' : ''} w-full h-full touch-none ${
               draggingHandle
                 ? 'cursor-grabbing'
                 : hoveredHandle
@@ -772,7 +892,11 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
         </div>
 
         {/* Parametric Side Panel Column */}
-        <div className="rounded border border-[var(--c-br1)] bg-[var(--c-bg4)] p-3 space-y-3 flex flex-col justify-between">
+        <div
+          className={`rounded border border-[var(--c-br1)] bg-[var(--c-bg4)] p-3 space-y-3 flex flex-col justify-between ${
+            fillContainer ? 'min-h-0 overflow-y-auto' : ''
+          }`}
+        >
           <div className="space-y-3">
             <div className="flex items-center gap-1.5 text-xs font-semibold text-[var(--c-tx2)] border-b border-[var(--c-br1)] pb-1.5">
               <Sliders size={13} className="text-violet-400" />
@@ -791,12 +915,7 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
                     id="width-3d-input"
                     type="number"
                     min={1}
-                    value={width3D}
-                    onChange={(e) => {
-                      const val = Math.max(1, parseFloat(e.target.value) || 1);
-                      setWidth3D(val);
-                      emitChange({ width: val });
-                    }}
+                    {...fieldProps('width', width3D)}
                     className="h-7 text-xs font-mono"
                   />
                 </div>
@@ -810,12 +929,7 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
                     id="length-3d-input"
                     type="number"
                     min={1}
-                    value={length3D}
-                    onChange={(e) => {
-                      const val = Math.max(1, parseFloat(e.target.value) || 1);
-                      setLength3D(val);
-                      emitChange({ length: val });
-                    }}
+                    {...fieldProps('length', length3D)}
                     className="h-7 text-xs font-mono"
                   />
                 </div>
@@ -833,12 +947,7 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
                   id="radius-3d-input"
                   type="number"
                   min={1}
-                  value={radius3D}
-                  onChange={(e) => {
-                    const val = Math.max(1, parseFloat(e.target.value) || 1);
-                    setRadius3D(val);
-                    emitChange({ radius: val });
-                  }}
+                  {...fieldProps('radius', radius3D)}
                   className="h-7 text-xs font-mono"
                 />
               </div>
@@ -854,12 +963,7 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
                 <Input
                   id="height-3d-input"
                   type="number"
-                  value={height3D}
-                  onChange={(e) => {
-                    const val = parseFloat(e.target.value) || 0;
-                    setHeight3D(val);
-                    emitChange({ height: val });
-                  }}
+                  {...fieldProps('height', height3D)}
                   className="h-7 text-xs font-mono"
                 />
                 <p className="text-[9px] text-[var(--c-tx4)] italic">
@@ -877,12 +981,7 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
               <Input
                 id="base-elev-input"
                 type="number"
-                value={baseElevation}
-                onChange={(e) => {
-                  const val = parseFloat(e.target.value) || 0;
-                  setBaseElevation(val);
-                  emitChange({ elev: val });
-                }}
+                {...fieldProps('elev', baseElevation)}
                 className="h-7 text-xs font-mono"
               />
             </div>

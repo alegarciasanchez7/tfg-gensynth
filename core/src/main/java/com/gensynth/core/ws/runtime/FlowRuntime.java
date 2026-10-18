@@ -31,6 +31,12 @@ public class FlowRuntime {
     public int burst;
     /** Number of global ticks between two messages of this flow (at least 1). */
     public volatile int everyTicks = 1;
+    /** Percentage (0-100) of generated messages dropped at random instead of sent. */
+    public volatile double lossPercent;
+    /** Length in ticks of the periodic outage cycle (0 = no outages). */
+    public volatile int outageEveryTicks;
+    /** Ticks at the end of every outage cycle in which every message is dropped (0 = no outages). */
+    public volatile int outageDurationTicks;
     public String topic;
     public String host;
     public int port;
@@ -44,6 +50,8 @@ public class FlowRuntime {
     public final AtomicLong sent = new AtomicLong();
     /** Messages that could not be sent since the group was started (generation or publish error). */
     public final AtomicLong failed = new AtomicLong();
+    /** Messages generated but deliberately not sent (event loss) since the group was started. */
+    public final AtomicLong dropped = new AtomicLong();
     /** Send rate meter of this flow. */
     public final ThroughputMeter meter = new ThroughputMeter();
 
@@ -106,7 +114,51 @@ public class FlowRuntime {
 
         FlowRuntime runtime = new FlowRuntime(id, name, technology, status, throughput, latency, hasError, errorMessage, interval, burst, topic, host, port, template, format, enabled, config);
         runtime.everyTicks = definition.getEveryTicks();
+        runtime.lossPercent = definition.getLossPercent();
+        runtime.outageEveryTicks = definition.getOutageEveryTicks();
+        runtime.outageDurationTicks = definition.getOutageDurationTicks();
         return runtime;
+    }
+
+    /**
+     * Copies the send settings ({@code everyTicks} and the event loss fields) from another flow,
+     * e.g. when cloning.
+     *
+     * @param source flow whose settings are copied
+     */
+    public void copySendSettingsFrom(FlowRuntime source) {
+        this.everyTicks = source.everyTicks;
+        this.lossPercent = source.lossPercent;
+        this.outageEveryTicks = source.outageEveryTicks;
+        this.outageDurationTicks = source.outageDurationTicks;
+    }
+
+    /**
+     * Whether the flow is inside a periodic outage on the given group tick. The outage covers the
+     * last {@code d = min(outageDurationTicks, outageEveryTicks)} ticks of every
+     * {@code outageEveryTicks}-tick period; either value at 0 disables outages.
+     *
+     * @param groupTick simulation ticks since the group started (0 = first tick of the group)
+     * @return true if every message of this tick is lost
+     */
+    public boolean isInOutage(long groupTick) {
+        long period = outageEveryTicks;
+        long duration = Math.min(outageDurationTicks, period);
+        if (period <= 0 || duration <= 0) {
+            return false;
+        }
+        return Math.floorMod(groupTick, period) >= period - duration;
+    }
+
+    /**
+     * Whether a generated message must be dropped instead of sent.
+     *
+     * @param groupTick simulation ticks since the group started
+     * @param roll      random value in [0, 100)
+     * @return true if the tick is in an outage or the roll falls below {@link #lossPercent}
+     */
+    public boolean shouldDrop(long groupTick, double roll) {
+        return isInOutage(groupTick) || roll < lossPercent;
     }
 
     /**
@@ -138,6 +190,7 @@ public class FlowRuntime {
         generated.set(0);
         sent.set(0);
         failed.set(0);
+        dropped.set(0);
         meter.reset();
         throughput = 0;
     }
@@ -160,6 +213,9 @@ public class FlowRuntime {
         );
         def.setEnabled(enabled);
         def.setEveryTicks(everyTicks);
+        def.setLossPercent(lossPercent);
+        def.setOutageEveryTicks(outageEveryTicks);
+        def.setOutageDurationTicks(outageDurationTicks);
         return def;
     }
 
@@ -178,6 +234,9 @@ public class FlowRuntime {
         payload.put("interval", interval);
         payload.put("burst", burst);
         payload.put("everyTicks", everyTicks);
+        payload.put("lossPercent", lossPercent);
+        payload.put("outageEveryTicks", outageEveryTicks);
+        payload.put("outageDurationTicks", outageDurationTicks);
         payload.put("topic", topic);
         payload.put("host", host);
         payload.put("port", port);

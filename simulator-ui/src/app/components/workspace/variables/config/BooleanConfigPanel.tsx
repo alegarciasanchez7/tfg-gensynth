@@ -39,7 +39,8 @@ const PATTERN_DESCRIPTIONS: Record<BooleanGenerationPattern, string> = {
 
 export const BooleanConfigPanel: React.FC<BooleanConfigPanelProps> = ({ config, onChange, flowId, groupId, variableScope }) => {
   const currentPattern: BooleanGenerationPattern = config.pattern ?? 'CONSTANT_BOOLEAN';
-  const currentValue = config.currentValue ?? true;
+  // Same default as the Core (and as new variables): OFF
+  const currentValue = config.currentValue ?? false;
 
   const handlePatternChange = (patternStr: string) => {
     const newPattern = patternStr as BooleanGenerationPattern;

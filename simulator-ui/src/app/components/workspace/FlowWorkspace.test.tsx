@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { FlowWorkspace } from './FlowWorkspace';
 import type { Flow, Group } from '../../types';
@@ -120,5 +120,22 @@ describe('FlowWorkspace', () => {
     const templateTextarea = textareas.find(t => t.tagName === 'TEXTAREA') as HTMLTextAreaElement;
     // Should contain empty string
     expect(templateTextarea.value).toBe('');
+  });
+
+  it('sends a committed event loss change through updateFlowConfig', () => {
+    render(
+      <FlowWorkspace
+        flow={flow}
+        group={group}
+        template="T"
+        onTemplateChange={vi.fn()}
+      />
+    );
+
+    const input = screen.getByLabelText('Outage length (ticks)');
+    fireEvent.change(input, { target: { value: '3' } });
+    fireEvent.blur(input);
+
+    expect(mockActions.updateFlowConfig).toHaveBeenCalledWith('g1', 'f1', { outageDurationTicks: 3 });
   });
 });

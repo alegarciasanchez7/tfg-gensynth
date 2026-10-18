@@ -158,6 +158,19 @@ public abstract class VariableConfiguration {
 
     protected boolean hasActiveOverride = false;
     protected Object activeOverrideValue = null;
+    /** Generator config of the matching rule, when the rule overrides with a full config instead of one value. */
+    protected Map<String, Object> activeOverrideConfig = null;
+
+    /** Keys that only a full generator config has (written by the rule's visual editor). */
+    private static final java.util.Set<String> GENERATOR_KEYS = java.util.Set.of("pattern", "selectionStrategy", "timeAdvanceMode");
+
+    /**
+     * @return the generator config of the active rule, or {@code null} if no rule matches or the rule
+     *         overrides with a single value
+     */
+    public Map<String, Object> getActiveOverrideConfig() {
+        return activeOverrideConfig;
+    }
 
     public void setContext(Map<String, Object> context) {
         this.currentContext = context;
@@ -168,6 +181,7 @@ public abstract class VariableConfiguration {
         if (conditionalRules == null || conditionalRules.isEmpty()) {
             hasActiveOverride = false;
             activeOverrideValue = null;
+            activeOverrideConfig = null;
             return;
         }
 
@@ -190,8 +204,12 @@ public abstract class VariableConfiguration {
                 boolean match = evaluateCondition(contextVal, rule.condition, rule.value);
                 if (match) {
                     hasActiveOverride = true;
-                    // The overrides can contain a JSON payload or a mapping of properties.
-                    if (rule.overrides != null && !rule.overrides.isEmpty()) {
+                    activeOverrideConfig = null;
+                    // The overrides can contain a full generator config, a JSON payload or a mapping of properties.
+                    if (rule.overrides != null && rule.overrides.keySet().stream().anyMatch(GENERATOR_KEYS::contains)) {
+                        activeOverrideConfig = rule.overrides;
+                        activeOverrideValue = null;
+                    } else if (rule.overrides != null && !rule.overrides.isEmpty()) {
                         if (rule.overrides.containsKey(this.identifier)) {
                             activeOverrideValue = rule.overrides.get(this.identifier);
                         } else if (rule.overrides.containsKey("constantValue")) { // Extract fixed string mode property
@@ -220,6 +238,7 @@ public abstract class VariableConfiguration {
         // Reset if no rule matches
         hasActiveOverride = false;
         activeOverrideValue = null;
+        activeOverrideConfig = null;
     }
 
     private boolean evaluateCondition(Object contextVal, String operator, Object ruleVal) {

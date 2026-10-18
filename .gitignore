@@ -73,3 +73,6 @@ docs/
 **/jcef-bundle/
 **/src/main/resources/ui/
 hs_err_pid*.log
+
+# Spanish user guide: distributed separately (its screenshots in docs-assets/ are shared with USER_GUIDE.md)
+/USER_GUIDE.es.md

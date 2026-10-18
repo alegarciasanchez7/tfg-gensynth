@@ -52,14 +52,16 @@ export const SequentialGraphEditor: React.FC<SequentialGraphEditorProps> = ({
     const range = max - min;
     const mid = min + range / 2;
 
+    // The cycle plays every point (maxTicks + 1 values), so periodic shapes span maxTicks + 1 steps
+    const period = maxTicks + 1;
     for (let i = 0; i <= maxTicks; i++) {
       let y = mid;
       if (type === 'sine') {
-        y = mid + (range / 2) * Math.sin((i / maxTicks) * Math.PI * 2);
+        y = mid + (range / 2) * Math.sin((i / period) * Math.PI * 2);
       } else if (type === 'ramp') {
         y = min + range * (i / maxTicks);
       } else if (type === 'triangle') {
-        const factor = i / maxTicks;
+        const factor = i / period;
         y = min + range * (factor < 0.5 ? factor * 2 : (1 - factor) * 2);
       } else if (type === 'constant') {
         y = mid;

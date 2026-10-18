@@ -1,6 +1,7 @@
 package com.gensynth.core.desktop.bridge;
 
 import com.gensynth.core.desktop.DesktopFileChooser;
+import com.gensynth.core.desktop.ExternalLinkOpener;
 import com.gensynth.core.persistence.ProjectFileFormat;
 import com.gensynth.core.ws.*;
 import org.java_websocket.WebSocket;
@@ -20,6 +21,8 @@ public class GensynthMessageRouter extends CefMessageRouterHandlerAdapter {
             new javax.swing.filechooser.FileNameExtensionFilter(
                     "GenSynth project (*" + ProjectFileFormat.EXTENSION + ")", ProjectFileFormat.EXTENSION.substring(1));
     private static final String DEFAULT_PROJECT_FILE_NAME = "gen-synth-project" + ProjectFileFormat.EXTENSION;
+    private static final String OPEN_EXTERNAL_URL = "OPEN_EXTERNAL_URL";
+    private static final com.fasterxml.jackson.databind.ObjectMapper JSON = new com.fasterxml.jackson.databind.ObjectMapper();
     private final javax.swing.JFrame parentFrame;
 
     public GensynthMessageRouter(javax.swing.JFrame parentFrame) {
@@ -32,6 +35,20 @@ public class GensynthMessageRouter extends CefMessageRouterHandlerAdapter {
         logger.info("[BRIDGE] Command received from UI: {}", request);
 
         try {
+            // Desktop-only request answered here; checked first because the routing below matches substrings
+            if (request.contains(OPEN_EXTERNAL_URL)) {
+                com.fasterxml.jackson.databind.JsonNode command = JSON.readTree(request);
+                if (OPEN_EXTERNAL_URL.equals(command.path("type").asText())) {
+                    String url = command.path("payload").path("url").asText(null);
+                    if (ExternalLinkOpener.open(url)) {
+                        callback.success("{\"status\":\"ok\"}");
+                    } else {
+                        callback.failure(403, "URL not allowed");
+                    }
+                    return true;
+                }
+            }
+
             UiBridgeWebSocketServer server = com.gensynth.core.App.getWsServer();
             if (server == null) {
                 callback.failure(500, "Gen-Synth Core is not fully initialized");

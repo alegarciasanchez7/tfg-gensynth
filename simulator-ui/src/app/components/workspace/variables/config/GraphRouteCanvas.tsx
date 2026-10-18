@@ -1,5 +1,11 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { GraphNode, GraphEdge, PointVariableConfig, BoundaryObstacle, Point3DCoord } from '../../../../types';
+import { defaultBoundsFor, centerOf } from '../../../../core/pointDefaults';
+import { validateNodeAndEdge } from '../../../../core/routeGeometry';
+import { fitWorldWindow, niceStep } from '../../../../core/worldWindow';
+import { CommitInput } from '../../../common/CommitInput';
+import { OfflineGridOverlay, MapAutoFit } from './mapShared';
 import { Button } from '../../../ui/button';
 import { Label } from '../../../ui/label';
 import { Info, Plus, Link as LinkIcon, Trash2, RotateCcw, Move, MapPin, AlertTriangle, X, WifiOff, Maximize2, Minimize2, Eye, EyeOff } from 'lucide-react';
@@ -10,236 +16,33 @@ import {
   Polygon as LeafletPolygon,
   Marker as LeafletMarker,
   Polyline as LeafletPolyline,
+  Rectangle as LeafletRectangle,
   Tooltip as LeafletTooltip,
   useMapEvents,
   useMap,
 } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import markerIconUrl from 'leaflet/dist/images/marker-icon.png';
+import markerIconRetinaUrl from 'leaflet/dist/images/marker-icon-2x.png';
+import markerShadowUrl from 'leaflet/dist/images/marker-shadow.png';
 
-// Fix default Leaflet marker icon URLs for React bundler
-if (typeof L !== 'undefined' && L.Icon && L.Icon.Default) {
-  delete (L.Icon.Default.prototype as any)._getIconUrl;
-  L.Icon.Default.mergeOptions({
-    iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
-    iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
-    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-  });
-}
+// Default Leaflet marker icons bundled with the app (a CDN would break them offline). _getIconUrl
+// would prefix Leaflet's image path to these bundler URLs, so it is removed.
+delete (L.Icon.Default.prototype as unknown as { _getIconUrl?: unknown })._getIconUrl;
+L.Icon.Default.mergeOptions({ iconUrl: markerIconUrl, iconRetinaUrl: markerIconRetinaUrl, shadowUrl: markerShadowUrl });
+
+/** First free "Node N" name, so deleting a node and adding another never repeats a name. */
+const nextNodeName = (nodes: GraphNode[]): string => {
+  const used = new Set(nodes.map((n) => n.name));
+  let i = nodes.length;
+  while (used.has(`Node ${i}`)) i++;
+  return `Node ${i}`;
+};
 
 interface GraphRouteCanvasProps {
   config: PointVariableConfig;
   onChange: (newConfig: Partial<PointVariableConfig>) => void;
-}
-
-/** Ray-casting algorithm to test if point (px, py) lies inside obstacle polygon */
-const isPointInPolygon = (px: number, py: number, points: Point3DCoord[]): boolean => {
-  if (!points || points.length < 3) return false;
-  let inside = false;
-  const n = points.length;
-  for (let i = 0, j = n - 1; i < n; j = i++) {
-    const xi = points[i].x ?? 0;
-    const yi = points[i].y ?? 0;
-    const xj = points[j].x ?? 0;
-    const yj = points[j].y ?? 0;
-    const intersect = ((yi > py) !== (yj > py)) && (px < ((xj - xi) * (py - yi)) / (yj - yi + 1e-9) + xi);
-    if (intersect) inside = !inside;
-  }
-  return inside;
-};
-
-/** Counter-clockwise orienting helper for 2D line segment intersection */
-const ccw = (p1: { x: number; y: number }, p2: { x: number; y: number }, p3: { x: number; y: number }): boolean => {
-  return (p3.y - p1.y) * (p2.x - p1.x) > (p2.y - p1.y) * (p3.x - p1.x);
-};
-
-/** Returns true if line segment p1-p2 intersects line segment q1-q2 */
-const segmentsIntersect = (
-  p1: { x: number; y: number },
-  p2: { x: number; y: number },
-  q1: { x: number; y: number },
-  q2: { x: number; y: number }
-): boolean => {
-  return (
-    ccw(p1, q1, q2) !== ccw(p2, q1, q2) &&
-    ccw(p1, p2, q1) !== ccw(p1, p2, q2)
-  );
-};
-
-/** Evaluates collision between candidate node/edge and active forbidden obstacle zones or wall segments */
-const checkObstacleCollision = (
-  fromNode: { x: number; y: number } | null,
-  targetPoint: { x: number; y: number },
-  obstacles: BoundaryObstacle[]
-): string | null => {
-  const activeObstacles = (obstacles || []).filter((obs) => obs.enabled && obs.points && obs.points.length > 0);
-
-  for (const obs of activeObstacles) {
-    const pts = obs.points;
-    const name = obs.name || (obs.type === 'WALL_SEGMENT' ? 'Wall Segment' : 'Forbidden Zone');
-    const getPt = (p: Point3DCoord) => ({ x: p.x ?? 0, y: p.y ?? 0 });
-
-    // 1. Check if target node point lies inside forbidden region polygon
-    if (obs.type !== 'WALL_SEGMENT' && pts.length >= 3) {
-      if (isPointInPolygon(targetPoint.x, targetPoint.y, pts)) {
-        return `Cannot place route node inside forbidden obstacle zone: "${name}"`;
-      }
-    }
-
-    // 2. Check if connecting edge intersects wall segments or obstacle polygon edges
-    if (fromNode) {
-      if (obs.type === 'WALL_SEGMENT' && pts.length >= 2) {
-        for (let i = 0; i < pts.length - 1; i++) {
-          if (segmentsIntersect(fromNode, targetPoint, getPt(pts[i]), getPt(pts[i + 1]))) {
-            return `Cannot draw route edge crossing forbidden wall barrier: "${name}"`;
-          }
-        }
-      } else if (pts.length >= 3) {
-        for (let i = 0; i < pts.length; i++) {
-          const nextIdx = (i + 1) % pts.length;
-          if (segmentsIntersect(fromNode, targetPoint, getPt(pts[i]), getPt(pts[nextIdx]))) {
-            return `Cannot draw route edge crossing forbidden obstacle region: "${name}"`;
-          }
-        }
-      }
-    }
-  }
-
-  return null;
-};
-
-/** Evaluates compliance of candidate node/edge against allowed boundary polygon and bounding limits */
-const checkBoundaryCompliance = (
-  fromNode: { x: number; y: number } | null,
-  targetPoint: { x: number; y: number },
-  polygon: Point3DCoord[],
-  minPoint?: Point3DCoord,
-  maxPoint?: Point3DCoord
-): string | null => {
-  const getPt = (p: Point3DCoord) => ({ x: p.x ?? 0, y: p.y ?? (p.x ?? 0) });
-
-  // 1. Check if allowed boundary polygon is defined (>= 3 points)
-  if (polygon && polygon.length >= 3) {
-    const isInside = isPointInPolygon(targetPoint.x, targetPoint.y, polygon);
-    if (!isInside) {
-      return 'Cannot place route node outside the allowed boundary region.';
-    }
-
-    if (fromNode) {
-      const fromInside = isPointInPolygon(fromNode.x, fromNode.y, polygon);
-      if (!fromInside) {
-        return 'Cannot draw route edge from an origin node located outside the allowed boundary region.';
-      }
-      // Check if connecting line segment intersects any edge of the boundary polygon
-      for (let i = 0; i < polygon.length; i++) {
-        const nextIdx = (i + 1) % polygon.length;
-        if (segmentsIntersect(fromNode, targetPoint, getPt(polygon[i]), getPt(polygon[nextIdx]))) {
-          return 'Cannot draw route edge exiting the allowed boundary region.';
-        }
-      }
-    }
-  } else if (minPoint && maxPoint && minPoint.x !== undefined && maxPoint.x !== undefined && (minPoint.x !== -100 || maxPoint.x !== 100)) {
-    // Bounding Box check when custom minPoint / maxPoint limits are specified
-    const minX = minPoint.x ?? -100;
-    const maxX = maxPoint.x ?? 100;
-    const minY = minPoint.y ?? -100;
-    const maxY = maxPoint.y ?? 100;
-
-    if (targetPoint.x < minX || targetPoint.x > maxX || targetPoint.y < minY || targetPoint.y > maxY) {
-      return `Cannot place route node outside allowed boundary limits.`;
-    }
-
-    if (fromNode) {
-      if (fromNode.x < minX || fromNode.x > maxX || fromNode.y < minY || fromNode.y > maxY) {
-        return `Cannot draw route edge from an origin node outside allowed boundary limits.`;
-      }
-    }
-  }
-
-  return null;
-};
-
-/** Unified validator evaluating both allowed boundary compliance and forbidden obstacle collisions */
-const validateNodeAndEdge = (
-  fromNode: { x: number; y: number } | null,
-  targetPoint: { x: number; y: number },
-  obstacles: BoundaryObstacle[],
-  polygon: Point3DCoord[],
-  minPoint?: Point3DCoord,
-  maxPoint?: Point3DCoord
-): string | null => {
-  const boundaryError = checkBoundaryCompliance(fromNode, targetPoint, polygon, minPoint, maxPoint);
-  if (boundaryError) return boundaryError;
-
-  const obstacleError = checkObstacleCollision(fromNode, targetPoint, obstacles);
-  if (obstacleError) return obstacleError;
-
-  return null;
-};
-
-// Technical Lat/Lon Coordinate Grid Layer for Offline Fallback Mode in Leaflet Map
-function OfflineGridOverlay() {
-  const map = useMap();
-  const [gridItems, setGridItems] = useState<{ positions: [number, number][]; label: string }[]>([]);
-
-  useEffect(() => {
-    const updateGrid = () => {
-      const b = map.getBounds();
-      const z = map.getZoom();
-      let step: number;
-      if (z >= 13) step = 0.01;
-      else if (z >= 11) step = 0.05;
-      else if (z >= 9) step = 0.1;
-      else if (z >= 7) step = 0.5;
-      else if (z >= 5) step = 1.0;
-      else step = 5.0;
-
-      const items: { positions: [number, number][]; label: string }[] = [];
-      const minLat = Math.max(-85, Math.floor(b.getSouth() / step) * step);
-      const maxLat = Math.min(85, Math.ceil(b.getNorth() / step) * step);
-      const minLon = Math.max(-180, Math.floor(b.getWest() / step) * step);
-      const maxLon = Math.min(180, Math.ceil(b.getEast() / step) * step);
-
-      for (let lat = minLat; lat <= maxLat; lat += step) {
-        const rLat = Math.round(lat * 10000) / 10000;
-        items.push({
-          positions: [[rLat, -180], [rLat, 180]],
-          label: `${rLat}° ${rLat >= 0 ? 'N' : 'S'}`,
-        });
-      }
-      for (let lon = minLon; lon <= maxLon; lon += step) {
-        const rLon = Math.round(lon * 10000) / 10000;
-        items.push({
-          positions: [[-85, rLon], [85, rLon]],
-          label: `${rLon}° ${rLon >= 0 ? 'E' : 'W'}`,
-        });
-      }
-      setGridItems(items);
-    };
-
-    updateGrid();
-    map.on('moveend zoomend', updateGrid);
-    return () => {
-      map.off('moveend zoomend', updateGrid);
-    };
-  }, [map]);
-
-  return (
-    <>
-      {gridItems.map((item, idx) => (
-        <LeafletPolyline
-          key={idx}
-          positions={item.positions}
-          pathOptions={{
-            color: '#334155',
-            weight: 1,
-            dashArray: '3, 3',
-            interactive: false,
-          }}
-        />
-      ))}
-    </>
-  );
 }
 
 /** Leaflet Map Click Handler Component for adding nodes & setting warnings */
@@ -315,53 +118,174 @@ function GraphMapResizeHandler({ isFullScreen }: { isFullScreen: boolean }) {
   return null;
 }
 
-/** Helper component to fit map bounds to selected boundary polygon or min/max points */
-function GraphMapAutoFit({ polygon, minPoint, maxPoint }: { polygon: Point3DCoord[]; minPoint: Point3DCoord; maxPoint: Point3DCoord }) {
-  const map = useMap();
-  const hasFittedRef = useRef(false);
+/** Map centre and zoom, remembered so the fullscreen remount keeps the user's view. */
+interface MapView {
+  center: [number, number];
+  zoom: number;
+}
 
-  useEffect(() => {
-    if (!hasFittedRef.current) {
-      hasFittedRef.current = true;
-      if (polygon && polygon.length >= 3) {
-        const bounds = L.latLngBounds(polygon.map((p) => [p.x ?? 0, p.y ?? p.x ?? 0]));
-        if (bounds.isValid()) {
-          map.fitBounds(bounds, { padding: [35, 35], maxZoom: 17, animate: false });
-        }
-      } else if (minPoint && maxPoint && minPoint.x !== undefined && maxPoint.x !== undefined && (minPoint.x !== -100 || maxPoint.x !== 100)) {
-        const bounds = L.latLngBounds([
-          [minPoint.x ?? 40.0, minPoint.y ?? -4.0],
-          [maxPoint.x ?? 41.0, maxPoint.y ?? -3.0],
-        ]);
-        if (bounds.isValid()) {
-          map.fitBounds(bounds, { padding: [35, 35], maxZoom: 17, animate: false });
-        }
-      }
-    }
-  }, [map, polygon, minPoint, maxPoint]);
-
+/** Reports the map view after every pan or zoom. */
+function GraphMapViewTracker({ onViewChange }: { onViewChange: (view: MapView) => void }) {
+  useMapEvents({
+    moveend(e) {
+      const map = e.target as L.Map;
+      const c = map.getCenter();
+      onViewChange({ center: [c.lat, c.lng], zoom: map.getZoom() });
+    },
+  });
   return null;
 }
 
+type NodeVisualState = 'normal' | 'selected' | 'origin';
+
+/** Builds a node marker icon: a 10 px dot centred in a 22 px transparent hit area. */
+const buildNodeIcon = (state: NodeVisualState): L.DivIcon => {
+  const dotStyle =
+    state === 'selected'
+      ? 'background-color:#22d3ee; box-shadow:0 0 10px rgba(34,211,238,0.9); border:1.5px solid #ffffff; transform:scale(1.3);'
+      : state === 'origin'
+      ? 'background-color:#fbbf24; box-shadow:0 0 10px rgba(251,191,36,0.9); border:1.5px solid #ffffff; transform:scale(1.3);'
+      : 'background-color:#0f172a; border:1.5px solid #22d3ee;';
+  return L.divIcon({
+    html: `<div style="display:flex; align-items:center; justify-content:center; width:22px; height:22px; cursor:pointer;"><div style="width:10px; height:10px; border-radius:9999px; box-sizing:border-box; ${dotStyle}"></div></div>`,
+    className: 'custom-graph-node-marker',
+    iconSize: [22, 22],
+    iconAnchor: [11, 11],
+  });
+};
+
+// Icons are cached per visual state: a new icon on every render would make react-leaflet call
+// setIcon, which recreates the marker element and kills an ongoing drag
+const NODE_ICONS: Record<NodeVisualState, L.DivIcon> = {
+  normal: buildNodeIcon('normal'),
+  selected: buildNodeIcon('selected'),
+  origin: buildNodeIcon('origin'),
+};
+
+/** Draggable map marker of one route node. Takes primitives so it only re-renders when they change. */
+const GraphNodeMarker = React.memo(function GraphNodeMarker({
+  nodeId,
+  lat,
+  lon,
+  visualState,
+  draggable,
+  showLabel,
+  onNodeClick,
+  onNodeDragEnd,
+}: {
+  nodeId: string;
+  lat: number;
+  lon: number;
+  visualState: NodeVisualState;
+  draggable: boolean;
+  showLabel: boolean;
+  onNodeClick: (nodeId: string) => void;
+  /** Returns false when the move is rejected, so the marker goes back to its position. */
+  onNodeDragEnd: (nodeId: string, lat: number, lon: number) => boolean;
+}) {
+  const position = useMemo<[number, number]>(() => [lat, lon], [lat, lon]);
+  const eventHandlers = useMemo<L.LeafletEventHandlerFnMap>(
+    () => ({
+      click: (e) => {
+        L.DomEvent.stopPropagation(e);
+        onNodeClick(nodeId);
+      },
+      dragend: (e) => {
+        const marker = e.target as L.Marker;
+        const dropped = marker.getLatLng();
+        const accepted = onNodeDragEnd(nodeId, dropped.lat, dropped.lng);
+        if (!accepted) marker.setLatLng(position);
+      },
+    }),
+    [nodeId, onNodeClick, onNodeDragEnd, position]
+  );
+
+  return (
+    <LeafletMarker position={position} icon={NODE_ICONS[visualState]} draggable={draggable} eventHandlers={eventHandlers}>
+      {showLabel && (
+        <LeafletTooltip
+          permanent
+          direction="top"
+          offset={[0, -8]}
+          className="bg-[var(--c-bg1)]/90 border border-cyan-400/80 text-cyan-600 dark:text-cyan-300 font-mono text-[10px] font-bold px-1.5 py-0.5 rounded shadow-xl"
+        >
+          <span>(Lat: {lat.toFixed(4)}°, Lon: {lon.toFixed(4)}°)</span>
+        </LeafletTooltip>
+      )}
+    </LeafletMarker>
+  );
+});
+
+/** Style of the allowed region polygon on the map. */
+const REGION_STYLE: L.PathOptions = {
+  color: '#06b6d4',
+  fillColor: '#06b6d4',
+  fillOpacity: 0.16,
+  weight: 2,
+};
+
+/** The min/max box drawn when there is no polygon: not interactive, so clicks always reach the map. */
+const REGION_BOX_STYLE: L.PathOptions = { ...REGION_STYLE, interactive: false };
+
+type GraphTool = 'ADD_EXTEND' | 'CONNECT' | 'SELECT' | 'DELETE';
+
+/** One-line hint shown for each tool. */
+const TOOL_HINTS: Record<GraphTool, string> = {
+  ADD_EXTEND: 'Click empty space to add a node linked to the selected one · Drag a node to move it',
+  SELECT: 'Click a node to select it · Drag a node to move it',
+  CONNECT: 'Click the origin, then the target · Esc cancels',
+  DELETE: 'Click a node or edge to delete it',
+};
+
+/** Time-based id for new graph nodes and edges ("node-<ms>", "edge-<ms>"). */
+const newGraphId = (prefix: 'node' | 'edge'): string => `${prefix}-${Date.now()}`;
+
+/** Minimum pointer travel (px) before a press on a node becomes a drag instead of a click. */
+const DRAG_THRESHOLD_PX = 4;
+
+interface DragState {
+  nodeId: string;
+  pointerId: number;
+  startX: number;
+  startY: number;
+  moved: boolean;
+  x: number;
+  y: number;
+}
+
 export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onChange }) => {
-  const nodes: GraphNode[] = config.graphNodes ?? [];
-  const edges: GraphEdge[] = config.graphEdges ?? [];
+  const nodes = useMemo<GraphNode[]>(() => config.graphNodes ?? [], [config.graphNodes]);
+  const edges = useMemo<GraphEdge[]>(() => config.graphEdges ?? [], [config.graphEdges]);
   const sequence: string[] = config.graphSequence ?? [];
 
-  const minPoint = config.minPoint ?? { x: -100, y: -100 };
-  const maxPoint = config.maxPoint ?? { x: 100, y: 100 };
-  const polygon = config.boundaryPolygon ?? [];
-  const obstacles = config.obstacles ?? [];
+  // Explicit region: the configured bounds, or the default region of the coordinate system
+  const defaultBounds = useMemo(() => defaultBoundsFor(config.coordinateSystem), [config.coordinateSystem]);
+  const minPoint: Point3DCoord = config.minPoint ?? defaultBounds.minPoint;
+  const maxPoint: Point3DCoord = config.maxPoint ?? defaultBounds.maxPoint;
+  const polygon = useMemo<Point3DCoord[]>(() => config.boundaryPolygon ?? [], [config.boundaryPolygon]);
+  const obstacles = useMemo<BoundaryObstacle[]>(() => config.obstacles ?? [], [config.obstacles]);
 
   const isGeo = config.coordinateSystem === 'GEOSPATIAL';
 
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(nodes[0]?.id ?? null);
-  const [activeTool, setActiveTool] = useState<'ADD_EXTEND' | 'CONNECT' | 'SELECT' | 'DELETE'>('ADD_EXTEND');
+  // A selection that no longer exists falls back to the first node
+  const selectedId =
+    selectedNodeId && nodes.some((n) => n.id === selectedNodeId) ? selectedNodeId : (nodes[0]?.id ?? null);
+  const [activeTool, setActiveTool] = useState<GraphTool>('ADD_EXTEND');
   const [connectOriginId, setConnectOriginId] = useState<string | null>(null);
   const [warningMsg, setWarningMsg] = useState<string | null>(null);
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [showCoordinateLabels, setShowCoordinateLabels] = useState(true);
+
+  // Map view kept across the fullscreen remount: tracked on every move, frozen when toggling
+  const mapViewRef = useRef<MapView | null>(null);
+  const [initialMapView, setInitialMapView] = useState<MapView | null>(null);
+
+  const toggleFullScreen = (next: boolean) => {
+    setInitialMapView(mapViewRef.current);
+    setIsFullScreen(next);
+  };
 
   useEffect(() => {
     const handleOnline = () => setIsOffline(false);
@@ -374,26 +298,37 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
     };
   }, []);
 
-  // Handle ESC key press to exit full screen mode
+  // ESC cancels a pending connection first, then exits full screen mode
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isFullScreen) {
+      if (e.key !== 'Escape') return;
+      if (connectOriginId) {
+        setConnectOriginId(null);
+        return;
+      }
+      if (isFullScreen) {
+        setInitialMapView(mapViewRef.current);
         setIsFullScreen(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isFullScreen]);
+  }, [isFullScreen, connectOriginId]);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [canvasSize, setCanvasSize] = useState({ w: 700, h: 340 });
 
-  useEffect(() => {
-    if (!selectedNodeId && nodes.length > 0) {
-      setSelectedNodeId(nodes[0].id);
-    }
-  }, [nodes, selectedNodeId]);
+  // 2D node drag: the ref holds the live gesture, the state renders the moved node. The state
+  // remembers the nodes it was based on, so after a commit the dragged position stays on screen
+  // until the updated nodes come back from the Core (no flicker to the old position).
+  const dragRef = useRef<DragState | null>(null);
+  const suppressClickRef = useRef(false);
+  const [dragPos, setDragPos] = useState<{ nodeId: string; x: number; y: number; base: GraphNode[] } | null>(null);
+  const activeDrag = dragPos && dragPos.base === nodes ? dragPos : null;
+  const displayNodes = activeDrag
+    ? nodes.map((n) => (n.id === activeDrag.nodeId ? { ...n, x: activeDrag.x, y: activeDrag.y } : n))
+    : nodes;
 
   // Responsive canvas size calculation
   useEffect(() => {
@@ -419,13 +354,11 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
   const canvasW = canvasSize.w;
   const canvasH = canvasSize.h;
   const margin = 36;
-  const viewWidth = canvasW - margin * 2;
-  const viewHeight = canvasH - margin * 2;
 
-  // Auto-fit domain bounds precisely to selected region polygon or min/max points for 2D mode
-  let baseMinX = minPoint.x ?? -100;
+  // Region box: the boundary polygon bounds when there is one, else the min/max bounds
+  let baseMinX = minPoint.x ?? 0;
   let baseMaxX = maxPoint.x ?? 100;
-  let baseMinY = minPoint.y ?? -100;
+  let baseMinY = minPoint.y ?? 0;
   let baseMaxY = maxPoint.y ?? 100;
 
   if (polygon && polygon.length >= 3) {
@@ -437,7 +370,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
     baseMaxY = Math.max(...ys);
   }
 
-  // 5% Viewport padding to ensure handles on region boundary are fully visible
+  // Clicks and drags are clamped to the region plus 5% padding (so boundary handles stay usable)
   const spanXRaw = Math.abs(baseMaxX - baseMinX);
   const spanYRaw = Math.abs(baseMaxY - baseMinY);
   const padX = spanXRaw > 0 ? spanXRaw * 0.05 : 10;
@@ -448,27 +381,28 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
   const minY = baseMinY - padY;
   const maxY = baseMaxY + padY;
 
-  const spanX = Math.abs(maxX - minX) > 0 ? Math.abs(maxX - minX) : 200;
-  const spanY = Math.abs(maxY - minY) > 0 ? Math.abs(maxY - minY) : 200;
+  // One scale for both axes, so the region and the route keep their real proportions
+  const { cx: worldCx, cy: worldCy, scale: worldScale } = fitWorldWindow(
+    [{ x: baseMinX, y: baseMinY }, { x: baseMaxX, y: baseMaxY }],
+    canvasW,
+    canvasH,
+    margin,
+    0.05
+  );
 
   // Projection: Domain coordinate -> Canvas pixel (2D Mode)
-  const toCanvasX = (val: number) => {
-    return margin + ((val - minX) / spanX) * viewWidth;
-  };
-
-  const toCanvasY = (val: number) => {
-    return canvasH - margin - ((val - minY) / spanY) * viewHeight;
-  };
+  const toCanvasX = (val: number) => canvasW / 2 + (val - worldCx) * worldScale;
+  const toCanvasY = (val: number) => canvasH / 2 - (val - worldCy) * worldScale;
 
   // Inverse projection: Canvas pixel -> Domain coordinate (2D Mode)
   const fromCanvasX = (px: number) => {
-    const raw = minX + ((px - margin) / viewWidth) * spanX;
+    const raw = worldCx + (px - canvasW / 2) / worldScale;
     const clamped = Math.max(minX, Math.min(maxX, raw));
     return Math.round(clamped * 10) / 10;
   };
 
   const fromCanvasY = (py: number) => {
-    const raw = minY + ((canvasH - margin - py) / viewHeight) * spanY;
+    const raw = worldCy - (py - canvasH / 2) / worldScale;
     const clamped = Math.max(minY, Math.min(maxY, raw));
     return Math.round(clamped * 10) / 10;
   };
@@ -487,12 +421,23 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
     ctx.fillStyle = '#0f172a';
     ctx.fillRect(0, 0, canvasW, canvasH);
 
-    // 1. Render Grid Lines
+    // Visible world extents: the grid covers the whole canvas, not only the region
+    const visLeft = worldCx - canvasW / 2 / worldScale;
+    const visRight = worldCx + canvasW / 2 / worldScale;
+    const visBottom = worldCy - canvasH / 2 / worldScale;
+    const visTop = worldCy + canvasH / 2 / worldScale;
+
+    // 1. Render Grid Lines (at least ~40 px apart)
     ctx.strokeStyle = '#1e293b';
     ctx.lineWidth = 1;
-    const gridStep = spanX <= 20 ? 2 : (spanX <= 50 ? 5 : (spanX <= 100 ? 10 : (spanX <= 500 ? 50 : 100)));
+    const gridStep = niceStep(40 / worldScale);
+    const gridValues = (from: number, to: number, step: number): number[] => {
+      const values: number[] = [];
+      for (let i = Math.ceil(from / step); i * step <= to; i++) values.push(Number((i * step).toFixed(6)));
+      return values;
+    };
 
-    for (let xVal = Math.ceil(minX / gridStep) * gridStep; xVal <= maxX; xVal += gridStep) {
+    for (const xVal of gridValues(visLeft, visRight, gridStep)) {
       const px = toCanvasX(xVal);
       ctx.beginPath();
       ctx.moveTo(px, 0);
@@ -500,7 +445,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
       ctx.stroke();
     }
 
-    for (let yVal = Math.ceil(minY / gridStep) * gridStep; yVal <= maxY; yVal += gridStep) {
+    for (const yVal of gridValues(visBottom, visTop, gridStep)) {
       const py = toCanvasY(yVal);
       ctx.beginPath();
       ctx.moveTo(0, py);
@@ -512,7 +457,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
     const originX = toCanvasX(0);
     const originY = toCanvasY(0);
 
-    if (minY <= 0 && maxY >= 0) {
+    if (visBottom <= 0 && visTop >= 0) {
       ctx.strokeStyle = '#ef4444'; // Red X Axis
       ctx.lineWidth = 1.5;
       ctx.beginPath();
@@ -521,7 +466,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
       ctx.stroke();
     }
 
-    if (minX <= 0 && maxX >= 0) {
+    if (visLeft <= 0 && visRight >= 0) {
       ctx.strokeStyle = '#22c55e'; // Green Y Axis
       ctx.lineWidth = 1.5;
       ctx.beginPath();
@@ -535,12 +480,12 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
     ctx.font = '9px monospace';
     const labelStep = gridStep * 2;
 
-    for (let xVal = Math.ceil(minX / labelStep) * labelStep; xVal <= maxX; xVal += labelStep) {
+    for (const xVal of gridValues(visLeft, visRight, labelStep)) {
       const tx = toCanvasX(xVal);
       ctx.fillText(`${xVal}`, tx - 8, canvasH - 6);
     }
 
-    for (let yVal = Math.ceil(minY / labelStep) * labelStep; yVal <= maxY; yVal += labelStep) {
+    for (const yVal of gridValues(visBottom, visTop, labelStep)) {
       const ty = toCanvasY(yVal);
       ctx.fillText(`${yVal}`, 4, ty + 3);
     }
@@ -615,23 +560,25 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
         ctx.stroke();
       }
     });
-  }, [isGeo, canvasW, canvasH, minX, maxX, minY, maxY, baseMinX, baseMaxX, baseMinY, baseMaxY, polygon, obstacles]);
+  }, [isGeo, canvasW, canvasH, worldCx, worldCy, worldScale, minX, minY, baseMinX, baseMaxX, baseMinY, baseMaxY, polygon, obstacles]);
 
-  // Handle 2D Canvas click for adding nodes
-  const handleCanvasClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (isGeo) return; // Leaflet handles clicks in Geospatial mode
+  /** Converts a pointer position to canvas pixels, accounting for CSS scaling of the canvas. */
+  const clientToCanvas = (clientX: number, clientY: number): { px: number; py: number } | null => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas) return null;
     const rect = canvas.getBoundingClientRect();
     const scaleX = rect.width > 0 ? canvasW / rect.width : 1;
     const scaleY = rect.height > 0 ? canvasH / rect.height : 1;
-    const clickPx = (e.clientX - rect.left) * scaleX;
-    const clickPy = (e.clientY - rect.top) * scaleY;
+    return { px: (clientX - rect.left) * scaleX, py: (clientY - rect.top) * scaleY };
+  };
 
-    const domainX = fromCanvasX(clickPx);
-    const domainY = fromCanvasY(clickPy);
-
-    handleAddNode(domainX, domainY);
+  // Handle 2D Canvas click for adding nodes: only on empty plane and with the Add & Extend tool
+  const handleCanvasClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (isGeo) return; // Leaflet handles clicks in Geospatial mode
+    if (activeTool !== 'ADD_EXTEND' || e.target !== e.currentTarget) return;
+    const p = clientToCanvas(e.clientX, e.clientY);
+    if (!p) return;
+    handleAddNode(fromCanvasX(p.px), fromCanvasY(p.py));
   };
 
   // Helper to append a node at (x, y) with active edge connection
@@ -645,7 +592,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
       setWarningMsg(null);
 
       const firstNode: GraphNode = {
-        id: `node-${Date.now()}`,
+        id: newGraphId('node'),
         name: 'Node 0',
         x,
         y,
@@ -658,7 +605,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
         graphSequence: [firstNode.id],
       });
     } else {
-      const originId = selectedNodeId || nodes[nodes.length - 1].id;
+      const originId = selectedId || nodes[nodes.length - 1].id;
       const originNode = nodes.find((n) => n.id === originId) || nodes[nodes.length - 1];
 
       const valError = validateNodeAndEdge(originNode, { x, y }, obstacles, polygon, minPoint, maxPoint);
@@ -669,14 +616,14 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
       setWarningMsg(null);
 
       const newNode: GraphNode = {
-        id: `node-${Date.now()}`,
-        name: `Node ${nodes.length}`,
+        id: newGraphId('node'),
+        name: nextNodeName(nodes),
         x,
         y,
         z: 0,
       };
       const newEdge: GraphEdge = {
-        id: `edge-${Date.now()}`,
+        id: newGraphId('edge'),
         fromNodeId: originId,
         toNodeId: newNode.id,
         bidirectional: true,
@@ -694,12 +641,44 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
     }
   };
 
+  /** Validates a node moved to (x, y) together with every edge connected to it. */
+  const validateNodeMove = (nodeId: string, x: number, y: number): string | null => {
+    const target = { x, y };
+    const nodeError = validateNodeAndEdge(null, target, obstacles, polygon, minPoint, maxPoint);
+    if (nodeError) return nodeError;
+
+    for (const edge of edges) {
+      const otherId = edge.fromNodeId === nodeId ? edge.toNodeId : edge.toNodeId === nodeId ? edge.fromNodeId : null;
+      const other = otherId ? nodes.find((n) => n.id === otherId) : undefined;
+      if (!other) continue;
+      const edgeError = validateNodeAndEdge(other, target, obstacles, polygon, minPoint, maxPoint);
+      if (edgeError) return edgeError;
+    }
+    return null;
+  };
+
+  /** Moves a node with a single onChange; returns false and shows the warning when the move is invalid. */
+  const commitNodeMove = (nodeId: string, x: number, y: number): boolean => {
+    const node = nodes.find((n) => n.id === nodeId);
+    if (!node) return false;
+    if (node.x === x && node.y === y) return true;
+
+    const valError = validateNodeMove(nodeId, x, y);
+    if (valError) {
+      setWarningMsg(valError);
+      return false;
+    }
+    setWarningMsg(null);
+    onChange({ graphNodes: nodes.map((n) => (n.id === nodeId ? { ...n, x, y } : n)) });
+    return true;
+  };
+
   const handleNodeClick = (node: GraphNode) => {
     if (activeTool === 'DELETE') {
       const updatedNodes = nodes.filter((n) => n.id !== node.id);
       const updatedEdges = edges.filter((edge) => edge.fromNodeId !== node.id && edge.toNodeId !== node.id);
       const updatedSeq = sequence.filter((id) => id !== node.id);
-      if (selectedNodeId === node.id) {
+      if (selectedId === node.id) {
         setSelectedNodeId(updatedNodes[0]?.id ?? null);
       }
       onChange({
@@ -733,7 +712,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
 
         if (!edgeExists) {
           const newEdge: GraphEdge = {
-            id: `edge-${Date.now()}`,
+            id: newGraphId('edge'),
             fromNodeId: connectOriginId,
             toNodeId: node.id,
             bidirectional: true,
@@ -757,6 +736,115 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
     }
   };
 
+  // Nodes can be dragged with the tools that do not use the node click for something else
+  const canDrag = activeTool === 'ADD_EXTEND' || activeTool === 'SELECT';
+
+  const handleNodePointerDown = (e: React.PointerEvent<HTMLDivElement>, node: GraphNode) => {
+    suppressClickRef.current = false;
+    setDragPos(null);
+    if (!canDrag || e.button !== 0) return;
+    e.stopPropagation();
+    if (typeof e.currentTarget.setPointerCapture === 'function') {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    }
+    dragRef.current = {
+      nodeId: node.id,
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      moved: false,
+      x: node.x,
+      y: node.y,
+    };
+  };
+
+  const handleNodePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    if (!drag.moved && Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) < DRAG_THRESHOLD_PX) return;
+    const p = clientToCanvas(e.clientX, e.clientY);
+    if (!p) return;
+    drag.moved = true;
+    drag.x = fromCanvasX(p.px);
+    drag.y = fromCanvasY(p.py);
+    setDragPos({ nodeId: drag.nodeId, x: drag.x, y: drag.y, base: nodes });
+  };
+
+  const handleNodePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    dragRef.current = null;
+    if (!drag.moved) return; // A plain click: handled by onClick
+
+    // The click that follows the drag must not select, delete or connect
+    suppressClickRef.current = true;
+    setSelectedNodeId(drag.nodeId);
+    if (!commitNodeMove(drag.nodeId, drag.x, drag.y)) {
+      setDragPos(null); // Rejected: back to the stored position
+    }
+  };
+
+  const handleNodePointerCancel = () => {
+    dragRef.current = null;
+    setDragPos(null);
+  };
+
+  const handleNodeElementClick = (e: React.MouseEvent<HTMLDivElement>, node: GraphNode) => {
+    e.stopPropagation();
+    if (suppressClickRef.current) {
+      suppressClickRef.current = false;
+      return;
+    }
+    handleNodeClick(node);
+  };
+
+  // Stable callbacks for the memoised map markers, delegating to the latest handlers
+  const geoHandlersRef = useRef<{
+    click: (nodeId: string) => void;
+    dragEnd: (nodeId: string, lat: number, lon: number) => boolean;
+  } | null>(null);
+  useLayoutEffect(() => {
+    geoHandlersRef.current = {
+      click: (nodeId) => {
+        const node = nodes.find((n) => n.id === nodeId);
+        if (node) handleNodeClick(node);
+      },
+      dragEnd: (nodeId, lat, lon) => {
+        setSelectedNodeId(nodeId);
+        return commitNodeMove(nodeId, Math.round(lat * 10000) / 10000, Math.round(lon * 10000) / 10000);
+      },
+    };
+  });
+  const onMarkerClick = useCallback((nodeId: string) => geoHandlersRef.current?.click(nodeId), []);
+  const onMarkerDragEnd = useCallback(
+    (nodeId: string, lat: number, lon: number) => geoHandlersRef.current?.dragEnd(nodeId, lat, lon) ?? false,
+    []
+  );
+  const handleMapViewChange = useCallback((view: MapView) => {
+    mapViewRef.current = view;
+  }, []);
+
+  /** Commits a typed coordinate after parsing and validating it. */
+  const commitCoordinate = (node: GraphNode, axis: 'x' | 'y', raw: string): boolean => {
+    const text = raw.trim();
+    const val = Number(text);
+    if (text === '' || !Number.isFinite(val)) {
+      setWarningMsg('Enter a valid number for the node coordinate.');
+      return false;
+    }
+    return commitNodeMove(node.id, axis === 'x' ? val : node.x, axis === 'y' ? val : node.y);
+  };
+
+  const commitName = (node: GraphNode, raw: string): boolean => {
+    onChange({ graphNodes: nodes.map((n) => (n.id === node.id ? { ...n, name: raw } : n)) });
+    return true;
+  };
+
+  const selectTool = (tool: GraphTool) => {
+    setActiveTool(tool);
+    setConnectOriginId(null);
+  };
+
   const clearGraph = () => {
     setSelectedNodeId(null);
     setConnectOriginId(null);
@@ -768,49 +856,49 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
     });
   };
 
-  // Center calculation for Leaflet Map
-  const geoCenter = useMemo(() => {
-    if (polygon && polygon.length >= 3) {
-      const lats = polygon.map((p) => p.x ?? 0);
-      const lons = polygon.map((p) => p.y ?? p.x ?? 0);
-      return [(Math.min(...lats) + Math.max(...lats)) / 2, (Math.min(...lons) + Math.max(...lons)) / 2] as [number, number];
-    }
-    if (nodes.length > 0) {
-      return [nodes[0].x, nodes[0].y] as [number, number];
-    }
-    if (minPoint && maxPoint && minPoint.x !== undefined && maxPoint.x !== undefined && (minPoint.x !== -100 || maxPoint.x !== 100)) {
-      const minX = minPoint.x ?? 40.0;
-      const maxX = maxPoint.x ?? 41.0;
-      const minY = minPoint.y ?? -4.0;
-      const maxY = maxPoint.y ?? -3.0;
-      return [(minX + maxX) / 2, (minY + maxY) / 2] as [number, number];
-    }
-    return [40.4168, -3.7038] as [number, number]; // Default to Madrid / Iberia
-  }, [polygon, nodes, minPoint, maxPoint]);
+  // Initial centre for the Leaflet map (the auto-fit or the remembered view refines it)
+  let geoCenter: [number, number];
+  if (polygon.length >= 3) {
+    const lats = polygon.map((p) => p.x ?? 0);
+    const lons = polygon.map((p) => p.y ?? p.x ?? 0);
+    geoCenter = [(Math.min(...lats) + Math.max(...lats)) / 2, (Math.min(...lons) + Math.max(...lons)) / 2];
+  } else if (nodes.length > 0) {
+    geoCenter = [nodes[0].x, nodes[0].y];
+  } else {
+    const c = centerOf(minPoint, maxPoint);
+    geoCenter = [c.x, c.y];
+  }
 
-  // Leaflet Marker Icon generator (approx 3x smaller node icons: 10px)
-  const createNodeIcon = (_node: GraphNode, isSelected: boolean, isConnectOrigin: boolean) => {
-    const bgStyle = isSelected
-      ? 'background-color:#22d3ee; box-shadow:0 0 10px rgba(34,211,238,0.9); border:1.5px solid #ffffff; transform:scale(1.3);'
-      : isConnectOrigin
-      ? 'background-color:#fbbf24; box-shadow:0 0 10px rgba(251,191,36,0.9); border:1.5px solid #ffffff; transform:scale(1.3);'
-      : 'background-color:#0f172a; border:1.5px solid #22d3ee;';
+  const inputClass = 'h-6 px-1.5 bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded text-cyan-600 dark:text-cyan-300 text-xs';
 
-    const html = `
-      <div style="display:flex; align-items:center; justify-content:center; width:10px; height:10px; border-radius:9999px; cursor:pointer; transition:all 0.15s; ${bgStyle}">
-      </div>
-    `;
+  const toolButtons: { tool: GraphTool; label: string; tooltip: string; icon: React.ReactNode }[] = [
+    {
+      tool: 'ADD_EXTEND',
+      label: 'Add & Extend',
+      tooltip: 'Click empty space to add a node connected to the selected node',
+      icon: <Plus size={12} />,
+    },
+    {
+      tool: 'CONNECT',
+      label: 'Connect Nodes',
+      tooltip: 'Click two existing nodes sequentially to add a connecting edge between them',
+      icon: <LinkIcon size={12} />,
+    },
+    {
+      tool: 'SELECT',
+      label: 'Select / Move',
+      tooltip: 'Click a node to make it the origin for new nodes, or drag it to move it',
+      icon: <Move size={12} />,
+    },
+    {
+      tool: 'DELETE',
+      label: 'Delete',
+      tooltip: 'Click any node or edge line to remove it from the graph',
+      icon: <Trash2 size={12} />,
+    },
+  ];
 
-    return L.divIcon({
-      html,
-      className: 'custom-graph-node-marker',
-      iconSize: [10, 10],
-      iconAnchor: [5, 5],
-    });
-  };
-
-  return (
-    <TooltipProvider delayDuration={200}>
+  const editor = (
       <div
         className={
           isFullScreen
@@ -819,7 +907,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
         }
       >
         {/* Header & Tool Bar */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <Label className="text-xs font-semibold text-cyan-400 uppercase tracking-wider">
               {isGeo ? 'Route Graph Editor (Geospatial Map Region)' : 'Route Graph Editor (2D Spatial Boundary Plane)'}
@@ -832,105 +920,35 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
               </TooltipTrigger>
               <TooltipContent className="max-w-[320px] space-y-1.5 text-[11px] leading-relaxed">
                 <p className="font-semibold text-cyan-400">{"Graph Route Instructions:"}</p>
-                <p>{"1. Click anywhere on the map or plane to set the initial route node."}</p>
-                <p>{"2. Select an origin node and click anywhere to place the next step and automatically draw a connecting edge."}</p>
-                <p>{"3. Route points and edges crossing forbidden obstacle zones are blocked."}</p>
+                <p>{"1. Add & Extend: click empty space to place a node; it is linked to the selected node."}</p>
+                <p>{"2. Select / Move: click a node to select it, drag it to move it (dragging also works in Add & Extend)."}</p>
+                <p>{"3. Connect Nodes: click the origin node, then the target node (Esc cancels)."}</p>
+                <p>{"4. Delete: click a node or an edge to remove it."}</p>
+                <p>{"Nodes and edges outside the region or crossing forbidden obstacle zones are blocked."}</p>
               </TooltipContent>
             </Tooltip>
           </div>
 
-          <div className="flex items-center gap-1">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span>
-                  <Button
-                    type="button"
-                    variant={activeTool === 'ADD_EXTEND' ? 'default' : 'outline'}
-                    size="sm"
-                    className="h-7 px-2 text-xs gap-1"
-                    onClick={() => {
-                      setActiveTool('ADD_EXTEND');
-                      setConnectOriginId(null);
-                    }}
-                  >
-                    <Plus size={12} />
-                    <span>{"Add & Extend"}</span>
-                  </Button>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent className="text-[11px]">
-                {"Click to add new destination nodes connected to the selected origin node"}
-              </TooltipContent>
-            </Tooltip>
-
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span>
-                  <Button
-                    type="button"
-                    variant={activeTool === 'CONNECT' ? 'default' : 'outline'}
-                    size="sm"
-                    className="h-7 px-2 text-xs gap-1"
-                    onClick={() => {
-                      setActiveTool('CONNECT');
-                      setConnectOriginId(null);
-                    }}
-                  >
-                    <LinkIcon size={12} />
-                    <span>{"Connect Nodes"}</span>
-                  </Button>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent className="text-[11px]">
-                {"Click two existing nodes sequentially to add a connecting edge between them"}
-              </TooltipContent>
-            </Tooltip>
-
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span>
-                  <Button
-                    type="button"
-                    variant={activeTool === 'SELECT' ? 'default' : 'outline'}
-                    size="sm"
-                    className="h-7 px-2 text-xs gap-1"
-                    onClick={() => {
-                      setActiveTool('SELECT');
-                      setConnectOriginId(null);
-                    }}
-                  >
-                    <Move size={12} />
-                    <span>{"Select Node"}</span>
-                  </Button>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent className="text-[11px]">
-                {"Select active origin node for route extension"}
-              </TooltipContent>
-            </Tooltip>
-
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span>
-                  <Button
-                    type="button"
-                    variant={activeTool === 'DELETE' ? 'destructive' : 'outline'}
-                    size="sm"
-                    className="h-7 px-2 text-xs gap-1"
-                    onClick={() => {
-                      setActiveTool('DELETE');
-                      setConnectOriginId(null);
-                    }}
-                  >
-                    <Trash2 size={12} />
-                    <span>{"Delete"}</span>
-                  </Button>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent className="text-[11px]">
-                {"Click any node or edge line to remove it from the graph"}
-              </TooltipContent>
-            </Tooltip>
+          <div className="flex flex-wrap items-center gap-1">
+            {toolButtons.map(({ tool, label, tooltip, icon }) => (
+              <Tooltip key={tool}>
+                <TooltipTrigger asChild>
+                  <span>
+                    <Button
+                      type="button"
+                      variant={activeTool === tool ? (tool === 'DELETE' ? 'destructive' : 'default') : 'outline'}
+                      size="sm"
+                      className="h-7 px-2 text-xs gap-1"
+                      onClick={() => selectTool(tool)}
+                    >
+                      {icon}
+                      <span>{label}</span>
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent className="text-[11px]">{tooltip}</TooltipContent>
+              </Tooltip>
+            ))}
 
             <Tooltip>
               <TooltipTrigger asChild>
@@ -960,7 +978,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
                     variant={isFullScreen ? 'secondary' : 'outline'}
                     size="sm"
                     className="h-7 px-2 text-xs gap-1"
-                    onClick={() => setIsFullScreen(!isFullScreen)}
+                    onClick={() => toggleFullScreen(!isFullScreen)}
                   >
                     {isFullScreen ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
                     <span>{isFullScreen ? 'Exit Fullscreen' : 'Fullscreen'}</span>
@@ -991,23 +1009,6 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
           </div>
         </div>
 
-        {/* Forbidden Zone / Obstacle Warning Banner */}
-        {warningMsg && (
-          <div className="flex items-center justify-between bg-rose-100 dark:bg-rose-950/90 border border-rose-500/80 text-rose-700 dark:text-rose-200 px-3 py-1.5 rounded text-xs animate-in fade-in slide-in-from-top-1">
-            <div className="flex items-center gap-2 font-medium">
-              <AlertTriangle size={14} className="text-rose-400 shrink-0" />
-              <span>{warningMsg}</span>
-            </div>
-            <button
-              type="button"
-              onClick={() => setWarningMsg(null)}
-              className="text-rose-400 hover:text-rose-700 dark:hover:text-rose-200 text-xs font-bold px-1"
-            >
-              <X size={14} />
-            </button>
-          </div>
-        )}
-
         {/* Editor Area (Geospatial OpenStreetMap or 2D Plane Canvas) */}
         <div
           ref={containerRef}
@@ -1019,19 +1020,20 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
           {isGeo ? (
             /* GEOSPATIAL MAP VIEW (Leaflet OpenStreetMap) */
             <MapContainer
-              center={geoCenter}
-              zoom={6}
+              center={initialMapView?.center ?? geoCenter}
+              zoom={initialMapView?.zoom ?? 6}
               minZoom={2}
               maxBounds={[[-90, -180], [90, 180]]}
               maxBoundsViscosity={1.0}
               worldCopyJump={false}
               scrollWheelZoom={true}
+              doubleClickZoom={false}
               style={{ height: '100%', width: '100%', minHeight: isFullScreen ? 'calc(100vh - 140px)' : '340px', background: '#090d16' }}
             >
               <GraphMapEventsHandler
                 activeTool={activeTool}
                 nodes={nodes}
-                selectedNodeId={selectedNodeId}
+                selectedNodeId={selectedId}
                 obstacles={obstacles}
                 polygon={polygon}
                 minPoint={minPoint}
@@ -1040,7 +1042,9 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
                 onWarning={setWarningMsg}
               />
               <GraphMapResizeHandler isFullScreen={isFullScreen} />
-              <GraphMapAutoFit polygon={polygon} minPoint={minPoint} maxPoint={maxPoint} />
+              {/* The tracker goes first so it also records the view set by the auto-fit */}
+              <GraphMapViewTracker onViewChange={handleMapViewChange} />
+              <MapAutoFit polygon={polygon} minPoint={minPoint} maxPoint={maxPoint} enabled={initialMapView === null} />
 
               {!isOffline && (
                 <TileLayer
@@ -1063,16 +1067,19 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
                 </div>
               )}
 
-              {/* Boundary Region Geofence Polygon */}
-              {polygon && polygon.length >= 3 && (
+              {/* Boundary Region: the geofence polygon, or the min/max box when there is none */}
+              {polygon && polygon.length >= 3 ? (
                 <LeafletPolygon
                   positions={polygon.map((p) => [p.x ?? 0, p.y ?? p.x ?? 0])}
-                  pathOptions={{
-                    color: '#06b6d4',
-                    fillColor: '#06b6d4',
-                    fillOpacity: 0.16,
-                    weight: 2,
-                  }}
+                  pathOptions={REGION_STYLE}
+                />
+              ) : (
+                <LeafletRectangle
+                  bounds={[
+                    [minPoint.x ?? 0, minPoint.y ?? 0],
+                    [maxPoint.x ?? 0, maxPoint.y ?? 0],
+                  ]}
+                  pathOptions={REGION_BOX_STYLE}
                 />
               )}
 
@@ -1138,39 +1145,23 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
               })}
 
               {/* Graph Nodes & Floating Coordinate Badges */}
-              {nodes.map((node) => {
-                const isSelected = selectedNodeId === node.id;
-                const isConnectOrigin = connectOriginId === node.id;
-
-                return (
-                  <LeafletMarker
-                    key={node.id}
-                    position={[node.x, node.y]}
-                    icon={createNodeIcon(node, isSelected, isConnectOrigin)}
-                    eventHandlers={{
-                      click: (e) => {
-                        L.DomEvent.stopPropagation(e);
-                        handleNodeClick(node);
-                      },
-                    }}
-                  >
-                    {showCoordinateLabels && (
-                      <LeafletTooltip
-                        permanent
-                        direction="top"
-                        offset={[0, -8]}
-                        className="bg-[var(--c-bg1)]/90 border border-cyan-400/80 text-cyan-600 dark:text-cyan-300 font-mono text-[10px] font-bold px-1.5 py-0.5 rounded shadow-xl"
-                      >
-                        <span>(Lat: {node.x.toFixed(4)}°, Lon: {node.y.toFixed(4)}°)</span>
-                      </LeafletTooltip>
-                    )}
-                  </LeafletMarker>
-                );
-              })}
+              {nodes.map((node) => (
+                <GraphNodeMarker
+                  key={node.id}
+                  nodeId={node.id}
+                  lat={node.x}
+                  lon={node.y}
+                  visualState={selectedId === node.id ? 'selected' : connectOriginId === node.id ? 'origin' : 'normal'}
+                  draggable={canDrag}
+                  showLabel={showCoordinateLabels}
+                  onNodeClick={onMarkerClick}
+                  onNodeDragEnd={onMarkerDragEnd}
+                />
+              ))}
             </MapContainer>
           ) : (
             /* 2D CARTESIAN PLANE VIEW (HTML5 Canvas) */
-            <div onClick={handleCanvasClick} className="relative size-full">
+            <div onClick={handleCanvasClick} data-testid="graph-plane" className="relative size-full">
               <canvas
                 ref={canvasRef}
                 width={canvasW}
@@ -1181,8 +1172,8 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
               {/* SVG Overlay rendering Graph Edges in 2D mode */}
               <svg className="absolute inset-0 size-full pointer-events-none z-10">
                 {edges.map((edge) => {
-                  const fromNode = nodes.find((n) => n.id === edge.fromNodeId);
-                  const toNode = nodes.find((n) => n.id === edge.toNodeId);
+                  const fromNode = displayNodes.find((n) => n.id === edge.fromNodeId);
+                  const toNode = displayNodes.find((n) => n.id === edge.toNodeId);
                   if (!fromNode || !toNode) return null;
 
                   const x1 = toCanvasX(fromNode.x);
@@ -1191,7 +1182,14 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
                   const y2 = toCanvasY(toNode.y);
 
                   return (
-                    <g key={edge.id} className="pointer-events-auto cursor-pointer" onClick={() => handleEdgeClick(edge)}>
+                    <g
+                      key={edge.id}
+                      className="pointer-events-auto cursor-pointer"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleEdgeClick(edge);
+                      }}
+                    >
                       <line
                         x1={x1}
                         y1={y1}
@@ -1208,9 +1206,10 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
               </svg>
 
               {/* Render 2D Graph Nodes & Floating Coordinate Badges */}
-              {nodes.map((node) => {
-                const isSelected = selectedNodeId === node.id;
+              {displayNodes.map((node) => {
+                const isSelected = selectedId === node.id;
                 const isConnectOrigin = connectOriginId === node.id;
+                const isDragging = activeDrag?.nodeId === node.id;
                 const cx = toCanvasX(node.x);
                 const cy = toCanvasY(node.y);
 
@@ -1225,18 +1224,31 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
                       </div>
                     )}
 
+                    {/* 22 px transparent hit area around the 10 px dot */}
                     <div
-                      onClick={() => handleNodeClick(node)}
-                      className={`absolute -translate-x-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full cursor-pointer transition-all duration-150 z-30 ${
-                        isSelected
-                          ? 'bg-cyan-400 ring-2 ring-cyan-400/80 shadow-md scale-125'
-                          : isConnectOrigin
-                          ? 'bg-amber-400 ring-2 ring-amber-400/80 animate-bounce scale-125'
-                          : 'bg-[var(--c-bg2)] text-cyan-600 dark:text-cyan-300 border-2 border-cyan-400 hover:bg-cyan-100 dark:hover:bg-cyan-950 hover:scale-110'
+                      data-testid={`graph-node-${node.id}`}
+                      onPointerDown={(e) => handleNodePointerDown(e, node)}
+                      onPointerMove={handleNodePointerMove}
+                      onPointerUp={handleNodePointerUp}
+                      onPointerCancel={handleNodePointerCancel}
+                      onClick={(e) => handleNodeElementClick(e, node)}
+                      className={`group absolute -translate-x-1/2 -translate-y-1/2 w-[22px] h-[22px] flex items-center justify-center touch-none z-30 ${
+                        canDrag ? (isDragging ? 'cursor-grabbing' : 'cursor-grab') : 'cursor-pointer'
                       }`}
                       style={{ left: `${cx}px`, top: `${cy}px` }}
                     >
-                      <span>{node.name || node.id.replace('node-', '')}</span>
+                      <div
+                        className={`w-2.5 h-2.5 rounded-full ${
+                          isSelected
+                            ? 'bg-cyan-400 ring-2 ring-cyan-400/80 shadow-md scale-125'
+                            : isConnectOrigin
+                            ? 'bg-amber-400 ring-2 ring-amber-400/80 scale-125'
+                            : 'bg-[var(--c-bg2)] border-2 border-cyan-400 group-hover:bg-cyan-100 dark:group-hover:bg-cyan-950 group-hover:scale-110'
+                        }`}
+                      />
+                      <span className="absolute left-full top-1/2 -translate-y-1/2 text-[10px] font-semibold text-cyan-600 dark:text-cyan-300 whitespace-nowrap pointer-events-none">
+                        {node.name || node.id.replace('node-', '')}
+                      </span>
                     </div>
                   </React.Fragment>
                 );
@@ -1244,9 +1256,34 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
             </div>
           )}
 
+          {/* Forbidden Zone / Obstacle Warning Banner, over the editor so the view does not shift */}
+          {warningMsg && (
+            <div className="absolute top-2 left-14 right-2 z-[1100] flex items-center justify-between bg-rose-100 dark:bg-rose-950/90 border border-rose-500/80 text-rose-700 dark:text-rose-200 px-3 py-1.5 rounded text-xs shadow-md animate-in fade-in slide-in-from-top-1">
+              <div className="flex items-center gap-2 font-medium">
+                <AlertTriangle size={14} className="text-rose-400 shrink-0" />
+                <span>{warningMsg}</span>
+              </div>
+              <button
+                type="button"
+                aria-label="Dismiss warning"
+                onClick={() => setWarningMsg(null)}
+                className="text-rose-400 hover:text-rose-700 dark:hover:text-rose-200 text-xs font-bold px-1"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          )}
+
+          {/* Active tool hint */}
+          {nodes.length > 0 && (
+            <div className="absolute top-2 right-2 z-[1000] max-w-[calc(100%-1rem)] truncate px-2 py-0.5 rounded bg-[var(--c-bg1)]/85 border border-[var(--c-br2)] text-[10px] text-[var(--c-tx3)] pointer-events-none">
+              {TOOL_HINTS[activeTool]}
+            </div>
+          )}
+
           {/* Empty state hint overlay */}
           {nodes.length === 0 && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center text-[var(--c-tx4)] pointer-events-none space-y-1 z-20">
+            <div className="absolute inset-0 flex flex-col items-center justify-center text-[var(--c-tx4)] pointer-events-none space-y-1 z-[1000]">
               <Plus size={24} className="text-cyan-400/80 animate-pulse" />
               <p className="text-xs font-semibold text-cyan-600 dark:text-cyan-300">
                 {isGeo
@@ -1259,67 +1296,46 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
         </div>
 
         {/* Selected Node Inspector Panel */}
-        {selectedNodeId && (() => {
-          const targetNode = nodes.find((n) => n.id === selectedNodeId);
+        {selectedId && (() => {
+          const targetNode = nodes.find((n) => n.id === selectedId);
           if (!targetNode) return null;
 
           return (
-            <div className="flex items-center justify-between bg-[var(--c-bg2)]/80 p-2 px-3 rounded border border-[var(--c-br2)] text-xs">
-              <div className="flex items-center gap-4">
+            <div className="flex flex-wrap items-center justify-between gap-2 bg-[var(--c-bg2)]/80 p-2 px-3 rounded border border-[var(--c-br2)] text-xs">
+              <div className="flex flex-wrap items-center gap-4">
                 <div className="flex items-center gap-1.5">
                   <MapPin size={14} className="text-cyan-400" />
                   <Label className="text-[10px] text-cyan-400 font-semibold uppercase">Selected Node:</Label>
-                  <input
-                    type="text"
+                  <CommitInput
+                    key={`${targetNode.id}-name-${targetNode.name ?? ''}`}
                     value={targetNode.name || ''}
-                    onChange={(e) => {
-                      const newName = e.target.value;
-                      const updated = nodes.map((n) => (n.id === selectedNodeId ? { ...n, name: newName } : n));
-                      onChange({ graphNodes: updated });
-                    }}
-                    className="h-6 w-24 px-1.5 bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded text-cyan-600 dark:text-cyan-300 text-xs"
+                    ariaLabel="Node name"
+                    onCommit={(raw) => commitName(targetNode, raw)}
+                    className={`${inputClass} w-24`}
                   />
                 </div>
 
                 <div className="flex items-center gap-1.5">
                   <Label className="text-[10px] text-cyan-400 font-semibold uppercase">{isGeo ? 'Lat:' : 'X:'}</Label>
-                  <input
-                    type="number"
-                    step={isGeo ? '0.0001' : '0.1'}
-                    value={targetNode.x}
-                    onChange={(e) => {
-                      const val = parseFloat(e.target.value) || 0;
-                      const valError = validateNodeAndEdge(null, { x: val, y: targetNode.y }, obstacles, polygon, minPoint, maxPoint);
-                      if (valError) {
-                        setWarningMsg(valError);
-                        return;
-                      }
-                      setWarningMsg(null);
-                      const updated = nodes.map((n) => (n.id === selectedNodeId ? { ...n, x: val } : n));
-                      onChange({ graphNodes: updated });
-                    }}
-                    className="h-6 w-20 px-1.5 bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded text-cyan-600 dark:text-cyan-300 text-xs font-mono"
+                  <CommitInput
+                    key={`${targetNode.id}-x-${targetNode.x}`}
+                    value={String(targetNode.x)}
+                    ariaLabel={isGeo ? 'Node latitude' : 'Node X'}
+                    inputMode="decimal"
+                    onCommit={(raw) => commitCoordinate(targetNode, 'x', raw)}
+                    className={`${inputClass} w-20 font-mono`}
                   />
                 </div>
 
                 <div className="flex items-center gap-1.5">
                   <Label className="text-[10px] text-cyan-400 font-semibold uppercase">{isGeo ? 'Lon:' : 'Y:'}</Label>
-                  <input
-                    type="number"
-                    step={isGeo ? '0.0001' : '0.1'}
-                    value={targetNode.y}
-                    onChange={(e) => {
-                      const val = parseFloat(e.target.value) || 0;
-                      const valError = validateNodeAndEdge(null, { x: targetNode.x, y: val }, obstacles, polygon, minPoint, maxPoint);
-                      if (valError) {
-                        setWarningMsg(valError);
-                        return;
-                      }
-                      setWarningMsg(null);
-                      const updated = nodes.map((n) => (n.id === selectedNodeId ? { ...n, y: val } : n));
-                      onChange({ graphNodes: updated });
-                    }}
-                    className="h-6 w-20 px-1.5 bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded text-cyan-600 dark:text-cyan-300 text-xs font-mono"
+                  <CommitInput
+                    key={`${targetNode.id}-y-${targetNode.y}`}
+                    value={String(targetNode.y)}
+                    ariaLabel={isGeo ? 'Node longitude' : 'Node Y'}
+                    inputMode="decimal"
+                    onCommit={(raw) => commitCoordinate(targetNode, 'y', raw)}
+                    className={`${inputClass} w-20 font-mono`}
                   />
                 </div>
               </div>
@@ -1335,8 +1351,13 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
           );
         })()}
       </div>
+  );
+
+  return (
+    <TooltipProvider delayDuration={200}>
+      {/* In fullscreen the editor is rendered in <body>: inside the panel it would stay in the
+          stacking context of its ancestors and the app bars and side panels would cover it */}
+      {isFullScreen ? createPortal(editor, document.body) : editor}
     </TooltipProvider>
   );
 };
-
-

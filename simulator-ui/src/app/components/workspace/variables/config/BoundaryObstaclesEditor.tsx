@@ -4,9 +4,13 @@ import { Plus, Trash2, ShieldAlert, Eye, EyeOff, Layers } from 'lucide-react';
 import { Button } from '../../../ui/button';
 import { Input } from '../../../ui/input';
 import { Label } from '../../../ui/label';
+import { centerOf } from '../../../../core/pointDefaults';
 
 interface BoundaryObstaclesEditorProps {
   obstacles: BoundaryObstacle[];
+  /** Region bounds: new obstacles are placed at its centre and sized relative to it. */
+  minPoint?: Point3DCoord;
+  maxPoint?: Point3DCoord;
   selectedObstacleId?: string | null;
   onSelectObstacle?: (id: string | null) => void;
   onChange: (newObstacles: BoundaryObstacle[]) => void;
@@ -14,6 +18,8 @@ interface BoundaryObstaclesEditorProps {
 
 export const BoundaryObstaclesEditor: React.FC<BoundaryObstaclesEditorProps> = ({
   obstacles = [],
+  minPoint = { x: -50, y: -50 },
+  maxPoint = { x: 50, y: 50 },
   selectedObstacleId,
   onSelectObstacle,
   onChange,
@@ -23,17 +29,22 @@ export const BoundaryObstaclesEditor: React.FC<BoundaryObstaclesEditorProps> = (
 
   const handleAddObstacle = () => {
     const name = newObstacleName.trim() || (newObstacleType === 'WALL_SEGMENT' ? 'Wall Barrier' : 'Forbidden Zone');
+    // Centred on the region: a wall 40% of its width, a zone 30% of its size
+    const { x: cx, y: cy } = centerOf(minPoint, maxPoint);
+    const spanX = Math.abs((maxPoint.x ?? 0) - (minPoint.x ?? 0)) || 100;
+    const spanY = Math.abs((maxPoint.y ?? 0) - (minPoint.y ?? 0)) || 100;
+    const round = (v: number) => Math.round(v * 1000) / 1000;
     const defaultPoints: Point3DCoord[] =
       newObstacleType === 'WALL_SEGMENT'
         ? [
-            { x: -20, y: 0, z: 0 },
-            { x: 20, y: 0, z: 0 },
+            { x: round(cx - spanX * 0.2), y: round(cy), z: 0 },
+            { x: round(cx + spanX * 0.2), y: round(cy), z: 0 },
           ]
         : [
-            { x: -15, y: -15, z: 0 },
-            { x: 15, y: -15, z: 0 },
-            { x: 15, y: 15, z: 0 },
-            { x: -15, y: 15, z: 0 },
+            { x: round(cx - spanX * 0.15), y: round(cy - spanY * 0.15), z: 0 },
+            { x: round(cx + spanX * 0.15), y: round(cy - spanY * 0.15), z: 0 },
+            { x: round(cx + spanX * 0.15), y: round(cy + spanY * 0.15), z: 0 },
+            { x: round(cx - spanX * 0.15), y: round(cy + spanY * 0.15), z: 0 },
           ];
 
     const newObs: BoundaryObstacle = {

@@ -60,7 +60,7 @@ public class ParallelGroupDispatcher implements IGroupDispatcher {
     }
 
     @Override
-    public boolean dispatch(List<FlowRuntime> dueFlows) {
+    public boolean dispatch(List<FlowRuntime> dueFlows, long groupTick) {
         if (closed) {
             return false;
         }
@@ -75,7 +75,7 @@ public class ParallelGroupDispatcher implements IGroupDispatcher {
                 continue;
             }
             try {
-                worker.executor.execute(() -> sendOne(worker, flow));
+                worker.executor.execute(() -> sendOne(worker, flow, groupTick));
                 handedOff = true;
             } catch (RejectedExecutionException e) {
                 // Shut down concurrently
@@ -85,14 +85,14 @@ public class ParallelGroupDispatcher implements IGroupDispatcher {
         return handedOff;
     }
 
-    private void sendOne(Worker worker, FlowRuntime flow) {
+    private void sendOne(Worker worker, FlowRuntime flow, long groupTick) {
         try {
             if (closed) {
                 return;
             }
             String payload = handler.generate(group, flow);
             if (payload != null && !closed) {
-                handler.publish(group, flow, payload);
+                handler.publish(group, flow, payload, groupTick);
             }
         } finally {
             worker.busy.set(false);

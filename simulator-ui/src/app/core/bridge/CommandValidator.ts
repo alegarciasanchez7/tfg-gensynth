@@ -15,6 +15,22 @@ export function validateCommand<T extends UICommandType>(
   const everyTicks = readField('everyTicks');
   const invalidEveryTicks = everyTicks !== undefined && !(Number.isInteger(everyTicks) && (everyTicks as number) >= 1);
 
+  // Event loss fields (optional): a percentage in [0, 100] and two tick counts >= 0
+  const validateEventLoss = (): Error | null => {
+    const lossPercent = readField('lossPercent');
+    if (lossPercent !== undefined
+      && !(typeof lossPercent === 'number' && Number.isFinite(lossPercent) && lossPercent >= 0 && lossPercent <= 100)) {
+      return new Error('lossPercent must be a number between 0 and 100');
+    }
+    for (const field of ['outageEveryTicks', 'outageDurationTicks']) {
+      const value = readField(field);
+      if (value !== undefined && !(Number.isInteger(value) && (value as number) >= 0)) {
+        return new Error(`${field} must be an integer >= 0`);
+      }
+    }
+    return null;
+  };
+
   const requireStringField = (field: string, message: string) => {
     const value = readField(field);
     return typeof value === 'string' && value.trim().length > 0 ? null : new Error(message);
@@ -49,6 +65,10 @@ export function validateCommand<T extends UICommandType>(
       return requireStringField('name', 'El comando CREATE_GROUP requiere name');
     case 'CREATE_FLOW':
       if (invalidEveryTicks) return new Error('everyTicks must be an integer >= 1');
+      {
+        const eventLossError = validateEventLoss();
+        if (eventLossError) return eventLossError;
+      }
       return isObjectPayload
         && typeof readField('groupId') === 'string'
         && typeof readField('name') === 'string'
@@ -59,6 +79,10 @@ export function validateCommand<T extends UICommandType>(
       return requireStringField('groupId', 'El comando UPDATE_GROUP_CONFIG requiere groupId');
     case 'UPDATE_FLOW_CONFIG':
       if (invalidEveryTicks) return new Error('everyTicks must be an integer >= 1');
+      {
+        const eventLossError = validateEventLoss();
+        if (eventLossError) return eventLossError;
+      }
       return isObjectPayload
         && typeof readField('flowId') === 'string'
         && typeof readField('groupId') === 'string'

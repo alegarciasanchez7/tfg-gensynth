@@ -130,7 +130,7 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
   const [integerFormatStr, setIntegerFormatStr] = useState(config.integerFormat ?? '');
 
   // New fields local string states
-  const [sineFreqStr, setSineFreqStr] = useState(String(config.sineFrequency ?? 1.0));
+  const [sineFreqStr, setSineFreqStr] = useState(String(config.sineFrequency ?? 0.05));
   const [sineAmpStr, setSineAmpStr] = useState(String(config.sineAmplitude ?? 10.0));
   const [sinePhaseStr, setSinePhaseStr] = useState(String(config.sinePhase ?? 0.0));
   const [sineOffsetStr, setSineOffsetStr] = useState(String(config.sineOffset ?? 0.0));
@@ -372,7 +372,8 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
   }, [config.max]);
 
   useEffect(() => {
-    if (config.initialValue !== undefined && parseFloat(initialStr) !== config.initialValue) setInitialStr(String(config.initialValue));
+    if (config.initialValue === undefined || config.initialValue === null) setInitialStr('');
+    else if (parseFloat(initialStr) !== config.initialValue) setInitialStr(String(config.initialValue));
   }, [config.initialValue]);
 
   useEffect(() => {
@@ -407,6 +408,10 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
     }
     if (newPattern === 'DISTRIBUTION' && (!config.customDistributionGraph || config.customDistributionGraph.length === 0)) {
       updates.customDistributionGraph = [];
+    }
+    if (newPattern === 'SINUSOIDAL' && config.sineFrequency === undefined) {
+      // 1 Hz sampled once per second is a flat line: start with a 20 s period
+      updates.sineFrequency = 0.05;
     }
     onChange(updates);
   };
@@ -495,12 +500,19 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
                   onChange={(e) => handleNumericChange(e.target.value, setInitialStr, 'initialValue')}
                   onBlur={(e) => {
                     const val = parseFloat(e.target.value);
-                    const clamped = isNaN(val) ? min : Math.max(min, Math.min(max, val));
+                    if (isNaN(val)) {
+                      // Optional: an empty field means "no fixed first value"
+                      setInitialStr('');
+                      onChange({ initialValue: undefined });
+                      return;
+                    }
+                    const clamped = Math.max(min, Math.min(max, val));
                     setInitialStr(String(clamped));
                     onChange({ initialValue: clamped });
                   }}
                   className="h-8 text-xs font-mono"
-                  placeholder="e.g. 0"
+                  placeholder="Optional (first value)"
+                  title="Optional. First value emitted by the Random and Sequential patterns. Leave empty to start directly with the pattern."
                 />
               </div>
             </div>
@@ -774,7 +786,8 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
                   </TooltipContent>
                 </Tooltip>
               </div>
-              <div className="relative">
+              {/* The background lives here: the input on top must stay transparent so the overlay shows */}
+              <div className="relative rounded-md bg-input-background dark:bg-input/30">
                 {/* Highlighting Overlay */}
                 <div 
                   ref={overlayRef}
@@ -837,7 +850,7 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
                       setShowAutocomplete(false);
                     }, 150);
                   }}
-                  className="file:text-foreground placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground dark:bg-input/30 border-input flex w-full min-w-0 rounded-md border px-3 py-1 bg-input-background transition-[color,box-shadow] outline-none disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] h-8 text-xs font-mono text-transparent caret-[var(--c-tx1)] relative z-10"
+                  className="file:text-foreground placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground border-input flex w-full min-w-0 rounded-md border px-3 py-1 bg-transparent transition-[color,box-shadow] outline-none disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] h-8 text-xs font-mono text-transparent caret-[var(--c-tx1)] relative z-10"
                   autoComplete="off"
                 />
 
@@ -909,7 +922,7 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
                     placeholder="e.g. 1.0"
                     value={sineFreqStr}
                     onChange={(e) => handleNumericChange(e.target.value, setSineFreqStr, 'sineFrequency')}
-                    onBlur={(e) => handleNumericBlur(e.target.value, setSineFreqStr, 'sineFrequency', 1.0)}
+                    onBlur={(e) => handleNumericBlur(e.target.value, setSineFreqStr, 'sineFrequency', 0.05)}
                     className="h-8 text-xs font-mono"
                   />
                 </div>

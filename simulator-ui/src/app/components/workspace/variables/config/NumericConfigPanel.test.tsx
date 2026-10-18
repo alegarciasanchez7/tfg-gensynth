@@ -41,6 +41,27 @@ describe('NumericConfigPanel', () => {
     });
   });
 
+  it('keeps the initial value empty when the field is left blank', () => {
+    const onChange = vi.fn();
+    render(<NumericConfigPanel config={{ ...defaultConfig, pattern: 'RANDOM' }} onChange={onChange} />);
+
+    const initial = screen.getByTestId('numeric-initial-input');
+    fireEvent.focus(initial);
+    fireEvent.blur(initial, { target: { value: '' } });
+
+    expect(onChange).toHaveBeenCalledWith({ initialValue: undefined });
+    expect(initial).toHaveValue('');
+  });
+
+  it('clamps a typed initial value to the range', () => {
+    const onChange = vi.fn();
+    render(<NumericConfigPanel config={{ ...defaultConfig, pattern: 'RANDOM' }} onChange={onChange} />);
+
+    fireEvent.blur(screen.getByTestId('numeric-initial-input'), { target: { value: '99' } });
+
+    expect(onChange).toHaveBeenCalledWith({ initialValue: 50 });
+  });
+
   it('renders input fields with initial config values', () => {
     render(<NumericConfigPanel config={defaultConfig} onChange={vi.fn()} />);
 

@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
+import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { Binary, ListChecks, ALargeSmall, CalendarClock, MapPin, ToggleLeft } from 'lucide-react';
 import { toast } from 'sonner';
 import { useApp } from '../../../context';
 import type { Variable } from '../../../types';
 import { useVariableValidation } from '../../../context/hooks/useVariableValidation';
+import { findVariableNameConflict } from '../../../core/variableNames';
 
 export type VariableDraft = {
   name: string;
@@ -83,6 +84,35 @@ function createDraft(variable: Variable): VariableDraft {
   };
 }
 
+type VariableUpdate = Pick<Variable, 'name' | 'type' | 'scope' | 'description' | 'config' | 'flowId' | 'groupId'>;
+
+/** Order-independent JSON, so a server echo matches the update it answers. */
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, v]) => v !== undefined)
+      .sort(([a], [b]) => a.localeCompare(b));
+    return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`).join(',')}}`;
+  }
+  return JSON.stringify(value ?? null);
+}
+
+function updateKey(update: VariableUpdate): string {
+  return stableStringify({
+    name: update.name,
+    type: update.type,
+    scope: update.scope,
+    description: update.description ?? '',
+    config: update.config ?? {},
+    flowId: update.flowId,
+    groupId: update.groupId,
+  });
+}
+
+/** Most updates kept to recognise their echoes. */
+const MAX_PENDING_ECHOES = 100;
+
 function parseConfig(text: string) {
   const trimmed = text.trim();
   if (!trimmed) {
@@ -97,32 +127,51 @@ export function useVariableEditor(variable: Variable) {
   const [draft, setDraftState] = useState<VariableDraft>(() => createDraft(variable));
   const [isDeleting, setIsDeleting] = useState(false);
   const isDirty = state?.dirtyItems?.variableIds?.has(variable.id) ?? false;
+  // Latest draft, so quick consecutive edits build on each other
+  const draftRef = useRef(draft);
+  // Updates sent from this editor that the app state has not echoed back yet
+  const pendingEchoes = useRef<string[]>([]);
+
+  const resetDraft = (next: VariableDraft) => {
+    pendingEchoes.current = [];
+    draftRef.current = next;
+    setDraftState(next);
+  };
 
   useEffect(() => {
-    setDraftState(createDraft(variable));
+    const echoIndex = pendingEchoes.current.lastIndexOf(updateKey(variable));
+    if (echoIndex !== -1) {
+      // Echo of our own edit: the draft is already newer or equal, so typing is never overwritten
+      pendingEchoes.current = pendingEchoes.current.slice(echoIndex + 1);
+      return;
+    }
+    // Changed elsewhere (another variable, discard, server correction)
+    resetDraft(createDraft(variable));
   }, [variable]);
 
   const setDraft: Dispatch<SetStateAction<VariableDraft>> = (valueOrFn) => {
-    setDraftState((prev) => {
-      const next = typeof valueOrFn === 'function' ? valueOrFn(prev) : valueOrFn;
-      // Auto-update context state
-      let parsed: Variable['config'] = variable.config;
-      try {
-        parsed = parseConfig(next.configText);
-      } catch {
-        // Keep previous config if invalid json while typing
-      }
-      actions.updateVariable(variable.id, {
-        name: next.name.trim(),
-        type: next.type,
-        scope: next.scope,
-        description: next.description.trim(),
-        config: parsed,
-        flowId: next.flowId,
-        groupId: next.groupId,
-      });
-      return next;
-    });
+    const next = typeof valueOrFn === 'function' ? valueOrFn(draftRef.current) : valueOrFn;
+    draftRef.current = next;
+    setDraftState(next);
+
+    // Auto-update context state
+    let parsed: Variable['config'] = variable.config;
+    try {
+      parsed = parseConfig(next.configText);
+    } catch {
+      // Keep previous config if invalid json while typing
+    }
+    const update: VariableUpdate = {
+      name: next.name.trim(),
+      type: next.type,
+      scope: next.scope,
+      description: next.description.trim(),
+      config: parsed,
+      flowId: next.flowId,
+      groupId: next.groupId,
+    };
+    pendingEchoes.current = [...pendingEchoes.current, updateKey(update)].slice(-MAX_PENDING_ECHOES);
+    actions.updateVariable(variable.id, update);
   };
 
   const typeTheme = useMemo(() => VARIABLE_TYPES[draft.type], [draft.type]);
@@ -141,7 +190,7 @@ export function useVariableEditor(variable: Variable) {
 
   const handleDiscard = () => {
     actions.discardItemChanges('variable', variable.id);
-    setDraftState(createDraft(variable));
+    resetDraft(createDraft(variable));
     toast.info(`Changes discarded for variable "${variable.name}"`);
   };
 
@@ -170,6 +219,8 @@ export function useVariableEditor(variable: Variable) {
       const parsedConfig: Variable['config'] = parseConfig(draft.configText);
       const variablesList = actions.getVariables?.() || [];
       const errors = validateConfig(draft.type, parsedConfig, variablesList);
+      const nameConflict = findVariableNameConflict(variablesList, { ...draft, id: variable.id });
+      if (nameConflict) errors.name = nameConflict;
       
       let cycle: string[] | null = null;
       if (draft.type === 'numeric' && parsedConfig.formula) {
@@ -179,7 +230,7 @@ export function useVariableEditor(variable: Variable) {
     } catch {
       return { errors: {}, cycle: null, isJsonValid: false };
     }
-  }, [draft.configText, draft.type, draft.name, variable.id, actions]);
+  }, [draft.configText, draft.type, draft.name, draft.scope, draft.flowId, draft.groupId, variable.id, actions]);
 
   const hasValidationError = !validationResult.isJsonValid || Object.keys(validationResult.errors).length > 0 || validationResult.cycle !== null;
 

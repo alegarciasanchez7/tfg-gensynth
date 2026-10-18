@@ -31,6 +31,16 @@ interface ConditionalRulesTabProps {
   groupId?: string;
 }
 
+/** Generator selected by default in each override editor (same defaults as the config panels). */
+const OVERRIDE_DEFAULT_GENERATOR: Record<Variable['type'], Record<string, string>> = {
+  numeric: { pattern: 'RANDOM' },
+  string: { pattern: 'RANDOM_STRING' },
+  boolean: { pattern: 'CONSTANT_BOOLEAN' },
+  list: { selectionStrategy: 'WEIGHTED_RANDOM' },
+  temporal: { timeAdvanceMode: 'WALL_CLOCK' },
+  point: { pattern: 'RANDOM_POINT' },
+};
+
 export const ConditionalRulesTab: React.FC<ConditionalRulesTabProps> = ({ 
   rules, 
   onChange,
@@ -113,7 +123,9 @@ export const ConditionalRulesTab: React.FC<ConditionalRulesTabProps> = ({
       : {};
     newRules[index] = {
       ...newRules[index],
-      overrides: { ...currentOverrides, ...newOverrides }
+      // Store the pattern the editor shows by default, so the Core generates from this config
+      // instead of treating the override as a single fixed value
+      overrides: { ...OVERRIDE_DEFAULT_GENERATOR[variableType], ...currentOverrides, ...newOverrides }
     };
     onChange(newRules);
   };

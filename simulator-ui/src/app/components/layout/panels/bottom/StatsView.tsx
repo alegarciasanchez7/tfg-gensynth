@@ -57,9 +57,13 @@ export function StatsView({ running }: StatsViewProps) {
     ? Math.round(activeFlowMetrics.reduce((acc, curr) => acc + curr.latency, 0) / activeFlowMetrics.length)
     : 0;
 
+  // Messages lost on purpose by the event loss of every flow
+  const totalDropped = Object.values(flowMetrics).reduce((acc, curr) => acc + (curr.dropped ?? 0), 0);
+
   const counters = [
     { label: 'TOTAL SENT',  value: running ? formatShortNumber(metrics?.totalMessages ?? 0) : '0',  color: 'text-cyan-500' },
     { label: 'ERRORS',      value: running ? (metrics?.errorCount ?? 0).toLocaleString() : '0', color: (metrics?.errorCount ?? 0) > 0 ? 'text-red-500' : 'text-slate-400' },
+    { label: 'DROPPED',     value: running ? formatShortNumber(totalDropped) : '0', color: running && totalDropped > 0 ? 'text-amber-500' : 'text-slate-400' },
     { label: 'ACTIVE FLOWS', value: activeFlowMetrics.length.toString(), color: 'text-violet-500' },
     { label: 'AVG LATENCY', value: running && avgLatency > 0 ? `${avgLatency}ms` : '--', color: 'text-emerald-500' },
   ];

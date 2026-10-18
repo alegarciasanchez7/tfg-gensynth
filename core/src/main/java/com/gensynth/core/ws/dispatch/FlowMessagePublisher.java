@@ -11,6 +11,7 @@ import org.slf4j.LoggerFactory;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -19,7 +20,8 @@ import java.util.concurrent.TimeUnit;
  *
  * Counters: {@code generated} after a successful generation, {@code sent} when
  * {@link ConnectorSession#send} returns (the technology accepted or confirmed it), {@code failed} when the template
- * cannot be evaluated or the publish throws.
+ * cannot be evaluated or the publish throws, {@code dropped} when the flow's event loss
+ * (random loss percentage or periodic outage) discards a generated message without sending it.
  */
 public class FlowMessagePublisher implements IFlowMessageHandler {
 
@@ -32,11 +34,14 @@ public class FlowMessagePublisher implements IFlowMessageHandler {
     private static final long ERROR_LOG_THROTTLE_MS = 1_000;
     /** Minimum time between two "skipped tick" warnings of the same flow. */
     private static final long SKIP_LOG_THROTTLE_MS = 10_000;
+    /** Minimum time between two "message dropped" debug entries of the same flow. */
+    private static final long DROP_LOG_THROTTLE_MS = 10_000;
 
     private final BridgeContext ctx;
     private final Map<String, Long> lastPreviewLogByFlowId = new ConcurrentHashMap<>();
     private final Map<String, Long> lastErrorLogByFlowId = new ConcurrentHashMap<>();
     private final Map<String, Long> lastSkipLogByFlowId = new ConcurrentHashMap<>();
+    private final Map<String, Long> lastDropLogByFlowId = new ConcurrentHashMap<>();
 
     /**
      * @param ctx shared bridge context
@@ -50,21 +55,31 @@ public class FlowMessagePublisher implements IFlowMessageHandler {
         try {
             // Global sequence: {{n}} is unique even across flows running in parallel
             long sequence = ctx.getMessageSequence().incrementAndGet();
-            String payload = ctx.getTemplateEngine().evaluate(flow.template, sequence, ctx.getVariablesById(), flow.id, group.id);
+            String payload = ctx.getTemplateEngine().evaluate(
+                flow.template, sequence, ctx.getVariablesById(), flow.id, group.id, flow.name, null);
             flow.generated.incrementAndGet();
             return payload;
         } catch (Exception ex) {
-            flow.failed.incrementAndGet();
+            // Error state first, so whoever sees the failed counter also sees the error
             markError(flow, "Message generation failed: " + ex.getMessage());
+            flow.failed.incrementAndGet();
             return null;
         }
     }
 
     @Override
-    public void publish(GroupRuntime group, FlowRuntime flow, String payload) {
+    public void publish(GroupRuntime group, FlowRuntime flow, String payload, long groupTick) {
         ConnectorSession connector = ctx.getConnectorByFlowId().get(flow.id);
         if (connector == null) {
             // The group was stopped: the message stays as generated but not sent
+            return;
+        }
+        if (flow.shouldDrop(groupTick, ThreadLocalRandom.current().nextDouble(100))) {
+            // Event loss: the message was generated (and consumed {{n}}) but is never sent
+            flow.dropped.incrementAndGet();
+            if (logger.isDebugEnabled() && shouldLog(lastDropLogByFlowId, flow.id, DROP_LOG_THROTTLE_MS)) {
+                logger.debug("[{} - {}] Message dropped by event loss (group tick {})", group.name, flow.name, groupTick);
+            }
             return;
         }
 
@@ -78,8 +93,8 @@ public class FlowMessagePublisher implements IFlowMessageHandler {
                 // The group was stopped while publishing; not a real error
                 return;
             }
-            flow.failed.incrementAndGet();
             markError(flow, "Publish failed: " + ex.getMessage());
+            flow.failed.incrementAndGet();
             return;
         }
 

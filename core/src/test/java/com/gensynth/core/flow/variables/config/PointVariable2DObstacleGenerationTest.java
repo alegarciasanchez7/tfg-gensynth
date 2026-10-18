@@ -106,5 +106,58 @@ public class PointVariable2DObstacleGenerationTest {
         }
         assertTrue("Points can land on both sides when wall obstacle is disabled", generatedAcrossWall);
     }
+    /** Strictly inside the notch of the U polygon used below: x in (30, 70), y in (30, 100]. */
+    private static boolean inNotch(double x, double y) {
+        return x > 30.0 + 1e-9 && x < 70.0 - 1e-9 && y > 30.0 + 1e-9;
+    }
+
+    @Test
+    public void testRandomWalkStaysInsideAConcavePolygon() {
+        for (BoundaryBehavior behavior : new BoundaryBehavior[] {
+                BoundaryBehavior.CLAMP, BoundaryBehavior.BOUNCE, BoundaryBehavior.WRAP }) {
+            // U shape over the 0..100 box: the notch x 30..70, y 30..100 is outside the region
+            PointVariableConfig walk = new PointVariableConfig()
+                    .coordinateSystem(CoordinateSystem.CARTESIAN_2D)
+                    .range(0.0, 100.0, 0.0, 100.0, 0.0, 0.0)
+                    .pattern(GenerationPattern.RANDOM_WALK)
+                    .boundaryBehavior(behavior)
+                    .maxStepDistance(12.0)
+                    .inertia(0.5)
+                    .addBoundaryPolygonPoint(0.0, 0.0, 0.0)
+                    .addBoundaryPolygonPoint(100.0, 0.0, 0.0)
+                    .addBoundaryPolygonPoint(100.0, 100.0, 0.0)
+                    .addBoundaryPolygonPoint(70.0, 100.0, 0.0)
+                    .addBoundaryPolygonPoint(70.0, 30.0, 0.0)
+                    .addBoundaryPolygonPoint(30.0, 30.0, 0.0)
+                    .addBoundaryPolygonPoint(30.0, 100.0, 0.0)
+                    .addBoundaryPolygonPoint(0.0, 100.0, 0.0);
+
+            double prevX = Double.NaN, prevY = Double.NaN;
+            boolean visitedLeftArm = false, visitedRightArm = false;
+            for (int i = 0; i < 2000; i++) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> val = (Map<String, Object>) walk.generateNextValue();
+                double x = (Double) val.get("x");
+                double y = (Double) val.get("y");
+
+                assertTrue(behavior + " inside the box: " + x + "," + y, x >= 0.0 && x <= 100.0 && y >= 0.0 && y <= 100.0);
+                assertFalse(behavior + " outside the notch at step " + i + ": " + x + "," + y, inNotch(x, y));
+                if (i > 0) {
+                    // The step from the previous point never cuts through the notch
+                    for (int k = 1; k < 50; k++) {
+                        double t = k / 50.0;
+                        double sx = prevX + (x - prevX) * t;
+                        double sy = prevY + (y - prevY) * t;
+                        assertFalse(behavior + " step " + i + " crosses the notch", inNotch(sx, sy));
+                    }
+                }
+                visitedLeftArm |= x < 30.0 && y > 40.0;
+                visitedRightArm |= x > 70.0 && y > 40.0;
+                prevX = x;
+                prevY = y;
+            }
+            assertTrue(behavior + " still moves around the U", visitedLeftArm || visitedRightArm);
+        }
+    }
 }
 

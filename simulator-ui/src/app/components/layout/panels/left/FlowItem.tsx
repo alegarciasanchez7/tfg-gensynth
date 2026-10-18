@@ -94,6 +94,7 @@ export function FlowItem({
   const connCfg = connColor[flow.connectionStatus];
   const liveMetrics = state?.flowMetrics?.[flow.id];
   const fails = liveMetrics?.failed ?? 0;
+  const dropped = liveMetrics?.dropped ?? 0;
   const template = formatTemplate[flow.id] ?? '';
   const usedVars = parseTemplateVars(template);
 
@@ -210,9 +211,9 @@ export function FlowItem({
         />
       </div>
 
-      {/* Row 2: status dot + live metrics (msg/s · sent · fails) + error */}
+      {/* Row 2: status dot + live metrics (msg/s · sent · fails · dropped) + error */}
       <div
-        className={`flex items-center gap-1.5 pl-0.5 text-[10px] transition-opacity ${!flow.enabled ? 'opacity-40' : ''}`}
+        className={`flex flex-wrap items-center gap-x-1.5 pl-0.5 text-[10px] transition-opacity [&>span]:whitespace-nowrap ${!flow.enabled ? 'opacity-40' : ''}`}
         style={{ fontFamily: 'JetBrains Mono, monospace' }}
         data-testid="flow-metrics"
       >
@@ -231,6 +232,14 @@ export function FlowItem({
         >
           {formatCount(fails)} <span className="text-[var(--c-tx4)]">fails</span>
         </span>
+        {dropped > 0 && (
+          <>
+            <span className="text-[var(--c-tx5)]">·</span>
+            <span className="text-amber-600 dark:text-amber-400" title="Generated but lost on purpose (event loss)">
+              {formatCount(dropped)} <span className="text-[var(--c-tx4)]">dropped</span>
+            </span>
+          </>
+        )}
         {flow.hasError && (
           <AlertTriangle size={10} className="text-red-500 ml-auto" />
         )}

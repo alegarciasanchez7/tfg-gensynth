@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.gensynth.plugin.api.ConnectorConfigException;
 import com.gensynth.plugin.api.ConnectorContext;
 import com.gensynth.plugin.api.ConnectorSession;
+import com.gensynth.core.model.FlowDefinition;
 import com.gensynth.core.model.Variable;
 import com.gensynth.core.ws.BridgeContext;
 import com.gensynth.core.ws.UiBridgeWebSocketServer;
@@ -20,6 +21,7 @@ import com.gensynth.core.model.OutputMode;
 import com.gensynth.core.ws.dispatch.FlowMessagePublisher;
 import com.gensynth.core.ws.dispatch.ParallelGroupDispatcher;
 import com.gensynth.core.ws.dispatch.SequentialGroupDispatcher;
+import com.gensynth.core.flow.TemplateEngine;
 import com.gensynth.core.flow.variables.VariableConfiguration;
 import com.gensynth.core.flow.variables.VariableFactory;
 import com.gensynth.core.flow.variables.DependencyResolver;
@@ -37,6 +39,10 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
     private final BridgeContext ctx;
     private final IFlowMessageHandler messageHandler;
+
+    /** The flows of one group due on a tick, with the group tick they were due on. */
+    private record GroupWork(IGroupDispatcher dispatcher, List<FlowRuntime> dueFlows, long groupTick) {
+    }
 
     public FlowCommandHandler(BridgeContext ctx) {
         this.ctx = ctx;
@@ -115,6 +121,7 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
             FlowRuntime flow = findFlowById(group, flowId);
             if (flow != null) {
                 flow.everyTicks = everyTicks;
+                applyEventLoss(flow, payload);
             }
             server.persistState();
 
@@ -181,7 +188,7 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
                 return;
             }
 
-            // Generation fields (everyTicks, template, format) apply on the next tick.
+            // Generation fields (everyTicks, event loss, template, format) apply on the next tick.
             // Connection fields (technology, host, port, connectorConfig) apply when the group is restarted.
             if (payload.hasNonNull("name")) {
                 flow.name = payload.path("name").asText(flow.name);
@@ -212,6 +219,7 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
             if (payload.hasNonNull("everyTicks")) {
                 flow.everyTicks = Math.max(1, payload.path("everyTicks").asInt(flow.everyTicks));
             }
+            applyEventLoss(flow, payload);
             if (payload.hasNonNull("template")) {
                 flow.template = payload.path("template").asText(flow.template);
             }
@@ -264,9 +272,7 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
 
             for (int i = 1; i <= count; i++) {
                 String newFlowId = UUID.randomUUID().toString();
-                String newName = namingPattern
-                    .replace("${name}", original.name)
-                    .replace("${index}", String.valueOf(i));
+                String newName = com.gensynth.core.util.NamingPattern.apply(namingPattern, original.name, i);
 
                 FlowRuntime clone = new FlowRuntime(
                     newFlowId,
@@ -287,7 +293,7 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
                     original.enabled,
                     original.connectorConfig
                 );
-                clone.everyTicks = original.everyTicks;
+                clone.copySendSettingsFrom(original);
                 group.flows.add(clone);
 
                 // Clone variables for this flow
@@ -373,7 +379,8 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
                 java.util.regex.Matcher matcher = tagPattern.matcher(template);
                 while (matcher.find()) {
                     String fullSpec = matcher.group(1).trim();
-                    if ("uuid".equals(fullSpec) || "ts".equals(fullSpec) || "n".equals(fullSpec)) {
+                    if ("uuid".equals(fullSpec) || "ts".equals(fullSpec) || "n".equals(fullSpec)
+                        || TemplateEngine.FLOW_NAME_PLACEHOLDER.equals(fullSpec)) {
                         continue;
                     }
                     String scopePart = null;
@@ -517,7 +524,7 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
      */
     @Override
     public boolean onTick(long tickNumber) {
-        Map<IGroupDispatcher, List<FlowRuntime>> work = new LinkedHashMap<>();
+        List<GroupWork> work = new ArrayList<>();
         synchronized (ctx.getStateLock()) {
             // Snapshot under the lock; generating and publishing happen outside it
             for (GroupRuntime group : ctx.getGroupsById().values()) {
@@ -536,16 +543,37 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
                     }
                 }
                 if (!due.isEmpty()) {
-                    work.put(group.dispatcher, due);
+                    // Ticks since the group started: same reference as everyTicks, used by the outage rule
+                    work.add(new GroupWork(group.dispatcher, due, tickNumber - group.startTick));
                 }
             }
         }
 
         boolean dispatched = false;
-        for (Map.Entry<IGroupDispatcher, List<FlowRuntime>> entry : work.entrySet()) {
-            dispatched |= entry.getKey().dispatch(entry.getValue());
+        for (GroupWork groupWork : work) {
+            dispatched |= groupWork.dispatcher().dispatch(groupWork.dueFlows(), groupWork.groupTick());
         }
         return dispatched;
+    }
+
+    /**
+     * Applies the optional event loss fields of a CREATE_FLOW or UPDATE_FLOW_CONFIG payload.
+     * Missing fields keep the current value; out-of-range values are clamped
+     * ({@code lossPercent} to [0, 100], the outage fields to at least 0).
+     *
+     * @param flow    the flow to update
+     * @param payload the command payload
+     */
+    private static void applyEventLoss(FlowRuntime flow, JsonNode payload) {
+        if (payload.path("lossPercent").isNumber()) {
+            flow.lossPercent = FlowDefinition.clampPercent(payload.path("lossPercent").asDouble());
+        }
+        if (payload.path("outageEveryTicks").isNumber()) {
+            flow.outageEveryTicks = Math.max(0, payload.path("outageEveryTicks").asInt());
+        }
+        if (payload.path("outageDurationTicks").isNumber()) {
+            flow.outageDurationTicks = Math.max(0, payload.path("outageDurationTicks").asInt());
+        }
     }
 
     private void markConnectorError(FlowRuntime flow, String message) {

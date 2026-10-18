@@ -18,14 +18,16 @@ public interface IFlowMessageHandler {
     String generate(GroupRuntime group, FlowRuntime flow);
 
     /**
-     * Publishes a generated message through the flow's connector. Never throws: failures
-     * are recorded on the flow.
+     * Publishes a generated message through the flow's connector, unless the flow's event loss
+     * drops it (then it is only counted as dropped). Never throws: failures are recorded on the flow.
      *
-     * @param group   the group that owns the flow
-     * @param flow    the flow
-     * @param payload the generated message
+     * @param group     the group that owns the flow
+     * @param flow      the flow
+     * @param payload   the generated message
+     * @param groupTick simulation ticks since the group started on the tick that generated the
+     *                  message (0 = the group's first tick), used by the outage rule
      */
-    void publish(GroupRuntime group, FlowRuntime flow, String payload);
+    void publish(GroupRuntime group, FlowRuntime flow, String payload, long groupTick);
 
     /**
      * Notifies that a flow could not take a due tick because it is still busy

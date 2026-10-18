@@ -43,4 +43,15 @@ describe('ConditionalRulesTab', () => {
       { targetVariable: '', operator: 'EQUALS', value: '', overrides: {} }
     ]);
   });
+
+  it('stores the default generator when an override is edited', () => {
+    const handleChange = vi.fn();
+    render(<ConditionalRulesTab rules={defaultRules} onChange={handleChange} variableType="numeric" />);
+
+    fireEvent.change(screen.getByTestId('numeric-min-input'), { target: { value: '40' } });
+
+    expect(handleChange).toHaveBeenLastCalledWith([
+      expect.objectContaining({ overrides: { pattern: 'RANDOM', max: 100, min: 40 } }),
+    ]);
+  });
 });

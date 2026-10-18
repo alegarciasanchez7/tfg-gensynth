@@ -457,7 +457,7 @@ export const TemporalConfigPanel: React.FC<TemporalConfigPanelProps> = ({ config
           <Input
             id="date-timezone"
             type="text"
-            placeholder="e.g. UTC, Europe/Madrid, Offset-05:00"
+            placeholder="e.g. UTC, Europe/Madrid, -05:00"
             value={config.timeZone ?? ''}
             onChange={(e) => onChange({ timeZone: e.target.value })}
             className="bg-[var(--c-bg2)] border-[var(--c-br1)] h-8 text-[11px]"
