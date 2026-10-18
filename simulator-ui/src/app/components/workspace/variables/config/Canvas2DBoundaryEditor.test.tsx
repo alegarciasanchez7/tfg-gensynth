@@ -129,4 +129,56 @@ describe('Canvas2DBoundaryEditor', () => {
     // Canvas renders cleanly with selectedObstacleId prop set
     expect(screen.getByText('Move Boundaries (Purple)')).toBeInTheDocument();
   });
+
+  // jsdom has no layout: getBoundingClientRect() is all zeros, so client coordinates equal canvas pixels.
+  // With the default 360x200 canvas and a 0..100 region, the world window is centred at (50, 50)
+  // at 1.25 px per unit, so the vertex (0, 0) is drawn at (117.5, 162.5).
+  const toPx = (x: number, y: number) => ({ clientX: 180 + (x - 50) * 1.25, clientY: 100 - (y - 50) * 1.25 });
+
+  it('commits a vertex drag once, on pointer-up', () => {
+    const onChange = vi.fn();
+    const { container } = render(
+      <Canvas2DBoundaryEditor minX={0} maxX={100} minY={0} maxY={100} onChange={onChange} />
+    );
+    const canvas = container.querySelector('canvas') as HTMLCanvasElement;
+
+    fireEvent.pointerDown(canvas, { ...toPx(0, 0), button: 0, pointerId: 1 });
+    fireEvent.pointerMove(canvas, { ...toPx(-10, -5), pointerId: 1 });
+    fireEvent.pointerMove(canvas, { ...toPx(-20, -10), pointerId: 1 });
+    expect(onChange).not.toHaveBeenCalled();
+
+    fireEvent.pointerUp(canvas, { ...toPx(-20, -10), pointerId: 1 });
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ minX: -20, minY: -10, maxX: 100, maxY: 100 }));
+  });
+
+  it('does not call onChange for a click without movement', () => {
+    const onChange = vi.fn();
+    const { container } = render(
+      <Canvas2DBoundaryEditor minX={0} maxX={100} minY={0} maxY={100} onChange={onChange} />
+    );
+    const canvas = container.querySelector('canvas') as HTMLCanvasElement;
+
+    fireEvent.pointerDown(canvas, { ...toPx(0, 0), button: 0, pointerId: 1 });
+    fireEvent.pointerUp(canvas, { ...toPx(0, 0), pointerId: 1 });
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('keeps the region size when a preset is applied repeatedly', () => {
+    const onChange = vi.fn();
+    render(
+      <Canvas2DBoundaryEditor minX={10} maxX={90} minY={20} maxY={60} showToolbar={true} onChange={onChange} />
+    );
+
+    fireEvent.click(screen.getByText('Circle'));
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ minX: 10, maxX: 90, minY: 20, maxY: 60 }));
+    fireEvent.click(screen.getByText('Square'));
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ minX: 10, maxX: 90, minY: 20, maxY: 60 }));
+  });
+
+  it('marks the New Region confirmation as an alert dialog', () => {
+    render(<Canvas2DBoundaryEditor minX={0} maxX={100} minY={0} maxY={100} showToolbar={true} onChange={vi.fn()} />);
+    fireEvent.click(screen.getByText('New Region'));
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+  });
 });

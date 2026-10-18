@@ -1,4 +1,4 @@
-import React, { useState, createContext, useContext } from 'react';
+import React, { useState, useEffect, createContext, useContext } from 'react';
 import { Button } from '../../../ui/button';
 import { X, Maximize2, Minimize2 } from 'lucide-react';
 import { Tooltip, TooltipTrigger, TooltipContent } from '../../../ui/tooltip';
@@ -32,14 +32,36 @@ export const BoundaryExpandModal: React.FC<BoundaryExpandModalProps> = ({
 }) => {
   const [isFullScreen, setIsFullScreen] = useState(false);
 
+  // Escape closes the editor, unless a confirmation dialog inside it is open
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || document.querySelector('[role="alertdialog"]')) return;
+      setIsFullScreen(false);
+      onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const toggleFullScreen = () => setIsFullScreen((prev) => !prev);
 
+  /** Closes the editor; it opens again in the standard window. */
+  const handleClose = () => {
+    setIsFullScreen(false);
+    onClose();
+  };
+
   return (
     <BoundaryModalContext.Provider value={{ isFullScreen, setIsFullScreen, toggleFullScreen }}>
       <div className={`fixed inset-0 z-[99999] flex items-center justify-center bg-black/85 backdrop-blur-md transition-all duration-200 ${isFullScreen ? 'p-0' : 'p-3 sm:p-4'}`}>
-        <div className={`relative bg-[var(--c-bg2)] border-[var(--c-br1)] shadow-2xl flex flex-col overflow-hidden transition-all duration-200 ${
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={title}
+          className={`relative bg-[var(--c-bg2)] border-[var(--c-br1)] shadow-2xl flex flex-col overflow-hidden transition-all duration-200 ${
           isFullScreen
             ? 'w-screen h-screen max-w-none max-h-none rounded-none border-0'
             : 'w-full max-w-5xl max-h-[92vh] border rounded-xl'
@@ -75,7 +97,7 @@ export const BoundaryExpandModal: React.FC<BoundaryExpandModalProps> = ({
                 <TooltipTrigger asChild>
                   <button
                     type="button"
-                    onClick={onClose}
+                    onClick={handleClose}
                     className="p-1.5 rounded text-[var(--c-tx4)] hover:text-rose-600 dark:hover:text-rose-300 hover:bg-rose-500/20 transition-colors cursor-pointer"
                     aria-label="Close Editor Modal"
                   >
@@ -97,7 +119,7 @@ export const BoundaryExpandModal: React.FC<BoundaryExpandModalProps> = ({
           {/* Footer */}
           <div className="px-5 py-3 border-t border-[var(--c-br1)] bg-[var(--c-bg4)] flex justify-between items-center text-xs text-[var(--c-tx4)] shrink-0">
             <span>Tip: Right-click edges to insert points. Right-click vertices to delete points (Min 3 required).</span>
-            <Button size="sm" onClick={onClose} className="bg-violet-600 hover:bg-violet-500 text-white font-medium cursor-pointer">
+            <Button size="sm" onClick={handleClose} className="bg-violet-600 hover:bg-violet-500 text-white font-medium cursor-pointer">
               Done & Apply
             </Button>
           </div>

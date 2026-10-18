@@ -60,5 +60,22 @@ describe('BoundaryObstaclesEditor', () => {
       sampleObstacles[1],
     ]);
   });
-});
 
+  it('places a new obstacle at the centre of the region', () => {
+    const onChange = vi.fn();
+    render(
+      <BoundaryObstaclesEditor
+        obstacles={[]}
+        minPoint={{ x: 0, y: 0, z: 0 }}
+        maxPoint={{ x: 100, y: 200, z: 100 }}
+        onChange={onChange}
+      />
+    );
+
+    fireEvent.click(screen.getByText('Add Barrier'));
+
+    expect(onChange).toHaveBeenCalledWith([
+      expect.objectContaining({ points: [{ x: 30, y: 100, z: 0 }, { x: 70, y: 100, z: 0 }] }),
+    ]);
+  });
+});
