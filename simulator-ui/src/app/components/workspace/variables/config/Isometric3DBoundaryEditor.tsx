@@ -48,6 +48,20 @@ type FieldKey = 'width' | 'length' | 'radius' | 'height' | 'elev';
 const baseElevationFor = (shape: Shape3DType | undefined, minZ: number, maxZ: number, height: number | undefined) =>
   shape !== 'sphere' && (height ?? 0) < 0 ? maxZ : minZ;
 
+/** Side of an unset footprint dimension, like the Core: the bounds span, or 100 for a flat range. */
+const spanOr100 = (min: number, max: number) => Math.abs(max - min) || 100;
+
+/** Shape as the Core sees it: the persisted dimensions, or the ones it derives from the bounds when unset. */
+const resolveShape = (p: Pick<Isometric3DBoundaryEditorProps,
+  'minX' | 'maxX' | 'minY' | 'maxY' | 'minZ' | 'maxZ' | 'shape3DType' | 'shape3DWidth' | 'shape3DLength' | 'shape3DHeight' | 'shape3DRadius'>) => ({
+  shape: (p.shape3DType === ('custom' as Shape3DType) ? 'cube' : p.shape3DType ?? 'cube') as Shape3DType,
+  width: p.shape3DWidth ?? spanOr100(p.minX, p.maxX),
+  length: p.shape3DLength ?? spanOr100(p.minY, p.maxY),
+  height: p.shape3DHeight ?? p.maxZ - p.minZ,
+  radius: p.shape3DRadius ?? 50,
+  elev: baseElevationFor(p.shape3DType, p.minZ, p.maxZ, p.shape3DHeight),
+});
+
 export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps> = ({
   minX,
   maxX,
@@ -59,23 +73,37 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
   shape3DWidth,
   shape3DLength,
   shape3DHeight,
-  shape3DRadius = 50,
+  shape3DRadius,
   onChange,
   width = 360,
   height = 220,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // Shape state
-  const [activeShape, setActiveShape] = useState<Shape3DType>(
-    shape3DType === ('custom' as any) ? 'cube' : shape3DType
-  );
-  const [width3D, setWidth3D] = useState<number>(shape3DWidth ?? Math.max(20, Math.abs(maxX - minX) || 100));
-  const [length3D, setLength3D] = useState<number>(shape3DLength ?? Math.max(20, Math.abs(maxY - minY) || 100));
-  const [height3D, setHeight3D] = useState<number>(shape3DHeight ?? (maxZ - minZ || 100));
-  const [radius3D, setRadius3D] = useState<number>(shape3DRadius ?? 50);
-  const [baseElevation, setBaseElevation] = useState<number>(baseElevationFor(shape3DType, minZ, maxZ, shape3DHeight));
+  // Shape state: local while a handle is dragged or a field typed, reset whenever the props change.
+  // Unset dimensions are derived live from the bounds with the Core rule, so what is drawn and
+  // emitted is the region the generator uses.
+  const resolved = resolveShape({ minX, maxX, minY, maxY, minZ, maxZ, shape3DType, shape3DWidth, shape3DLength, shape3DHeight, shape3DRadius });
+  const [activeShape, setActiveShape] = useState<Shape3DType>(resolved.shape);
+  const [width3D, setWidth3D] = useState<number>(resolved.width);
+  const [length3D, setLength3D] = useState<number>(resolved.length);
+  const [height3D, setHeight3D] = useState<number>(resolved.height);
+  const [radius3D, setRadius3D] = useState<number>(resolved.radius);
+  const [baseElevation, setBaseElevation] = useState<number>(resolved.elev);
   const [drafts, setDrafts] = useState<Partial<Record<FieldKey, string>>>({});
+
+  // Keep state in sync with incoming props (adjusted during render, without an effect)
+  const propsKey = [shape3DType, shape3DWidth, shape3DLength, shape3DHeight, shape3DRadius, minX, maxX, minY, maxY, minZ, maxZ].join('|');
+  const [syncedKey, setSyncedKey] = useState(propsKey);
+  if (propsKey !== syncedKey) {
+    setSyncedKey(propsKey);
+    setActiveShape(resolved.shape);
+    setWidth3D(resolved.width);
+    setLength3D(resolved.length);
+    setHeight3D(resolved.height);
+    setRadius3D(resolved.radius);
+    setBaseElevation(resolved.elev);
+  }
 
   // Camera & View controls
   const [orbitView, setOrbitView] = useState<boolean>(false);
@@ -98,33 +126,6 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
     height: number;
     radius: number;
   }>({ width: 100, length: 100, height: 100, radius: 50 });
-
-  // Keep state in sync with incoming props
-  useEffect(() => {
-    if (shape3DType && shape3DType !== ('custom' as any)) {
-      setActiveShape(shape3DType);
-    }
-  }, [shape3DType]);
-
-  useEffect(() => {
-    if (shape3DWidth !== undefined) setWidth3D(shape3DWidth);
-  }, [shape3DWidth]);
-
-  useEffect(() => {
-    if (shape3DLength !== undefined) setLength3D(shape3DLength);
-  }, [shape3DLength]);
-
-  useEffect(() => {
-    if (shape3DHeight !== undefined) setHeight3D(shape3DHeight);
-  }, [shape3DHeight]);
-
-  useEffect(() => {
-    if (shape3DRadius !== undefined) setRadius3D(shape3DRadius);
-  }, [shape3DRadius]);
-
-  useEffect(() => {
-    setBaseElevation(baseElevationFor(shape3DType, minZ, maxZ, shape3DHeight));
-  }, [shape3DType, minZ, maxZ, shape3DHeight]);
 
   // Centre of the current X/Y bounds: the generated footprint stays centred there
   const centerX = (minX + maxX) / 2;

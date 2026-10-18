@@ -153,12 +153,9 @@ export function TemplateEditor({
         
         if (variable) {
           if (isItemAccess && variable.type === 'list') {
-            const strategy = variable.config?.selectionStrategy;
-            if (strategy && strategy !== 'FIXED_SUBSET') {
-              isValid = false;
-            } else {
-              isValid = true;
-            }
+            // Item access needs a whole list: only Fixed Subset yields one (the default is Weighted Random)
+            const strategy = variable.config?.selectionStrategy || 'WEIGHTED_RANDOM';
+            isValid = strategy === 'FIXED_SUBSET';
           } else if (subProperty) {
             const lowerProp = subProperty.toLowerCase();
             if (variable.type === 'point') {
@@ -247,7 +244,8 @@ export function TemplateEditor({
 
     accessibleVars.forEach(v => {
       if (v.type === 'list') {
-        const strategy = v.config?.selectionStrategy || 'FIXED_SUBSET';
+        // Same default as the Core and the list editor
+        const strategy = v.config?.selectionStrategy || 'WEIGHTED_RANDOM';
         const isFixedSubset = strategy === 'FIXED_SUBSET';
 
         options.push({ 
@@ -256,11 +254,14 @@ export function TemplateEditor({
           detail: isFixedSubset ? 'Fixed Subset / Entire List' : 'Single Item Selection' 
         });
 
-        options.push({ name: `${v.name}.size`, scope: v.scope, detail: 'List Item Count' });
-        options.push({ name: `${v.name}.first`, scope: v.scope, detail: 'First List Item' });
-        options.push({ name: `${v.name}.last`, scope: v.scope, detail: 'Last List Item' });
-
+        // Size/first/last and item access are offered for Fixed Subset only. Other strategies
+        // yield a single item each tick: the Core still resolves size/first/last (1 / the item)
+        // and the highlight accepts them, but suggesting them would be misleading
         if (isFixedSubset) {
+          options.push({ name: `${v.name}.size`, scope: v.scope, detail: 'List Item Count' });
+          options.push({ name: `${v.name}.first`, scope: v.scope, detail: 'First List Item' });
+          options.push({ name: `${v.name}.last`, scope: v.scope, detail: 'Last List Item' });
+
           const effectiveItems = getEffectiveListItems(v, variables);
           effectiveItems.forEach((item, index) => {
             options.push({
@@ -273,7 +274,8 @@ export function TemplateEditor({
       } else if (v.type === 'point') {
         options.push({ name: v.name, scope: v.scope, detail: 'Full Point Object' });
 
-        const coordSys = v.config?.coordinateSystem || 'CARTESIAN_2D';
+        // Same default as the Core and the point editor
+        const coordSys = v.config?.coordinateSystem || 'CARTESIAN_3D';
         if (coordSys === 'GEOSPATIAL') {
           options.push({ name: `${v.name}.latitude`, scope: v.scope, detail: 'Latitude (Degrees / DMS)' });
           options.push({ name: `${v.name}.longitude`, scope: v.scope, detail: 'Longitude (Degrees / DMS)' });

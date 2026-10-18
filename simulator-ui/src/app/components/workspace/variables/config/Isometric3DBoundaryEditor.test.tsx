@@ -193,4 +193,47 @@ describe('Isometric3DBoundaryEditor', () => {
     expect(emitted.shape3DWidth).toBeGreaterThan(100);
     expect(emitted.shape3DLength).toBeGreaterThan(100);
   });
+  it('derives unset dimensions live from the bounds, like the Core', () => {
+    const onChange = vi.fn();
+    const unset = { minX: 0, maxX: 200, minY: 0, maxY: 50, minZ: 10, maxZ: 40, shape3DType: 'cube' as const, onChange };
+    const { rerender } = render(<Isometric3DBoundaryEditor {...unset} />);
+
+    expect(screen.getByLabelText('Base Width (X)')).toHaveValue(200);
+    expect(screen.getByLabelText('Base Length (Y)')).toHaveValue(50);
+    expect(screen.getByLabelText('Height (Z)')).toHaveValue(30);
+    expect(screen.getByLabelText('Base Elevation (minZ)')).toHaveValue(10);
+
+    // A bbox change follows while the dimensions stay unset (no max(20, …) floor any more)
+    rerender(<Isometric3DBoundaryEditor {...unset} minX={-5} maxX={5} minY={20} maxY={20} minZ={0} maxZ={80} />);
+    expect(screen.getByLabelText('Base Width (X)')).toHaveValue(10);
+    expect(screen.getByLabelText('Base Length (Y)')).toHaveValue(100);
+    expect(screen.getByLabelText('Height (Z)')).toHaveValue(80);
+    expect(screen.getByLabelText('Base Elevation (minZ)')).toHaveValue(0);
+    expect(onChange).not.toHaveBeenCalled();
+
+    // What is emitted is the region the Core derives: centred on the bounds, base at minZ
+    fireEvent.click(screen.getByText('Pyramid'));
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({
+      minX: -5, maxX: 5, minY: -30, maxY: 70, minZ: 0, maxZ: 80,
+      shape3DType: 'pyramid', shape3DWidth: 10, shape3DLength: 100, shape3DHeight: 80, shape3DRadius: 50,
+    }));
+  });
+
+  it('keeps an explicit dimension when the bounds change', () => {
+    const props = { minX: 0, maxX: 100, minY: 0, maxY: 100, minZ: 0, maxZ: 100, shape3DType: 'cube' as const, shape3DWidth: 30, onChange: vi.fn() };
+    const { rerender } = render(<Isometric3DBoundaryEditor {...props} />);
+    rerender(<Isometric3DBoundaryEditor {...props} maxX={400} />);
+    expect(screen.getByLabelText('Base Width (X)')).toHaveValue(30);
+    expect(screen.getByLabelText('Base Length (Y)')).toHaveValue(100);
+  });
+
+  it('rests an unset sphere on minZ with the default radius', () => {
+    const onChange = vi.fn();
+    render(<Isometric3DBoundaryEditor minX={0} maxX={100} minY={0} maxY={100} minZ={20} maxZ={30} shape3DType="cube" onChange={onChange} />);
+    fireEvent.click(screen.getByText('Sphere'));
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({
+      minX: 0, maxX: 100, minY: 0, maxY: 100, minZ: 20, maxZ: 120, shape3DRadius: 50,
+    }));
+  });
 });
