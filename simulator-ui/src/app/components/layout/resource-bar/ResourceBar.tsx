@@ -17,7 +17,7 @@ function formatBytes(bytes: number): { value: string; unit: string } {
   const sizes = ['B/s', 'KB/s', 'MB/s', 'GB/s'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return {
-    value: parseFloat((bytes / Math.pow(k, i)).toFixed(1)).toString(),
+    value: Number.parseFloat((bytes / Math.pow(k, i)).toFixed(1)).toString(),
     unit: sizes[i],
   };
 }

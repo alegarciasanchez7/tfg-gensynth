@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Flow } from '../../../../types';
 import type { FlowMetricsPayload } from '../../../../core/types';
@@ -38,14 +38,14 @@ const metrics: FlowMetricsPayload = {
   connectionStatus: 'connected',
 };
 
-function renderItem(flowMetrics: Record<string, FlowMetricsPayload> | undefined) {
+function renderItem(flowMetrics: Record<string, FlowMetricsPayload> | undefined, onSelect = vi.fn()) {
   mockUseApp.mockReturnValue({ state: { variables: [], flowMetrics, dirtyItems: undefined } });
   return render(
     <FlowItem
       flow={flow}
       selected={false}
       groupId="g1"
-      onSelect={vi.fn()}
+      onSelect={onSelect}
       onToggleEnabled={vi.fn()}
       onClone={vi.fn()}
       onDelete={vi.fn(async () => undefined)}
@@ -88,5 +88,21 @@ describe('FlowItem', () => {
     expect(row).toHaveTextContent('0 msg/s');
     expect(row).toHaveTextContent('0 sent');
     expect(row).toHaveTextContent('0 fails');
+  });
+
+  it('selects the flow from the keyboard, but not when the key comes from its menu button', () => {
+    const onSelect = vi.fn();
+    renderItem(undefined, onSelect);
+    const row = screen.getByTestId('flow-metrics').closest('[role="button"]') as HTMLElement;
+    expect(row).toHaveAttribute('tabindex', '0');
+
+    fireEvent.keyDown(row, { key: 'Enter' });
+    fireEvent.keyDown(row, { key: ' ' });
+    expect(onSelect).toHaveBeenCalledTimes(2);
+    expect(onSelect).toHaveBeenCalledWith('g1', 'f1');
+
+    fireEvent.keyDown(row, { key: 'a' });
+    fireEvent.keyDown(row.querySelector('button') as HTMLElement, { key: 'Enter' });
+    expect(onSelect).toHaveBeenCalledTimes(2);
   });
 });

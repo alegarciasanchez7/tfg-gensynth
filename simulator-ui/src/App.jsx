@@ -41,13 +41,13 @@ function App() {
           <ul>
             <li>
               <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
+                <img className="logo" src={viteLogo} alt="" />{' '}
                 Explore Vite
               </a>
             </li>
             <li>
               <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
+                <img className="button-icon" src={reactLogo} alt="" />{' '}
                 Learn more
               </a>
             </li>
@@ -68,7 +68,7 @@ function App() {
                   aria-hidden="true"
                 >
                   <use href="/icons.svg#github-icon"></use>
-                </svg>
+                </svg>{' '}
                 GitHub
               </a>
             </li>
@@ -80,7 +80,7 @@ function App() {
                   aria-hidden="true"
                 >
                   <use href="/icons.svg#discord-icon"></use>
-                </svg>
+                </svg>{' '}
                 Discord
               </a>
             </li>
@@ -92,7 +92,7 @@ function App() {
                   aria-hidden="true"
                 >
                   <use href="/icons.svg#x-icon"></use>
-                </svg>
+                </svg>{' '}
                 X.com
               </a>
             </li>
@@ -104,7 +104,7 @@ function App() {
                   aria-hidden="true"
                 >
                   <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
+                </svg>{' '}
                 Bluesky
               </a>
             </li>

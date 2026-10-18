@@ -49,7 +49,7 @@ export interface CreateOptimisticContext {
  */
 export function generateOptimisticId(entityType: 'group' | 'flow' | 'var'): string {
   const timestamp = Date.now().toString(36);
-  const random = Math.random().toString(36).substring(2, 9);
+  const random = crypto.randomUUID().replace(/-/g, '').substring(0, 7);
   return `opt_${entityType}_${timestamp}_${random}`;
 }
 

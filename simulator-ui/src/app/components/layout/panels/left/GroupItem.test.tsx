@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Group } from '../../../../types';
@@ -30,14 +30,17 @@ const group: Group = {
   enabled: true,
 };
 
-function renderItem(onUpdateGroupConfig: (groupId: string, config: unknown, name?: string) => Promise<void>) {
+function renderItem(
+  onUpdateGroupConfig: (groupId: string, config: unknown, name?: string) => Promise<void>,
+  onSelectGroup = vi.fn(),
+) {
   mockUseApp.mockReturnValue({ state: { flowMetrics: undefined, dirtyItems: undefined } });
   return render(
     <GroupItem
       group={group}
       selection={{ type: 'none' }}
       formatTemplate={{}}
-      onSelectGroup={vi.fn()}
+      onSelectGroup={onSelectGroup}
       onSelectFlow={vi.fn()}
       onToggleGroup={vi.fn()}
       onDeleteGroup={vi.fn(async () => undefined)}
@@ -90,5 +93,21 @@ describe('GroupItem', () => {
     } finally {
       nodeProcess.off('unhandledRejection', unhandled);
     }
+  });
+
+  it('selects the group from the keyboard, but not when the key comes from its menu button', () => {
+    const onSelectGroup = vi.fn();
+    renderItem(vi.fn(async () => undefined), onSelectGroup);
+    const menuButton = screen.getByRole('button', { name: 'Actions for group Orders' });
+    const row = menuButton.closest('[role="button"]') as HTMLElement;
+    expect(row).toHaveAttribute('tabindex', '0');
+
+    fireEvent.keyDown(row, { key: 'Enter' });
+    fireEvent.keyDown(row, { key: ' ' });
+    expect(onSelectGroup).toHaveBeenCalledTimes(2);
+    expect(onSelectGroup).toHaveBeenCalledWith('g1');
+
+    fireEvent.keyDown(menuButton, { key: 'Enter' });
+    expect(onSelectGroup).toHaveBeenCalledTimes(2);
   });
 });

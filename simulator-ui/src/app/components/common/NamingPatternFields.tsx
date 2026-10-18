@@ -35,7 +35,7 @@ export function NamingPatternFields({
   itemsNoun,
   onSubmit,
 }: NamingPatternFieldsProps) {
-  const total = parseInt(count, 10);
+  const total = Number.parseInt(count, 10);
   const previews = useMemo(
     () => (Number.isNaN(total) || total <= 0 ? [] : buildPatternNames(pattern, itemName, Math.min(total, PREVIEW_COUNT))),
     [total, pattern, itemName],
