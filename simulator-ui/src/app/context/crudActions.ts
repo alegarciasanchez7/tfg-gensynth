@@ -45,7 +45,7 @@ function throwValidationError(field: string, reason: string): never {
 }
 
 function generateId(): string {
-  return Math.random().toString(36).substring(2, 11);
+  return crypto.randomUUID().replace(/-/g, '').substring(0, 9);
 }
 
 function extractCommandError(error: unknown): CRUDError {

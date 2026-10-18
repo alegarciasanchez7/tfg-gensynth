@@ -240,16 +240,17 @@ export const ConditionalRulesTab: React.FC<ConditionalRulesTabProps> = ({
                       className="absolute z-50 mt-1 w-full max-h-32 overflow-y-auto bg-[var(--c-bg2)] border border-[var(--c-br1)] rounded shadow-lg"
                     >
                       {filteredVars.map(v => (
-                        <div
+                        <button
+                          type="button"
                           key={v}
-                          className="px-2 py-1.5 text-[10px] font-mono hover:bg-[var(--c-bg4)] cursor-pointer text-[var(--c-tx2)]"
+                          className="block w-full text-left px-2 py-1.5 text-[10px] font-mono hover:bg-[var(--c-bg4)] cursor-pointer text-[var(--c-tx2)]"
                           onClick={() => {
                             handleUpdateRule(idx, 'targetVariable', v);
                             setShowSuggestions(null);
                           }}
                         >
                           {v}
-                        </div>
+                        </button>
                       ))}
                     </div>
                   )}

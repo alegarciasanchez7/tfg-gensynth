@@ -50,7 +50,7 @@ export function PreviewView({ running }: PreviewViewProps) {
         <div className="flex-1" />
         {running && (
           <span className="flex items-center gap-1.5 text-[10px] text-emerald-500" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
+            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />{' '}
             live
           </span>
         )}

@@ -212,7 +212,7 @@ export const SequentialGraphEditor: React.FC<SequentialGraphEditorProps> = ({
           <input
             type="number"
             value={maxTicks}
-            onChange={(e) => handleTicksChange(parseInt(e.target.value) || 10)}
+            onChange={(e) => handleTicksChange(Number.parseInt(e.target.value) || 10)}
             className="w-12 rounded border border-[var(--c-br1)] bg-[var(--c-bg3)] px-1 py-0.5 text-center text-xs text-[var(--c-tx1)]"
             min={2}
             max={50}
@@ -223,6 +223,7 @@ export const SequentialGraphEditor: React.FC<SequentialGraphEditorProps> = ({
       <div className="relative rounded border border-[var(--c-br1)] bg-[var(--c-bg3)] p-2">
         <svg
           ref={svgRef}
+          aria-label="Sequence graph"
           viewBox="0 0 400 150"
           className="w-full select-none overflow-visible"
           onPointerMove={handlePointerMove}

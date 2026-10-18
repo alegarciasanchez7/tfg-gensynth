@@ -86,6 +86,15 @@ export function LeftPanel({
     setIsResizing(true);
   };
 
+  // Keyboard alternative to dragging the resizer.
+  const handleResizerKeyDown = (e: React.KeyboardEvent) => {
+    const steps: Record<string, number> = { ArrowRight: 16, ArrowLeft: -16 };
+    const step = steps[e.key];
+    if (!step) return;
+    e.preventDefault();
+    setWidth(w => Math.max(180, Math.min(500, w + step)));
+  };
+
   useEffect(() => {
     if (!isResizing) return;
 
@@ -312,17 +321,20 @@ export function LeftPanel({
         </span>
       </div>
       {/* Ultrafine Resizer Handle on Right Edge */}
-      <div
+      <button
+        type="button"
         onMouseDown={handleMouseDownResizer}
+        onKeyDown={handleResizerKeyDown}
         className="absolute top-0 bottom-0 -right-1 w-2 cursor-col-resize z-40 group flex justify-center"
         title="Drag to resize width"
+        aria-label="Resize panel"
       >
-        <div
+        <span
           className={`w-[2px] h-full transition-colors ${
             isResizing ? 'bg-cyan-500' : 'bg-transparent group-hover:bg-cyan-500/60'
           }`}
         />
-      </div>
+      </button>
 
       {isResizing && (
         <div className="fixed inset-0 z-[9999] cursor-col-resize select-none" />

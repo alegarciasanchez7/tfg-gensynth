@@ -30,8 +30,8 @@ export function CloneDialog({
   const [namingPattern, setNamingPattern] = useState('${name} (Clone ${index})');
 
   const handleConfirm = () => {
-    const num = parseInt(count, 10);
-    if (!isNaN(num) && num > 0) {
+    const num = Number.parseInt(count, 10);
+    if (!Number.isNaN(num) && num > 0) {
       onConfirm(num, namingPattern);
       onOpenChange(false);
       setCount('1');
@@ -75,7 +75,7 @@ export function CloneDialog({
           <Button 
             className="bg-violet-600 hover:bg-violet-700 text-white shadow-lg shadow-violet-500/20"
             onClick={handleConfirm}
-            disabled={!count || parseInt(count, 10) <= 0 || !namingPattern.trim()}
+            disabled={!count || Number.parseInt(count, 10) <= 0 || !namingPattern.trim()}
           >
             Create {count} {count === '1' ? 'Clone' : 'Clones'}
           </Button>

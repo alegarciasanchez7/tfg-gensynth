@@ -230,13 +230,20 @@ export const WaypointCanvas2D: React.FC<WaypointCanvas2DProps> = ({
     setSelected(index);
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIndex !== null) {
+  // Delete / Backspace removes the selected waypoint while the editor has the focus. A native listener:
+  // the container is a pointer-driven drawing surface, focused on click, not a keyboard widget.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || selectedIndex === null) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
       e.preventDefault();
       onDelete(selectedIndex);
       setSelected(null);
-    }
-  };
+    };
+    container.addEventListener('keydown', handleKeyDown);
+    return () => container.removeEventListener('keydown', handleKeyDown);
+  }, [selectedIndex, onDelete]);
 
   const n = displayWaypoints.length;
 
@@ -268,13 +275,13 @@ export const WaypointCanvas2D: React.FC<WaypointCanvas2DProps> = ({
   return (
     <div
       ref={containerRef}
-      tabIndex={0}
-      onKeyDown={handleKeyDown}
+      tabIndex={-1}
       className="relative w-full rounded-md border border-[var(--c-br2)] overflow-hidden select-none outline-none focus-visible:ring-1 focus-visible:ring-cyan-500/60"
       style={{ height: fill ? '100%' : height }}
     >
       <svg
         ref={svgRef}
+        aria-label="Waypoint plane"
         data-testid="waypoint-canvas"
         width="100%"
         height={height}

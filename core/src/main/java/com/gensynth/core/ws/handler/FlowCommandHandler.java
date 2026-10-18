@@ -120,7 +120,7 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
 
             FlowRuntime flow = findFlowById(group, flowId);
             if (flow != null) {
-                flow.everyTicks = everyTicks;
+                flow.everyTicks.set(everyTicks);
                 applyEventLoss(flow, payload);
             }
             server.persistState();
@@ -217,7 +217,7 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
                 flow.burst = Math.max(1, payload.path("burst").asInt(flow.burst));
             }
             if (payload.hasNonNull("everyTicks")) {
-                flow.everyTicks = Math.max(1, payload.path("everyTicks").asInt(flow.everyTicks));
+                flow.everyTicks.set(Math.max(1, payload.path("everyTicks").asInt(flow.everyTicks.get())));
             }
             applyEventLoss(flow, payload);
             if (payload.hasNonNull("template")) {
@@ -569,10 +569,10 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
             flow.lossPercent = FlowDefinition.clampPercent(payload.path("lossPercent").asDouble());
         }
         if (payload.path("outageEveryTicks").isNumber()) {
-            flow.outageEveryTicks = Math.max(0, payload.path("outageEveryTicks").asInt());
+            flow.outageEveryTicks.set(Math.max(0, payload.path("outageEveryTicks").asInt()));
         }
         if (payload.path("outageDurationTicks").isNumber()) {
-            flow.outageDurationTicks = Math.max(0, payload.path("outageDurationTicks").asInt());
+            flow.outageDurationTicks.set(Math.max(0, payload.path("outageDurationTicks").asInt()));
         }
     }
 

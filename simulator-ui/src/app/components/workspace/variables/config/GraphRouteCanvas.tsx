@@ -739,7 +739,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
   // Nodes can be dragged with the tools that do not use the node click for something else
   const canDrag = activeTool === 'ADD_EXTEND' || activeTool === 'SELECT';
 
-  const handleNodePointerDown = (e: React.PointerEvent<HTMLDivElement>, node: GraphNode) => {
+  const handleNodePointerDown = (e: React.PointerEvent<HTMLButtonElement>, node: GraphNode) => {
     suppressClickRef.current = false;
     setDragPos(null);
     if (!canDrag || e.button !== 0) return;
@@ -758,7 +758,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
     };
   };
 
-  const handleNodePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+  const handleNodePointerMove = (e: React.PointerEvent<HTMLButtonElement>) => {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== e.pointerId) return;
     if (!drag.moved && Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) < DRAG_THRESHOLD_PX) return;
@@ -770,7 +770,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
     setDragPos({ nodeId: drag.nodeId, x: drag.x, y: drag.y, base: nodes });
   };
 
-  const handleNodePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+  const handleNodePointerUp = (e: React.PointerEvent<HTMLButtonElement>) => {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== e.pointerId) return;
     dragRef.current = null;
@@ -789,7 +789,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
     setDragPos(null);
   };
 
-  const handleNodeElementClick = (e: React.MouseEvent<HTMLDivElement>, node: GraphNode) => {
+  const handleNodeElementClick = (e: React.MouseEvent<HTMLButtonElement>, node: GraphNode) => {
     e.stopPropagation();
     if (suppressClickRef.current) {
       suppressClickRef.current = false;
@@ -1160,8 +1160,9 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
               ))}
             </MapContainer>
           ) : (
-            /* 2D CARTESIAN PLANE VIEW (HTML5 Canvas) */
-            <div onClick={handleCanvasClick} data-testid="graph-plane" className="relative size-full">
+            /* 2D CARTESIAN PLANE VIEW (HTML5 Canvas). The plane is a pointer-only drawing surface (a click adds
+               a node at the pointer position), hence presentational; its nodes are native buttons. */
+            <div role="presentation" onClick={handleCanvasClick} data-testid="graph-plane" className="relative size-full">
               <canvas
                 ref={canvasRef}
                 width={canvasW}
@@ -1170,7 +1171,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
               />
 
               {/* SVG Overlay rendering Graph Edges in 2D mode */}
-              <svg className="absolute inset-0 size-full pointer-events-none z-10">
+              <svg aria-label="Route edges" className="absolute inset-0 size-full pointer-events-none z-10">
                 {edges.map((edge) => {
                   const fromNode = displayNodes.find((n) => n.id === edge.fromNodeId);
                   const toNode = displayNodes.find((n) => n.id === edge.toNodeId);
@@ -1224,21 +1225,23 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
                       </div>
                     )}
 
-                    {/* 22 px transparent hit area around the 10 px dot */}
-                    <div
+                    {/* 22 px transparent hit area around the 10 px dot; a native button, so the node is
+                        also reachable and usable (select / delete / connect) from the keyboard */}
+                    <button
+                      type="button"
                       data-testid={`graph-node-${node.id}`}
                       onPointerDown={(e) => handleNodePointerDown(e, node)}
                       onPointerMove={handleNodePointerMove}
                       onPointerUp={handleNodePointerUp}
                       onPointerCancel={handleNodePointerCancel}
                       onClick={(e) => handleNodeElementClick(e, node)}
-                      className={`group absolute -translate-x-1/2 -translate-y-1/2 w-[22px] h-[22px] flex items-center justify-center touch-none z-30 ${
+                      className={`group absolute -translate-x-1/2 -translate-y-1/2 w-[22px] h-[22px] flex items-center justify-center touch-none z-30 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80 ${
                         canDrag ? (isDragging ? 'cursor-grabbing' : 'cursor-grab') : 'cursor-pointer'
                       }`}
                       style={{ left: `${cx}px`, top: `${cy}px` }}
                     >
-                      <div
-                        className={`w-2.5 h-2.5 rounded-full ${
+                      <span
+                        className={`block w-2.5 h-2.5 rounded-full ${
                           isSelected
                             ? 'bg-cyan-400 ring-2 ring-cyan-400/80 shadow-md scale-125'
                             : isConnectOrigin
@@ -1249,7 +1252,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
                       <span className="absolute left-full top-1/2 -translate-y-1/2 text-[10px] font-semibold text-cyan-600 dark:text-cyan-300 whitespace-nowrap pointer-events-none">
                         {node.name || node.id.replace('node-', '')}
                       </span>
-                    </div>
+                    </button>
                   </React.Fragment>
                 );
               })}

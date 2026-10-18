@@ -230,5 +230,18 @@ describe('Canvas2DBoundaryEditor', () => {
       expect(screen.getByText('+ Insert Vertex Here on Obstacle')).toBeInTheDocument();
       expect(screen.queryByText('+ Insert Vertex Here on Boundary Edge')).not.toBeInTheDocument();
     });
+
+    it('closes the menu on a click inside the editor or elsewhere on the page', () => {
+      const { container } = renderWithWall();
+      const canvas = container.querySelector('canvas') as HTMLCanvasElement;
+
+      fireEvent.contextMenu(canvas, toPx(50, 2.4));
+      fireEvent.click(canvas);
+      expect(screen.queryByText('+ Insert Vertex Here on Boundary Edge')).not.toBeInTheDocument();
+
+      fireEvent.contextMenu(canvas, toPx(50, 2.4));
+      fireEvent.click(document.body);
+      expect(screen.queryByText('+ Insert Vertex Here on Boundary Edge')).not.toBeInTheDocument();
+    });
   });
 });

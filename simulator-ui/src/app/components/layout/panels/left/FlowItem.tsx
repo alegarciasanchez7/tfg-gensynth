@@ -112,7 +112,15 @@ export function FlowItem({
 
   return (
     <div
+      role="button"
+      tabIndex={0}
       onClick={() => onSelect(groupId, flow.id)}
+      onKeyDown={(e) => {
+        // Only the row itself: keys pressed on its menu button or menu items bubble up here too
+        if (e.target !== e.currentTarget || (e.key !== 'Enter' && e.key !== ' ')) return;
+        e.preventDefault();
+        onSelect(groupId, flow.id);
+      }}
       className={`w-full text-left px-3 py-2 flex flex-col gap-1 border-l-2 transition-all cursor-pointer ${
         selected
           ? 'bg-violet-500/10 border-l-violet-500'

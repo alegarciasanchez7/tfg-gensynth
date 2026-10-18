@@ -6,6 +6,8 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import com.gensynth.core.model.GroupDefinition;
 import com.gensynth.core.model.ProjectSettings;
 import com.gensynth.core.model.Variable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
@@ -28,6 +30,8 @@ import java.util.Map;
  * non-existent file, returns an empty list.
  */
 public class JsonStateRepositoryImpl implements StateRepository {
+
+    private static final Logger logger = LoggerFactory.getLogger(JsonStateRepositoryImpl.class);
 
     private static final String GROUPS_FILE = "groups.json";
     private static final String VARIABLES_FILE = "variables.json";
@@ -67,8 +71,7 @@ public class JsonStateRepositoryImpl implements StateRepository {
             Files.createDirectories(path);
             return true;
         } catch (IOException e) {
-            System.err.println("Failed to initialize state directory: " + stateDirectory);
-            e.printStackTrace();
+            logger.error("Failed to initialize state directory: {}", stateDirectory, e);
             return false;
         }
     }

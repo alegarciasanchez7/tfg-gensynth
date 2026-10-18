@@ -132,7 +132,15 @@ export function GroupItem({
             </button>
 
             <div
+              role="button"
+              tabIndex={0}
               onClick={() => onSelectGroup(group.id)}
+              onKeyDown={(e) => {
+                // Only the row itself: keys pressed on its menu button or menu items bubble up here too
+                if (e.target !== e.currentTarget || (e.key !== 'Enter' && e.key !== ' ')) return;
+                e.preventDefault();
+                onSelectGroup(group.id);
+              }}
               className="flex-1 flex flex-col gap-0.5 text-left cursor-pointer"
             >
               <div className="flex items-center gap-1.5">

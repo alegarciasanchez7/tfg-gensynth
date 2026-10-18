@@ -235,14 +235,14 @@ export function CreateVariableDialog({
             <div className="p-3 rounded border border-cyan-500/20 bg-cyan-500/5 animate-in fade-in slide-in-from-top-2 duration-300">
               {state.scope === 'local' && (
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-[9px] uppercase tracking-widest text-cyan-500/70 font-bold" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+                  <label htmlFor="var-flow" className="text-[9px] uppercase tracking-widest text-cyan-500/70 font-bold" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
                     Target Flow Assignment
                   </label>
                   <Select
                     value={state.flowId}
                     onValueChange={(value) => onStateChange({ flowId: value })}
                   >
-                    <SelectTrigger className="bg-[var(--c-bg4)] border-[var(--c-br2)] h-8 text-xs">
+                    <SelectTrigger id="var-flow" className="bg-[var(--c-bg4)] border-[var(--c-br2)] h-8 text-xs">
                       <SelectValue placeholder="Select flow" />
                     </SelectTrigger>
                     <SelectContent className="bg-[var(--c-bg2)] border-[var(--c-br1)]">
@@ -258,14 +258,14 @@ export function CreateVariableDialog({
 
               {state.scope === 'group' && (
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-[9px] uppercase tracking-widest text-cyan-500/70 font-bold" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+                  <label htmlFor="var-group" className="text-[9px] uppercase tracking-widest text-cyan-500/70 font-bold" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
                     Target Group Assignment
                   </label>
                   <Select
                     value={state.groupId}
                     onValueChange={(value) => onStateChange({ groupId: value })}
                   >
-                    <SelectTrigger className="bg-[var(--c-bg4)] border-[var(--c-br2)] h-8 text-xs">
+                    <SelectTrigger id="var-group" className="bg-[var(--c-bg4)] border-[var(--c-br2)] h-8 text-xs">
                       <SelectValue placeholder="Select group" />
                     </SelectTrigger>
                     <SelectContent className="bg-[var(--c-bg2)] border-[var(--c-br1)]">

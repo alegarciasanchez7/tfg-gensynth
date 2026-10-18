@@ -45,7 +45,7 @@ export function convertFormatClientSide(content: string, src: string, tgt: strin
             const v = vals[idx] !== undefined ? vals[idx] : '';
             if (v.toLowerCase() === 'true' || v.toLowerCase() === 'false') {
               obj[h] = v.toLowerCase() === 'true';
-            } else if (!isNaN(Number(v)) && v !== '') {
+            } else if (!Number.isNaN(Number(v)) && v !== '') {
               obj[h] = Number(v);
             } else {
               obj[h] = v;
@@ -172,7 +172,7 @@ export function FormatConverterModal({
           {/* Format Selectors */}
           <div className="flex items-center justify-between gap-4 p-3 bg-[var(--c-bg1)] rounded-lg border border-[var(--c-br1)]">
             <div className="space-y-1 flex-1">
-              <label className="text-[10px] text-[var(--c-tx4)] font-mono uppercase tracking-wider">Source Format</label>
+              <span className="text-[10px] text-[var(--c-tx4)] font-mono uppercase tracking-wider">Source Format</span>
               <div className="flex items-center h-9 px-3 bg-[var(--c-bg2)]/80 border border-[var(--c-br1)] rounded text-xs font-mono text-[var(--c-tx2)] select-none">
                 <span className="font-bold text-cyan-400">{sourceFormat.toUpperCase()}</span>
                 <span className="ml-auto text-[9px] text-[var(--c-tx4)] uppercase tracking-wider">(Current)</span>
@@ -184,9 +184,9 @@ export function FormatConverterModal({
             </div>
 
             <div className="space-y-1 flex-1">
-              <label className="text-[10px] text-[var(--c-tx4)] font-mono uppercase tracking-wider">Target Format</label>
+              <label htmlFor="format-converter-target" className="text-[10px] text-[var(--c-tx4)] font-mono uppercase tracking-wider">Target Format</label>
               <Select value={targetFormat} onValueChange={(val: any) => setTargetFormat(val)}>
-                <SelectTrigger className="bg-[var(--c-bg2)] border-[var(--c-br1)] text-xs font-mono">
+                <SelectTrigger id="format-converter-target" className="bg-[var(--c-bg2)] border-[var(--c-br1)] text-xs font-mono">
                   <SelectValue placeholder="Target Format" />
                 </SelectTrigger>
                 <SelectContent className="bg-[var(--c-bg2)] border-[var(--c-br1)] text-xs">

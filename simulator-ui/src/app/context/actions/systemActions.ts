@@ -1,7 +1,7 @@
 import type React from 'react';
 import type { AppAction } from '../reducer';
 import { CoreCommands } from '../../core/bridge';
-import { isSystemPlaceholder } from '../../core/templatePlaceholders';
+import { findTemplatePlaceholders, isSystemPlaceholder } from '../../core/templatePlaceholders';
 
 export const startSystem = (
   dispatch: React.Dispatch<AppAction>,
@@ -61,10 +61,8 @@ export const startSystem = (
           const template = formatTemplates[flow.id] ?? flow.template ?? '';
           if (!template) continue;
 
-          const regex = /\{\{([^}]+)\}\}/g;
-          let match;
-          while ((match = regex.exec(template)) !== null) {
-            const fullSpec = match[1].trim();
+          for (const placeholder of findTemplatePlaceholders(template)) {
+            const fullSpec = placeholder.spec.trim();
             if (isSystemPlaceholder(fullSpec)) continue;
 
             let scope: string | null = null;

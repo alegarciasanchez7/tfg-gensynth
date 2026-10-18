@@ -392,7 +392,7 @@ public class TemplateEngine {
                     String s = String.format(java.util.Locale.US, "%f", val);
                     int idx = s.indexOf('.');
                     if (idx != -1) {
-                        String sub = s.substring(idx + 1).replaceAll("0+$", "");
+                        String sub = stripTrailingZeros(s.substring(idx + 1));
                         return sub.isEmpty() ? "0" : sub;
                     }
                     return "0";
@@ -690,5 +690,17 @@ public class TemplateEngine {
         }
         sb.append("}");
         return sb.toString();
+    }
+
+    /**
+     * Removes the trailing {@code '0'} characters of a digit string (same result as
+     * {@code replaceAll("0+$", "")}, but in linear time).
+     */
+    static String stripTrailingZeros(String digits) {
+        int end = digits.length();
+        while (end > 0 && digits.charAt(end - 1) == '0') {
+            end--;
+        }
+        return digits.substring(0, end);
     }
 }

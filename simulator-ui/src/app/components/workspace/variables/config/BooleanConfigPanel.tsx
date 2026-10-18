@@ -134,7 +134,7 @@ export const BooleanConfigPanel: React.FC<BooleanConfigPanelProps> = ({ config, 
               max={1}
               step={0.05}
               value={config.trueProbability ?? 0.5}
-              onChange={(e) => onChange({ trueProbability: parseFloat(e.target.value) || 0 })}
+              onChange={(e) => onChange({ trueProbability: Number.parseFloat(e.target.value) || 0 })}
               className="bg-[var(--c-bg2)] border-[var(--c-br1)] h-8 text-[11px]"
             />
           </div>
@@ -164,7 +164,7 @@ export const BooleanConfigPanel: React.FC<BooleanConfigPanelProps> = ({ config, 
               type="number"
               min={1}
               value={config.flipInterval ?? 1}
-              onChange={(e) => onChange({ flipInterval: parseInt(e.target.value, 10) || 1 })}
+              onChange={(e) => onChange({ flipInterval: Number.parseInt(e.target.value, 10) || 1 })}
               className="bg-[var(--c-bg2)] border-[var(--c-br1)] h-8 text-[11px]"
             />
           </div>
@@ -195,7 +195,7 @@ export const BooleanConfigPanel: React.FC<BooleanConfigPanelProps> = ({ config, 
                 type="number"
                 min={1}
                 value={config.burstDurationTicks ?? 5}
-                onChange={(e) => onChange({ burstDurationTicks: parseInt(e.target.value, 10) || 1 })}
+                onChange={(e) => onChange({ burstDurationTicks: Number.parseInt(e.target.value, 10) || 1 })}
                 className="bg-[var(--c-bg2)] border-[var(--c-br1)] h-8 text-[11px]"
               />
             </div>
@@ -206,7 +206,7 @@ export const BooleanConfigPanel: React.FC<BooleanConfigPanelProps> = ({ config, 
                 type="number"
                 min={0}
                 value={config.burstIdleTicks ?? 5}
-                onChange={(e) => onChange({ burstIdleTicks: parseInt(e.target.value, 10) || 0 })}
+                onChange={(e) => onChange({ burstIdleTicks: Number.parseInt(e.target.value, 10) || 0 })}
                 className="bg-[var(--c-bg2)] border-[var(--c-br1)] h-8 text-[11px]"
               />
             </div>
@@ -240,7 +240,7 @@ export const BooleanConfigPanel: React.FC<BooleanConfigPanelProps> = ({ config, 
                 max={1}
                 step={0.05}
                 value={config.pTrueToTrue ?? 0.8}
-                onChange={(e) => onChange({ pTrueToTrue: parseFloat(e.target.value) || 0 })}
+                onChange={(e) => onChange({ pTrueToTrue: Number.parseFloat(e.target.value) || 0 })}
                 className="bg-[var(--c-bg2)] border-[var(--c-br1)] h-8 text-[11px]"
               />
             </div>
@@ -253,7 +253,7 @@ export const BooleanConfigPanel: React.FC<BooleanConfigPanelProps> = ({ config, 
                 max={1}
                 step={0.05}
                 value={config.pFalseToTrue ?? 0.2}
-                onChange={(e) => onChange({ pFalseToTrue: parseFloat(e.target.value) || 0 })}
+                onChange={(e) => onChange({ pFalseToTrue: Number.parseFloat(e.target.value) || 0 })}
                 className="bg-[var(--c-bg2)] border-[var(--c-br1)] h-8 text-[11px]"
               />
             </div>
@@ -285,7 +285,7 @@ export const BooleanConfigPanel: React.FC<BooleanConfigPanelProps> = ({ config, 
                 type="number"
                 min={1}
                 value={config.onDurationTicks ?? 1}
-                onChange={(e) => onChange({ onDurationTicks: parseInt(e.target.value, 10) || 1 })}
+                onChange={(e) => onChange({ onDurationTicks: Number.parseInt(e.target.value, 10) || 1 })}
                 className="bg-[var(--c-bg2)] border-[var(--c-br1)] h-8 text-[11px]"
               />
             </div>
@@ -296,7 +296,7 @@ export const BooleanConfigPanel: React.FC<BooleanConfigPanelProps> = ({ config, 
                 type="number"
                 min={1}
                 value={config.offDurationTicks ?? 1}
-                onChange={(e) => onChange({ offDurationTicks: parseInt(e.target.value, 10) || 1 })}
+                onChange={(e) => onChange({ offDurationTicks: Number.parseInt(e.target.value, 10) || 1 })}
                 className="bg-[var(--c-bg2)] border-[var(--c-br1)] h-8 text-[11px]"
               />
             </div>
@@ -327,7 +327,7 @@ export const BooleanConfigPanel: React.FC<BooleanConfigPanelProps> = ({ config, 
               type="number"
               min={1}
               value={config.alternationInterval ?? 1}
-              onChange={(e) => onChange({ alternationInterval: parseInt(e.target.value, 10) || 1 })}
+              onChange={(e) => onChange({ alternationInterval: Number.parseInt(e.target.value, 10) || 1 })}
               className="bg-[var(--c-bg2)] border-[var(--c-br1)] h-8 text-[11px]"
             />
           </div>

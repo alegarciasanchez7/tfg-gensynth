@@ -45,6 +45,7 @@ export const CustomDropdown: React.FC<CustomDropdownProps> = ({ value, onChange,
         <svg
           className={`size-3.5 opacity-60 transition-transform duration-200 shrink-0 ml-1 ${isOpen ? 'rotate-180' : ''}`}
           xmlns="http://www.w3.org/2000/svg"
+          aria-hidden="true"
           fill="none"
           viewBox="0 0 24 24"
           stroke="currentColor"
@@ -76,6 +77,7 @@ export const CustomDropdown: React.FC<CustomDropdownProps> = ({ value, onChange,
                   <svg
                     className="size-3.5 text-violet-400 shrink-0 ml-1"
                     xmlns="http://www.w3.org/2000/svg"
+                    aria-hidden="true"
                     fill="none"
                     viewBox="0 0 24 24"
                     stroke="currentColor"

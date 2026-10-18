@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useApp } from '../../../context';
 import type { Variable } from '../../../types';
-import { isSystemPlaceholder, SYSTEM_PLACEHOLDERS } from '../../../core/templatePlaceholders';
+import { findTemplatePlaceholders, isSystemPlaceholder, SYSTEM_PLACEHOLDERS } from '../../../core/templatePlaceholders';
 
 interface TemplateEditorProps {
   value: string;
@@ -94,17 +94,15 @@ export function TemplateEditor({
   // Parse variables for highlighting and validation
   const tokens = useMemo(() => {
     const parts: Array<{ text: string; isValid?: boolean; isVariable?: boolean }> = [];
-    const regex = /\{\{([^}]+)\}\}/g;
     let lastIndex = 0;
-    let match;
 
-    while ((match = regex.exec(value)) !== null) {
+    for (const placeholder of findTemplatePlaceholders(value)) {
       // Add text before variable
-      if (match.index > lastIndex) {
-        parts.push({ text: value.substring(lastIndex, match.index) });
+      if (placeholder.start > lastIndex) {
+        parts.push({ text: value.substring(lastIndex, placeholder.start) });
       }
 
-      const fullSpec = match[1].trim();
+      const fullSpec = placeholder.spec.trim();
       const isSystem = isSystemPlaceholder(fullSpec);
       
       let isValid = false;
@@ -205,11 +203,11 @@ export function TemplateEditor({
       }
 
       parts.push({ 
-        text: match[0], 
+        text: value.substring(placeholder.start, placeholder.end), 
         isValid, 
         isVariable: true 
       });
-      lastIndex = regex.lastIndex;
+      lastIndex = placeholder.end;
     }
 
     if (lastIndex < value.length) {
@@ -535,6 +533,8 @@ export function TemplateEditor({
       {showAutocomplete && autocompleteOptions.length > 0 && (
         <div 
           ref={autocompleteRef}
+          role="listbox"
+          aria-label="Template suggestions"
           className="absolute z-50 bg-[var(--c-bg2)] border border-[var(--c-br1)] rounded shadow-xl min-w-[220px] max-h-60 overflow-y-auto scrollbar-thin scrollbar-thumb-[var(--c-br3)]"
           style={{ 
             top: dropdownPosition.top, 
@@ -544,6 +544,9 @@ export function TemplateEditor({
           {autocompleteOptions.map((opt, i) => (
             <div
               key={i}
+              role="option"
+              aria-selected={i === selectedIndex}
+              tabIndex={-1}
               onMouseDown={(e) => {
                 e.preventDefault(); // Prevent blur
                 insertOption(opt);

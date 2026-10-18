@@ -12,6 +12,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
 
 /**
@@ -39,9 +40,9 @@ public class TickClockImpl implements ITickClock {
     private final Object lock = new Object();
     private final AtomicLong tickCount = new AtomicLong();
 
-    private volatile TickSettings settings;
+    private final AtomicReference<TickSettings> settings;
     /** Incremented on every stop/reschedule so a stale as-fast-as-possible loop exits. */
-    private volatile long generation;
+    private final AtomicLong generation = new AtomicLong();
     private Future<?> task;
     private long lastSampleTicks;
     private long lastSampleNanos;
@@ -63,7 +64,7 @@ public class TickClockImpl implements ITickClock {
      */
     public TickClockImpl(ITickListener listener, TickSettings settings) {
         this.listener = Objects.requireNonNull(listener, "listener cannot be null");
-        this.settings = Objects.requireNonNull(settings, "settings cannot be null");
+        this.settings = new AtomicReference<>(Objects.requireNonNull(settings, "settings cannot be null"));
         this.executor = Executors.newSingleThreadScheduledExecutor(runnable -> {
             Thread thread = new Thread(runnable, "gensynth-tick-clock");
             thread.setDaemon(true);
@@ -102,7 +103,7 @@ public class TickClockImpl implements ITickClock {
     public void applySettings(TickSettings newSettings) {
         Objects.requireNonNull(newSettings, "settings cannot be null");
         synchronized (lock) {
-            settings = newSettings;
+            settings.set(newSettings);
             if (task != null) {
                 cancelTask();
                 // Wait one period before the first tick so editing the settings does not emit an extra burst
@@ -113,7 +114,7 @@ public class TickClockImpl implements ITickClock {
 
     @Override
     public TickSettings getSettings() {
-        return settings;
+        return settings.get();
     }
 
     @Override
@@ -142,8 +143,8 @@ public class TickClockImpl implements ITickClock {
 
     /** Must be called while holding {@code lock}. */
     private void schedule(long initialDelayNanos) {
-        long gen = generation;
-        TickSettings current = settings;
+        long gen = generation.get();
+        TickSettings current = settings.get();
         if (current.getMode() == TickSettings.Mode.AS_FAST_AS_POSSIBLE) {
             task = executor.submit(() -> runAsFastAsPossible(gen));
         } else {
@@ -153,7 +154,7 @@ public class TickClockImpl implements ITickClock {
 
     /** Must be called while holding {@code lock}. */
     private void cancelTask() {
-        generation++;
+        generation.incrementAndGet();
         if (task != null) {
             task.cancel(false);
             task = null;
@@ -162,7 +163,7 @@ public class TickClockImpl implements ITickClock {
 
     private void runAsFastAsPossible(long gen) {
         long backoff = MIN_IDLE_BACKOFF_NANOS;
-        while (generation == gen && !Thread.currentThread().isInterrupted()) {
+        while (generation.get() == gen && !Thread.currentThread().isInterrupted()) {
             if (tickOnce()) {
                 backoff = MIN_IDLE_BACKOFF_NANOS;
             } else {

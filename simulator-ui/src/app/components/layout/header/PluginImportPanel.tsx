@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useId } from 'react';
 import { Upload, X, Check, AlertTriangle, Loader2, FileArchive, ArrowRight, ShieldCheck } from 'lucide-react';
 import { CoreCommands, bridge } from '../../../core/bridge';
 import type { PluginValidationResultPayload } from '../../../core/types';
@@ -12,6 +12,8 @@ interface PluginImportPanelProps {
 export function PluginImportPanel({ onClose }: PluginImportPanelProps) {
   const ref = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const nameInputId = useId();
+  const versionInputId = useId();
 
   const [pluginName, setPluginName] = useState('');
   const [pluginVersion, setPluginVersion] = useState('');
@@ -178,8 +180,9 @@ export function PluginImportPanel({ onClose }: PluginImportPanelProps) {
         {/* Form fields */}
         <div className="grid grid-cols-3 gap-3 mb-4">
           <div className="col-span-2">
-            <label className="text-[9px] text-[var(--c-tx4)] uppercase tracking-wider block mb-1 font-semibold">Plugin Name</label>
+            <label htmlFor={nameInputId} className="text-[9px] text-[var(--c-tx4)] uppercase tracking-wider block mb-1 font-semibold">Plugin Name</label>
             <input
+              id={nameInputId}
               type="text"
               value={pluginName}
               onChange={(e) => setPluginName(e.target.value)}
@@ -188,8 +191,9 @@ export function PluginImportPanel({ onClose }: PluginImportPanelProps) {
             />
           </div>
           <div>
-            <label className="text-[9px] text-[var(--c-tx4)] uppercase tracking-wider block mb-1 font-semibold">Version</label>
+            <label htmlFor={versionInputId} className="text-[9px] text-[var(--c-tx4)] uppercase tracking-wider block mb-1 font-semibold">Version</label>
             <input
+              id={versionInputId}
               type="text"
               value={pluginVersion}
               onChange={(e) => setPluginVersion(e.target.value)}
@@ -199,9 +203,18 @@ export function PluginImportPanel({ onClose }: PluginImportPanelProps) {
           </div>
         </div>
 
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".jar"
+          className="hidden"
+          onChange={(e) => e.target.files?.[0] && handleFileSelected(e.target.files[0])}
+        />
+
         {/* Drop zone */}
-        <div
-          className={`relative border-2 border-dashed rounded-xl p-6 flex flex-col items-center justify-center gap-3 cursor-pointer transition-all duration-300 ${
+        <button
+          type="button"
+          className={`relative w-full border-2 border-dashed rounded-xl p-6 flex flex-col items-center justify-center gap-3 cursor-pointer transition-all duration-300 ${
             isDragging
               ? 'border-cyan-400 bg-cyan-400/5 scale-[1.02]'
               : validationState === 'validating'
@@ -221,14 +234,6 @@ export function PluginImportPanel({ onClose }: PluginImportPanelProps) {
           }}
           onClick={() => fileInputRef.current?.click()}
         >
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".jar"
-            className="hidden"
-            onChange={(e) => e.target.files?.[0] && handleFileSelected(e.target.files[0])}
-          />
-          
           {validationState === 'validating' ? (
             <div className="flex flex-col items-center gap-3 py-2">
               <Loader2 size={24} className="text-amber-400 animate-spin" />
@@ -259,7 +264,7 @@ export function PluginImportPanel({ onClose }: PluginImportPanelProps) {
               </div>
             </>
           )}
-        </div>
+        </button>
 
         {/* Summary of the validated plugin */}
         {validationResult?.valid && validationResult.pluginId && (

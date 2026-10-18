@@ -295,12 +295,20 @@ export const WaypointMap: React.FC<WaypointMapProps> = ({
     handlersRef.current.onDelete(index);
   }, []);
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIndex !== null) {
+  // Delete / Backspace removes the selected waypoint while the map (or the editor) has the focus. A
+  // native listener: the container is a pointer-driven map surface, focused on click, not a keyboard widget.
+  const containerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || selectedIndex === null) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
       e.preventDefault();
       handleDelete(selectedIndex);
-    }
-  };
+    };
+    container.addEventListener('keydown', handleKeyDown);
+    return () => container.removeEventListener('keydown', handleKeyDown);
+  }, [selectedIndex, handleDelete]);
 
   const hasPolygon = polygon.length >= 3;
   const center = centerOf(minPoint, maxPoint);
@@ -331,8 +339,8 @@ export const WaypointMap: React.FC<WaypointMapProps> = ({
 
   return (
     <div
-      tabIndex={0}
-      onKeyDown={handleKeyDown}
+      ref={containerRef}
+      tabIndex={-1}
       className="relative w-full rounded-md border border-[var(--c-br2)] overflow-hidden outline-none focus-visible:ring-1 focus-visible:ring-cyan-500/60 cursor-crosshair"
       style={{ height: fill ? '100%' : HEIGHT }}
     >

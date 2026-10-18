@@ -36,6 +36,15 @@ export function BottomPanel({ tab, onTabChange, systemStatus }: BottomPanelProps
     e.preventDefault();
   };
 
+  // Keyboard alternative to dragging the handle.
+  const onHandleKeyDown = (e: React.KeyboardEvent) => {
+    const steps: Record<string, number> = { ArrowUp: 20, ArrowDown: -20 };
+    const step = steps[e.key];
+    if (!step) return;
+    e.preventDefault();
+    setHeight(h => Math.max(120, Math.min(500, h + step)));
+  };
+
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
       if (!dragging.current) return;
@@ -54,8 +63,11 @@ export function BottomPanel({ tab, onTabChange, systemStatus }: BottomPanelProps
       style={{ height: collapsed ? 32 : height }}
     >
       {/* Drag handle */}
-      <div
+      <button
+        type="button"
         onMouseDown={onMouseDown}
+        onKeyDown={onHandleKeyDown}
+        aria-label="Resize panel"
         className="h-1 bg-[var(--c-bg3)] hover:bg-cyan-500/20 cursor-row-resize transition-colors shrink-0"
       />
 
