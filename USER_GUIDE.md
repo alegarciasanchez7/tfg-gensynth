@@ -40,8 +40,8 @@ This guide covers GenSynth **0.5.1**. For a quick overview, see the [README](REA
    - **[Temporal](#temporal-variables)**: [advance mode](#temporal-advance-mode) ·
      [clock drift](#temporal-clock-drift) · [output format](#temporal-output-format)
    - **[Point](#point-variables)**: [visual editor](#point-visual-editor) ·
-     [movement patterns](#point-movement-patterns) · [graph route](#point-graph-route) ·
-     [spatial boundaries](#point-spatial-boundaries) ·
+     [movement patterns](#point-movement-patterns) · [waypoint editor](#point-waypoint-editor) ·
+     [graph route](#point-graph-route) · [spatial boundaries](#point-spatial-boundaries) ·
      [changing the coordinate system](#changing-the-coordinate-system)
 10. [Recipes for typical event patterns](#recipes-for-typical-event-patterns)
 11. [Saving and loading](#saving-and-loading)
@@ -115,7 +115,7 @@ inside GenSynth (see [Importing a plugin](#importing-a-plugin)); there is nothin
 |---|---|
 | **Top bar** | Project name (a `*` means unsaved changes), status (**RUNNING** / **STOPPED**), **START** / **STOP**, **New**, **Load**, **Save**, **Save as**, **Connectors (N)** (catalog), **+** (import a plugin), **Feedback**, the version and the ⚙ **Settings** button. |
 | **Resource bar** | Live metrics, see below. |
-| **Left panel – GROUPS & FLOWS** | Your groups and the flows inside them. **+ ADD** opens a menu with **Add Group** and **Add Flow**. Each flow shows its live **msg/s**, **sent** (messages delivered) and **fails** (messages that could not be generated or sent), plus chips with the variables its template uses. The footer shows how many groups are running. |
+| **Left panel – GROUPS & FLOWS** | Your groups and the flows inside them. **+ ADD** opens a menu with **Add Group** and **Add Flow**. Each flow shows its live **msg/s**, **sent** (messages delivered), **fails** (messages that could not be generated or sent) and, when above 0, **dropped** in amber (messages lost on purpose by [event loss](#event-loss)), plus chips with the variables its template uses. The footer shows how many groups are running. |
 | **Center** | The editor of the selected group, flow or variable, with a breadcrumb at the top. |
 | **Right panel – VARIABLES** | The variables, split in **LOCAL**, **GROUP** and **GLOBAL** tabs. **+ ADD** creates a variable; the **→** button on a variable inserts it in the template you are editing. |
 | **Bottom panel** | **Logs**, **Statistics** and **Preview** of the generated messages. |
@@ -269,7 +269,7 @@ Click a group to open its workspace:
 | Action | What it does |
 |---|---|
 | **Lock group** / **Unlock group** | Lock disables every flow of the group: while the simulation runs, they stop generating messages. Unlock enables them again. Useful to silence a site without deleting it. |
-| **Clone group** | Creates copies of the group with all its flows (same flow names), their LOCAL variables and the GROUP variables. The group names follow a [naming pattern](#naming-patterns). |
+| **Clone group** | Creates copies of the group with all its flows (same flow names and settings, event loss included), their LOCAL variables and the GROUP variables. The group names follow a [naming pattern](#naming-patterns). |
 | **Repeater** | Creates several new flows at once in this group, see below. |
 | **Delete group** | Deletes the group and its flows (also available with right-click). |
 
@@ -324,14 +324,15 @@ The flow cannot be created until every required connector field (marked with **\
   live msg/s, the last error message if any, **Discard** and **Delete**.
 - **Technical Configuration:** **Flow Name**, **Every N ticks**, **Connector**, **Version** (when
   several versions of a plugin are installed), a line with the plugin id, its plugin API version
-  and its health, and the connector fields.
+  and its health, the connector fields and the **EVENT LOSS** section (see
+  [Event loss](#event-loss)).
 - **Message Format:** the template editor, with the **JSON / XML / CSV / PLAIN** buttons.
 
 In the left panel, the **⋮** menu of a flow offers **Clone flow** (copies the template, the
-connector settings, *Every N ticks* and the LOCAL variables) and **Delete flow**.
+connector settings, *Every N ticks*, the event loss and the LOCAL variables) and **Delete flow**.
 
-Changes to the template and to *Every N ticks* of a running flow apply live. Changes to the
-connector or its fields take effect the next time you click **START**.
+Changes to the template, to *Every N ticks* and to the event loss of a running flow apply live.
+Changes to the connector or its fields take effect the next time you click **START**.
 
 ### Writing the template
 
@@ -392,12 +393,16 @@ Rules worth remembering:
 | String | `.length` (`.size`), `.upper`, `.lower`, `.trim`, `.firstChar`, `.lastChar` |
 | Boolean | `.inverse` (`.not`), `.asNumber` (`1`/`0`), `.asString`, `.upper` (`TRUE`/`FALSE`) |
 | Temporal | `.year`, `.monthNumber`, `.monthText` (`January`), `.monthShort` (`Jan`), `.day`, `.dayOfWeek` (`Monday`), `.dayOfWeekNumber` (1–7), `.hour`, `.minute`, `.second`, `.timestamp` (epoch ms), `.timezone` |
-| List (Fixed Subset) | `.item0`, `.item1`… (0-based), `.size`, `.first`, `.last` |
+| List | `.size`, `.first`, `.last` with every strategy: with **Fixed Subset** they describe the subset; with the strategies that pick one item, `.size` is 1 and `.first` / `.last` are that item. `.item0`, `.item1`… (0-based) only with **Fixed Subset**. |
 | Point | `.x`, `.y`, `.z` (Cartesian); `.latitude`, `.longitude`, `.altitude`, `.altitudeUnit`, `.altitudeReference`, and `.latitudeDecimal` / `.longitudeDecimal` in DMS format (Geospatial); `.nodeName`, `.nodeId`, `.targetNodeName`, `.targetNodeId`, `.isPaused` (Graph Route) |
 
 Temporal sub-properties use the instant the variable generated for this message, whatever its
 output format, so `{{readingTime}}` and `{{readingTime.hour}}` always describe the same moment.
 Hours, days and months are given in the variable's **Time Zone**, or in UTC when it is empty.
+
+The autocomplete offers the List sub-properties only for **Fixed Subset** lists (a list without a
+strategy counts as Weighted Random), and `.item0`, `.item1`… on any other list are highlighted in
+red.
 
 ### Converting the format
 
@@ -414,6 +419,46 @@ result before you apply it. The conversion rewrites the template text:
 The selected format is only a label for the editor: GenSynth sends exactly the text of the
 template, whatever button is highlighted.
 
+### Event loss
+
+![EVENT LOSS section of a flow](docs-assets/user-guide/41-flow-event-loss.png)
+
+The **EVENT LOSS** section, after the connector fields of the **Technical Configuration** column,
+makes a flow lose some of its messages on purpose, to test how your consumer copes with missing
+events. Lost messages are generated but never sent, and they count as **dropped** (not as sent nor
+as fails).
+
+| Field | What it does | Default |
+|---|---|---|
+| **Random loss (%)** | Share of the generated messages lost at random (0–100, decimals allowed). | 0 (off) |
+| **Outage every N ticks** | Length of the outage cycle, in ticks. | 0 (off) |
+| **Outage length (ticks)** | The last ticks of each cycle lose every message. | 0 |
+
+How outages work:
+
+- Ticks are counted from the start of the group (tick 0), and the outage is the last *length*
+  ticks of each cycle (at most the whole cycle). With **Outage every N ticks** `4` and **Outage
+  length** `2`, the messages of ticks 2, 3, 6, 7, 10, 11… are lost.
+- The cycle counts simulation ticks, not messages of the flow: with *Every N ticks* = 3, only the
+  messages that fall on outage ticks are lost.
+- Outside an outage, each message is lost with the **Random loss (%)** probability.
+- When the length is equal to or greater than the cycle, an amber warning says that every message
+  of the flow is lost.
+- **START**, and resuming a paused group, restart the cycle at tick 0.
+
+Good to know:
+
+- The fields are applied when you leave them or press `Enter`; a running flow uses them from the
+  next tick. They mark the flow as unsaved (`*`), **Discard** reverts them and they are saved in
+  the `.gsynth` file (projects from older versions open with no loss).
+- **Clone flow** and **Clone group** copy them. The **Add flow** dialog does not show them: new
+  flows start without loss.
+- Lost messages still use `{{n}}` and advance the variables of the message, so a LOCAL counter
+  shows gaps where messages were lost (see
+  [Missing events](#missing-events-lost-messages-and-outages)).
+- The **dropped** counter is kept on pause and on stop, and resets when the group starts again from
+  stopped, like the other counters.
+
 ### Preview, logs and statistics
 
 ![Logs](docs-assets/user-guide/32-bottom-logs.png)
@@ -426,7 +471,8 @@ template, whatever button is highlighted.
 
 ![Statistics](docs-assets/user-guide/33-bottom-statistics.png)
 
-- **Statistics:** **TOTAL SENT**, **ERRORS**, **ACTIVE FLOWS**, **AVG LATENCY** (time the
+- **Statistics:** **TOTAL SENT**, **ERRORS**, **DROPPED** (messages of all flows lost on purpose
+  by [event loss](#event-loss); 0 while not running), **ACTIVE FLOWS**, **AVG LATENCY** (time the
   connector takes to confirm a message) and the throughput by technology.
 
 ![Preview](docs-assets/user-guide/34-bottom-preview.png)
@@ -435,7 +481,9 @@ template, whatever button is highlighted.
 
 **Counters:** a message is **sent** when the connector confirms it (for RabbitMQ, when the broker
 acknowledges it); it is a **fail** when it cannot be generated (for example an invalid variable)
-or the destination rejects it. The logs explain each failure.
+or the destination rejects it; it is **dropped** when it is generated but lost on purpose by
+[event loss](#event-loss). The logs explain each failure. Every generated message is sent, a fail,
+dropped or still pending: generated = sent + fails + dropped + pending.
 
 ---
 
@@ -1026,9 +1074,9 @@ are ignored).
 
 | Field | What it does | Default |
 |---|---|---|
-| **Drift Mode** | **Random Jitter (± Bounds):** adds a random amount between −max and +max ms to each value, so timestamps can arrive slightly out of order. **Constant Static Shift:** adds a fixed number of ms. **Progressive Drift / Tick:** adds n × rate ms to the n-th value, a clock that runs fast or slow. | Random Jitter |
+| **Drift Mode** | **Random Jitter (± Bounds):** adds a random amount between −max and +max ms to each value, so timestamps can arrive slightly out of order. **Constant Static Shift:** adds a fixed number of ms. **Progressive Drift / Tick:** adds n × rate ms to value n (counting from 0), a clock that runs fast or slow. | Random Jitter |
 | **Max Jitter Bound (ms)** / **Static Shift (ms)** | Size of the jitter or of the shift. | 0 |
-| **Drift Rate (ms / tick)** | Extra ms per value for Progressive Drift. Works with Simulated Step and Backfill Sequential Step. | 1.0 |
+| **Drift Rate (ms / tick)** | Extra ms per value for Progressive Drift. Works in every advance mode (Wall Clock, Simulated Step, Backfill with both strategies, Fixed). | 1.0 |
 
 #### Temporal: output format
 
@@ -1068,16 +1116,62 @@ Points model positions: a robot on a factory floor, a vehicle on a map, a drone 
 | Pattern | Fields | Behaviour |
 |---|---|---|
 | **Fixed Point (Constant)** | X/Y/Z (Latitude/Longitude/Altitude) | Always the same position. |
-| **Random Point (Within bounds)** | — | A new random position inside the bounding box on every value, outside forbidden zones and inside the polygon if you drew one. |
-| **Random Walk (Continuous step)** | **Max Step Distance** (default 10), **Momentum / Inertia (0 to 1)** (default 0) | Moves a random step of up to Max Step Distance per coordinate from the previous position (when the step is larger than the area, 5 % of the area is used). Inertia keeps the previous direction (smooth paths with values near 1). It starts at the Fixed Point coordinates when they are set (or when Min X is 0), otherwise at a random position, and avoids walls and forbidden zones. In Geospatial mode 0.000009° ≈ 1 m, 0.00009° ≈ 10 m, 0.0009° ≈ 100 m. |
-| **Circular Orbit / Spiral** | **Orbit Radius** (default 10), **Angular Speed (rad/tick)** (default 0.1), **Spiral Rate (+/- r/tick)** (default 0) | Circles around the centre of the bounding box (or around 0,0 when Min X is exactly 0); a spiral rate grows or shrinks the radius on each value. 2π / angular speed values make a full turn. |
-| **Waypoint Navigation** | **Interpolation Steps per Segment** | Not usable in 0.5.1: there is no way to enter waypoints (see [Known limitations](#known-limitations-and-issues)). Use Graph Route with a fixed sequence instead. |
+| **Random Point (Within bounds)** | — | A new random position inside the region on every value: inside the polygon if you drew one (2D and Geospatial) or inside the drawn shape (3D), and outside forbidden zones. |
+| **Random Walk (Continuous step)** | **Max Step Distance** (default 10), **Momentum / Inertia (0 to 1)** (default 0) | Moves a random step of up to Max Step Distance per coordinate from the previous position (when the step is larger than the area, 5 % of the area is used). Inertia keeps the previous direction (smooth paths with values near 1). It starts at the Fixed Point coordinates when they are set and inside the region (the polygon in 2D/Geospatial, the 3D shape in 3D) and outside obstacles; otherwise at a random valid position. It avoids walls and forbidden zones, and in 2D/Geospatial a step never ends outside the custom polygon nor cuts across it: keep Max Step Distance smaller than narrow passages, or the point may wait in place. In Geospatial mode 0.000009° ≈ 1 m, 0.00009° ≈ 10 m, 0.0009° ≈ 100 m. |
+| **Circular Orbit / Spiral** | **Orbit Radius** (default 10), **Angular Speed (rad/tick)** (default 0.1), **Spiral Rate (+/- r/tick)** (default 0) | Circles around the centre of the region (the centre of the bounding box), whatever Min X is; a spiral rate grows or shrinks the radius on each value. 2π / angular speed values make a full turn. |
+| **Waypoint Navigation** | The [waypoint editor](#point-waypoint-editor), **Loop Path** (default on), **Interpolation Steps** (default 1) | Travels along the waypoints in order. Each segment takes Interpolation Steps values: each waypoint appears once, followed by Steps − 1 evenly spaced points towards the next one. With **Loop Path** on, after the last waypoint it travels back to the first and repeats (a lap takes Steps × number of waypoints values); off, it stops on the last waypoint. The generator uses the waypoints as they are (it does not clamp them); in 2D and Geospatial the editor rejects points outside the region or in forbidden zones. Available in 2D, 3D and Geospatial. |
 | **Graph Route (Connected Graph Path)** | See below (2D and Geospatial only) | Moves along the edges of a graph of nodes that you draw. |
+
+#### Point: waypoint editor
+
+With the **Waypoint Navigation** pattern, the **Visual Editor** shows the waypoint editor.
+
+![Waypoint editor in 2D, with a region and an obstacle](docs-assets/user-guide/39-waypoint-editor-2d.png)
+
+| Element | What it does | Default |
+|---|---|---|
+| **WAYPOINTS** | Title, with the number of waypoints (*N waypoints*). | — |
+| **Loop Path** | On: after the last waypoint the point travels back to the first and repeats the path. Off: it stops on the last waypoint. | On |
+| **Interpolation Steps** | Values per segment, a whole number of at least 1. Applied when you leave the field or press `Enter`. | 1 |
+| **Clear** | Deletes every waypoint after asking *Clear all waypoints?* (**Yes** / **No**; `Esc` cancels). | — |
+| Visual area | A plane in 2D or a map in Geospatial, see below. | — |
+| Table | One row per waypoint, see below. | — |
+
+**Visual area:**
+
+- **2D:** a plane with the region (the dashed min/max box, plus the polygon if you drew one), the
+  enabled obstacles in red, the numbered path and, when **Loop Path** is on and there are 3 or more
+  waypoints, a dashed segment that closes the loop. Both axes use the same scale.
+- **Geospatial:** a map (OpenStreetMap tiles, or a technical grid when there is no connection) with
+  the region polygon or the min/max rectangle, the obstacles, the path with numbered markers and
+  the closing line. It fits the region when it opens; double-clicking does not zoom.
+- **3D:** there is no visual editor; the editor asks you to *Enter the coordinates in the table*.
+
+On the 2D plane and on the map (the hint line says *Click to add · Drag to move · Right-click or
+Delete to remove*):
+
+- click empty space to append a waypoint at the end of the path;
+- drag a waypoint to move it: the move is applied when you release the mouse, and a rejected drop
+  goes back;
+- right-click a waypoint to delete it, or click it to select it and press `Delete` or `Backspace`.
+
+![Waypoint editor on the map](docs-assets/user-guide/40-waypoint-editor-map.png)
+
+**Table:** columns **#**, **X**, **Y** and **Z** (**Lat**, **Lon** and **Alt** in Geospatial; no
+Z in 2D), with ↑ / ↓ on each row to move the waypoint up or down in the path and ✕ to delete it.
+**+ Add waypoint** adds one at the centre of the region (the first) or next to the last one
+(shifted 5 % of the region span, kept inside the region), with the same Z or altitude. The fields
+are applied when you leave them or press `Enter`; text that is not a number is rejected, latitude
+is limited to ±90 and longitude to ±180.
+
+**Validation (2D and Geospatial):** a waypoint inside a forbidden obstacle or outside the region,
+or a segment that crosses a wall or a forbidden zone or leaves the region, is rejected: a red
+warning appears over the editor (✕ closes it) and the value goes back.
 
 #### Point: graph route
 
 Draw the graph on the canvas or map of the route editor with its tools. A hint line at the
-bottom-left of the editor reminds you what the active tool does.
+top-right of the editor reminds you what the active tool does.
 
 | Tool | What it does |
 |---|---|
@@ -1093,6 +1187,9 @@ bottom-left of the editor reminds you what the active tool does.
   map. The move is applied when you release the mouse.
 - Selecting a node lets you rename it and edit its coordinates; the name and the coordinates are
   applied when you leave the field or press `Enter`.
+- The 2D canvas uses the same scale on both axes (a 200 × 100 region looks twice as wide as it is
+  tall) and its grid fills the canvas. On the map, the bounding box is drawn as a rectangle when
+  the region has no polygon.
 - Edges cannot cross forbidden zones. Warnings appear over the top of the editor and can be closed
   with their dismiss button.
 - **Fullscreen** opens the editor on the whole window and keeps the current map view; `Esc` exits
@@ -1100,7 +1197,7 @@ bottom-left of the editor reminds you what the active tool does.
 
 | Field | What it does | Default |
 |---|---|---|
-| **Graph Navigation Mode** | **Random Neighbor (Graph Walk):** at each node, go to a random connected node. **Fixed Sequence (Node Path):** follow the order you build in **Fixed Sequence Path Order** (pick the start node, then add neighbours; **Clear Path** empties it). | Random Neighbor |
+| **Graph Navigation Mode** | **Random Neighbor (Graph Walk):** at each node, go to a random connected node. **Fixed Sequence (Node Path):** follow the order you build in **Fixed Sequence Path Order** (pick the start node, then add neighbours; **Clear Path** empties it). A node can appear more than once (A → B → A → C). | Random Neighbor |
 | **Ticks Per Edge (Interpolation)** | Number of values needed to travel an edge (1 = jump from node to node). | 1 |
 | **Pause Probability (0.0 - 1.0)** | Chance of stopping when arriving at a node. | 0 |
 | **Pause Duration (Ticks)** | How many values the stop lasts. | 0 |
@@ -1121,9 +1218,9 @@ The **Spatial Boundaries** tab sets the region where the point lives.
 | Visual editor | 2D canvas, 3D view or world map, depending on the Coordinate System (see below). **Expand View / High-Precision Editor** opens a larger editor with presets (**Square**, **Triangle**, **Circle**, **New Region**), zoom and obstacle management; `Esc` closes it. | — |
 | **Boundary Collision Action** | Same as Boundary Behavior. | Clamp |
 | **Outer Envelope Bounding Box (AABB Bounds)** | **Min/Max X, Y, Z** (Latitude, Longitude, Altitude in Geospatial): the box the point lives in. | 0–100 on every axis |
-| **Exact Individual Polygon Vertices** | The vertices of a custom polygon (3 or more), when you drew one. The box then fits the polygon. | — |
+| **Exact Individual Polygon Vertices** | 2D and Geospatial: the vertices of a custom polygon (3 or more), when you drew one. The box then fits the polygon. In 3D the polygon is not used, and the list only shows the footprint of the drawn shape. | — |
 | Barriers & obstacles | **Obstacle Name**, **Type** (**Wall Line Segment** or **Forbidden Interior Polygon**) and **Add Barrier**; each barrier can be disabled or removed. Walls block Random Walk steps; forbidden polygons are never entered. | — |
-| Altitude (Geospatial) | **Independent Altitude Dynamics Pattern**: **Follow Primary XY Pattern**, **Fixed Altitude**, **Random Elevation (Uniform in Range)**, **Continuous Climb & Descent Walk** (**Max Vertical Step (m/tick)**), **Sinusoidal Hover Oscillation** (**Oscillation Speed (rad/tick)**); **Min/Max Altitude**, **Initial Altitude (Seed)**, **Altitude Measurement Unit** (m, ft, km, mi) and **Datum / Altitude Reference** (MSL, AGL, ELLIPSOID), which are written in the output. | Follow XY, m, MSL |
+| Altitude (Geospatial) | **Independent Altitude Dynamics Pattern**: **Follow Primary XY Pattern**, **Fixed Altitude** (the value typed in its **Fixed Altitude** field), **Random Elevation (Uniform in Range)**, **Continuous Climb & Descent Walk** (**Max Vertical Step (m/tick)**), **Sinusoidal Hover Oscillation** (**Oscillation Speed (rad/tick)**); **Min/Max Altitude**, **Initial Altitude (Seed)**, **Altitude Measurement Unit** (m, ft, km, mi) and **Datum / Altitude Reference** (MSL, AGL, ELLIPSOID), which are written in the output. | Follow XY, m, MSL |
 
 How editing works in every boundary and route editor:
 
@@ -1140,15 +1237,25 @@ How editing works in every boundary and route editor:
 - In **Move Boundaries** mode the region vertices take priority; whole obstacles can only be
   dragged in **Move Obstacles** mode.
 - Right-click a vertex or an edge for its menu: insert a vertex on an edge (of the region or of
-  an obstacle) or delete a vertex (a region keeps at least 3).
+  an obstacle) or delete a vertex (a region keeps at least 3). Vertices take priority; on an edge,
+  the menu is the one of the nearest edge within 10 px.
 - The presets (**Square**, **Triangle**, **Circle**) fill the current bounding box, so the region
   does not shrink. New obstacles appear at the centre of the region.
+- **New Region** asks for confirmation; `Esc` closes it without changes. In the expanded editor,
+  the first `Esc` closes the confirmation and the second closes the editor.
 
 **3D view:**
 
+- The shape drawn in the 3D view (cube, pyramid, cone or sphere) is the region where points are
+  generated: **Random Point** fills its volume, and **Random Walk** and **Circular Orbit** stay
+  inside it. The custom polygon is not used in 3D.
+- Its footprint is centred on the X/Y bounds. The base is at **Min Z**, or at **Max Z** when the
+  height is negative (a cube, pyramid or cone then points down). A sphere rests on Min Z: its
+  centre is Min Z + radius.
+- The dimensions you never set follow the bounds: width and length are the X and Y spans (100 when
+  a span is 0), the height is Max Z − Min Z and the radius is 50. Once you edit the shape, the
+  Min/Max fields only move it; resize it in the 3D view.
 - The height handle follows the cursor, and a negative height does not move the base.
-- The shape is centred on the X/Y bounds. For a sphere, the Z range is its diameter: from the
-  elevation to the elevation + 2 × radius.
 
 ![Geofence editor on the map (Expand View)](docs-assets/user-guide/27-point-map.png)
 
@@ -1158,8 +1265,10 @@ How editing works in every boundary and route editor:
   ±180°. Drag empty space to pan the map.
 - Right-click on the map to add a vertex on the nearest edge; right-click on a vertex to delete it
   (a region keeps at least 3).
-- **New Box Region** keeps the current region until you finish drawing the new box (releasing the
-  mouse outside the map also finishes it). The presets and a new box zoom the map to the region.
+- **New Box Region** asks for confirmation first (`Esc` closes it without changes; in the expanded
+  editor, the first `Esc` closes the confirmation and the second the editor), and keeps the current
+  region until you finish drawing the new box (releasing the mouse outside the map also finishes
+  it). The presets and a new box zoom the map to the region.
 - The marker icons work offline. The altitude fields are applied when you leave them or press
   `Enter`.
 
@@ -1171,15 +1280,16 @@ How editing works in every boundary and route editor:
 
 Changing the **Coordinate System** keeps as much of the configuration as the units allow:
 
-- **2D ↔ 3D Cartesian** share units, so the region is kept: bounds, polygon and obstacles. Graph
-  Route is not available in 3D: going to 3D with Graph Route switches the pattern to **Random
-  Point** and drops the route, after asking you first.
+- **2D ↔ 3D Cartesian** share units, so the region is kept: bounds, polygon and obstacles. The
+  waypoints are kept too (a missing Z becomes 0). Graph Route is not available in 3D: going to 3D
+  with Graph Route switches the pattern to **Random Point** and drops the route, after asking you
+  first.
 - **Cartesian ↔ Geospatial** use different units (coordinate units against degrees). GenSynth
   first asks for confirmation, listing what will be lost, and then:
   - resets the bounds to the defaults of the new system: 0 to 100 on every axis in Cartesian, or
     a city-sized area around Madrid in Geospatial;
-  - resets the region polygon, the obstacles, the route graph and the fixed point (which moves to
-    the centre of the new region);
+  - resets the region polygon, the obstacles, the route graph, the waypoints and the fixed point
+    (which moves to the centre of the new region);
   - adapts **Max Step Distance**, **Orbit Radius** and the jitter radius to the new units:
     0.0005°, 0.01° and 0 in Geospatial, 10, 10 and 0 in Cartesian.
 
@@ -1237,7 +1347,30 @@ Short bursts of high activity separated by quiet periods:
   **Random** 8–10.
 - The pace of a flow is fixed, so a burst changes the values, not the number of messages. To
   also raise the event rate, model the bursty source as a second flow with a smaller *Every N
-  ticks*, and use **Lock group** / **Unlock group** to switch it on and off by hand.
+  ticks*, and use **Lock group** / **Unlock group** to switch it on and off by hand. For scheduled
+  silences, use the outages of [event loss](#event-loss) instead.
+
+### Missing events (lost messages and outages)
+
+A device that loses some readings and goes silent from time to time, to test how your consumer
+detects missing data:
+
+- Numeric `seq`: **Linear Drift**, **Minimum** `1`, **Maximum** a large value such as
+  `1000000000`, **Precision** **Integer**, **Drift Rate** `1`, **Virtual Clock Delta** `1`. It
+  counts 1, 2, 3…, one per message of the flow.
+- Template: `{"device": "{{flow.name}}", "seq": {{seq}}, …}`, followed by the readings of the
+  device.
+- [Event loss](#event-loss) of the flow: **Random loss (%)** `5`, **Outage every N ticks** `300`
+  and **Outage length (ticks)** `20`.
+
+About 5 % of the messages are lost at random, and the device is silent during the last 20 ticks of
+every 300 (20 s every 5 minutes with a tick of 1 second). Lost messages still advance `seq`, so
+the consumer can detect both cases: a jump in `seq` reveals lost messages, and a silence longer
+than the usual interval reveals an outage (for example, a CEP pattern "no event from a device for
+N seconds").
+
+Use a LOCAL counter rather than `{{n}}`: `{{n}}` is shared by all flows, so it already has gaps
+when several flows run.
 
 ### Correlated values
 
@@ -1332,18 +1465,6 @@ Limitations of the design:
 - **The Statistics totals carry over between projects** until GenSynth is restarted, as does
   `{{n}}`.
 
-Known issues in 0.5.1, with workarounds:
-
-| Issue | Workaround |
-|---|---|
-| **Progressive Drift** only works in **Simulated Step** and **Backfill Historical** (Sequential Step) modes; it has no effect in **Wall Clock** mode. | Use Simulated Step. |
-| **Waypoint Navigation** has no way to enter waypoints, so the point does not move. | Use **Graph Route** with a **Fixed Sequence**. |
-| In **3D Cartesian**, the 3D shape (cube, pyramid, cone, sphere) drawn in the 3D editor is not used: points are kept in a 100 × 100 × 100 box centred on the bounding box. | Use 2D or Geospatial when the exact limits matter. |
-| **Circular Orbit** circles around (0, 0) when Min X (or Min Latitude) is exactly 0, instead of the centre of the bounding box. | Use a bounding box whose Min X is not 0. |
-| **Random Walk** in 2D/Geospatial can leave a custom polygon (it stays inside the bounding box and avoids obstacles). | Use forbidden polygons or walls to fence it in. |
-| A node repeated in a Graph Route **Fixed Sequence** (A → B → A → C) makes the route loop back early (A → B → A → B…). | Do not repeat nodes in the sequence; use Random Neighbor or two variables. |
-| The template autocomplete offers `.size`, `.first` and `.last` for every List, but they only make sense with **Fixed Subset**: with other strategies they return the selected item. | Use them only with Fixed Subset lists. |
-
 ---
 
 ## Troubleshooting
@@ -1353,6 +1474,7 @@ Known issues in 0.5.1, with workarounds:
 | The first start shows *"GenSynth could not set up its embedded browser"* | The embedded browser could not be downloaded. Check your internet connection (and proxy or firewall) and click **Retry**. |
 | The logs show *Invalid connector configuration…* when starting a group | A required connector field is empty or invalid; the message says which one. |
 | A plugin is rejected as "built for the legacy plugin API" | That plugin was made for an older GenSynth; it must be rebuilt by its author. |
+| Messages are missing, or **dropped** grows | Check the [event loss](#event-loss) of the flow (**Random loss (%)** and the outages). |
 | *fails* keeps growing | Check the logs panel (bottom): it shows why the message could not be generated or why the destination rejected it. |
 | START warns about *validation errors or circular dependencies* | A formula, template variable or conditional rule refers to a variable that does not exist, or two variables refer to each other. Fix the red references. |
 | RabbitMQ: *Connection refused* | The broker is not running or Host/Port are wrong. Check `docker ps` and that port 5672 is published. |
