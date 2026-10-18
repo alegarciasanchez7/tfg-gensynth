@@ -38,4 +38,20 @@ public class VariableFactoryPatternTest {
     public void legacyConfigsWithoutPatternStillInferIt() {
         assertEquals("fixed", generate("string", Map.of("constantValue", "fixed")));
     }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void pointWithoutBoundsUsesTheSameDefaultRegionAsTheUi() {
+        Map<String, Object> config = Map.of("pattern", "RANDOM_POINT", "coordinateSystem", "CARTESIAN_2D");
+        double maxSeen = 0;
+        for (int i = 0; i < 200; i++) {
+            Map<String, Object> point = (Map<String, Object>) generate("point", config);
+            double x = ((Number) point.get("x")).doubleValue();
+            double y = ((Number) point.get("y")).doubleValue();
+            assertTrue("x " + x, x >= 0 && x <= 100);
+            assertTrue("y " + y, y >= 0 && y <= 100);
+            maxSeen = Math.max(maxSeen, Math.max(x, y));
+        }
+        assertTrue("points must spread over 0..100, not 0..1: " + maxSeen, maxSeen > 1);
+    }
 }

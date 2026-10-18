@@ -520,33 +520,29 @@ public class VariableFactory {
 
                 // Deserialization of minPoint / maxPoint range bounds (defaults match the UI: 0..100 on every axis)
                 double minX = 0.0, maxX = 100.0, minY = 0.0, maxY = 100.0, minZ = 0.0, maxZ = 100.0;
-                boolean rangeSet = false;
 
                 if (configMap.get("minPoint") instanceof Map<?, ?> minMap) {
                     minX = minMap.containsKey("x") ? ((Number) minMap.get("x")).doubleValue() : (minMap.containsKey("lat") ? ((Number) minMap.get("lat")).doubleValue() : 0.0);
                     minY = minMap.containsKey("y") ? ((Number) minMap.get("y")).doubleValue() : (minMap.containsKey("lon") ? ((Number) minMap.get("lon")).doubleValue() : 0.0);
                     minZ = minMap.containsKey("z") ? ((Number) minMap.get("z")).doubleValue() : (minMap.containsKey("alt") ? ((Number) minMap.get("alt")).doubleValue() : 0.0);
-                    rangeSet = true;
                 }
                 if (configMap.get("maxPoint") instanceof Map<?, ?> maxMap) {
                     maxX = maxMap.containsKey("x") ? ((Number) maxMap.get("x")).doubleValue() : (maxMap.containsKey("lat") ? ((Number) maxMap.get("lat")).doubleValue() : 100.0);
                     maxY = maxMap.containsKey("y") ? ((Number) maxMap.get("y")).doubleValue() : (maxMap.containsKey("lon") ? ((Number) maxMap.get("lon")).doubleValue() : 100.0);
                     maxZ = maxMap.containsKey("z") ? ((Number) maxMap.get("z")).doubleValue() : (maxMap.containsKey("alt") ? ((Number) maxMap.get("alt")).doubleValue() : 100.0);
-                    rangeSet = true;
                 }
 
-                if (configMap.containsKey("minLat")) { minX = ((Number) configMap.get("minLat")).doubleValue(); rangeSet = true; }
-                if (configMap.containsKey("maxLat")) { maxX = ((Number) configMap.get("maxLat")).doubleValue(); rangeSet = true; }
-                if (configMap.containsKey("minLon")) { minY = ((Number) configMap.get("minLon")).doubleValue(); rangeSet = true; }
-                if (configMap.containsKey("maxLon")) { maxY = ((Number) configMap.get("maxLon")).doubleValue(); rangeSet = true; }
-                if (configMap.containsKey("minAlt")) { minZ = ((Number) configMap.get("minAlt")).doubleValue(); rangeSet = true; }
-                if (configMap.containsKey("maxAlt")) { maxZ = ((Number) configMap.get("maxAlt")).doubleValue(); rangeSet = true; }
-                if (configMap.containsKey("minZ")) { minZ = ((Number) configMap.get("minZ")).doubleValue(); rangeSet = true; }
-                if (configMap.containsKey("maxZ")) { maxZ = ((Number) configMap.get("maxZ")).doubleValue(); rangeSet = true; }
+                if (configMap.containsKey("minLat")) { minX = ((Number) configMap.get("minLat")).doubleValue(); }
+                if (configMap.containsKey("maxLat")) { maxX = ((Number) configMap.get("maxLat")).doubleValue(); }
+                if (configMap.containsKey("minLon")) { minY = ((Number) configMap.get("minLon")).doubleValue(); }
+                if (configMap.containsKey("maxLon")) { maxY = ((Number) configMap.get("maxLon")).doubleValue(); }
+                if (configMap.containsKey("minAlt")) { minZ = ((Number) configMap.get("minAlt")).doubleValue(); }
+                if (configMap.containsKey("maxAlt")) { maxZ = ((Number) configMap.get("maxAlt")).doubleValue(); }
+                if (configMap.containsKey("minZ")) { minZ = ((Number) configMap.get("minZ")).doubleValue(); }
+                if (configMap.containsKey("maxZ")) { maxZ = ((Number) configMap.get("maxZ")).doubleValue(); }
 
-                if (rangeSet) {
-                    pointConfig.range(minX, maxX, minY, maxY, minZ, maxZ);
-                }
+                // Without range keys the UI shows 0..100 on every axis: generate in that same region
+                pointConfig.range(minX, maxX, minY, maxY, minZ, maxZ);
 
                 if (configMap.get("boundaryPolygon") instanceof List<?> polyList) {
                     for (Object item : polyList) {

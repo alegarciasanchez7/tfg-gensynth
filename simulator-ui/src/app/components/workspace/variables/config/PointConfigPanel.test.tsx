@@ -56,4 +56,41 @@ describe('PointConfigPanel', () => {
 
     expect(screen.getByText(/Degrees, Minutes, Sec \(DMS\)/i)).toBeInTheDocument();
   });
+
+  const switchTo = (label: RegExp) => {
+    fireEvent.click(document.getElementById('point-coord-system')!);
+    fireEvent.click(screen.getAllByRole('button', { name: label }).pop()!);
+  };
+
+  it('asks before resetting the region when switching to Geospatial, and keeps it if cancelled', () => {
+    const handleChange = vi.fn();
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const config: PointVariableConfig = {
+      coordinateSystem: 'CARTESIAN_2D', pattern: 'RANDOM_POINT',
+      boundaryPolygon: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }],
+    };
+    render(<PointConfigPanel config={config} onChange={handleChange} />);
+
+    switchTo(/Geospatial \(Lat, Lon, Alt\)/);
+
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('the region polygon'));
+    expect(handleChange).not.toHaveBeenCalled();
+
+    confirm.mockReturnValue(true);
+    switchTo(/Geospatial \(Lat, Lon, Alt\)/);
+    expect(handleChange).toHaveBeenCalledWith(expect.objectContaining({ coordinateSystem: 'GEOSPATIAL', boundaryPolygon: [] }));
+    confirm.mockRestore();
+  });
+
+  it('switches between 2D and 3D without asking and keeps the region', () => {
+    const handleChange = vi.fn();
+    const confirm = vi.spyOn(window, 'confirm');
+    render(<PointConfigPanel config={{ ...defaultConfig, coordinateSystem: 'CARTESIAN_2D' }} onChange={handleChange} />);
+
+    switchTo(/3D Cartesian \(X, Y, Z\)/);
+
+    expect(confirm).not.toHaveBeenCalled();
+    expect(handleChange).toHaveBeenCalledWith({ coordinateSystem: 'CARTESIAN_3D' });
+    confirm.mockRestore();
+  });
 });

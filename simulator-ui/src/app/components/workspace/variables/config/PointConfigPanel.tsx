@@ -17,6 +17,7 @@ import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '../../
 
 import { ListReferenceSelector } from './ListReferenceSelector';
 import { GraphRouteCanvas } from './GraphRouteCanvas';
+import { coordinateSystemSwitch } from '../../../../core/pointDefaults';
 
 interface PointConfigPanelProps {
   config: PointVariableConfig;
@@ -116,6 +117,13 @@ export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onCh
   const [spiralRateStr, setSpiralRateStr] = useState(String(config.spiralRate ?? 0.0));
   const [jitterRadiusStr, setJitterRadiusStr] = useState(String(config.jitterRadius ?? 0.0));
 
+  // Follow values changed from outside these inputs (e.g. a coordinate system switch rescales them),
+  // keeping what the user is typing when it already means that value ("0." while typing "0.5")
+  const follow = (value: number) => (prev: string) => (parseFloat(prev) === value ? prev : String(value));
+  useEffect(() => { setStepDistanceStr(follow(config.maxStepDistance ?? 0.1)); }, [config.maxStepDistance]);
+  useEffect(() => { setOrbitRadiusStr(follow(config.orbitRadius ?? 10.0)); }, [config.orbitRadius]);
+  useEffect(() => { setJitterRadiusStr(follow(config.jitterRadius ?? 0.0)); }, [config.jitterRadius]);
+
   const isGeospatial = coordSystem === 'GEOSPATIAL';
   const is2D = coordSystem === 'CARTESIAN_2D';
 
@@ -159,14 +167,15 @@ export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onCh
               id="point-coord-system"
               value={coordSystem}
               onChange={(val) => {
-                if (val !== coordSystem) {
-                  onChange({
-                    coordinateSystem: val as CoordinateSystem,
-                    graphNodes: [],
-                    graphEdges: [],
-                    graphSequence: [],
-                  });
+                const { updates, lost } = coordinateSystemSwitch(config, val as CoordinateSystem);
+                if (Object.keys(updates).length === 0) return;
+                const lostText = lost.length > 1 ? `${lost.slice(0, -1).join(', ')} and ${lost[lost.length - 1]}` : lost[0];
+                if (lost.length > 0 && !window.confirm(
+                  `The new coordinate system uses different units, so ${lostText} will be reset. Continue?`,
+                )) {
+                  return;
                 }
+                onChange(updates);
               }}
               options={[
                 { value: 'CARTESIAN_2D', label: '2D Cartesian (X, Y)' },
