@@ -466,20 +466,29 @@ public class VariableFactory {
                     double fz = fpMap.containsKey("z") ? ((Number) fpMap.get("z")).doubleValue() : (fpMap.containsKey("alt") ? ((Number) fpMap.get("alt")).doubleValue() : 0.0);
                     pointConfig.fixedPoint(fx, fy, fz);
                 }
-                if (configMap.get("path") instanceof List<?> pathList) {
+                // The editor stores the route as "waypoints"; "path" is the legacy key
+                Object waypointsObj = configMap.containsKey("waypoints") ? configMap.get("waypoints") : configMap.get("path");
+                if (waypointsObj instanceof List<?> pathList) {
                     for (Object item : pathList) {
                         if (item instanceof Map<?, ?> ptMap) {
-                            double px = ptMap.containsKey("x") ? ((Number) ptMap.get("x")).doubleValue() : (ptMap.containsKey("lat") ? ((Number) ptMap.get("lat")).doubleValue() : 0.0);
-                            double py = ptMap.containsKey("y") ? ((Number) ptMap.get("y")).doubleValue() : (ptMap.containsKey("lon") ? ((Number) ptMap.get("lon")).doubleValue() : 0.0);
-                            double pz = ptMap.containsKey("z") ? ((Number) ptMap.get("z")).doubleValue() : (ptMap.containsKey("alt") ? ((Number) ptMap.get("alt")).doubleValue() : 0.0);
-                            pointConfig.addPathPoint(px, py, pz);
+                            double[] wp = parsePointCoords(ptMap);
+                            pointConfig.addPathPoint(wp[0], wp[1], wp[2]);
                         }
                     }
+                }
+                if (configMap.get("loopPath") != null) {
+                    pointConfig.loopPath(parseBooleanHelper(configMap.get("loopPath"), true));
                 }
                 if (configMap.containsKey("maxStepDistance"))
                     pointConfig.maxStepDistance(((Number) configMap.get("maxStepDistance")).doubleValue());
                 if (configMap.containsKey("inertia"))
                     pointConfig.inertia(((Number) configMap.get("inertia")).doubleValue());
+                // The orbit centre and radius may grow the bounding box to fit the orbit; range() below
+                // runs afterwards, so the region configured in the editor always wins
+                if (configMap.get("orbitCenter") instanceof Map<?, ?> ocMap) {
+                    double[] oc = parsePointCoords(ocMap);
+                    pointConfig.orbitCenter(oc[0], oc[1], oc[2]);
+                }
                 if (configMap.containsKey("orbitRadius"))
                     pointConfig.orbitRadius(((Number) configMap.get("orbitRadius")).doubleValue());
                 if (configMap.containsKey("angularSpeed"))
@@ -490,8 +499,24 @@ public class VariableFactory {
                     pointConfig.jitterRadius(((Number) configMap.get("jitterRadius")).doubleValue());
                 if (configMap.containsKey("gpsNoiseEnabled"))
                     pointConfig.gpsNoiseEnabled(Boolean.TRUE.equals(configMap.get("gpsNoiseEnabled")));
-                if (configMap.containsKey("interpolationSteps"))
-                    pointConfig.interpolationSteps(((Number) configMap.get("interpolationSteps")).intValue());
+                if (configMap.get("interpolationSteps") != null)
+                    pointConfig.interpolationSteps(Math.max(1, parseIntHelper(configMap.get("interpolationSteps"), 1)));
+
+                // 3D shape: the UI stores the type in lower case ("sphere"); unknown types ("custom") keep CUBE
+                if (configMap.get("shape3DType") != null) {
+                    try {
+                        pointConfig.shape3DType(PointVariableConfig.Shape3DType.valueOf(
+                                configMap.get("shape3DType").toString().trim().toUpperCase(java.util.Locale.ROOT)));
+                    } catch (IllegalArgumentException ignored) {}
+                }
+                if (configMap.get("shape3DWidth") != null)
+                    pointConfig.shape3DWidth(parseDoubleHelper(configMap.get("shape3DWidth"), 100.0));
+                if (configMap.get("shape3DLength") != null)
+                    pointConfig.shape3DLength(parseDoubleHelper(configMap.get("shape3DLength"), 100.0));
+                if (configMap.get("shape3DHeight") != null)
+                    pointConfig.shape3DHeight(parseDoubleHelper(configMap.get("shape3DHeight"), 100.0));
+                if (configMap.get("shape3DRadius") != null)
+                    pointConfig.shape3DRadius(parseDoubleHelper(configMap.get("shape3DRadius"), 50.0));
 
                 if (configMap.containsKey("altitudeUnit")) {
                     try {
@@ -553,7 +578,9 @@ public class VariableFactory {
                             pointConfig.addBoundaryPolygonPoint(px, py, pz);
                         }
                     }
-                    if (!pointConfig.getBoundaryPolygon().isEmpty()) {
+                    // In 3D the shape is the region: the polygon does not re-range the bounding box
+                    if (!pointConfig.getBoundaryPolygon().isEmpty()
+                            && pointConfig.getCoordinateSystem() != CoordinateSystem.CARTESIAN_3D) {
                         double pMinX = Double.MAX_VALUE, pMaxX = -Double.MAX_VALUE;
                         double pMinY = Double.MAX_VALUE, pMaxY = -Double.MAX_VALUE;
                         for (PointVariableConfig.Point3D pt : pointConfig.getBoundaryPolygon()) {
@@ -681,9 +708,11 @@ public class VariableFactory {
                 }
 
                 Object stepsObj = configMap.containsKey("graphInterpolationSteps") ? configMap.get("graphInterpolationSteps") : configMap.get("stepsPerEdge");
-                if (stepsObj == null) stepsObj = configMap.get("interpolationSteps");
                 if (stepsObj != null) {
                     pointConfig.graphInterpolationSteps(parseIntHelper(stepsObj, 1));
+                } else if (configMap.get("interpolationSteps") != null) {
+                    // Fallback to the waypoint steps, clamped like them
+                    pointConfig.graphInterpolationSteps(Math.max(1, parseIntHelper(configMap.get("interpolationSteps"), 1)));
                 }
 
                 return pointConfig;
@@ -691,6 +720,16 @@ public class VariableFactory {
             default:
                 throw new IllegalArgumentException("Unknown variable type: " + type);
         }
+    }
+
+    /**
+     * Reads x/y/z (or lat/lon/alt) from a point map; missing coordinates are 0.
+     */
+    private static double[] parsePointCoords(Map<?, ?> ptMap) {
+        Object x = ptMap.containsKey("x") ? ptMap.get("x") : ptMap.get("lat");
+        Object y = ptMap.containsKey("y") ? ptMap.get("y") : ptMap.get("lon");
+        Object z = ptMap.containsKey("z") ? ptMap.get("z") : ptMap.get("alt");
+        return new double[] { parseDoubleHelper(x, 0.0), parseDoubleHelper(y, 0.0), parseDoubleHelper(z, 0.0) };
     }
 
     private static double parseDoubleHelper(Object val, double defaultValue) {

@@ -19,11 +19,14 @@ public class PointVariableConfig extends VariableConfiguration {
     private BoundaryBehavior boundaryBehavior;
 
     private Point3D fixedPoint;
+    /** Whether {@link #fixedPoint} was configured (a Random Walk only starts there when it was). */
+    private boolean fixedPointSet;
     private Point3D minPoint;
     private Point3D maxPoint;
 
     private List<Point3D> path;
     private int interpolationSteps;
+    /** Kept for compatibility with older configs: the waypoint timing only uses {@link #interpolationSteps}. */
     private double navigationSpeed;
     private boolean loopPath;
     private int currentSegmentIndex;
@@ -35,7 +38,7 @@ public class PointVariableConfig extends VariableConfiguration {
     private Point3D lastPoint;
     private Point3D lastVelocity;
 
-    // Circular Orbit
+    // Circular Orbit (a null centre means the centre of the bounding box)
     private Point3D orbitCenter;
     private double orbitRadius;
     private double angularSpeed; // radians per tick
@@ -102,6 +105,8 @@ public class PointVariableConfig extends VariableConfiguration {
     private String currentGraphNodeId = null;
     private String targetGraphNodeId = null;
     private int graphStepInEdge = 0;
+    /** Position in {@link #graphSequence} of the current node (a node may appear more than once). */
+    private int graphSequenceIndex = 0;
     private int remainingStopTicks = 0;
     private transient boolean hasPausedAtCurrentNode = false;
     private List<String> visitedNodeHistory = new ArrayList<>();
@@ -111,10 +116,11 @@ public class PointVariableConfig extends VariableConfiguration {
     private AltitudePattern altitudePattern = AltitudePattern.FOLLOW_XY;
     private Shape3DType shape3DType = Shape3DType.CUBE;
     private List<BoundaryObstacle> obstacles = new ArrayList<>();
-    private double shape3DWidth = 100.0;
-    private double shape3DLength = 100.0;
-    private double shape3DHeight = 100.0;
-    private double shape3DRadius = 50.0;
+    // 3D shape dimensions; null means "derive from the bounding box" (see the effective getters)
+    private Double shape3DWidth = null;
+    private Double shape3DLength = null;
+    private Double shape3DHeight = null;
+    private Double shape3DRadius = null;
     private double maxVerticalStep = 1.0;
     private double altitudeOscillationSpeed = 0.1;
     private double currentAltitudeAngle = 0.0;
@@ -144,7 +150,7 @@ public class PointVariableConfig extends VariableConfiguration {
         this.lastPoint = null;
         this.lastVelocity = new Point3D(0.0, 0.0, 0.0);
 
-        this.orbitCenter = new Point3D(0.0, 0.0, 0.0);
+        this.orbitCenter = null;
         this.orbitRadius = 10.0;
         this.angularSpeed = 0.1;
         this.spiralRate = 0.0;
@@ -191,9 +197,28 @@ public class PointVariableConfig extends VariableConfiguration {
         return this;
     }
 
+    /**
+     * Sets the fixed point: the value of Fixed Point, the fallback of an empty waypoint path and
+     * the start of a Random Walk (when it lies inside the region).
+     *
+     * @param x X (or latitude)
+     * @param y Y (or longitude)
+     * @param z Z (or altitude)
+     * @return this config
+     */
     public PointVariableConfig fixedPoint(double x, double y, double z) {
         this.fixedPoint = new Point3D(x, y, z);
+        this.fixedPointSet = true;
         return this;
+    }
+
+    /**
+     * Whether a fixed point was configured.
+     *
+     * @return {@code true} once {@link #fixedPoint(double, double, double)} was called
+     */
+    public boolean isFixedPointSet() {
+        return fixedPointSet;
     }
 
     public PointVariableConfig range(double minX, double maxX, double minY, double maxY, double minZ, double maxZ) {
@@ -218,6 +243,13 @@ public class PointVariableConfig extends VariableConfiguration {
         return this;
     }
 
+    /**
+     * Stores the legacy navigation speed. It has no effect: waypoint timing depends only on the
+     * interpolation steps.
+     *
+     * @param speed ignored speed value, kept for older configs
+     * @return this config
+     */
     public PointVariableConfig navigationSpeed(double speed) {
         this.navigationSpeed = speed;
         return this;
@@ -237,6 +269,15 @@ public class PointVariableConfig extends VariableConfiguration {
         return inertia;
     }
 
+    /**
+     * Sets an explicit orbit centre (without one the orbit turns around the bounding-box centre).
+     * The bounding box grows to contain the orbit when needed; a later {@link #range} call wins.
+     *
+     * @param x centre X (or latitude)
+     * @param y centre Y (or longitude)
+     * @param z centre Z (or altitude)
+     * @return this config
+     */
     public PointVariableConfig orbitCenter(double x, double y, double z) {
         this.orbitCenter = new Point3D(x, y, z);
         double r = (this.orbitRadius > 0 ? this.orbitRadius : 10.0) * 2.0;
@@ -399,40 +440,149 @@ public class PointVariableConfig extends VariableConfiguration {
         return this;
     }
 
+    /**
+     * Effective width (X) of a cube or pyramid: the configured one, else the X span of the
+     * bounding box (100 when that span is 0).
+     *
+     * @return the width used to generate points
+     */
     public double getShape3DWidth() {
-        return shape3DWidth;
+        return shape3DWidth != null ? shape3DWidth : spanOr100(maxPoint.x - minPoint.x);
     }
 
+    /**
+     * Sets the width (X) of a cube or pyramid; its absolute value is used, at least 0.1.
+     *
+     * @param width the width
+     * @return this config
+     */
     public PointVariableConfig shape3DWidth(double width) {
-        this.shape3DWidth = Math.max(0.1, width);
+        this.shape3DWidth = Math.max(0.1, Math.abs(width));
         return this;
     }
 
+    /**
+     * Effective length (Y) of a cube or pyramid: the configured one, else the Y span of the
+     * bounding box (100 when that span is 0).
+     *
+     * @return the length used to generate points
+     */
     public double getShape3DLength() {
-        return shape3DLength;
+        return shape3DLength != null ? shape3DLength : spanOr100(maxPoint.y - minPoint.y);
     }
 
+    /**
+     * Sets the length (Y) of a cube or pyramid; its absolute value is used, at least 0.1.
+     *
+     * @param length the length
+     * @return this config
+     */
     public PointVariableConfig shape3DLength(double length) {
-        this.shape3DLength = Math.max(0.1, length);
+        this.shape3DLength = Math.max(0.1, Math.abs(length));
         return this;
     }
 
+    /**
+     * Effective radius of a cone or sphere: the configured one, else 50.
+     *
+     * @return the radius used to generate points
+     */
     public double getShape3DRadius() {
-        return shape3DRadius;
+        return shape3DRadius != null ? shape3DRadius : 50.0;
     }
 
+    /**
+     * Sets the radius of a cone or sphere; its absolute value is used, at least 0.1.
+     *
+     * @param radius the radius
+     * @return this config
+     */
     public PointVariableConfig shape3DRadius(double radius) {
-        this.shape3DRadius = Math.max(0.1, radius);
+        this.shape3DRadius = Math.max(0.1, Math.abs(radius));
         return this;
     }
 
+    /**
+     * Effective height of a cube, pyramid or cone: the configured one, else {@code maxZ - minZ}.
+     * A negative height means the shape hangs down from its base at {@code maxZ}.
+     *
+     * @return the signed height used to generate points
+     */
     public double getShape3DHeight() {
-        return shape3DHeight;
+        return shape3DHeight != null ? shape3DHeight : maxPoint.z - minPoint.z;
     }
 
+    /**
+     * Sets the signed height of a cube, pyramid or cone (negative: the apex is below the base).
+     * Its absolute value is at least 0.1.
+     *
+     * @param height the height
+     * @return this config
+     */
     public PointVariableConfig shape3DHeight(double height) {
-        this.shape3DHeight = (Math.abs(height) < 0.1) ? 0.1 : height;
+        this.shape3DHeight = (Math.abs(height) < 0.1) ? Math.copySign(0.1, height) : height;
         return this;
+    }
+
+    private static double spanOr100(double span) {
+        double abs = Math.abs(span);
+        return abs > 0 ? abs : 100.0;
+    }
+
+    /**
+     * Elevation of the shape base, as the 3D editor draws it: {@code maxZ} for a cube, pyramid or
+     * cone with a negative height, {@code minZ} otherwise (a sphere always rests on {@code minZ}).
+     */
+    private double shapeBaseZ() {
+        return (shape3DType != Shape3DType.SPHERE && getShape3DHeight() < 0) ? maxPoint.z : minPoint.z;
+    }
+
+    /**
+     * Position of a Z value between the shape base (0) and its apex (1); 0 for a flat shape.
+     */
+    private double normalizedShapeZ(double z) {
+        double h = getShape3DHeight();
+        if (Math.abs(h) < 1e-9) {
+            return 0.0;
+        }
+        return (z - shapeBaseZ()) / h;
+    }
+
+    /**
+     * Whether a point lies inside the 3D shape (Cartesian 3D region). The footprint is centred on
+     * the bounding-box X/Y centre; the base sits at {@link #shapeBaseZ()} and the apex at base +
+     * height; a sphere is centred at {@code minZ + radius}.
+     *
+     * @param x X coordinate
+     * @param y Y coordinate
+     * @param z Z coordinate
+     * @return {@code true} if the point is inside the shape or on its surface
+     */
+    public boolean isInsideShape3D(double x, double y, double z) {
+        final double eps = 1e-9;
+        double cx = (minPoint.x + maxPoint.x) / 2.0;
+        double cy = (minPoint.y + maxPoint.y) / 2.0;
+        Shape3DType shape = shape3DType != null ? shape3DType : Shape3DType.CUBE;
+        if (shape == Shape3DType.SPHERE) {
+            double r = getShape3DRadius();
+            double dx = x - cx, dy = y - cy, dz = z - (minPoint.z + r);
+            return dx * dx + dy * dy + dz * dz <= r * r + eps;
+        }
+        double normZ = normalizedShapeZ(z);
+        if (normZ < -eps || normZ > 1.0 + eps) {
+            return false;
+        }
+        if (Math.abs(getShape3DHeight()) < 1e-9 && Math.abs(z - shapeBaseZ()) > eps) {
+            return false;
+        }
+        double scale = (shape == Shape3DType.CUBE) ? 1.0 : 1.0 - Math.max(0.0, Math.min(1.0, normZ));
+        if (shape == Shape3DType.CONE) {
+            double rAtZ = getShape3DRadius() * scale;
+            double dx = x - cx, dy = y - cy;
+            return dx * dx + dy * dy <= rAtZ * rAtZ + eps;
+        }
+        return Math.abs(x - cx) <= getShape3DWidth() / 2.0 * scale + eps
+            && Math.abs(y - cy) <= getShape3DLength() / 2.0 * scale + eps;
     }
 
     public AltitudeUnit getAltitudeUnit() {
@@ -504,7 +654,8 @@ public class PointVariableConfig extends VariableConfiguration {
 
         switch (altitudePattern) {
             case FIXED_ALTITUDE:
-                newZ = (fixedPoint != null && fixedPoint.z != 0.0) ? fixedPoint.z : midZ;
+                // The Fixed Altitude field writes minAlt = maxAlt = value
+                newZ = midZ;
                 break;
 
             case RANDOM_UNIFORM:
@@ -644,6 +795,9 @@ public class PointVariableConfig extends VariableConfiguration {
     }
 
     private Point3D generateRandomPoint() {
+        if (coordinateSystem == CoordinateSystem.CARTESIAN_3D) {
+            return generateRandomPointInShape3D();
+        }
         for (int i = 0; i < 200; i++) {
             double x = randomInRange(minPoint.x, maxPoint.x);
             double y = randomInRange(minPoint.y, maxPoint.y);
@@ -661,20 +815,67 @@ public class PointVariableConfig extends VariableConfiguration {
         return center;
     }
 
+    /**
+     * Uniform random point inside the 3D shape: rejection sampling in the shape's own bounding box.
+     * The boundary polygon and the initial altitude do not apply in Cartesian 3D.
+     */
+    private Point3D generateRandomPointInShape3D() {
+        double cx = (minPoint.x + maxPoint.x) / 2.0;
+        double cy = (minPoint.y + maxPoint.y) / 2.0;
+        Shape3DType shape = shape3DType != null ? shape3DType : Shape3DType.CUBE;
+        double halfX, halfY, zLow, zHigh;
+        if (shape == Shape3DType.SPHERE) {
+            double r = getShape3DRadius();
+            halfX = r;
+            halfY = r;
+            zLow = minPoint.z;
+            zHigh = minPoint.z + 2.0 * r;
+        } else {
+            boolean round = shape == Shape3DType.CONE;
+            halfX = round ? getShape3DRadius() : getShape3DWidth() / 2.0;
+            halfY = round ? getShape3DRadius() : getShape3DLength() / 2.0;
+            double base = shapeBaseZ();
+            double apex = base + getShape3DHeight();
+            zLow = Math.min(base, apex);
+            zHigh = Math.max(base, apex);
+        }
+        for (int i = 0; i < 200; i++) {
+            double x = randomInRange(cx - halfX, cx + halfX);
+            double y = randomInRange(cy - halfY, cy + halfY);
+            double z = randomInRange(zLow, zHigh);
+            if (isInsideShape3D(x, y, z)) {
+                return new Point3D(x, y, z);
+            }
+        }
+        // Interior fallback: the sphere centre, or a quarter of the way from the base to the apex
+        double z = shape == Shape3DType.SPHERE
+            ? minPoint.z + getShape3DRadius()
+            : shapeBaseZ() + getShape3DHeight() * 0.25;
+        return new Point3D(cx, cy, z);
+    }
+
+    /**
+     * Waypoint navigation: each segment takes {@link #interpolationSteps} ticks and each waypoint is
+     * emitted once (at the start of its segment). With loop on, the last waypoint joins the first
+     * one; with loop off, the point stops on the last waypoint. Waypoints are not clamped.
+     */
     private Point3D generatePathPoint() {
         if (path.isEmpty()) {
-            return fixedPoint != null && (fixedPoint.x != 0 || fixedPoint.y != 0 || minPoint.x == 0)
-                ? fixedPoint
-                : getCenterPoint();
+            return fixedPointSet ? fixedPoint : getCenterPoint();
         }
         if (path.size() == 1) {
             return path.get(0);
         }
 
+        int segments = loopPath ? path.size() : path.size() - 1;
+        if (currentSegmentIndex >= segments) {
+            return path.get(path.size() - 1); // finished (loop off)
+        }
+
         Point3D from = path.get(currentSegmentIndex);
         Point3D to = path.get((currentSegmentIndex + 1) % path.size());
 
-        double t = interpolationSteps <= 1 ? 0.0 : (double) stepInSegment / (interpolationSteps - 1);
+        double t = (double) stepInSegment / interpolationSteps;
         Point3D result = new Point3D(
             lerp(from.x, to.x, t),
             lerp(from.y, to.y, t),
@@ -684,22 +885,56 @@ public class PointVariableConfig extends VariableConfiguration {
         stepInSegment++;
         if (stepInSegment >= interpolationSteps) {
             stepInSegment = 0;
+            currentSegmentIndex++;
             if (loopPath) {
-                currentSegmentIndex = (currentSegmentIndex + 1) % path.size();
-            } else if (currentSegmentIndex < path.size() - 2) {
-                currentSegmentIndex++;
+                currentSegmentIndex %= segments;
             }
         }
 
         return result;
     }
 
+    /**
+     * Whether a Random Walk may start at this point: inside the region (the 3D shape, or the
+     * boundary polygon in 2D/Geo) and outside every obstacle.
+     */
+    private boolean isValidWalkStart(Point3D p) {
+        boolean inRegion = coordinateSystem == CoordinateSystem.CARTESIAN_3D
+            ? isInsideShape3D(p.x, p.y, p.z)
+            : isPointInsidePolygon(p.x, p.y);
+        return inRegion && !isPointInAnyObstacle(p.x, p.y);
+    }
+
+    /**
+     * Whether the segment strictly crosses an edge of the boundary polygon (closing edge included).
+     * Touching an edge does not count, so a point resting on the border can still move inwards.
+     */
+    private boolean doesSegmentCrossPolygon(double x1, double y1, double x2, double y2) {
+        if (boundaryPolygon == null || boundaryPolygon.size() < 3) {
+            return false;
+        }
+        int n = boundaryPolygon.size();
+        for (int i = 0; i < n; i++) {
+            Point3D a = boundaryPolygon.get(i);
+            Point3D b = boundaryPolygon.get((i + 1) % n);
+            double d1 = ccwCross(x1, y1, x2, y2, a.x, a.y);
+            double d2 = ccwCross(x1, y1, x2, y2, b.x, b.y);
+            double d3 = ccwCross(a.x, a.y, b.x, b.y, x1, y1);
+            double d4 = ccwCross(a.x, a.y, b.x, b.y, x2, y2);
+            if (d1 * d2 < 0.0 && d3 * d4 < 0.0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private Point3D generateRandomWalkPoint() {
         if (lastPoint == null || isPointInAnyObstacle(lastPoint.x, lastPoint.y)) {
-            Point3D initial = (fixedPoint != null && (fixedPoint.x != 0 || fixedPoint.y != 0 || minPoint.x == 0))
+            Point3D initial = (fixedPointSet && isValidWalkStart(fixedPoint))
                 ? fixedPoint
                 : generateRandomPoint();
-            if (initialAltitude != null && (altitudePattern == AltitudePattern.FOLLOW_XY || altitudePattern == null)) {
+            if (initialAltitude != null && coordinateSystem != CoordinateSystem.CARTESIAN_3D
+                    && (altitudePattern == AltitudePattern.FOLLOW_XY || altitudePattern == null)) {
                 initial = new Point3D(initial.x, initial.y, initialAltitude);
             }
             lastVelocity = new Point3D(0.0, 0.0, 0.0);
@@ -737,8 +972,15 @@ public class PointVariableConfig extends VariableConfiguration {
         double targetZ = lastPoint.z + vz;
         Point3D bounded = applyBoundaries(targetX, targetY, targetZ, vx, vy, vz);
 
+        // In 2D/Geo a custom polygon is the region: the step must end inside it without leaving it
+        boolean leavesPolygon = coordinateSystem != CoordinateSystem.CARTESIAN_3D
+            && boundaryPolygon != null && boundaryPolygon.size() >= 3
+            && (!isPointInsidePolygon(bounded.x, bounded.y)
+                || doesSegmentCrossPolygon(lastPoint.x, lastPoint.y, bounded.x, bounded.y));
+
         // Check if movement segment hits a wall barrier or steps inside an obstacle zone
-        if (doesSegmentIntersectAnyWall(lastPoint.x, lastPoint.y, targetX, targetY)
+        if (leavesPolygon
+         || doesSegmentIntersectAnyWall(lastPoint.x, lastPoint.y, targetX, targetY)
          || doesSegmentIntersectAnyWall(lastPoint.x, lastPoint.y, bounded.x, bounded.y)
          || isPointInAnyObstacle(targetX, targetY)
          || isPointInAnyObstacle(bounded.x, bounded.y)) {
@@ -758,9 +1000,7 @@ public class PointVariableConfig extends VariableConfiguration {
         double spanX = Math.abs(maxPoint.x - minPoint.x);
         double spanY = Math.abs(maxPoint.y - minPoint.y);
 
-        Point3D center = (orbitCenter != null && (orbitCenter.x != 0 || orbitCenter.y != 0 || minPoint.x == 0))
-            ? orbitCenter
-            : getCenterPoint();
+        Point3D center = orbitCenter != null ? orbitCenter : getCenterPoint();
 
         if (currentRadius < 0) {
             currentRadius = (orbitRadius > 0) ? orbitRadius : Math.max(Math.min(spanX, spanY) * 0.35, 0.0001);
@@ -826,11 +1066,17 @@ public class PointVariableConfig extends VariableConfiguration {
             return new Point3D(newX, newY, newZ);
         }
 
+        // Cartesian 3D: the shape is the region (the boundary polygon does not apply)
+        double cx = (minPoint.x + maxPoint.x) / 2.0;
+        double cy = (minPoint.y + maxPoint.y) / 2.0;
+        double baseZ = shapeBaseZ();
+        double apexZ = baseZ + getShape3DHeight();
+        double zMin = Math.min(baseZ, apexZ);
+        double zMax = Math.max(baseZ, apexZ);
+
         if (shape3DType == Shape3DType.SPHERE) {
-            double cx = (minPoint.x + maxPoint.x) / 2.0;
-            double cy = (minPoint.y + maxPoint.y) / 2.0;
-            double cz = (minPoint.z + maxPoint.z) / 2.0;
-            double radius = shape3DRadius > 0 ? shape3DRadius : 50.0;
+            double radius = getShape3DRadius();
+            double cz = minPoint.z + radius;
 
             double dx = x - cx;
             double dy = y - cy;
@@ -847,7 +1093,8 @@ public class PointVariableConfig extends VariableConfiguration {
                     newY = cy + dy * factor;
                     newZ = cz + dz * factor;
                 } else if (boundaryBehavior == BoundaryBehavior.WRAP) {
-                    double factor = -0.8;
+                    // Reappear on the opposite side, never beyond the surface
+                    double factor = dist * 0.8 > radius ? -(radius * 0.95) / dist : -0.8;
                     newX = cx + dx * factor;
                     newY = cy + dy * factor;
                     newZ = cz + dz * factor;
@@ -858,68 +1105,42 @@ public class PointVariableConfig extends VariableConfiguration {
                     newZ = cz + dz * factor;
                 }
             }
-        } else if (shape3DType == Shape3DType.CONE) {
-            double baseZ = minPoint.z;
-            double topZ = minPoint.z + shape3DHeight;
-            double zMin = Math.min(baseZ, topZ);
-            double zMax = Math.max(baseZ, topZ);
+        } else if (shape3DType == Shape3DType.CONE || shape3DType == Shape3DType.PYRAMID) {
             newZ = Math.max(zMin, Math.min(zMax, z));
+            double scale = 1.0 - Math.max(0.0, Math.min(1.0, normalizedShapeZ(newZ)));
 
-            double height = Math.abs(shape3DHeight) > 0.001 ? Math.abs(shape3DHeight) : 100.0;
-            double normZ = shape3DHeight >= 0 
-                ? Math.max(0.0, Math.min(1.0, (newZ - baseZ) / height))
-                : Math.max(0.0, Math.min(1.0, (baseZ - newZ) / height));
-            double radiusAtZ = (shape3DRadius > 0 ? shape3DRadius : 50.0) * (1.0 - normZ);
+            if (shape3DType == Shape3DType.CONE) {
+                double radiusAtZ = getShape3DRadius() * scale;
+                double dx = x - cx;
+                double dy = y - cy;
+                double distXY = Math.sqrt(dx * dx + dy * dy);
 
-            double cx = (minPoint.x + maxPoint.x) / 2.0;
-            double cy = (minPoint.y + maxPoint.y) / 2.0;
-            double dx = x - cx;
-            double dy = y - cy;
-            double distXY = Math.sqrt(dx * dx + dy * dy);
+                if (distXY > radiusAtZ) {
+                    if (boundaryBehavior == BoundaryBehavior.BOUNCE) {
+                        newVx = -vx;
+                        newVy = -vy;
+                    }
+                    double factor = radiusAtZ / (distXY > 0 ? distXY : 1.0);
+                    newX = cx + dx * factor;
+                    newY = cy + dy * factor;
+                }
+            } else {
+                double halfX = getShape3DWidth() / 2.0 * scale;
+                double halfY = getShape3DLength() / 2.0 * scale;
 
-            if (distXY > radiusAtZ) {
-                if (boundaryBehavior == BoundaryBehavior.BOUNCE) {
+                newX = Math.max(cx - halfX, Math.min(cx + halfX, x));
+                newY = Math.max(cy - halfY, Math.min(cy + halfY, y));
+                if (boundaryBehavior == BoundaryBehavior.BOUNCE && (x != newX || y != newY)) {
                     newVx = -vx;
                     newVy = -vy;
                 }
-                double factor = radiusAtZ / (distXY > 0 ? distXY : 1.0);
-                newX = cx + dx * factor;
-                newY = cy + dy * factor;
-            }
-        } else if (shape3DType == Shape3DType.PYRAMID) {
-            double baseZ = minPoint.z;
-            double topZ = minPoint.z + shape3DHeight;
-            double zMin = Math.min(baseZ, topZ);
-            double zMax = Math.max(baseZ, topZ);
-            newZ = Math.max(zMin, Math.min(zMax, z));
-
-            double height = Math.abs(shape3DHeight) > 0.001 ? Math.abs(shape3DHeight) : 100.0;
-            double normZ = shape3DHeight >= 0 
-                ? Math.max(0.0, Math.min(1.0, (newZ - baseZ) / height))
-                : Math.max(0.0, Math.min(1.0, (baseZ - newZ) / height));
-            double scale = 1.0 - normZ;
-
-            double cx = (minPoint.x + maxPoint.x) / 2.0;
-            double cy = (minPoint.y + maxPoint.y) / 2.0;
-            double halfX = (shape3DWidth > 0 ? shape3DWidth : 100.0) / 2.0 * scale;
-            double halfY = (shape3DLength > 0 ? shape3DLength : 100.0) / 2.0 * scale;
-
-            newX = Math.max(cx - halfX, Math.min(cx + halfX, x));
-            newY = Math.max(cy - halfY, Math.min(cy + halfY, y));
-            if (boundaryBehavior == BoundaryBehavior.BOUNCE && (x != newX || y != newY)) {
-                newVx = -vx;
-                newVy = -vy;
             }
         } else {
             // CUBE / BOX
-            double halfX = (shape3DWidth > 0 ? shape3DWidth : Math.abs(maxPoint.x - minPoint.x)) / 2.0;
-            double halfY = (shape3DLength > 0 ? shape3DLength : Math.abs(maxPoint.y - minPoint.y)) / 2.0;
-            double cx = (minPoint.x + maxPoint.x) / 2.0;
-            double cy = (minPoint.y + maxPoint.y) / 2.0;
-            double bZ1 = minPoint.z;
-            double bZ2 = minPoint.z + shape3DHeight;
-            double boundMinZ = Math.min(bZ1, bZ2);
-            double boundMaxZ = Math.max(bZ1, bZ2);
+            double halfX = getShape3DWidth() / 2.0;
+            double halfY = getShape3DLength() / 2.0;
+            double boundMinZ = zMin;
+            double boundMaxZ = zMax;
 
             double boundMinX = cx - halfX;
             double boundMaxX = cx + halfX;
@@ -954,16 +1175,6 @@ public class PointVariableConfig extends VariableConfiguration {
                     }
                     break;
             }
-        }
-
-        if (boundaryPolygon != null && boundaryPolygon.size() >= 3 && !isPointInsidePolygon(newX, newY)) {
-            Point3D center = getCenterPoint();
-            if (boundaryBehavior == BoundaryBehavior.BOUNCE) {
-                newVx = -newVx;
-                newVy = -newVy;
-            }
-            newX = lerp(newX, center.x, 0.5);
-            newY = lerp(newY, center.y, 0.5);
         }
 
         lastVelocity = new Point3D(newVx, newVy, newVz);
@@ -1092,6 +1303,7 @@ public class PointVariableConfig extends VariableConfiguration {
         currentGraphNodeId = null;
         targetGraphNodeId = null;
         graphStepInEdge = 0;
+        graphSequenceIndex = 0;
         remainingStopTicks = 0;
         if (visitedNodeHistory != null) {
             visitedNodeHistory.clear();
@@ -1110,10 +1322,20 @@ public class PointVariableConfig extends VariableConfiguration {
         map.put("fixedPoint", fixedPoint.toString());
         map.put("pathSize", path.size());
         map.put("interpolationSteps", interpolationSteps);
+        map.put("loopPath", loopPath);
         map.put("navigationSpeed", navigationSpeed);
         map.put("maxStepDistance", maxStepDistance);
         map.put("inertia", inertia);
         map.put("orbitRadius", orbitRadius);
+        if (orbitCenter != null) {
+            map.put("orbitCenter", Map.of("x", orbitCenter.x, "y", orbitCenter.y, "z", orbitCenter.z));
+        }
+        map.put("shape3DType", shape3DType != null ? shape3DType.toString() : Shape3DType.CUBE.toString());
+        // Only configured dimensions: unset ones keep following the bounding box
+        if (shape3DWidth != null) map.put("shape3DWidth", shape3DWidth);
+        if (shape3DLength != null) map.put("shape3DLength", shape3DLength);
+        if (shape3DHeight != null) map.put("shape3DHeight", shape3DHeight);
+        if (shape3DRadius != null) map.put("shape3DRadius", shape3DRadius);
         map.put("angularSpeed", angularSpeed);
         map.put("spiralRate", spiralRate);
         map.put("gpsNoiseEnabled", gpsNoiseEnabled);
@@ -1246,6 +1468,11 @@ public class PointVariableConfig extends VariableConfiguration {
         return maxPoint;
     }
 
+    /**
+     * Explicit orbit centre.
+     *
+     * @return the configured centre, or {@code null} when the orbit turns around the bounding-box centre
+     */
     public Point3D getOrbitCenter() {
         return orbitCenter;
     }
@@ -1390,6 +1617,7 @@ public class PointVariableConfig extends VariableConfiguration {
             }
             targetGraphNodeId = currentGraphNodeId;
             graphStepInEdge = 0;
+            graphSequenceIndex = 0;
             remainingStopTicks = 0;
             hasPausedAtCurrentNode = false;
             visitedNodeHistory.clear();
@@ -1413,15 +1641,12 @@ public class PointVariableConfig extends VariableConfiguration {
         if (currentGraphNodeId.equals(targetGraphNodeId)) {
             if (graphNavigationMode == GraphNavigationMode.SEQUENCE) {
                 if (graphSequence != null && !graphSequence.isEmpty()) {
-                    int idx = graphSequence.indexOf(currentGraphNodeId);
-                    int nextIdx = idx + 1;
+                    // Follow the position in the sequence, not the node id: ids may repeat (A, B, A, C)
+                    int nextIdx = graphSequenceIndex + 1;
                     if (nextIdx >= graphSequence.size()) {
-                        if (graphLoopSequence) {
-                            nextIdx = 0;
-                        } else {
-                            nextIdx = graphSequence.size() - 1;
-                        }
+                        nextIdx = graphLoopSequence ? 0 : graphSequence.size() - 1;
                     }
+                    graphSequenceIndex = nextIdx;
                     targetGraphNodeId = graphSequence.get(nextIdx);
                 }
             } else {

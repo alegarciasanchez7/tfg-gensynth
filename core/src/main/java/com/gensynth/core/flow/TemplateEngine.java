@@ -179,6 +179,12 @@ public class TemplateEngine {
                             targetObj = null;
                         }
                     }
+                    if (itemIndex == null && isListCollectionProperty(propertyPart)
+                            && "list".equalsIgnoreCase(variable.getType())
+                            && !(targetObj instanceof java.util.List<?>)) {
+                        // Single-item strategies yield one item, not a list: answer as a one-item list
+                        targetObj = targetObj != null ? java.util.List.of(targetObj) : java.util.List.of();
+                    }
 
                     if (propertyPart != null) {
                         String propResolved = resolveVariableProperty(targetObj, propertyPart, variable);
@@ -218,6 +224,25 @@ public class TemplateEngine {
         matcher.appendTail(result);
 
         return result.toString();
+    }
+
+    /** Whether the property reads the list as a whole ({@code .size}, {@code .first}, {@code .last} and aliases). */
+    private static boolean isListCollectionProperty(String propertyPart) {
+        if (propertyPart == null) {
+            return false;
+        }
+        switch (propertyPart.toLowerCase(java.util.Locale.ROOT)) {
+            case "size":
+            case "length":
+            case "count":
+            case "first":
+            case "firstitem":
+            case "last":
+            case "lastitem":
+                return true;
+            default:
+                return false;
+        }
     }
 
     private String resolveVariableProperty(Object targetObj, String propertyPart, Variable variable) {

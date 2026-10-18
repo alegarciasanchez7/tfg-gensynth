@@ -397,6 +397,52 @@ public class TemplateEngineTest {
     }
 
     @Test
+    public void singleItemListStrategyAnswersListPropertiesAsAOneItemList() {
+        Variable listVar = new Variable(
+                "v_pick",
+                "fruit",
+                "LOCAL",
+                "list",
+                List.of(),
+                Map.of(
+                        "selectionStrategy", "WEIGHTED_RANDOM",
+                        "items", List.of("Watermelon")
+                ),
+                "flow-1",
+                "group-1"
+        );
+        variables.put(listVar.getId(), listVar);
+
+        String template = "{{fruit.size}}|{{fruit.count}}|{{fruit.first}}|{{fruit.last}}|{{fruit.length}}|{{fruit.upper}}";
+        String result = engine.evaluate(template, 1, variables, "flow-1", "group-1");
+
+        // .size/.length/.count count items (1), not characters; string properties still apply to the item
+        assertEquals("1|1|Watermelon|Watermelon|1|WATERMELON", result);
+    }
+
+    @Test
+    public void fixedSubsetItemStringPropertiesAreUnchanged() {
+        Variable listVar = new Variable(
+                "v_sub",
+                "colors",
+                "LOCAL",
+                "list",
+                List.of(),
+                Map.of(
+                        "selectionStrategy", "FIXED_SUBSET",
+                        "items", List.of("Red", "Green", "Blue")
+                ),
+                "flow-1",
+                "group-1"
+        );
+        variables.put(listVar.getId(), listVar);
+
+        String result = engine.evaluate("{{colors.item1.length}}|{{colors.item0.upper}}", 1, variables, "flow-1", "group-1");
+
+        assertEquals("5|RED", result);
+    }
+
+    @Test
     public void variableReferencedTwiceHasOneValuePerMessage() {
         variables.put("c", new Variable("c", "counter", "LOCAL", "numeric", 0,
                 Map.of("pattern", "SEQUENTIAL", "min", 0, "max", 100, "precision", "INTEGER",

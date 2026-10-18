@@ -162,6 +162,52 @@ public class TemporalVariableExhaustiveGenerationTest {
     }
 
     @Test
+    public void testProgressiveDriftGrowsInFixedMode() {
+        Instant fixed = Instant.parse("2026-06-15T12:00:00Z");
+        config.timeAdvanceMode(TemporalVariableConfig.TimeAdvanceMode.FIXED)
+                .fixedDate(fixed)
+                .clockDriftEnabled(true)
+                .driftRateMsPerTick(25.0)
+                .driftType(TemporalVariableConfig.ClockDriftType.PROGRESSIVE_DRIFT);
+
+        for (int n = 0; n < 10; n++) {
+            assertEquals(fixed.plusMillis(25L * n), config.generateNextValue());
+        }
+    }
+
+    @Test
+    public void testProgressiveDriftGrowsInWallClockMode() {
+        // A huge rate makes the drift dominate the few milliseconds the wall clock moves during the test
+        config.timeAdvanceMode(TemporalVariableConfig.TimeAdvanceMode.WALL_CLOCK)
+                .clockDriftEnabled(true)
+                .driftRateMsPerTick(1_000_000.0)
+                .driftType(TemporalVariableConfig.ClockDriftType.PROGRESSIVE_DRIFT);
+
+        Instant v0 = (Instant) config.generateNextValue();
+        config.generateNextValue();
+        Instant v2 = (Instant) config.generateNextValue();
+
+        long diff = v2.toEpochMilli() - v0.toEpochMilli();
+        assertTrue("Two values later the drift adds 2,000,000 ms: " + diff, diff >= 2_000_000L && diff <= 2_005_000L);
+    }
+
+    @Test
+    public void testProgressiveDriftGrowsInBackfillRandomMode() {
+        // An empty range always yields its start, so only the drift moves the value
+        Instant at = Instant.parse("2026-01-01T00:00:00Z");
+        config.timeAdvanceMode(TemporalVariableConfig.TimeAdvanceMode.BACKFILL_HISTORICAL)
+                .range(at, at)
+                .backfillStrategy(TemporalVariableConfig.BackfillStrategy.RANDOM_IN_RANGE)
+                .clockDriftEnabled(true)
+                .driftRateMsPerTick(100.0)
+                .driftType(TemporalVariableConfig.ClockDriftType.PROGRESSIVE_DRIFT);
+
+        for (int n = 0; n < 5; n++) {
+            assertEquals(at.plusMillis(100L * n), config.generateNextValue());
+        }
+    }
+
+    @Test
     public void testOutputFormatsAndTemporalTypes() {
         Instant instant = Instant.parse("2026-08-27T15:30:45Z");
         config.timeAdvanceMode(TemporalVariableConfig.TimeAdvanceMode.FIXED)

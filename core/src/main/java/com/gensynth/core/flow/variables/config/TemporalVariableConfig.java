@@ -268,7 +268,6 @@ public class TemporalVariableConfig extends VariableConfiguration {
             }
         }
 
-        long currentSeq = sequenceIndex;
         Instant generatedInstant = computeBaseInstant();
 
         // Apply Clock Drift / Skew if enabled
@@ -285,7 +284,8 @@ public class TemporalVariableConfig extends VariableConfiguration {
                     driftOffsetMs = maxDriftMs;
                     break;
                 case PROGRESSIVE_DRIFT:
-                    driftOffsetMs = Math.round(currentSeq * driftRateMsPerTick);
+                    // Grows with the generated values in every time mode (the first value has no drift)
+                    driftOffsetMs = Math.round((tickCounter - 1) * driftRateMsPerTick);
                     break;
             }
             generatedInstant = generatedInstant.plusMillis(driftOffsetMs);
