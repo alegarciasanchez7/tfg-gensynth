@@ -93,4 +93,25 @@ describe('PointConfigPanel', () => {
     expect(handleChange).toHaveBeenCalledWith({ coordinateSystem: 'CARTESIAN_3D' });
     confirm.mockRestore();
   });
+
+  it('shows the waypoint editor for Waypoint Navigation and commits steps only on blur', () => {
+    const handleChange = vi.fn();
+    render(
+      <PointConfigPanel
+        config={{ coordinateSystem: 'CARTESIAN_3D', pattern: 'WAYPOINT_NAVIGATION', interpolationSteps: 3 }}
+        onChange={handleChange}
+      />
+    );
+
+    expect(screen.getByTestId('waypoint-editor')).toBeInTheDocument();
+    expect(screen.getByLabelText('Loop Path')).toBeChecked();
+    const steps = screen.getByLabelText('Interpolation Steps');
+    expect(steps).toHaveValue('3');
+
+    fireEvent.change(steps, { target: { value: '12' } });
+    expect(handleChange).not.toHaveBeenCalled();
+    fireEvent.blur(steps);
+    expect(handleChange).toHaveBeenCalledTimes(1);
+    expect(handleChange).toHaveBeenCalledWith({ interpolationSteps: 12 });
+  });
 });

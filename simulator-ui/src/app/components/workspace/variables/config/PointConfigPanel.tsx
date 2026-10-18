@@ -17,6 +17,7 @@ import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '../../
 
 import { ListReferenceSelector } from './ListReferenceSelector';
 import { GraphRouteCanvas } from './GraphRouteCanvas';
+import { WaypointEditor } from './WaypointEditor';
 import { coordinateSystemSwitch } from '../../../../core/pointDefaults';
 
 interface PointConfigPanelProps {
@@ -275,7 +276,7 @@ export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onCh
             <CustomDropdown
               id="point-pattern"
               value={pattern}
-              onChange={(val) => onChange({ pattern: val as any })}
+              onChange={(val) => onChange({ pattern: val })}
               options={[
                 { value: 'FIXED_POINT', label: 'Fixed Point (Constant)' },
                 { value: 'RANDOM_POINT', label: 'Random Point (Within bounds)' },
@@ -747,18 +748,7 @@ export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onCh
           )}
 
           {(pattern === 'WAYPOINT_NAVIGATION' || pattern === 'PATH_INTERPOLATOR') && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label className="text-[10px] uppercase text-[var(--c-tx4)]">Interpolation Steps per Segment</Label>
-                <Input
-                  type="number"
-                  min={1}
-                  value={config.interpolationSteps ?? 1}
-                  onChange={(e) => onChange({ interpolationSteps: parseInt(e.target.value) || 1 })}
-                  className="h-7 w-20 text-xs font-mono"
-                />
-              </div>
-            </div>
+            <WaypointEditor config={config} onChange={onChange} />
           )}
         </div>
 
