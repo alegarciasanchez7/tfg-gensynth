@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { BoundaryExpandModal, useBoundaryModalContext } from './BoundaryExpandModal';
 import { TooltipProvider } from '../../../ui/tooltip';
+import { Canvas2DBoundaryEditor } from './Canvas2DBoundaryEditor';
 
 const FullScreenProbe = () => {
   const { isFullScreen } = useBoundaryModalContext();
@@ -61,5 +62,26 @@ describe('BoundaryExpandModal', () => {
     rerender(modal(false));
     rerender(modal(true));
     expect(screen.getByText('windowed')).toBeInTheDocument();
+  });
+
+  it('closes a confirmation of the 2D editor with the first Escape and itself with the second', () => {
+    const onClose = vi.fn();
+    const onChange = vi.fn();
+    renderModal(
+      onClose,
+      true,
+      <Canvas2DBoundaryEditor minX={0} maxX={100} minY={0} maxY={100} showToolbar onChange={onChange} />
+    );
+    fireEvent.click(screen.getByText('New Region'));
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+
+    // The key goes to the focused element (the dialog's Cancel button), as in the browser
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(onChange).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react';
-import { MapContainer, TileLayer, Polygon, Marker, Rectangle, Polyline, Tooltip as LeafletTooltip, useMapEvents, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Polygon, Marker, Rectangle, Tooltip as LeafletTooltip, useMapEvents, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 // Bundled by Vite, so vertex markers render without network access
@@ -14,6 +14,8 @@ import { Info, BoxSelect, AlertTriangle, WifiOff, Maximize2, Minimize2 } from 'l
 import { Tooltip, TooltipTrigger, TooltipContent } from '../../../ui/tooltip';
 import { useBoundaryModalContext } from './BoundaryExpandModal';
 import { centerOf, defaultBoundsFor } from '../../../../core/pointDefaults';
+import { OfflineGridOverlay } from './mapShared';
+import { useDialogEscape } from './useDialogEscape';
 
 // Helper to format DMS coordinates for map tooltips & cursor HUD
 const formatDmsHelper = (val: number, isLat: boolean) => {
@@ -80,13 +82,6 @@ const SELECTION_STYLE: L.PathOptions = {
   dashArray: '5, 5',
 };
 
-const GRID_LINE_STYLE: L.PathOptions = {
-  color: '#334155',
-  weight: 1,
-  dashArray: '3, 3',
-  interactive: false,
-};
-
 /** Returns a callback with a stable identity that always runs the latest `fn`. */
 function useStableCallback<A extends unknown[]>(fn: (...args: A) => void): (...args: A) => void {
   const fnRef = useRef(fn);
@@ -94,62 +89,6 @@ function useStableCallback<A extends unknown[]>(fn: (...args: A) => void): (...a
     fnRef.current = fn;
   });
   return useCallback((...args: A) => fnRef.current(...args), []);
-}
-
-// Technical Lat/Lon Coordinate Grid Layer for Offline Fallback Mode
-function OfflineGridOverlay() {
-  const map = useMap();
-  const [gridItems, setGridItems] = useState<{ positions: [number, number][]; label: string }[]>([]);
-
-  useEffect(() => {
-    const updateGrid = () => {
-      const b = map.getBounds();
-      const z = map.getZoom();
-      let step: number;
-      if (z >= 13) step = 0.01;
-      else if (z >= 11) step = 0.05;
-      else if (z >= 9) step = 0.1;
-      else if (z >= 7) step = 0.5;
-      else if (z >= 5) step = 1.0;
-      else step = 5.0;
-
-      const items: { positions: [number, number][]; label: string }[] = [];
-      const minLat = Math.max(-85, Math.floor(b.getSouth() / step) * step);
-      const maxLat = Math.min(85, Math.ceil(b.getNorth() / step) * step);
-      const minLon = Math.max(-180, Math.floor(b.getWest() / step) * step);
-      const maxLon = Math.min(180, Math.ceil(b.getEast() / step) * step);
-
-      for (let lat = minLat; lat <= maxLat; lat += step) {
-        const rLat = Math.round(lat * 10000) / 10000;
-        items.push({
-          positions: [[rLat, -180], [rLat, 180]],
-          label: `${rLat}° ${rLat >= 0 ? 'N' : 'S'}`,
-        });
-      }
-      for (let lon = minLon; lon <= maxLon; lon += step) {
-        const rLon = Math.round(lon * 10000) / 10000;
-        items.push({
-          positions: [[-85, rLon], [85, rLon]],
-          label: `${rLon}° ${rLon >= 0 ? 'E' : 'W'}`,
-        });
-      }
-      setGridItems(items);
-    };
-
-    updateGrid();
-    map.on('moveend zoomend', updateGrid);
-    return () => {
-      map.off('moveend zoomend', updateGrid);
-    };
-  }, [map]);
-
-  return (
-    <>
-      {gridItems.map((item, idx) => (
-        <Polyline key={idx} positions={item.positions} pathOptions={GRID_LINE_STYLE} />
-      ))}
-    </>
-  );
 }
 
 type GeoBoundsChange = Parameters<GeospatialMapBoundaryEditorProps['onChange']>[0];
@@ -686,6 +625,7 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
 
   const [isDrawMode, setIsDrawMode] = useState(false);
   const [showConfirmDrawModal, setShowConfirmDrawModal] = useState(false);
+  useDialogEscape(showConfirmDrawModal, () => setShowConfirmDrawModal(false));
 
   const handleToggleDrawMode = () => {
     if (isDrawMode) {
@@ -832,6 +772,7 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
                 size="sm"
                 onClick={() => setShowConfirmDrawModal(false)}
                 className="text-xs"
+                autoFocus
               >
                 Cancel
               </Button>

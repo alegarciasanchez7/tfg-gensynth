@@ -219,6 +219,31 @@ describe('GraphRouteCanvas', () => {
     expect(screen.getByText(/outside allowed boundary limits/i)).toBeInTheDocument();
   });
 
+  it('projects both axes with the same scale, so a click lands on the expected point', () => {
+    // jsdom has no layout: the canvas is 320 × 340 px. A 0..200 × 0..100 region with 5% padding
+    // spans 220 × 110 world units, so the width limits the single scale to 248 / 220 px per unit.
+    const onChange = vi.fn();
+    const wide: PointVariableConfig = {
+      coordinateSystem: 'CARTESIAN_2D',
+      pattern: 'GRAPH_ROUTE',
+      minPoint: { x: 0, y: 0, z: 0 },
+      maxPoint: { x: 200, y: 100, z: 0 },
+      graphNodes: [],
+      graphEdges: [],
+      graphSequence: [],
+    };
+    render(<GraphRouteCanvas config={wide} onChange={onChange} />);
+
+    const scale = 248 / 220;
+    // World (150, 75): 50 units right of and 25 units above the centre (100, 50)
+    fireEvent.click(screen.getByTestId('graph-plane'), { clientX: 160 + 50 * scale, clientY: 170 - 25 * scale });
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    const [node] = onChange.mock.calls[0][0].graphNodes;
+    expect(node.x).toBeCloseTo(150, 1);
+    expect(node.y).toBeCloseTo(75, 1);
+  });
+
   it('renders geospatial nodes as map markers with lat/lon inputs', () => {
     const geoConfig: PointVariableConfig = {
       ...defaultConfig,

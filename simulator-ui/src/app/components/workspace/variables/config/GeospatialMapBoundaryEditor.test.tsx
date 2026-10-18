@@ -183,6 +183,19 @@ describe('GeospatialMapBoundaryEditor', () => {
     expect(h.map.fitBounds).toHaveBeenCalledTimes(2);
   });
 
+  it('closes the New Box Region confirmation with Escape, keeping the region and draw mode off', () => {
+    const { onChange } = renderEditor();
+    fireEvent.click(screen.getByRole('button', { name: /New Box Region/i }));
+    expect(screen.getByRole('button', { name: 'Cancel' })).toHaveFocus();
+
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(onChange).not.toHaveBeenCalled();
+    expect(h.map.dragging.disable).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: /New Box Region/i })).toBeInTheDocument();
+  });
+
   it('finishes the box with the last previewed corner when released outside the map', () => {
     const { onChange } = renderEditor();
     fireEvent.click(screen.getByRole('button', { name: /New Box Region/i }));

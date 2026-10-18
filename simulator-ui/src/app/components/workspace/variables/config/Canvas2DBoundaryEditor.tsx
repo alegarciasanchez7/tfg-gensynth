@@ -2,6 +2,8 @@ import React, { useRef, useState, useEffect } from 'react';
 import { Point3DCoord, BoundaryObstacle } from '../../../../types';
 import { Button } from '../../../ui/button';
 import { AlertTriangle, Move, ShieldAlert, Square, Triangle, Circle, RefreshCw } from 'lucide-react';
+import { fitWorldWindow, niceStep, type WorldWindow } from '../../../../core/worldWindow';
+import { useDialogEscape } from './useDialogEscape';
 
 interface Canvas2DBoundaryEditorProps {
   minX: number;
@@ -32,13 +34,6 @@ interface ContextMenuState {
 interface XY {
   x: number;
   y: number;
-}
-
-/** Visible world area: the world point drawn at the canvas centre and the pixels per world unit (before zoom). */
-interface WorldWindow {
-  cx: number;
-  cy: number;
-  scale: number;
 }
 
 /** Element under the pointer that a press would grab. */
@@ -87,41 +82,6 @@ const pointToSegmentDistance = (px: number, py: number, x1: number, y1: number, 
 const decimalsFor = (unit: number) => (unit > 0 ? Math.min(6, Math.max(0, Math.ceil(-Math.log10(unit)))) : 1);
 
 const roundTo = (value: number, decimals: number) => Number(value.toFixed(decimals));
-
-/** Rounds a raw grid step up to a "nice" 1, 2 or 5 × 10^k value. */
-const niceStep = (raw: number) => {
-  if (!(raw > 0) || !Number.isFinite(raw)) return 1;
-  const pow = Math.pow(10, Math.floor(Math.log10(raw)));
-  const n = raw / pow;
-  return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * pow;
-};
-
-/** Fits the bounding box of the given points, plus ~10% padding, into the drawable canvas area. */
-const computeWorldWindow = (points: Point3DCoord[], w: number, h: number): WorldWindow => {
-  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-  for (const p of points) {
-    const x = p.x ?? 0;
-    const y = p.y ?? 0;
-    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
-    minX = Math.min(minX, x);
-    maxX = Math.max(maxX, x);
-    minY = Math.min(minY, y);
-    maxY = Math.max(maxY, y);
-  }
-  if (minX > maxX || minY > maxY) {
-    minX = 0; maxX = 100; minY = 0; maxY = 100;
-  }
-  // A flat box (a single point or a line) still gets a visible extent
-  const extent = Math.max(maxX - minX, maxY - minY) || 1;
-  const spanX = Math.max(maxX - minX, extent * 0.05) * 1.2;
-  const spanY = Math.max(maxY - minY, extent * 0.05) * 1.2;
-  const scale = Math.min((w - MARGIN * 2) / spanX, (h - MARGIN * 2) / spanY);
-  return {
-    cx: (minX + maxX) / 2,
-    cy: (minY + maxY) / 2,
-    scale: Number.isFinite(scale) && scale > 0 ? scale : 1,
-  };
-};
 
 const sameHitTarget = (a: HitTarget | null, b: HitTarget | null) => JSON.stringify(a) === JSON.stringify(b);
 
@@ -183,6 +143,7 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
   const [showResetConfirmModal, setShowResetConfirmModal] = useState<boolean>(false);
+  useDialogEscape(showResetConfirmModal, () => setShowResetConfirmModal(false));
 
   // Match the canvas pixel size to its on-screen size, so it is never stretched (blurry text and
   // lines): fill the container, or take its width and keep the width/height aspect ratio
@@ -227,7 +188,7 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
   const displayObstacles = dragObstacles ?? obstacles;
 
   // Data-driven world window, frozen while a drag is active so the view does not rescale under the cursor
-  const liveWorld = computeWorldWindow(
+  const liveWorld = fitWorldWindow(
     [
       ...activePolygon,
       ...displayObstacles.filter((o) => o.enabled).flatMap((o) => o.points ?? []),
@@ -235,7 +196,9 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
       { x: maxX, y: maxY },
     ],
     currentW,
-    currentH
+    currentH,
+    MARGIN,
+    0.1
   );
   const world = frozenWorld ?? liveWorld;
   const pxPerUnit = world.scale * zoom;
@@ -593,12 +556,6 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
         }
       }
     });
-
-    // Info overlay
-    ctx.fillStyle = '#64748b';
-    ctx.font = '9px monospace';
-    const modeLabel = editMode === 'BOUNDARIES' ? 'MOVE BOUNDARIES' : 'MOVE OBSTACLES';
-    ctx.fillText(`[${modeLabel}] Zoom: ${zoom.toFixed(1)}x | Verts: ${activePolygon.length} | Obstacles: ${obstacles.length}`, 8, 12);
   }, [activePolygon, displayObstacles, editMode, activeSelectedObsId, hovered, drag, zoom, panOffset, currentW, currentH, world.cx, world.cy, world.scale]);
 
   const showTempFeedback = (msg: string) => {
@@ -934,7 +891,10 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
       return;
     }
 
-    // 2. Check if right clicked an obstacle edge
+    // 2. Edges: the nearest obstacle or region edge within reach; on a tie, the edited kind wins
+    const segmentDistance = (a: Point3DCoord, b: Point3DCoord) =>
+      pointToSegmentDistance(mx, my, toCanvasX(a.x ?? 0), toCanvasY(a.y ?? 0), toCanvasX(b.x ?? 0), toCanvasY(b.y ?? 0));
+    let obstacleEdge: { obstacleIndex: number; edgeIndex: number; dist: number } | null = null;
     for (let oIdx = 0; oIdx < displayObstacles.length; oIdx++) {
       const obs = displayObstacles[oIdx];
       if (!obs.enabled || !obs.points) continue;
@@ -944,32 +904,31 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
       if ((isWall && n < 2) || (!isWall && n < 3)) continue;
       const edgeCount = isWall ? n - 1 : n;
       for (let i = 0; i < edgeCount; i++) {
-        const j = (i + 1) % n;
-        const dist = pointToSegmentDistance(
-          mx, my,
-          toCanvasX(pts[i].x ?? 0), toCanvasY(pts[i].y ?? 0),
-          toCanvasX(pts[j].x ?? 0), toCanvasY(pts[j].y ?? 0)
-        );
-        if (dist < EDGE_MENU_HIT_PX) {
-          openMenu({ type: 'obstacle_edge', obstacleIndex: oIdx, obstaclePointIndex: i });
-          return;
+        const dist = segmentDistance(pts[i], pts[(i + 1) % n]);
+        if (dist < EDGE_MENU_HIT_PX && (obstacleEdge === null || dist < obstacleEdge.dist)) {
+          obstacleEdge = { obstacleIndex: oIdx, edgeIndex: i, dist };
         }
       }
     }
 
-    // 3. Check boundary edges
+    let boundaryEdge: { edgeIndex: number; dist: number } | null = null;
     const n = activePolygon.length;
     for (let i = 0; i < n; i++) {
-      const j = (i + 1) % n;
-      const dist = pointToSegmentDistance(
-        mx, my,
-        toCanvasX(activePolygon[i].x ?? 0), toCanvasY(activePolygon[i].y ?? 0),
-        toCanvasX(activePolygon[j].x ?? 0), toCanvasY(activePolygon[j].y ?? 0)
-      );
-      if (dist < EDGE_MENU_HIT_PX) {
-        openMenu({ type: 'boundary_edge', boundaryIndex: i });
-        return;
+      const dist = segmentDistance(activePolygon[i], activePolygon[(i + 1) % n]);
+      if (dist < EDGE_MENU_HIT_PX && (boundaryEdge === null || dist < boundaryEdge.dist)) {
+        boundaryEdge = { edgeIndex: i, dist };
       }
+    }
+
+    const preferBoundary =
+      boundaryEdge !== null &&
+      (obstacleEdge === null ||
+        boundaryEdge.dist < obstacleEdge.dist ||
+        (boundaryEdge.dist === obstacleEdge.dist && editMode === 'BOUNDARIES'));
+    if (preferBoundary && boundaryEdge) {
+      openMenu({ type: 'boundary_edge', boundaryIndex: boundaryEdge.edgeIndex });
+    } else if (obstacleEdge) {
+      openMenu({ type: 'obstacle_edge', obstacleIndex: obstacleEdge.obstacleIndex, obstaclePointIndex: obstacleEdge.edgeIndex });
     }
   };
 
@@ -1177,6 +1136,7 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
                 size="sm"
                 onClick={() => setShowResetConfirmModal(false)}
                 className="text-xs cursor-pointer"
+                autoFocus
               >
                 Cancel
               </Button>
@@ -1220,6 +1180,15 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
           onContextMenu={handleContextMenu}
           className="w-full h-full block touch-none"
         />
+
+        {/* Status line in the bottom-right corner: above the X scale labels, left of the "X →" name and
+            clear of the Y scale labels on the left (drawn on the canvas it covered them) */}
+        <div
+          data-testid="canvas2d-status"
+          className="pointer-events-none absolute bottom-4 right-7 z-10 max-w-[calc(100%-4rem)] truncate rounded bg-[#0f172a]/70 px-1 font-mono text-[9px] leading-tight text-slate-500"
+        >
+          {`[${editMode === 'BOUNDARIES' ? 'MOVE BOUNDARIES' : 'MOVE OBSTACLES'}] Zoom: ${zoom.toFixed(1)}x | Verts: ${activePolygon.length} | Obstacles: ${obstacles.length}`}
+        </div>
 
         {/* Context Menu */}
         {contextMenu && (

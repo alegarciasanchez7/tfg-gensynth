@@ -181,4 +181,54 @@ describe('Canvas2DBoundaryEditor', () => {
     fireEvent.click(screen.getByText('New Region'));
     expect(screen.getByRole('alertdialog')).toBeInTheDocument();
   });
+
+  it('closes the New Region confirmation with Escape without changing anything', () => {
+    const onChange = vi.fn();
+    render(<Canvas2DBoundaryEditor minX={0} maxX={100} minY={0} maxY={100} showToolbar={true} onChange={onChange} />);
+    fireEvent.click(screen.getByText('New Region'));
+    expect(screen.getByRole('button', { name: 'Cancel' })).toHaveFocus();
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('shows the mode, zoom and counts as an HTML status line that follows the mode', () => {
+    render(
+      <Canvas2DBoundaryEditor minX={0} maxX={100} minY={0} maxY={100} obstacles={sampleObstacles} showToolbar={true} onChange={vi.fn()} />
+    );
+    const status = screen.getByTestId('canvas2d-status');
+    expect(status).toHaveTextContent('[MOVE BOUNDARIES] Zoom: 1.0x | Verts: 4 | Obstacles: 1');
+
+    fireEvent.click(screen.getByText('Move Obstacles (Red)'));
+    expect(status).toHaveTextContent('[MOVE OBSTACLES]');
+  });
+
+  describe('edge context menu picks the nearest edge', () => {
+    // A wall parallel to the bottom region edge (y = 0), 8.8 units above it
+    const wall: BoundaryObstacle[] = [
+      { id: 'w', name: 'Wall', type: 'WALL_SEGMENT', points: [{ x: 20, y: 8.8 }, { x: 80, y: 8.8 }], enabled: true },
+    ];
+    const renderWithWall = () =>
+      render(<Canvas2DBoundaryEditor minX={0} maxX={100} minY={0} maxY={100} obstacles={wall} onChange={vi.fn()} />);
+
+    it('offers the region edge when it is nearer than the obstacle edge', () => {
+      const { container } = renderWithWall();
+      // 3 px from the region edge, 8 px from the wall (1.25 px per unit)
+      fireEvent.contextMenu(container.querySelector('canvas') as HTMLCanvasElement, toPx(50, 2.4));
+
+      expect(screen.getByText('+ Insert Vertex Here on Boundary Edge')).toBeInTheDocument();
+      expect(screen.queryByText('+ Insert Vertex Here on Obstacle')).not.toBeInTheDocument();
+    });
+
+    it('offers the obstacle edge when it is nearer than the region edge', () => {
+      const { container } = renderWithWall();
+      // 8 px from the region edge, 3 px from the wall
+      fireEvent.contextMenu(container.querySelector('canvas') as HTMLCanvasElement, toPx(50, 6.4));
+
+      expect(screen.getByText('+ Insert Vertex Here on Obstacle')).toBeInTheDocument();
+      expect(screen.queryByText('+ Insert Vertex Here on Boundary Edge')).not.toBeInTheDocument();
+    });
+  });
 });

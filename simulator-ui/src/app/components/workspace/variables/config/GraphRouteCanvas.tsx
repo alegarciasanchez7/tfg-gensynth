@@ -2,6 +2,10 @@ import React, { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallba
 import { createPortal } from 'react-dom';
 import { GraphNode, GraphEdge, PointVariableConfig, BoundaryObstacle, Point3DCoord } from '../../../../types';
 import { defaultBoundsFor, centerOf } from '../../../../core/pointDefaults';
+import { validateNodeAndEdge } from '../../../../core/routeGeometry';
+import { fitWorldWindow, niceStep } from '../../../../core/worldWindow';
+import { CommitInput } from '../../../common/CommitInput';
+import { OfflineGridOverlay, MapAutoFit } from './mapShared';
 import { Button } from '../../../ui/button';
 import { Label } from '../../../ui/label';
 import { Info, Plus, Link as LinkIcon, Trash2, RotateCcw, Move, MapPin, AlertTriangle, X, WifiOff, Maximize2, Minimize2, Eye, EyeOff } from 'lucide-react';
@@ -12,6 +16,7 @@ import {
   Polygon as LeafletPolygon,
   Marker as LeafletMarker,
   Polyline as LeafletPolyline,
+  Rectangle as LeafletRectangle,
   Tooltip as LeafletTooltip,
   useMapEvents,
   useMap,
@@ -38,216 +43,6 @@ const nextNodeName = (nodes: GraphNode[]): string => {
 interface GraphRouteCanvasProps {
   config: PointVariableConfig;
   onChange: (newConfig: Partial<PointVariableConfig>) => void;
-}
-
-/** Ray-casting algorithm to test if point (px, py) lies inside obstacle polygon */
-const isPointInPolygon = (px: number, py: number, points: Point3DCoord[]): boolean => {
-  if (!points || points.length < 3) return false;
-  let inside = false;
-  const n = points.length;
-  for (let i = 0, j = n - 1; i < n; j = i++) {
-    const xi = points[i].x ?? 0;
-    const yi = points[i].y ?? 0;
-    const xj = points[j].x ?? 0;
-    const yj = points[j].y ?? 0;
-    const intersect = ((yi > py) !== (yj > py)) && (px < ((xj - xi) * (py - yi)) / (yj - yi + 1e-9) + xi);
-    if (intersect) inside = !inside;
-  }
-  return inside;
-};
-
-/** Counter-clockwise orienting helper for 2D line segment intersection */
-const ccw = (p1: { x: number; y: number }, p2: { x: number; y: number }, p3: { x: number; y: number }): boolean => {
-  return (p3.y - p1.y) * (p2.x - p1.x) > (p2.y - p1.y) * (p3.x - p1.x);
-};
-
-/** Returns true if line segment p1-p2 intersects line segment q1-q2 */
-const segmentsIntersect = (
-  p1: { x: number; y: number },
-  p2: { x: number; y: number },
-  q1: { x: number; y: number },
-  q2: { x: number; y: number }
-): boolean => {
-  return (
-    ccw(p1, q1, q2) !== ccw(p2, q1, q2) &&
-    ccw(p1, p2, q1) !== ccw(p1, p2, q2)
-  );
-};
-
-/** Evaluates collision between candidate node/edge and active forbidden obstacle zones or wall segments */
-const checkObstacleCollision = (
-  fromNode: { x: number; y: number } | null,
-  targetPoint: { x: number; y: number },
-  obstacles: BoundaryObstacle[]
-): string | null => {
-  const activeObstacles = (obstacles || []).filter((obs) => obs.enabled && obs.points && obs.points.length > 0);
-
-  for (const obs of activeObstacles) {
-    const pts = obs.points;
-    const name = obs.name || (obs.type === 'WALL_SEGMENT' ? 'Wall Segment' : 'Forbidden Zone');
-    const getPt = (p: Point3DCoord) => ({ x: p.x ?? 0, y: p.y ?? 0 });
-
-    // 1. Check if target node point lies inside forbidden region polygon
-    if (obs.type !== 'WALL_SEGMENT' && pts.length >= 3) {
-      if (isPointInPolygon(targetPoint.x, targetPoint.y, pts)) {
-        return `Cannot place route node inside forbidden obstacle zone: "${name}"`;
-      }
-    }
-
-    // 2. Check if connecting edge intersects wall segments or obstacle polygon edges
-    if (fromNode) {
-      if (obs.type === 'WALL_SEGMENT' && pts.length >= 2) {
-        for (let i = 0; i < pts.length - 1; i++) {
-          if (segmentsIntersect(fromNode, targetPoint, getPt(pts[i]), getPt(pts[i + 1]))) {
-            return `Cannot draw route edge crossing forbidden wall barrier: "${name}"`;
-          }
-        }
-      } else if (pts.length >= 3) {
-        for (let i = 0; i < pts.length; i++) {
-          const nextIdx = (i + 1) % pts.length;
-          if (segmentsIntersect(fromNode, targetPoint, getPt(pts[i]), getPt(pts[nextIdx]))) {
-            return `Cannot draw route edge crossing forbidden obstacle region: "${name}"`;
-          }
-        }
-      }
-    }
-  }
-
-  return null;
-};
-
-/** Evaluates compliance of candidate node/edge against allowed boundary polygon and bounding limits */
-const checkBoundaryCompliance = (
-  fromNode: { x: number; y: number } | null,
-  targetPoint: { x: number; y: number },
-  polygon: Point3DCoord[],
-  minPoint?: Point3DCoord,
-  maxPoint?: Point3DCoord
-): string | null => {
-  const getPt = (p: Point3DCoord) => ({ x: p.x ?? 0, y: p.y ?? (p.x ?? 0) });
-
-  // 1. Check if allowed boundary polygon is defined (>= 3 points)
-  if (polygon && polygon.length >= 3) {
-    const isInside = isPointInPolygon(targetPoint.x, targetPoint.y, polygon);
-    if (!isInside) {
-      return 'Cannot place route node outside the allowed boundary region.';
-    }
-
-    if (fromNode) {
-      const fromInside = isPointInPolygon(fromNode.x, fromNode.y, polygon);
-      if (!fromInside) {
-        return 'Cannot draw route edge from an origin node located outside the allowed boundary region.';
-      }
-      // Check if connecting line segment intersects any edge of the boundary polygon
-      for (let i = 0; i < polygon.length; i++) {
-        const nextIdx = (i + 1) % polygon.length;
-        if (segmentsIntersect(fromNode, targetPoint, getPt(polygon[i]), getPt(polygon[nextIdx]))) {
-          return 'Cannot draw route edge exiting the allowed boundary region.';
-        }
-      }
-    }
-  } else if (minPoint && maxPoint) {
-    // Bounding box check against the region limits (an unset axis is not limited)
-    const minX = minPoint.x ?? -Infinity;
-    const maxX = maxPoint.x ?? Infinity;
-    const minY = minPoint.y ?? -Infinity;
-    const maxY = maxPoint.y ?? Infinity;
-
-    if (targetPoint.x < minX || targetPoint.x > maxX || targetPoint.y < minY || targetPoint.y > maxY) {
-      return `Cannot place route node outside allowed boundary limits.`;
-    }
-
-    if (fromNode) {
-      if (fromNode.x < minX || fromNode.x > maxX || fromNode.y < minY || fromNode.y > maxY) {
-        return `Cannot draw route edge from an origin node outside allowed boundary limits.`;
-      }
-    }
-  }
-
-  return null;
-};
-
-/** Unified validator evaluating both allowed boundary compliance and forbidden obstacle collisions */
-const validateNodeAndEdge = (
-  fromNode: { x: number; y: number } | null,
-  targetPoint: { x: number; y: number },
-  obstacles: BoundaryObstacle[],
-  polygon: Point3DCoord[],
-  minPoint?: Point3DCoord,
-  maxPoint?: Point3DCoord
-): string | null => {
-  const boundaryError = checkBoundaryCompliance(fromNode, targetPoint, polygon, minPoint, maxPoint);
-  if (boundaryError) return boundaryError;
-
-  const obstacleError = checkObstacleCollision(fromNode, targetPoint, obstacles);
-  if (obstacleError) return obstacleError;
-
-  return null;
-};
-
-// Technical Lat/Lon Coordinate Grid Layer for Offline Fallback Mode in Leaflet Map
-function OfflineGridOverlay() {
-  const map = useMap();
-  const [gridItems, setGridItems] = useState<{ positions: [number, number][]; label: string }[]>([]);
-
-  useEffect(() => {
-    const updateGrid = () => {
-      const b = map.getBounds();
-      const z = map.getZoom();
-      let step: number;
-      if (z >= 13) step = 0.01;
-      else if (z >= 11) step = 0.05;
-      else if (z >= 9) step = 0.1;
-      else if (z >= 7) step = 0.5;
-      else if (z >= 5) step = 1.0;
-      else step = 5.0;
-
-      const items: { positions: [number, number][]; label: string }[] = [];
-      const minLat = Math.max(-85, Math.floor(b.getSouth() / step) * step);
-      const maxLat = Math.min(85, Math.ceil(b.getNorth() / step) * step);
-      const minLon = Math.max(-180, Math.floor(b.getWest() / step) * step);
-      const maxLon = Math.min(180, Math.ceil(b.getEast() / step) * step);
-
-      for (let lat = minLat; lat <= maxLat; lat += step) {
-        const rLat = Math.round(lat * 10000) / 10000;
-        items.push({
-          positions: [[rLat, -180], [rLat, 180]],
-          label: `${rLat}° ${rLat >= 0 ? 'N' : 'S'}`,
-        });
-      }
-      for (let lon = minLon; lon <= maxLon; lon += step) {
-        const rLon = Math.round(lon * 10000) / 10000;
-        items.push({
-          positions: [[-85, rLon], [85, rLon]],
-          label: `${rLon}° ${rLon >= 0 ? 'E' : 'W'}`,
-        });
-      }
-      setGridItems(items);
-    };
-
-    updateGrid();
-    map.on('moveend zoomend', updateGrid);
-    return () => {
-      map.off('moveend zoomend', updateGrid);
-    };
-  }, [map]);
-
-  return (
-    <>
-      {gridItems.map((item, idx) => (
-        <LeafletPolyline
-          key={idx}
-          positions={item.positions}
-          pathOptions={{
-            color: '#334155',
-            weight: 1,
-            dashArray: '3, 3',
-            interactive: false,
-          }}
-        />
-      ))}
-    </>
-  );
 }
 
 /** Leaflet Map Click Handler Component for adding nodes & setting warnings */
@@ -319,42 +114,6 @@ function GraphMapResizeHandler({ isFullScreen }: { isFullScreen: boolean }) {
       if (observer) observer.disconnect();
     };
   }, [isFullScreen, map]);
-
-  return null;
-}
-
-/**
- * Helper component to fit map bounds to the boundary polygon or the min/max region once.
- * Disabled when the map is remounted with a remembered view (fullscreen toggle).
- */
-function GraphMapAutoFit({
-  polygon,
-  minPoint,
-  maxPoint,
-  enabled,
-}: {
-  polygon: Point3DCoord[];
-  minPoint: Point3DCoord;
-  maxPoint: Point3DCoord;
-  enabled: boolean;
-}) {
-  const map = useMap();
-  const hasFittedRef = useRef(false);
-
-  useEffect(() => {
-    if (!enabled || hasFittedRef.current) return;
-    hasFittedRef.current = true;
-    const bounds =
-      polygon && polygon.length >= 3
-        ? L.latLngBounds(polygon.map((p) => [p.x ?? 0, p.y ?? p.x ?? 0]))
-        : L.latLngBounds([
-            [minPoint.x ?? 0, minPoint.y ?? 0],
-            [maxPoint.x ?? 0, maxPoint.y ?? 0],
-          ]);
-    if (bounds.isValid()) {
-      map.fitBounds(bounds, { padding: [35, 35], maxZoom: 17, animate: false });
-    }
-  }, [map, polygon, minPoint, maxPoint, enabled]);
 
   return null;
 }
@@ -457,45 +216,16 @@ const GraphNodeMarker = React.memo(function GraphNodeMarker({
   );
 });
 
-/**
- * Text input that keeps its own draft and commits on blur or Enter, so typing intermediate
- * values ("-", "40.") never reaches the Core. A rejected commit restores the last value.
- */
-function CommitInput({
-  value,
-  onCommit,
-  ariaLabel,
-  className,
-  inputMode,
-}: {
-  value: string;
-  onCommit: (raw: string) => boolean;
-  ariaLabel: string;
-  className: string;
-  inputMode?: 'decimal';
-}) {
-  const [draft, setDraft] = useState(value);
+/** Style of the allowed region polygon on the map. */
+const REGION_STYLE: L.PathOptions = {
+  color: '#06b6d4',
+  fillColor: '#06b6d4',
+  fillOpacity: 0.16,
+  weight: 2,
+};
 
-  const commit = () => {
-    if (draft === value) return;
-    if (!onCommit(draft)) setDraft(value);
-  };
-
-  return (
-    <input
-      type="text"
-      inputMode={inputMode}
-      aria-label={ariaLabel}
-      value={draft}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={commit}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') e.currentTarget.blur();
-      }}
-      className={className}
-    />
-  );
-}
+/** The min/max box drawn when there is no polygon: not interactive, so clicks always reach the map. */
+const REGION_BOX_STYLE: L.PathOptions = { ...REGION_STYLE, interactive: false };
 
 type GraphTool = 'ADD_EXTEND' | 'CONNECT' | 'SELECT' | 'DELETE';
 
@@ -624,10 +354,8 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
   const canvasW = canvasSize.w;
   const canvasH = canvasSize.h;
   const margin = 36;
-  const viewWidth = canvasW - margin * 2;
-  const viewHeight = canvasH - margin * 2;
 
-  // Auto-fit domain bounds precisely to selected region polygon or min/max points for 2D mode
+  // Region box: the boundary polygon bounds when there is one, else the min/max bounds
   let baseMinX = minPoint.x ?? 0;
   let baseMaxX = maxPoint.x ?? 100;
   let baseMinY = minPoint.y ?? 0;
@@ -642,7 +370,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
     baseMaxY = Math.max(...ys);
   }
 
-  // 5% Viewport padding to ensure handles on region boundary are fully visible
+  // Clicks and drags are clamped to the region plus 5% padding (so boundary handles stay usable)
   const spanXRaw = Math.abs(baseMaxX - baseMinX);
   const spanYRaw = Math.abs(baseMaxY - baseMinY);
   const padX = spanXRaw > 0 ? spanXRaw * 0.05 : 10;
@@ -653,27 +381,28 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
   const minY = baseMinY - padY;
   const maxY = baseMaxY + padY;
 
-  const spanX = Math.abs(maxX - minX) > 0 ? Math.abs(maxX - minX) : 200;
-  const spanY = Math.abs(maxY - minY) > 0 ? Math.abs(maxY - minY) : 200;
+  // One scale for both axes, so the region and the route keep their real proportions
+  const { cx: worldCx, cy: worldCy, scale: worldScale } = fitWorldWindow(
+    [{ x: baseMinX, y: baseMinY }, { x: baseMaxX, y: baseMaxY }],
+    canvasW,
+    canvasH,
+    margin,
+    0.05
+  );
 
   // Projection: Domain coordinate -> Canvas pixel (2D Mode)
-  const toCanvasX = (val: number) => {
-    return margin + ((val - minX) / spanX) * viewWidth;
-  };
-
-  const toCanvasY = (val: number) => {
-    return canvasH - margin - ((val - minY) / spanY) * viewHeight;
-  };
+  const toCanvasX = (val: number) => canvasW / 2 + (val - worldCx) * worldScale;
+  const toCanvasY = (val: number) => canvasH / 2 - (val - worldCy) * worldScale;
 
   // Inverse projection: Canvas pixel -> Domain coordinate (2D Mode)
   const fromCanvasX = (px: number) => {
-    const raw = minX + ((px - margin) / viewWidth) * spanX;
+    const raw = worldCx + (px - canvasW / 2) / worldScale;
     const clamped = Math.max(minX, Math.min(maxX, raw));
     return Math.round(clamped * 10) / 10;
   };
 
   const fromCanvasY = (py: number) => {
-    const raw = minY + ((canvasH - margin - py) / viewHeight) * spanY;
+    const raw = worldCy - (py - canvasH / 2) / worldScale;
     const clamped = Math.max(minY, Math.min(maxY, raw));
     return Math.round(clamped * 10) / 10;
   };
@@ -692,12 +421,23 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
     ctx.fillStyle = '#0f172a';
     ctx.fillRect(0, 0, canvasW, canvasH);
 
-    // 1. Render Grid Lines
+    // Visible world extents: the grid covers the whole canvas, not only the region
+    const visLeft = worldCx - canvasW / 2 / worldScale;
+    const visRight = worldCx + canvasW / 2 / worldScale;
+    const visBottom = worldCy - canvasH / 2 / worldScale;
+    const visTop = worldCy + canvasH / 2 / worldScale;
+
+    // 1. Render Grid Lines (at least ~40 px apart)
     ctx.strokeStyle = '#1e293b';
     ctx.lineWidth = 1;
-    const gridStep = spanX <= 20 ? 2 : (spanX <= 50 ? 5 : (spanX <= 100 ? 10 : (spanX <= 500 ? 50 : 100)));
+    const gridStep = niceStep(40 / worldScale);
+    const gridValues = (from: number, to: number, step: number): number[] => {
+      const values: number[] = [];
+      for (let i = Math.ceil(from / step); i * step <= to; i++) values.push(Number((i * step).toFixed(6)));
+      return values;
+    };
 
-    for (let xVal = Math.ceil(minX / gridStep) * gridStep; xVal <= maxX; xVal += gridStep) {
+    for (const xVal of gridValues(visLeft, visRight, gridStep)) {
       const px = toCanvasX(xVal);
       ctx.beginPath();
       ctx.moveTo(px, 0);
@@ -705,7 +445,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
       ctx.stroke();
     }
 
-    for (let yVal = Math.ceil(minY / gridStep) * gridStep; yVal <= maxY; yVal += gridStep) {
+    for (const yVal of gridValues(visBottom, visTop, gridStep)) {
       const py = toCanvasY(yVal);
       ctx.beginPath();
       ctx.moveTo(0, py);
@@ -717,7 +457,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
     const originX = toCanvasX(0);
     const originY = toCanvasY(0);
 
-    if (minY <= 0 && maxY >= 0) {
+    if (visBottom <= 0 && visTop >= 0) {
       ctx.strokeStyle = '#ef4444'; // Red X Axis
       ctx.lineWidth = 1.5;
       ctx.beginPath();
@@ -726,7 +466,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
       ctx.stroke();
     }
 
-    if (minX <= 0 && maxX >= 0) {
+    if (visLeft <= 0 && visRight >= 0) {
       ctx.strokeStyle = '#22c55e'; // Green Y Axis
       ctx.lineWidth = 1.5;
       ctx.beginPath();
@@ -740,12 +480,12 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
     ctx.font = '9px monospace';
     const labelStep = gridStep * 2;
 
-    for (let xVal = Math.ceil(minX / labelStep) * labelStep; xVal <= maxX; xVal += labelStep) {
+    for (const xVal of gridValues(visLeft, visRight, labelStep)) {
       const tx = toCanvasX(xVal);
       ctx.fillText(`${xVal}`, tx - 8, canvasH - 6);
     }
 
-    for (let yVal = Math.ceil(minY / labelStep) * labelStep; yVal <= maxY; yVal += labelStep) {
+    for (const yVal of gridValues(visBottom, visTop, labelStep)) {
       const ty = toCanvasY(yVal);
       ctx.fillText(`${yVal}`, 4, ty + 3);
     }
@@ -820,7 +560,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
         ctx.stroke();
       }
     });
-  }, [isGeo, canvasW, canvasH, minX, maxX, minY, maxY, baseMinX, baseMaxX, baseMinY, baseMaxY, polygon, obstacles]);
+  }, [isGeo, canvasW, canvasH, worldCx, worldCy, worldScale, minX, minY, baseMinX, baseMaxX, baseMinY, baseMaxY, polygon, obstacles]);
 
   /** Converts a pointer position to canvas pixels, accounting for CSS scaling of the canvas. */
   const clientToCanvas = (clientX: number, clientY: number): { px: number; py: number } | null => {
@@ -1304,7 +1044,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
               <GraphMapResizeHandler isFullScreen={isFullScreen} />
               {/* The tracker goes first so it also records the view set by the auto-fit */}
               <GraphMapViewTracker onViewChange={handleMapViewChange} />
-              <GraphMapAutoFit polygon={polygon} minPoint={minPoint} maxPoint={maxPoint} enabled={initialMapView === null} />
+              <MapAutoFit polygon={polygon} minPoint={minPoint} maxPoint={maxPoint} enabled={initialMapView === null} />
 
               {!isOffline && (
                 <TileLayer
@@ -1327,16 +1067,19 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
                 </div>
               )}
 
-              {/* Boundary Region Geofence Polygon */}
-              {polygon && polygon.length >= 3 && (
+              {/* Boundary Region: the geofence polygon, or the min/max box when there is none */}
+              {polygon && polygon.length >= 3 ? (
                 <LeafletPolygon
                   positions={polygon.map((p) => [p.x ?? 0, p.y ?? p.x ?? 0])}
-                  pathOptions={{
-                    color: '#06b6d4',
-                    fillColor: '#06b6d4',
-                    fillOpacity: 0.16,
-                    weight: 2,
-                  }}
+                  pathOptions={REGION_STYLE}
+                />
+              ) : (
+                <LeafletRectangle
+                  bounds={[
+                    [minPoint.x ?? 0, minPoint.y ?? 0],
+                    [maxPoint.x ?? 0, maxPoint.y ?? 0],
+                  ]}
+                  pathOptions={REGION_BOX_STYLE}
                 />
               )}
 
@@ -1533,7 +1276,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
 
           {/* Active tool hint */}
           {nodes.length > 0 && (
-            <div className="absolute bottom-2 left-2 z-[1000] max-w-[calc(100%-1rem)] truncate px-2 py-0.5 rounded bg-[var(--c-bg1)]/85 border border-[var(--c-br2)] text-[10px] text-[var(--c-tx3)] pointer-events-none">
+            <div className="absolute top-2 right-2 z-[1000] max-w-[calc(100%-1rem)] truncate px-2 py-0.5 rounded bg-[var(--c-bg1)]/85 border border-[var(--c-br2)] text-[10px] text-[var(--c-tx3)] pointer-events-none">
               {TOOL_HINTS[activeTool]}
             </div>
           )}
