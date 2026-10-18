@@ -1,9 +1,15 @@
 # GenSynth User Guide
 
-GenSynth generates synthetic event streams: you describe devices (temperature sensors, machines,
-vehicles…), the values they report and how often they report them, and GenSynth sends the
-messages to a file or to a message broker such as RabbitMQ. It is designed to feed complex event
-processing (CEP) engines such as Esper with realistic, repeatable data.
+GenSynth is a desktop application that generates synthetic event streams. You describe the devices
+you want to simulate (sensors, machines, vehicles…), the values each one reports and how often it
+reports them, and GenSynth produces the messages continuously, following a single simulation clock.
+
+Messages are organised in **groups** and **flows**. Their content comes from configurable
+**variables** (numbers, texts, lists, booleans, dates and positions), which can follow random,
+scripted, periodic or correlated patterns. Each flow delivers its messages to a destination through
+a **connector**: GenSynth writes to files out of the box, and connector plugins add other
+technologies. Use it whenever you need realistic, repeatable data to develop, test or demonstrate a
+system that consumes events.
 
 This guide covers GenSynth **0.5.1**. For a quick overview, see the [README](README.md).
 
@@ -18,9 +24,25 @@ This guide covers GenSynth **0.5.1**. For a quick overview, see the [README](REA
 7. [Connectors](#connectors)
 8. [Simulation clock and settings](#simulation-clock-and-settings)
 9. [Variables](#variables)
-   - [Creating a variable](#creating-a-variable) · [Scopes](#scopes) · [The variable editor](#the-variable-editor)
-   - [Numeric](#numeric-variables) · [String](#string-variables) · [List](#list-variables) ·
-     [Boolean](#boolean-variables) · [Temporal](#temporal-variables) · [Point](#point-variables)
+   - [Creating a variable](#creating-a-variable) · [Scopes](#scopes) ·
+     [The variable editor](#the-variable-editor)
+     ([Inherit from a list](#inherit-value-from-parent-scope-list) ·
+     [Conditional rules](#conditional-rules))
+   - **[Numeric](#numeric-variables)**: [Random](#random) · [Constant](#constant) ·
+     [Sequential](#sequential) · [Distribution](#distribution) · [Formula](#formula) ·
+     [Sinusoidal Wave](#sinusoidal-wave) · [Linear Drift](#linear-drift) ·
+     [Noise and spikes](#noise-and-spikes)
+   - **[String](#string-variables)**: [modes](#string-modes) · [masks](#string-masks) ·
+     [data corruption](#string-data-corruption)
+   - **[List](#list-variables)**: [strategies](#list-selection-strategies) ·
+     [Markov chain](#list-markov-chain)
+   - **[Boolean](#boolean-variables)**: [patterns](#boolean-patterns)
+   - **[Temporal](#temporal-variables)**: [advance mode](#temporal-advance-mode) ·
+     [clock drift](#temporal-clock-drift) · [output format](#temporal-output-format)
+   - **[Point](#point-variables)**: [visual editor](#point-visual-editor) ·
+     [movement patterns](#point-movement-patterns) · [graph route](#point-graph-route) ·
+     [spatial boundaries](#point-spatial-boundaries) ·
+     [changing the coordinate system](#changing-the-coordinate-system)
 10. [Recipes for typical event patterns](#recipes-for-typical-event-patterns)
 11. [Saving and loading](#saving-and-loading)
 12. [Feedback](#feedback)
@@ -559,8 +581,25 @@ this device* or *Saved with the project*.
 
 ## Variables
 
-Variables generate the values of your messages. GenSynth has six types: **Numeric**, **String**,
-**List**, **Boolean**, **Temporal** and **Point**.
+Variables generate the values of your messages. GenSynth has six types:
+
+| Type | Use it for | Patterns / modes |
+|---|---|---|
+| [Numeric](#numeric-variables) | Measurements and counters: temperature, speed, load, battery level. | Random, Constant, Sequential, Distribution, Formula, Sinusoidal Wave, Linear Drift; optional noise and spikes. |
+| [String](#string-variables) | Identifiers, serial numbers, status texts, malformed data. | Random, Regex, Fixed, Template, Mask/IoT; optional data corruption. |
+| [List](#list-variables) | Categories, exact scripted sequences, state machines, arrays of values. | Weighted Random, Sequential, Shuffle, Markov Chain, Fixed Subset. |
+| [Boolean](#boolean-variables) | Flags and ON/OFF states: doors, motors, alarms. | Constant State, Probability Ratio, Flip Interval, Burst Mode, Markov Chain, Duty Cycle, Alternating Toggles. |
+| [Temporal](#temporal-variables) | Timestamps and simulated event time. | Wall Clock, Simulated Step, Backfill Historical, Fixed; optional clock drift. |
+| [Point](#point-variables) | Positions on a plane, in space or on a map. | Fixed Point, Random Point, Random Walk, Circular Orbit / Spiral, Waypoint Navigation, Graph Route. |
+
+**In this chapter:**
+
+- [Creating a variable](#creating-a-variable), [Scopes](#scopes) and
+  [The variable editor](#the-variable-editor) apply to every type, including
+  [inheriting a value from a list](#inherit-value-from-parent-scope-list) and
+  [conditional rules](#conditional-rules).
+- Then one section per type, linked from the table above, with its fields, patterns and typical
+  uses.
 
 ### Creating a variable
 
@@ -839,6 +878,8 @@ detect (or ignore).
 
 ![String](docs-assets/user-guide/21-string.png)
 
+#### String: modes
+
 Choose the **String Generation Mode** with the tabs:
 
 | Mode | Fields | What it produces |
@@ -848,6 +889,8 @@ Choose the **String Generation Mode** with the tabs:
 | **Fixed** | **Constant String Value** | Always the same text. |
 | **Template** | **Dynamic Template String** | A text built from other variables, e.g. `DEV-{{site}}-{{zone}}`. Use bare names (no scope, no sub-properties); type `{{` to autocomplete. |
 | **Mask/IoT** | **Preset Format Mask**, **Custom Format Pattern**, **Case Formatting** | Formatted identifiers, see below. |
+
+#### String: masks
 
 **Mask/IoT presets:** **MAC Address**, **IPv4 Address**, **IPv6 Address**, **UUID v4**,
 **Random Alphanumeric** and **Custom Format Mask**. The last two use the **Custom Format Pattern**:
@@ -862,6 +905,8 @@ Choose the **String Generation Mode** with the tabs:
 
 For example `SN-####-XXXX` → `SN-0417-9F3A`. **Case Formatting** (**Mixed Case**, **UPPERCASE**,
 **lowercase**) is applied to the whole result.
+
+#### String: data corruption
 
 **Simulate Data Corruption** (switch) damages some values on purpose:
 
@@ -890,7 +935,7 @@ A list picks values from items that you define.
 | **Weight** | Relative probability of the item (Weighted Random only). Weights do not need to add up to 100. | 1 (≥ 0) |
 | Move Up / Move Down / Delete | Reorder or remove items. The order matters for Sequential, Markov and Fixed Subset. | — |
 
-**Selection strategies**
+#### List: selection strategies
 
 | Strategy | What it does | When to use it |
 |---|---|---|
@@ -905,7 +950,7 @@ numeric items unquoted. Dynamic items generate a new value each time they are pi
 also inherit items from a GLOBAL or GROUP list ([see above](#inherit-value-from-parent-scope-list));
 inherited items appear first, marked *Inherited*.
 
-**Markov Chain**
+#### List: Markov chain
 
 ![List – Markov](docs-assets/user-guide/23-list-markov.png)
 
@@ -938,6 +983,8 @@ Example for a machine (rows = from, columns = to):
 | **Generation Pattern** | See the table below. | Constant State |
 | **Initial State** | Starting value (ON = `true`). The Constant pattern always sends it; the cyclic patterns start from it. | OFF (`false`) |
 
+#### Boolean: patterns
+
 | Pattern | Fields | Behaviour |
 |---|---|---|
 | **Constant State (Fixed ON/OFF)** | — | Always the **Initial State**. |
@@ -959,7 +1006,9 @@ variables through [conditional rules](#conditional-rules).
 
 ![Temporal](docs-assets/user-guide/25-temporal.png)
 
-**Advance Mode**
+#### Temporal: advance mode
+
+**Advance Mode** sets how the dates move forward:
 
 | Mode | Fields | What it produces |
 |---|---|---|
@@ -971,6 +1020,8 @@ variables through [conditional rules](#conditional-rules).
 Write ISO dates with a time zone, e.g. `2026-01-01T00:00:00Z` (dates without `Z` or an offset
 are ignored).
 
+#### Temporal: clock drift
+
 **Clock Drift / Skew (NTP Jitter)** (switch) imitates imperfect device clocks:
 
 | Field | What it does | Default |
@@ -979,7 +1030,9 @@ are ignored).
 | **Max Jitter Bound (ms)** / **Static Shift (ms)** | Size of the jitter or of the shift. | 0 |
 | **Drift Rate (ms / tick)** | Extra ms per value for Progressive Drift. Works with Simulated Step and Backfill Sequential Step. | 1.0 |
 
-**Output Category & Formatting**
+#### Temporal: output format
+
+**Output Category & Formatting** sets how the date is written:
 
 | Field | What it does | Default |
 |---|---|---|
@@ -1000,17 +1053,17 @@ are ignored).
 
 Points model positions: a robot on a factory floor, a vehicle on a map, a drone in the air.
 
-**Visual Editor**
+#### Point: visual editor
 
 | Field | What it does | Default |
 |---|---|---|
-| **Coordinate System** | **2D Cartesian (X, Y)**, **3D Cartesian (X, Y, Z)** or **Geospatial (Lat, Lon, Alt)** (WGS84 degrees and an altitude). Changing it clears the graph route. | 3D Cartesian |
+| **Coordinate System** | **2D Cartesian (X, Y)**, **3D Cartesian (X, Y, Z)** or **Geospatial (Lat, Lon, Alt)** (WGS84 degrees and an altitude). What a change keeps is explained in [Changing the coordinate system](#changing-the-coordinate-system). | 3D Cartesian |
 | **Geospatial Format** | **Decimal Degrees** or **Degrees, Minutes, Sec (DMS)** (text such as `40° 25' 0.48" N`). | Decimal |
 | **Boundary Behavior** | What happens when a moving point reaches the limits: **Clamp (Stop at boundary)**, **Bounce (Rebound velocity)** or **Wrap (Toroidal space)**. | Clamp |
 | **Movement Pattern** | See below. | Random Point |
 | **Position Jitter / GPS Satellite Noise** + **Random Jitter Noise Radius** | Adds Gaussian noise of that size (in coordinate units; degrees in Geospatial) to every coordinate, like a real GPS. | Off / 0 |
 
-**Movement patterns**
+#### Point: movement patterns
 
 | Pattern | Fields | Behaviour |
 |---|---|---|
@@ -1021,14 +1074,29 @@ Points model positions: a robot on a factory floor, a vehicle on a map, a drone 
 | **Waypoint Navigation** | **Interpolation Steps per Segment** | Not usable in 0.5.1: there is no way to enter waypoints (see [Known limitations](#known-limitations-and-issues)). Use Graph Route with a fixed sequence instead. |
 | **Graph Route (Connected Graph Path)** | See below (2D and Geospatial only) | Moves along the edges of a graph of nodes that you draw. |
 
-**Graph Route**
+#### Point: graph route
 
-![Point – map and graph route](docs-assets/user-guide/27-point-map.png)
+Draw the graph on the canvas or map of the route editor with its tools. A hint line at the
+bottom-left of the editor reminds you what the active tool does.
 
-Draw the graph on the canvas or map: click to place the first node, then **Add & Extend** places
-connected steps, **Connect Nodes** links two existing nodes, **Select Node** picks the origin of
-the next step; the trash button clears the graph. Selecting a node lets you rename it and edit
-its coordinates. Edges cannot cross forbidden zones.
+| Tool | What it does |
+|---|---|
+| **Add & Extend** | Click empty space to add a node linked to the selected one (the first click places the first node). Clicking an existing node does not add a new one. |
+| **Connect Nodes** | Click the origin, then the target, to link two existing nodes. `Esc` cancels a pending connection. |
+| **Select / Move** | Click a node to select it: it becomes the origin of the next Add & Extend step. |
+| **Delete** | Click a node or an edge to delete it. |
+| Trash button | Clears the whole graph. |
+
+![Route editor in 2D with the Select / Move tool](docs-assets/user-guide/38-route-editor.png)
+
+- Drag a node to move it, with **Add & Extend** or **Select / Move**, on the 2D canvas and on the
+  map. The move is applied when you release the mouse.
+- Selecting a node lets you rename it and edit its coordinates; the name and the coordinates are
+  applied when you leave the field or press `Enter`.
+- Edges cannot cross forbidden zones. Warnings appear over the top of the editor and can be closed
+  with their dismiss button.
+- **Fullscreen** opens the editor on the whole window and keeps the current map view; `Esc` exits
+  fullscreen (when no connection is pending). Double-clicking the map does not zoom it.
 
 | Field | What it does | Default |
 |---|---|---|
@@ -1042,19 +1110,78 @@ its coordinates. Edges cannot cross forbidden zones.
 The value then includes `nodeId`, `nodeName`, `targetNodeId`, `targetNodeName` and `isPaused`,
 handy for "vehicle arrived at depot" events.
 
-**Spatial Boundaries tab**
+#### Point: spatial boundaries
+
+![Spatial Boundaries tab with a 2D region and an obstacle](docs-assets/user-guide/37-point-boundaries-2d.png)
+
+The **Spatial Boundaries** tab sets the region where the point lives.
 
 | Element | What it does | Default |
 |---|---|---|
-| Visual editor | 2D grid, 3D view or world map. Drag to draw the area; right-click an edge to insert a vertex and a vertex to delete it. **Expand View / High-Precision Editor** opens a larger editor with presets (**Square**, **Triangle**, **Circle**, **New Region**), zoom and obstacle management. | — |
+| Visual editor | 2D canvas, 3D view or world map, depending on the Coordinate System (see below). **Expand View / High-Precision Editor** opens a larger editor with presets (**Square**, **Triangle**, **Circle**, **New Region**), zoom and obstacle management; `Esc` closes it. | — |
 | **Boundary Collision Action** | Same as Boundary Behavior. | Clamp |
-| **Outer Envelope Bounding Box (AABB Bounds)** | **Min/Max X, Y, Z** (Latitude, Longitude, Altitude in Geospatial): the box the point lives in. | 0–100 |
+| **Outer Envelope Bounding Box (AABB Bounds)** | **Min/Max X, Y, Z** (Latitude, Longitude, Altitude in Geospatial): the box the point lives in. | 0–100 on every axis |
 | **Exact Individual Polygon Vertices** | The vertices of a custom polygon (3 or more), when you drew one. The box then fits the polygon. | — |
 | Barriers & obstacles | **Obstacle Name**, **Type** (**Wall Line Segment** or **Forbidden Interior Polygon**) and **Add Barrier**; each barrier can be disabled or removed. Walls block Random Walk steps; forbidden polygons are never entered. | — |
 | Altitude (Geospatial) | **Independent Altitude Dynamics Pattern**: **Follow Primary XY Pattern**, **Fixed Altitude**, **Random Elevation (Uniform in Range)**, **Continuous Climb & Descent Walk** (**Max Vertical Step (m/tick)**), **Sinusoidal Hover Oscillation** (**Oscillation Speed (rad/tick)**); **Min/Max Altitude**, **Initial Altitude (Seed)**, **Altitude Measurement Unit** (m, ft, km, mi) and **Datum / Altitude Reference** (MSL, AGL, ELLIPSOID), which are written in the output. | Follow XY, m, MSL |
 
+How editing works in every boundary and route editor:
+
+- A drag is applied when you release the mouse, so each drag is a single change.
+- Numeric fields (bounds, coordinates, altitudes) are applied when you leave the field or press
+  `Enter`. Text that is not a number goes back to the previous value, and a minimum greater than
+  its maximum is swapped with it.
+
+**2D canvas:**
+
+- The view fits the region automatically; there is no fixed grid, and values are not limited to
+  ±100. The mouse wheel zooms around the cursor, and a drag continues if the cursor leaves the
+  canvas.
+- In **Move Boundaries** mode the region vertices take priority; whole obstacles can only be
+  dragged in **Move Obstacles** mode.
+- Right-click a vertex or an edge for its menu: insert a vertex on an edge (of the region or of
+  an obstacle) or delete a vertex (a region keeps at least 3).
+- The presets (**Square**, **Triangle**, **Circle**) fill the current bounding box, so the region
+  does not shrink. New obstacles appear at the centre of the region.
+
+**3D view:**
+
+- The height handle follows the cursor, and a negative height does not move the base.
+- The shape is centred on the X/Y bounds. For a sphere, the Z range is its diameter: from the
+  elevation to the elevation + 2 × radius.
+
+![Geofence editor on the map (Expand View)](docs-assets/user-guide/27-point-map.png)
+
+**World map (Geospatial):**
+
+- The polygon follows a vertex while you drag it. Latitude is limited to ±90° and longitude to
+  ±180°. Drag empty space to pan the map.
+- Right-click on the map to add a vertex on the nearest edge; right-click on a vertex to delete it
+  (a region keeps at least 3).
+- **New Box Region** keeps the current region until you finish drawing the new box (releasing the
+  mouse outside the map also finishes it). The presets and a new box zoom the map to the region.
+- The marker icons work offline. The altitude fields are applied when you leave them or press
+  `Enter`.
+
 > **Tip:** coordinates are sent with full precision (many decimals). Adjust the bounding box to
-> your scenario; by default every axis goes from 0 to 100.
+> your scenario: new point variables start with every axis from 0 to 100, and a point without
+> bounds also generates in that region.
+
+#### Changing the coordinate system
+
+Changing the **Coordinate System** keeps as much of the configuration as the units allow:
+
+- **2D ↔ 3D Cartesian** share units, so the region is kept: bounds, polygon and obstacles. Graph
+  Route is not available in 3D: going to 3D with Graph Route switches the pattern to **Random
+  Point** and drops the route, after asking you first.
+- **Cartesian ↔ Geospatial** use different units (coordinate units against degrees). GenSynth
+  first asks for confirmation, listing what will be lost, and then:
+  - resets the bounds to the defaults of the new system: 0 to 100 on every axis in Cartesian, or
+    a city-sized area around Madrid in Geospatial;
+  - resets the region polygon, the obstacles, the route graph and the fixed point (which moves to
+    the centre of the new region);
+  - adapts **Max Step Distance**, **Orbit Radius** and the jitter radius to the new units:
+    0.0005°, 0.01° and 0 in Geospatial, 10, 10 and 0 in Cartesian.
 
 ---
 
