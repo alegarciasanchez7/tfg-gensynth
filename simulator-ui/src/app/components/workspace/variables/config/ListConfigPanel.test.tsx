@@ -1,12 +1,29 @@
 import { render, screen, fireEvent } from '@testing-library/react';
+import { useState } from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { ListConfigPanel } from './ListConfigPanel';
 import { ListVariableConfig } from '../../../../types';
 
+// A GLOBAL list other lists can inherit from
+const parentList = {
+  id: 'parent', name: 'parent', scope: 'global', type: 'list',
+  config: { items: [{ id: 'p1', value: 'P1', weight: 1 }, { id: 'p2', value: 'P2', weight: 1 }] },
+};
+
 // Picking Dynamic Generator opens the generator editor, whose panels read the app state
 vi.mock('../../../../context', () => ({
-  useApp: () => ({ state: { variables: [], groups: [] } }),
+  useApp: () => ({ state: { variables: [parentList], groups: [], flows: [] } }),
 }));
+
+/** The panel inside an editor that keeps its changes, so several edits can follow each other. */
+function EditedList({ initial, onConfig }: { initial: ListVariableConfig; onConfig: (config: ListVariableConfig) => void }) {
+  const [config, setConfig] = useState(initial);
+  onConfig(config);
+  return <ListConfigPanel config={config} variableScope="global" onChange={(patch) => setConfig(current => ({ ...current, ...patch }))} />;
+}
+
+const rowSums = (matrix: Record<string, Record<string, number>> = {}) =>
+  Object.fromEntries(Object.entries(matrix).map(([from, row]) => [from, Object.values(row).reduce((a, p) => a + p, 0)]));
 
 describe('ListConfigPanel', () => {
   const defaultConfig: ListVariableConfig = {
@@ -170,5 +187,96 @@ describe('ListConfigPanel', () => {
 
     const infoButton = screen.getByRole('button', { name: /Selection strategy info/i });
     expect(infoButton).toBeInTheDocument();
+  });
+
+  it('keeps every Markov row adding up to 1 when items are added and removed', () => {
+    let config: ListVariableConfig = {};
+    render(<EditedList initial={{ selectionStrategy: 'MARKOV_CHAIN', items: [] }} onConfig={(c) => { config = c; }} />);
+    const addItem = () => fireEvent.click(screen.getByRole('button', { name: /Add Item/i }));
+
+    addItem();
+    addItem();
+    addItem();
+    expect(rowSums(config.transitionMatrix)).toEqual({ item_1: 1, item_2: 1, item_3: 1 });
+    expect(config.transitionMatrix?.item_1.item_3).toBeCloseTo(1 / 3);
+
+    fireEvent.click(screen.getAllByTitle('Delete Item')[1]);
+    expect(Object.keys(config.transitionMatrix ?? {})).toEqual(['item_1', 'item_3']);
+    expect(Object.keys(config.transitionMatrix?.item_1 ?? {})).toEqual(['item_1', 'item_3']);
+    expect(config.transitionMatrix?.item_1.item_1).toBeCloseTo(0.5);
+    expect(config.transitionMatrix?.item_1.item_3).toBeCloseTo(0.5);
+  });
+
+  it('keeps a dead-end state as it is when an item is added', () => {
+    let config: ListVariableConfig = {};
+    render(
+      <EditedList
+        initial={{ selectionStrategy: 'MARKOV_CHAIN', items: [{ id: 'a', value: 'A' }], transitionMatrix: { a: { a: 0 } } }}
+        onConfig={(c) => { config = c; }}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Add Item/i }));
+
+    expect(config.transitionMatrix?.a).toEqual({ a: 0 });
+  });
+
+  it('names a new item after its id, so no two items get the same name after a delete', () => {
+    let config: ListVariableConfig = {};
+    render(
+      <EditedList
+        initial={{ selectionStrategy: 'SEQUENTIAL', items: [{ id: 'item_1', value: 'Item 1' }, { id: 'item_3', value: 'Item 3' }] }}
+        onConfig={(c) => { config = c; }}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Add Item/i }));
+
+    expect(config.items?.map(item => item.value)).toEqual(['Item 1', 'Item 3', 'Item 4']);
+  });
+
+  it('shows an inherited state without a row as even, as the Core reads it, and keeps it when editing one cell', () => {
+    const handleChange = vi.fn();
+    render(
+      <ListConfigPanel
+        config={{
+          selectionStrategy: 'MARKOV_CHAIN',
+          items: [{ id: 'l1', value: 'L1' }],
+          transitionMatrix: { l1: { l1: 1 } },
+          sourceListVariableId: 'parent',
+          sourceListSelectionMode: 'SUBSET_SPECIFIC',
+        }}
+        variableScope="global"
+        onChange={handleChange}
+      />
+    );
+
+    // Rows P1, P2, L1 (3 x 3): the inherited P1 and P2 have no row yet
+    const cells = screen.getAllByLabelText('Transition probability');
+    expect(cells.slice(0, 3).map(c => (c as HTMLInputElement).value)).toEqual(['0.333', '0.333', '0.333']);
+    expect(cells.slice(6).map(c => (c as HTMLInputElement).value)).toEqual(['0', '0', '1']);
+
+    fireEvent.change(cells[0], { target: { value: '0.5' } });
+    expect(handleChange).toHaveBeenLastCalledWith({
+      transitionMatrix: { l1: { l1: 1 }, p1: { p1: 0.5, p2: 1 / 3, l1: 1 / 3 } },
+    });
+  });
+
+  it('starts every state without a row even when switching to Markov, keeping the rows already edited', () => {
+    const handleChange = vi.fn();
+    render(
+      <ListConfigPanel
+        config={{ selectionStrategy: 'SEQUENTIAL', items: [{ id: 'a', value: 'A' }, { id: 'b', value: 'B' }], transitionMatrix: { a: { b: 1 } } }}
+        onChange={handleChange}
+      />
+    );
+
+    fireEvent.click(document.getElementById('selection-strategy-select')!);
+    fireEvent.click(screen.getByRole('button', { name: /Markov Chain/i }));
+
+    expect(handleChange).toHaveBeenCalledWith({
+      selectionStrategy: 'MARKOV_CHAIN',
+      transitionMatrix: { a: { b: 1 }, b: { a: 0.5, b: 0.5 } },
+    });
   });
 });

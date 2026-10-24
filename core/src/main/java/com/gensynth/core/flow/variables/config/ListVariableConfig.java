@@ -94,6 +94,8 @@ public class ListVariableConfig extends VariableConfiguration {
     private List<Integer> shuffleIndices = new ArrayList<>();
     private int currentShufflePointer = 0;
     private String currentMarkovStateId = null;
+    /** Items drawn by an inherited "N Random" subset, kept for the whole run by the strategies that follow an order. */
+    private List<ListItem> keptRandomSubset = null;
 
     // Fast cache arrays for WEIGHTED_RANDOM
     private double[] cachedWeights;
@@ -236,10 +238,10 @@ public class ListVariableConfig extends VariableConfiguration {
                 shuffleIndices.add(i);
             }
             Collections.shuffle(shuffleIndices);
-            this.currentMarkovStateId = items.get(0).getId();
-        } else {
-            this.currentMarkovStateId = null;
         }
+        // The chain starts in the first item shown, which may be an inherited or reordered one
+        this.currentMarkovStateId = null;
+        this.keptRandomSubset = null;
     }
 
     @Override
@@ -265,12 +267,6 @@ public class ListVariableConfig extends VariableConfiguration {
 
         if (hasExplicitWeights && !hasPositiveWeight) {
             errors.add("List variable has weights config but all weights are zero or negative");
-        }
-
-        if (selectionStrategy == SelectionStrategy.MARKOV_CHAIN) {
-            if (transitionMatrix == null || transitionMatrix.isEmpty()) {
-                errors.add("Markov chain strategy requires a non-empty transition matrix");
-            }
         }
 
         // Validate embedded configurations
@@ -349,10 +345,7 @@ public class ListVariableConfig extends VariableConfiguration {
                         }
                     }
                 } else if ("SUBSET_RANDOM".equalsIgnoreCase(sourceListSelectionMode)) {
-                    List<ListItem> copy = new ArrayList<>(parentItems);
-                    Collections.shuffle(copy);
-                    int count = Math.min(randomSubsetCount > 0 ? randomSubsetCount : 1, copy.size());
-                    effective.addAll(copy.subList(0, count));
+                    effective.addAll(randomSubsetOf(parentItems));
                 } else if ("FIXED_ITEM".equalsIgnoreCase(sourceListSelectionMode) && selectedListItemId != null) {
                     for (ListItem pItem : parentItems) {
                         if (selectedListItemId.equals(pItem.getId()) || (pItem.getValue() != null && selectedListItemId.equals(String.valueOf(pItem.getValue())))) {
@@ -400,6 +393,26 @@ public class ListVariableConfig extends VariableConfiguration {
         }
 
         return effective;
+    }
+
+    /**
+     * Random items of the parent list. Weighted Random and Fixed Subset draw them again for every
+     * value; Sequential, Shuffle and Markov keep the first draw, or their order would be lost.
+     */
+    private List<ListItem> randomSubsetOf(List<ListItem> parentItems) {
+        boolean keepsDraw = selectionStrategy == SelectionStrategy.SEQUENTIAL
+                || selectionStrategy == SelectionStrategy.SHUFFLE
+                || selectionStrategy == SelectionStrategy.MARKOV_CHAIN;
+        // A parent edited during the run has new items: draw again from them
+        if (keepsDraw && keptRandomSubset != null && parentItems.containsAll(keptRandomSubset)) {
+            return keptRandomSubset;
+        }
+        List<ListItem> copy = new ArrayList<>(parentItems);
+        Collections.shuffle(copy);
+        int count = Math.min(randomSubsetCount > 0 ? randomSubsetCount : 1, copy.size());
+        List<ListItem> drawn = new ArrayList<>(copy.subList(0, count));
+        keptRandomSubset = keepsDraw ? drawn : null;
+        return drawn;
     }
 
     public List<String> getItemOrder() {
@@ -479,7 +492,7 @@ public class ListVariableConfig extends VariableConfiguration {
     }
 
     private ListItem selectMarkovChain(List<ListItem> activeItems) {
-        if (currentMarkovStateId == null && !activeItems.isEmpty()) {
+        if (currentMarkovStateId == null) {
             currentMarkovStateId = activeItems.get(0).getId();
         }
 
@@ -496,7 +509,10 @@ public class ListVariableConfig extends VariableConfiguration {
         }
 
         Map<String, Double> transitions = transitionMatrix.get(currentMarkovStateId);
-        if (transitions != null && !transitions.isEmpty()) {
+        if (transitions == null) {
+            // A state without a row (e.g. an item inherited after the matrix was filled) moves to any item
+            currentMarkovStateId = activeItems.get(ThreadLocalRandom.current().nextInt(activeItems.size())).getId();
+        } else if (!transitions.isEmpty()) {
             double sum = 0.0;
             for (double p : transitions.values()) {
                 if (p > 0) sum += p;

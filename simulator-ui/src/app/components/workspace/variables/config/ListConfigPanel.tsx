@@ -47,6 +47,22 @@ const EMBEDDED_TYPE_OPTIONS = [
   { value: 'temporal', label: 'Temporal' },
 ];
 
+type TransitionMatrix = Record<string, Record<string, number>>;
+
+/** Key of an item in the Markov matrix. */
+const matrixKey = (item: { id?: string; value?: unknown }, index: number): string =>
+  item.id || String(item.value || `item_${index + 1}`);
+
+/** Row of a state with no row in the matrix: the Core moves from it to any item with the same probability. */
+const evenRow = (keys: string[]): Record<string, number> =>
+  Object.fromEntries(keys.map(key => [key, 1 / keys.length]));
+
+/** The row scaled to add up to `total`; a row of zeros (a dead end) stays as it is. */
+const scaledRow = (row: Record<string, number>, total: number): Record<string, number> => {
+  const sum = Object.values(row).reduce((acc, p) => acc + p, 0);
+  return sum > 0 ? Object.fromEntries(Object.entries(row).map(([key, p]) => [key, (p / sum) * total])) : { ...row };
+};
+
 /**
  * Probability cell of the Markov matrix. Keeps the typed text (e.g. "0.") while it is not a full
  * number yet, so the decimal point is not lost, and shows at most 3 decimals otherwise.
@@ -197,22 +213,15 @@ export const ListConfigPanel: React.FC<ListConfigPanelProps> = ({
     return list;
   }, [inheritedItems, items, config.itemOrder]);
 
-  const transitionMatrix = config.transitionMatrix || {};
+  const transitionMatrix: TransitionMatrix = useMemo(() => config.transitionMatrix || {}, [config.transitionMatrix]);
+  const matrixKeys = useMemo(() => unifiedItems.map(matrixKey), [unifiedItems]);
 
   const handleStrategyChange = useCallback((newStrategy: ListSelectionStrategy) => {
     const updatedMatrix = { ...transitionMatrix };
-    if (newStrategy === 'MARKOV_CHAIN' && unifiedItems.length > 0) {
-      unifiedItems.forEach((fromItem: any) => {
-        const fromId = fromItem.id || String(fromItem.value);
-        if (!updatedMatrix[fromId]) {
-          updatedMatrix[fromId] = {};
-        }
-        unifiedItems.forEach((toItem: any) => {
-          const toId = toItem.id || String(toItem.value);
-          if (updatedMatrix[fromId][toId] === undefined) {
-            updatedMatrix[fromId][toId] = 1.0 / unifiedItems.length;
-          }
-        });
+    if (newStrategy === 'MARKOV_CHAIN') {
+      // Rows already edited are kept; the other states start even
+      matrixKeys.forEach((key) => {
+        if (!updatedMatrix[key]) updatedMatrix[key] = evenRow(matrixKeys);
       });
     }
 
@@ -220,7 +229,7 @@ export const ListConfigPanel: React.FC<ListConfigPanelProps> = ({
       selectionStrategy: newStrategy,
       transitionMatrix: updatedMatrix,
     });
-  }, [unifiedItems, transitionMatrix, onChange]);
+  }, [matrixKeys, transitionMatrix, onChange]);
 
   const handleAddItem = useCallback(() => {
     // Unique even after deletions (items.length + 1 could repeat an existing id)
@@ -230,48 +239,46 @@ export const ListConfigPanel: React.FC<ListConfigPanelProps> = ({
     const nextId = `item_${nextNumber}`;
     const newItem: ListItemConfig = {
       id: nextId,
-      value: `Item ${items.length + 1}`,
+      value: `Item ${nextNumber}`,
       weight: 1.0,
       isEmbedded: false,
       embeddedType: 'numeric',
       embeddedConfig: { min: 0, max: 100, precision: 'INTEGER' },
     };
     const newItems = [...items, newItem];
-    const newUnified = [...unifiedItems, { ...newItem, isInherited: false }];
 
-    const updatedMatrix = { ...transitionMatrix };
+    let updatedMatrix = transitionMatrix;
     if (selectionStrategy === 'MARKOV_CHAIN') {
-      updatedMatrix[nextId] = {};
-      newUnified.forEach((target: any) => {
-        const targetId = target.id || String(target.value);
-        updatedMatrix[nextId][targetId] = 1.0 / newUnified.length;
-      });
-      newUnified.forEach((source: any) => {
-        const sourceId = source.id || String(source.value);
-        if (!updatedMatrix[sourceId]) updatedMatrix[sourceId] = {};
-        updatedMatrix[sourceId][nextId] = 1.0 / newUnified.length;
-      });
+      // Every row keeps adding up to 1: its probabilities shrink to make room for the new item
+      const newKeys = [...matrixKeys, nextId];
+      const share = 1 / newKeys.length;
+      updatedMatrix = Object.fromEntries(Object.entries(transitionMatrix).map(([from, row]) => {
+        const deadEnd = Object.values(row).every(p => p <= 0);
+        return [from, deadEnd ? { ...row } : { ...scaledRow(row, 1 - share), [nextId]: share }];
+      }));
+      updatedMatrix[nextId] = evenRow(newKeys);
     }
 
     onChange({
       items: newItems,
       transitionMatrix: updatedMatrix,
     });
-  }, [items, unifiedItems, selectionStrategy, transitionMatrix, onChange]);
+  }, [items, unifiedItems, matrixKeys, selectionStrategy, transitionMatrix, onChange]);
 
   const handleRemoveItem = useCallback((index: number) => {
     const removedItem = items[index];
     const newItems = items.filter((_, i) => i !== index);
 
-    const updatedMatrix = { ...transitionMatrix };
+    let updatedMatrix = transitionMatrix;
     if (removedItem && (removedItem.id || removedItem.value)) {
       const removedId = removedItem.id || String(removedItem.value);
-      delete updatedMatrix[removedId];
-      Object.keys(updatedMatrix).forEach((key) => {
-        if (updatedMatrix[key]) {
-          delete updatedMatrix[key][removedId];
-        }
-      });
+      // Drop its row and column; the rest of each row is scaled back up to 1
+      updatedMatrix = Object.fromEntries(Object.entries(transitionMatrix)
+        .filter(([from]) => from !== removedId)
+        .map(([from, row]) => {
+          const { [removedId]: _removed, ...rest } = row;
+          return [from, scaledRow(rest, 1)];
+        }));
     }
 
     onChange({
@@ -315,13 +322,12 @@ export const ListConfigPanel: React.FC<ListConfigPanelProps> = ({
 
   const handleMatrixCellChange = useCallback((fromId: string, toId: string, valStr: string) => {
     const parsedVal = Number.parseFloat(valStr);
-    const updatedMatrix = { ...transitionMatrix };
-    if (!updatedMatrix[fromId]) {
-      updatedMatrix[fromId] = {};
-    }
-    updatedMatrix[fromId][toId] = Number.isNaN(parsedVal) ? 0 : parsedVal;
-    onChange({ transitionMatrix: updatedMatrix });
-  }, [transitionMatrix, onChange]);
+    // A state with no row yet is even: editing one cell keeps the others as shown
+    const row = transitionMatrix[fromId] ?? evenRow(matrixKeys);
+    onChange({
+      transitionMatrix: { ...transitionMatrix, [fromId]: { ...row, [toId]: Number.isNaN(parsedVal) ? 0 : parsedVal } },
+    });
+  }, [transitionMatrix, matrixKeys, onChange]);
 
   return (
     <div className="space-y-4">
@@ -513,6 +519,7 @@ export const ListConfigPanel: React.FC<ListConfigPanelProps> = ({
                         <Input
                           type="number"
                           step="0.1"
+                          min={0}
                           placeholder="Weight"
                           value={weight}
                           onChange={(e) => handleItemChange(localIdx, { weight: Number.parseFloat(e.target.value) || 0 })}
@@ -590,7 +597,8 @@ export const ListConfigPanel: React.FC<ListConfigPanelProps> = ({
               </thead>
               <tbody>
                 {unifiedItems.map((source: any, sourceIdx: number) => {
-                  const sourceId = source.id || String(source.value || `item_${sourceIdx + 1}`);
+                  const sourceId = matrixKey(source, sourceIdx);
+                  const row = transitionMatrix[sourceId];
                   const sourceLabel = source.isInherited
                     ? (source.value !== undefined && source.value !== '' ? String(source.value) : `Item ${sourceIdx + 1}`)
                     : (source.isEmbedded
@@ -603,10 +611,9 @@ export const ListConfigPanel: React.FC<ListConfigPanelProps> = ({
                         {String(sourceLabel).length > 10 ? String(sourceLabel).substring(0, 10) + '…' : String(sourceLabel)}
                       </td>
                       {unifiedItems.map((target: any, targetIdx: number) => {
-                        const targetId = target.id || String(target.value || `item_${targetIdx + 1}`);
-                        const rawProb = transitionMatrix[sourceId] && transitionMatrix[sourceId][targetId];
-                        // A missing cell is a 0 probability for the Core
-                        const prob = rawProb !== undefined ? rawProb : 0;
+                        const targetId = matrixKey(target, targetIdx);
+                        // As the Core reads it: a state with no row is even, a missing cell in a row is 0
+                        const prob = row ? (row[targetId] ?? 0) : 1 / unifiedItems.length;
 
                         return (
                           <td key={`${sourceId}_${targetId}`} className="p-1 text-center">

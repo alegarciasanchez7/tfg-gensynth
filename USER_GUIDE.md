@@ -725,13 +725,14 @@ its initial state (a sequence starts again, a drift goes back to its start value
 
 Numeric, String, Boolean, Temporal, Point and List variables start with the check box **Inherit
 value from parent-scope List**. When it is ticked, the variable takes its value from a GLOBAL or
-GROUP List variable instead of its own pattern:
+GROUP List variable instead of its own pattern. The check box is disabled while there is no list
+the variable can read from; hovering over it says which list to create first.
 
 | Field | What it does |
 |---|---|
-| **Source List Variable** | The list to read from (GLOBAL lists, and GROUP lists of the same group). LOCAL lists cannot be shared. |
+| **Source List Variable** | The list to read from. A GLOBAL variable reads only GLOBAL lists; a GROUP or LOCAL variable also reads the GROUP lists of its group. LOCAL lists cannot be shared. |
 | **Item Selection Mode** (non-list variables) | **Random Item:** a random item of the list on every value. **Specific Fixed:** always the item chosen in **Compatible Specific Item**. |
-| **Source List Subset** (List variables) | **Fixed Subset:** tick the items to include. **N Random:** a random selection of **Number of random items to select** items, drawn again for every value. |
+| **Source List Subset** (List variables) | **Fixed Subset:** tick the items to include. **N Random:** a random selection of **Number of random items to select** items. With Weighted Random and Fixed Subset they are drawn again for every value; with Sequential, Shuffle and Markov they are drawn once when the simulation starts, so the order is kept. |
 
 The item is chosen independently of the parent list's own strategy. Literal items are text (a
 Numeric variable converts them to a number, a Boolean reads `true`); dynamic items generate a new
@@ -1036,10 +1037,14 @@ The **Markov Transition Probability Matrix** has one row per current state (**Fr
 column per next state (**To**). Each cell is the probability of moving from the row state to the
 column state, as a fraction between 0 and 1 (the title says **(0–1 per row)**). Cells show up to
 three decimals, and an empty cell counts as 0. Rows are normalised, so they do not need to add up
-to exactly 1.
+to exactly 1. Adding or deleting an item rescales the other probabilities of each row so that it
+still adds up to 1.
 
-- The chain starts in the first item of the list, and the first value sent is that item.
+- The chain starts in the first item of the list as shown (after Move Up / Move Down, and
+  inherited items first), and the first value sent is that item.
 - A row with all zeros is a dead end: the chain stays in that state forever.
+- An item that has no row yet, such as an item inherited after the matrix was filled, shows an
+  even row: it moves to any item with the same probability until you edit it.
 - A high value on the diagonal makes states "sticky" (long runs of the same state).
 
 Example for a machine (rows = from, columns = to):

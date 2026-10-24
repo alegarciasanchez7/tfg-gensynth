@@ -45,6 +45,76 @@ public class ListVariableConfigMarkovTest {
     }
 
     @Test
+    public void markovStartsOnTheFirstItemOfTheChosenOrder() {
+        ListVariableConfig config = cycleABC().transitionMatrix(cycleMatrix());
+        config.setItemOrder(List.of("c", "a", "b"));
+
+        assertEquals(List.of("C", "A", "B", "C"), next(config, 4));
+    }
+
+    @Test
+    public void markovStartsOnTheFirstInheritedItem() {
+        ListVariableConfig parent = cycleABC();
+        ListVariableConfig child = VariableFactory.createList("child")
+                .selectionStrategy(ListVariableConfig.SelectionStrategy.MARKOV_CHAIN)
+                .items(List.of(new ListVariableConfig.ListItem("l", "L", 1.0)))
+                .transitionMatrix(Map.of("b", Map.of("l", 1.0), "l", Map.of("b", 1.0)));
+        child.setSourceListVariableId("parent");
+        child.setSourceListSelectionMode("SUBSET_SPECIFIC");
+        child.setSelectedListItemIds(List.of("b"));
+        child.setContext(Map.of("parent", parent));
+
+        assertEquals(List.of("B", "L", "B", "L"), next(child, 4));
+    }
+
+    @Test
+    public void markovStateWithoutARowMovesToAnyItem() {
+        ListVariableConfig config = cycleABC();
+
+        assertTrue(config.validate().isEmpty());
+        assertEquals(Set.of("A", "B", "C"), new HashSet<>(next(config, 200)));
+    }
+
+    @Test
+    public void inheritedRandomSubsetKeepsItsDrawWhileTheSequenceRuns() {
+        ListVariableConfig child = VariableFactory.createList("child")
+                .selectionStrategy(ListVariableConfig.SelectionStrategy.SEQUENTIAL)
+                .items(List.of(new ListVariableConfig.ListItem("l", "L", 1.0)));
+        child.setSourceListVariableId("parent");
+        child.setSourceListSelectionMode("SUBSET_RANDOM");
+        child.setRandomSubsetCount(2);
+        child.setContext(Map.of("parent", cycleABC()));
+
+        List<Object> values = next(child, 30);
+        for (int i = 3; i < values.size(); i++) {
+            assertEquals("value " + i + " of " + values, values.get(i - 3), values.get(i));
+        }
+        assertEquals(3, new HashSet<>(values).size());
+    }
+
+    private static ListVariableConfig cycleABC() {
+        return VariableFactory.createList("list")
+                .selectionStrategy(ListVariableConfig.SelectionStrategy.MARKOV_CHAIN)
+                .items(List.of(
+                        new ListVariableConfig.ListItem("a", "A", 1.0),
+                        new ListVariableConfig.ListItem("b", "B", 1.0),
+                        new ListVariableConfig.ListItem("c", "C", 1.0)));
+    }
+
+    /** A → B → C → A. */
+    private static Map<String, Map<String, Double>> cycleMatrix() {
+        return Map.of("a", Map.of("b", 1.0), "b", Map.of("c", 1.0), "c", Map.of("a", 1.0));
+    }
+
+    private static List<Object> next(ListVariableConfig config, int count) {
+        List<Object> values = new ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            values.add(config.generateNextValue());
+        }
+        return values;
+    }
+
+    @Test
     public void testShuffleModeNoImmediateDuplicates() {
         ListVariableConfig.ListItem item1 = new ListVariableConfig.ListItem("1", "ONE", 1.0);
         ListVariableConfig.ListItem item2 = new ListVariableConfig.ListItem("2", "TWO", 1.0);

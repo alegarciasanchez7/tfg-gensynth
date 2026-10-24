@@ -23,6 +23,7 @@
   - Temporal variables without a Time Zone use the computer's zone; dates use English month and day names on every computer; two flows that map to the same output file get a clear error; locked groups and flows no longer take or create output files;
   - START shows why it cannot start (naming the variable) and starts nothing; format conversion keeps the content and reads quoted CSV fields; String masks give a value right after switching mode, and Mixed Case gives both cases; the Logs bin clears the list; a save or load dialog left open for a while no longer opens a second one;
   - the route editor uses the same scale on both axes; `Esc` closes the New Region and New Box Region confirmations; the Spatial Boundaries editor opens directly in fullscreen with a single button.
+  - Markov lists start on the first item shown, rows keep adding up to 1 when items are added or deleted, and inherited items without a row move evenly instead of getting stuck; a Markov list without a matrix no longer sends empty values; an inherited N Random subset keeps the order of Sequential, Shuffle and Markov; Inherit value from parent-scope List is disabled (with the reason) while there is no list to read from.
 - **Behaviour changes for existing projects:**
   - Waypoint Navigation sends each waypoint once per lap, followed by Interpolation Steps − 1 points towards the next one;
   - Circular Orbit always turns around the centre of the region, unless an explicit orbit centre is set;
