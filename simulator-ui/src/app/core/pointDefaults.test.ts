@@ -34,13 +34,21 @@ describe('coordinateSystemSwitch', () => {
     expect(coordinateSystemSwitch(config, 'CARTESIAN_3D')).toEqual({ updates: { coordinateSystem: 'CARTESIAN_3D' }, lost: [] });
   });
 
-  it('drops the route graph when moving a Graph Route to 3D', () => {
+  it('drops the route graph when moving a Graph Route to 3D, saying Graph Route is 2D only', () => {
     const config: PointVariableConfig = {
       coordinateSystem: 'CARTESIAN_2D', pattern: 'GRAPH_ROUTE', graphNodes: [{ id: 'a', name: 'A', x: 1, y: 1, z: 0 }],
     };
-    const { updates, lost } = coordinateSystemSwitch(config, 'CARTESIAN_3D');
+    const { updates, lost, confirmMessage } = coordinateSystemSwitch(config, 'CARTESIAN_3D');
     expect(updates).toMatchObject({ pattern: 'RANDOM_POINT', graphNodes: [] });
     expect(lost).toEqual(['the route graph (1 nodes)']);
+    expect(confirmMessage).toBe('Graph Route is not available in 3D Cartesian, so the route graph (1 nodes) will be reset. Continue?');
+  });
+
+  it('blames the units when moving between Cartesian and Geospatial', () => {
+    const config: PointVariableConfig = { coordinateSystem: 'CARTESIAN_2D', boundaryPolygon: polygon, waypoints: [{ x: 1, y: 1 }] };
+    expect(coordinateSystemSwitch(config, 'GEOSPATIAL').confirmMessage).toBe(
+      'The new coordinate system uses different units, so the region polygon and the waypoints will be reset. Continue?',
+    );
   });
 
   it('resets units-dependent data when moving to Geospatial', () => {

@@ -1,7 +1,7 @@
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Flow } from '../../../../types';
+import type { Flow, Group } from '../../../../types';
 import type { ConnectorPluginDescriptor } from '../../../../core/types';
 
 const { mockToast } = vi.hoisted(() => ({ mockToast: { success: vi.fn(), error: vi.fn() } }));
@@ -65,11 +65,25 @@ describe('CreateFlowDialog', () => {
 
   afterEach(() => cleanup());
 
-  const renderDialog = (repeat = false) =>
+  const group: Group = {
+    id: 'g1',
+    name: 'Sensors',
+    status: 'stopped',
+    throughput: '0 msg/s',
+    description: '',
+    threads: 1,
+    outputMode: 'parallel',
+    expanded: true,
+    enabled: true,
+    flows: [createdFlow('e1', 'Sensor 1'), createdFlow('e2', 'Sensor 2')],
+  };
+
+  const renderDialog = (repeat = false, groups?: Group[]) =>
     render(
       <CreateFlowDialog
         open
         onOpenChange={onOpenChange}
+        groups={groups}
         groupId="g1"
         latestConnectors={[fileConnector, brokerConnector]}
         onCreateFlow={onCreateFlow}
@@ -166,6 +180,51 @@ describe('CreateFlowDialog', () => {
 
     expect(onCreateFlow).toHaveBeenCalledTimes(1);
     expect(onCreateFlow.mock.calls[0][9]).toEqual({ address: 'tcp://host:1' });
+  });
+
+  it('blocks a name already used in the group (trimmed, ignoring case)', async () => {
+    const user = userEvent.setup();
+    renderDialog(false, [group]);
+    await fillBasics(user, '  sensor 2 ');
+
+    expect(screen.getByRole('alert')).toHaveTextContent('A flow named "sensor 2" already exists in this group');
+    expect(screen.getByRole('button', { name: 'Create flow' })).toBeDisabled();
+
+    await user.clear(screen.getByLabelText(/name/i));
+    await user.type(screen.getByLabelText(/name/i), 'Sensor 3');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create flow' })).toBeEnabled();
+  });
+
+  it('shows the message of a Core error (CRUD error object) instead of a generic text', async () => {
+    const user = userEvent.setup();
+    onCreateFlow.mockImplementationOnce(async () => {
+      throw { code: 'UNKNOWN_ERROR', message: 'A flow named "Sensor" already exists in this group' };
+    });
+    renderDialog();
+    await fillBasics(user, 'Sensor');
+    await user.click(screen.getByRole('button', { name: 'Create flow' }));
+
+    await waitFor(() => expect(mockToast.error).toHaveBeenCalledWith('A flow named "Sensor" already exists in this group'));
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+  });
+
+  it('lets the Repeater rename taken names and previews the final names', async () => {
+    const user = userEvent.setup();
+    onCreateFlow.mockImplementation(async (_g: string, name: string) =>
+      createdFlow(`f${++counter}`, name === 'Sensor 1' ? 'Sensor 1 (2)' : name));
+    renderDialog(true, [group]);
+    await fillBasics(user, 'Sensor');
+
+    expect(screen.getByText('Sensor 1 (2)')).toBeInTheDocument();
+    expect(screen.getByText('Sensor 2 (2)')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('2 names are already used');
+
+    await user.click(screen.getByRole('button', { name: 'Create 2 flows' }));
+
+    await waitFor(() => expect(onCreateFlow).toHaveBeenCalledTimes(2));
+    expect(onCreateFlow.mock.calls.every((call) => call[11] === true)).toBe(true);
+    expect(mockToast.success).toHaveBeenCalledWith('2 flows created (1 renamed to keep the names unique)');
   });
 
   it('fills the connector defaults when a connector is selected', async () => {

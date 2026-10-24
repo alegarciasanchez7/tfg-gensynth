@@ -909,7 +909,7 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
                 <div className="space-y-1">
                   <div className="flex justify-between text-[10px] text-[var(--c-tx4)]">
                     <Label htmlFor="width-3d-input">Base Width (X)</Label>
-                    <span className="font-mono">{width3D} px</span>
+                    <span className="font-mono">{width3D}</span>
                   </div>
                   <Input
                     id="width-3d-input"
@@ -923,7 +923,7 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
                 <div className="space-y-1">
                   <div className="flex justify-between text-[10px] text-[var(--c-tx4)]">
                     <Label htmlFor="length-3d-input">Base Length (Y)</Label>
-                    <span className="font-mono">{length3D} px</span>
+                    <span className="font-mono">{length3D}</span>
                   </div>
                   <Input
                     id="length-3d-input"
@@ -941,7 +941,7 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
               <div className="space-y-1">
                 <div className="flex justify-between text-[10px] text-[var(--c-tx4)]">
                   <Label htmlFor="radius-3d-input">Radius (R)</Label>
-                  <span className="font-mono">{radius3D} px</span>
+                  <span className="font-mono">{radius3D}</span>
                 </div>
                 <Input
                   id="radius-3d-input"
@@ -958,7 +958,7 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
               <div className="space-y-1">
                 <div className="flex justify-between text-[10px] text-[var(--c-tx4)]">
                   <Label htmlFor="height-3d-input">Height (Z)</Label>
-                  <span className="font-mono">{height3D} px</span>
+                  <span className="font-mono">{height3D}</span>
                 </div>
                 <Input
                   id="height-3d-input"
@@ -976,7 +976,7 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
             <div className="space-y-1">
               <div className="flex justify-between text-[10px] text-[var(--c-tx4)]">
                 <Label htmlFor="base-elev-input">Base Elevation (minZ)</Label>
-                <span className="font-mono">{baseElevation} px</span>
+                <span className="font-mono">{baseElevation}</span>
               </div>
               <Input
                 id="base-elev-input"

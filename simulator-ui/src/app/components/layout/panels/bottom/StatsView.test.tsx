@@ -55,4 +55,14 @@ describe('StatsView', () => {
     renderStats(false, { f1: flowMetrics('f1', 50) });
     expect(counterValue('DROPPED')).toHaveTextContent('0');
   });
+
+  it('keeps TOTAL SENT and ERRORS after STOP: the Core totals carry over until restart', () => {
+    mockUseApp.mockReturnValue({
+      state: { metrics: { totalMessages: 18441, errorCount: 2 }, groups: [], flowMetrics: {} },
+    });
+    render(<StatsView running={false} />);
+    expect(counterValue('TOTAL SENT')).toHaveTextContent('18.4 K');
+    expect(counterValue('ERRORS')).toHaveTextContent('2');
+    expect(counterValue('ERRORS').className).toContain('text-red-500');
+  });
 });

@@ -3,6 +3,11 @@ import { describe, it, expect, vi } from 'vitest';
 import { ListConfigPanel } from './ListConfigPanel';
 import { ListVariableConfig } from '../../../../types';
 
+// Picking Dynamic Generator opens the generator editor, whose panels read the app state
+vi.mock('../../../../context', () => ({
+  useApp: () => ({ state: { variables: [], groups: [] } }),
+}));
+
 describe('ListConfigPanel', () => {
   const defaultConfig: ListVariableConfig = {
     selectionStrategy: 'WEIGHTED_RANDOM',
@@ -41,6 +46,37 @@ describe('ListConfigPanel', () => {
     expect(handleChange).toHaveBeenCalledWith(expect.objectContaining({
       selectionStrategy: 'MARKOV_CHAIN'
     }));
+  });
+
+  it('lets the last item switch to a Dynamic Generator (menu not clipped by the item list)', () => {
+    const handleChange = vi.fn();
+    render(<ListConfigPanel config={defaultConfig} onChange={handleChange} />);
+
+    const modeTriggers = screen.getAllByRole('button', { name: /^Literal$/ });
+    fireEvent.click(modeTriggers[modeTriggers.length - 1]);
+    const option = screen.getByRole('button', { name: /Dynamic Generator/ });
+    // Rendered outside the scrollable item list, which clips its overflow
+    expect(option.closest('.overflow-y-auto.max-h-80')).toBeNull();
+    fireEvent.click(option);
+
+    const items = handleChange.mock.calls[0][0].items;
+    expect(items[1]).toMatchObject({ id: 'item2', isEmbedded: true });
+  });
+
+  it('starts a generator from the new type defaults when its type changes', () => {
+    const handleChange = vi.fn();
+    const config: ListVariableConfig = {
+      items: [{ id: 'item1', isEmbedded: true, embeddedType: 'numeric', embeddedConfig: { min: 0, max: 100, precision: 'INTEGER' } }],
+    };
+    render(<ListConfigPanel config={config} onChange={handleChange} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /^Numeric$/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^Boolean$/ }));
+
+    expect(handleChange.mock.calls[0][0].items[0]).toMatchObject({
+      embeddedType: 'boolean',
+      embeddedConfig: { pattern: 'CONSTANT_BOOLEAN', currentValue: false },
+    });
   });
 
   it('calls onChange when Add Item is clicked', () => {

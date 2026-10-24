@@ -102,4 +102,16 @@ describe('GroupWorkspace', () => {
     fireEvent.click(screen.getByRole('button', { name: /Humidity/ }));
     expect(actions.selectFlow).toHaveBeenCalledWith('g1', 'f2');
   });
+
+  it('shows a LOCKED badge instead of the run status for a locked group', () => {
+    render(<GroupWorkspace group={{ ...group, enabled: false }} />);
+    expect(screen.queryByText('RUNNING')).not.toBeInTheDocument();
+    expect(screen.getByText('LOCKED')).toBeInTheDocument();
+    expect(screen.getByText(/its flows do not generate messages/)).toBeInTheDocument();
+    cleanup();
+
+    render(<GroupWorkspace group={group} />);
+    expect(screen.queryByText('LOCKED')).not.toBeInTheDocument();
+    expect(screen.getByText('RUNNING')).toBeInTheDocument();
+  });
 });

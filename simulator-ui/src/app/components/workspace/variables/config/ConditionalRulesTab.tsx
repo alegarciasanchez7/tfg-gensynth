@@ -32,10 +32,11 @@ interface ConditionalRulesTabProps {
 }
 
 /** Generator selected by default in each override editor (same defaults as the config panels). */
-const OVERRIDE_DEFAULT_GENERATOR: Record<Variable['type'], Record<string, string>> = {
+const OVERRIDE_DEFAULT_GENERATOR: Record<Variable['type'], Record<string, string | boolean>> = {
   numeric: { pattern: 'RANDOM' },
   string: { pattern: 'RANDOM_STRING' },
-  boolean: { pattern: 'CONSTANT_BOOLEAN' },
+  // Explicit OFF: the editor shows OFF, the Core would start ON without the key
+  boolean: { pattern: 'CONSTANT_BOOLEAN', currentValue: false },
   list: { selectionStrategy: 'WEIGHTED_RANDOM' },
   temporal: { timeAdvanceMode: 'WALL_CLOCK' },
   point: { pattern: 'RANDOM_POINT' },

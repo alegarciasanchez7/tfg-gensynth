@@ -228,12 +228,14 @@ export function VariableEditorIdentityCard({ draft, setDraft, scopeOptions, grou
 
 interface VariableEditorConfigCardProps {
   typeLabel: string;
+  /** Id of the edited variable (kept out of its own formula suggestions). */
+  variableId?: string;
   theme: VariableEditorTheme;
   draft: VariableDraft;
   setDraft: Dispatch<SetStateAction<VariableDraft>>;
 }
 
-export function VariableEditorConfigCard({ typeLabel, theme, draft, setDraft }: VariableEditorConfigCardProps) {
+export function VariableEditorConfigCard({ typeLabel, variableId, theme, draft, setDraft }: VariableEditorConfigCardProps) {
   const Icon = theme.icon;
 
   let parsedConfig: VariableConfig = {};
@@ -260,7 +262,7 @@ export function VariableEditorConfigCard({ typeLabel, theme, draft, setDraft }: 
 
   const renderVisualEditor = () => {
     switch (draft.type) {
-      case 'numeric': return <NumericConfigPanel config={parsedConfig as NumericVariableConfig} onChange={handleConfigChange} flowId={draft.flowId} groupId={draft.groupId} variableScope={draft.scope} />;
+      case 'numeric': return <NumericConfigPanel config={parsedConfig as NumericVariableConfig} onChange={handleConfigChange} flowId={draft.flowId} groupId={draft.groupId} variableScope={draft.scope} variableId={variableId} />;
       case 'string': return <StringConfigPanel config={parsedConfig as StringVariableConfig} onChange={handleConfigChange} flowId={draft.flowId} groupId={draft.groupId} variableScope={draft.scope} />;
       case 'list': return <ListConfigPanel config={parsedConfig as ListVariableConfig} onChange={handleConfigChange} flowId={draft.flowId} groupId={draft.groupId} variableScope={draft.scope} />;
       case 'temporal': return <TemporalConfigPanel config={parsedConfig as TemporalVariableConfig} onChange={handleConfigChange} flowId={draft.flowId} groupId={draft.groupId} variableScope={draft.scope} />;

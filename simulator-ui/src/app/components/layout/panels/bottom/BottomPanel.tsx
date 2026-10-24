@@ -15,7 +15,7 @@ interface BottomPanelProps {
 }
 
 export function BottomPanel({ tab, onTabChange, systemStatus }: BottomPanelProps) {
-  const { state } = useApp();
+  const { state, actions } = useApp();
   const [height, setHeight] = useState(220);
   const [collapsed, setCollapsed] = useState(false);
   const dragging = useRef(false);
@@ -105,7 +105,7 @@ export function BottomPanel({ tab, onTabChange, systemStatus }: BottomPanelProps
       {/* Content */}
       {!collapsed && (
         <div className="flex-1 overflow-hidden flex">
-          {tab === 'logs'    && <LogsView entries={state.logs} connectorHealthSummary={state.connectorHealthSummary} groups={state.groups ?? []} />}
+          {tab === 'logs'    && <LogsView entries={state.logs} connectorHealthSummary={state.connectorHealthSummary} groups={state.groups ?? []} onClear={actions?.clearLogs} />}
           {tab === 'stats'   && <StatsView running={running} />}
           {tab === 'preview' && <PreviewView running={running} />}
         </div>

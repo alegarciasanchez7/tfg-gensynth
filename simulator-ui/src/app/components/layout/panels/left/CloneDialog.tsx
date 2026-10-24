@@ -17,6 +17,12 @@ interface CloneDialogProps {
   onConfirm: (count: number, namingPattern: string) => void;
   title: string;
   itemName: string;
+  /**
+   * Names already used where the clones go (the flows of the group, or every group for a group
+   * clone): the preview shows the names that collide and the " (2)" suffix the Core adds to keep
+   * them unique.
+   */
+  existingNames?: readonly string[];
 }
 
 export function CloneDialog({
@@ -25,6 +31,7 @@ export function CloneDialog({
   onConfirm,
   title,
   itemName,
+  existingNames,
 }: CloneDialogProps) {
   const [count, setCount] = useState('1');
   const [namingPattern, setNamingPattern] = useState('${name} (Clone ${index})');
@@ -64,6 +71,8 @@ export function CloneDialog({
             itemName={itemName}
             countLabel="Number of clones"
             itemsNoun="copies"
+            existingNames={existingNames}
+            collisionMode="rename"
             onSubmit={handleConfirm}
           />
         </div>

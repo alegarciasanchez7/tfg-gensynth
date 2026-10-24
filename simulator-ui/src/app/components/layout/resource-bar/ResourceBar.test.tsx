@@ -54,4 +54,18 @@ describe('ResourceBar', () => {
 
     expect(screen.getByText('--:--:--')).toBeTruthy();
   });
+
+  it('formats MSG/S compactly instead of with locale separators', () => {
+    mockUseSystemStatus.mockReturnValue('running');
+    mockUseMetrics.mockReturnValue({
+      metrics: {
+        cpu: 1, memory: 256, heap: 1024, networkUp: 0, networkDown: 0, messagesPerSecond: 18441,
+        totalMessages: 500, uptime: 5, ticksPerSecond: 1, totalTicks: 5,
+      },
+    });
+    render(<ResourceBar />);
+    expect(screen.getByText('18.4K')).toBeTruthy();
+    expect(screen.queryByText('18,441')).toBeNull();
+    expect(screen.queryByText('18.441')).toBeNull();
+  });
 });

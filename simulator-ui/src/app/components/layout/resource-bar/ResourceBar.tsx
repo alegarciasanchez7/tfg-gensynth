@@ -1,6 +1,7 @@
 import { Cpu, MemoryStick, ArrowUpRight, ArrowDownLeft, Server, Clock4, Timer } from 'lucide-react';
 import { useSystemStatus, useMetrics } from '../../../context';
 import { formatTickRate } from '../../../core/tickSettings';
+import { formatRate } from '../../../core/metricsFormat';
 
 interface Metric {
   icon: React.ReactNode;
@@ -95,7 +96,8 @@ export function ResourceBar() {
     {
       icon: <Server size={11} />,
       label: 'MSG/S',
-      value: running ? `${msgs.toLocaleString()}` : '0',
+      // Compact like the flow rates (18.4K), never locale separators: "18.441" read as 18 msg/s
+      value: running ? formatRate(msgs) : '0',
       unit: running ? `(${formatShortNumber(totalMsgs)} total)` : '',
       color: running ? 'text-amber-500' : 'text-slate-400',
     },

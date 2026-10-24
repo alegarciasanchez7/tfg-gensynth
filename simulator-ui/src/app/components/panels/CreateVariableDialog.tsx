@@ -10,11 +10,11 @@ import {
 import { Input } from '../ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Button } from '../ui/button';
-import { CalendarClock, Binary, ListChecks, ALargeSmall, MapPin, ToggleLeft, AlertTriangle } from 'lucide-react';
+import { CalendarClock, Binary, ListChecks, ALargeSmall, MapPin, ToggleLeft, AlertTriangle, type LucideIcon } from 'lucide-react';
 import type { Group, Variable, VariableScope, VariableType } from '../../types';
 import { useVariableValidation, type ValidationErrors } from '../../context/hooks/useVariableValidation';
 import { findVariableNameConflict } from '../../core/variableNames';
-import { defaultBoundsFor } from '../../core/pointDefaults';
+import { defaultConfigTextForType } from '../workspace/variables/config/defaultConfigs';
 
 interface CreateVariableDialogProps {
   open: boolean;
@@ -35,7 +35,7 @@ interface CreateVariableDialogProps {
   variablesList?: Variable[]; // passed down from RightPanel
 }
 
-const varTypes: Array<{ type: VariableType; label: string; icon: any }> = [
+const varTypes: Array<{ type: VariableType; label: string; icon: LucideIcon }> = [
   { type: 'numeric', label: 'Numeric', icon: Binary },
   { type: 'string', label: 'String', icon: ALargeSmall },
   { type: 'list', label: 'List', icon: ListChecks },
@@ -51,24 +51,6 @@ const scopeLabels: Record<VariableScope, string> = {
   group: 'GROUP',
   global: 'GLOBAL',
 };
-
-function defaultConfigTextForType(type: VariableType): string {
-  switch (type) {
-    case 'numeric':
-      return JSON.stringify({ min: 0, max: 100, precision: 'DOUBLE', distribution: 'UNIFORM' }, null, 2);
-    case 'list':
-      return JSON.stringify({ items: [] }, null, 2);
-    case 'boolean':
-      return JSON.stringify({ currentValue: false }, null, 2);
-    case 'temporal':
-      return JSON.stringify({ temporalType: 'TIMESTAMP', dateFormat: "yyyy-MM-dd'T'HH:mm:ss.SSSZ" }, null, 2);
-    case 'point':
-      return JSON.stringify({ maxStepDistance: 10.0, ...defaultBoundsFor('CARTESIAN_3D') }, null, 2);
-    case 'string':
-    default:
-      return JSON.stringify({ fixedLength: 8 }, null, 2);
-  }
-}
 
 export function CreateVariableDialog({
   open,

@@ -217,6 +217,7 @@ export async function createFlow(
   connectorConfig?: Record<string, unknown>,
   onResponse?: (data: FlowState) => void,
   everyTicks?: number,
+  autoRename?: boolean,
 ): Promise<FlowState> {
   // Validations
   if (!groupId?.trim()) throwValidationError('groupId', 'is required');
@@ -238,6 +239,7 @@ export async function createFlow(
         everyTicks: everyTicks ?? 1,
         template: template || '{}',
         ...(connectorConfig && { connectorConfig }),
+        ...(autoRename && { autoRename: true }),
       }, onResponse);
 
       if (response && typeof response === 'object' && 'id' in response) {

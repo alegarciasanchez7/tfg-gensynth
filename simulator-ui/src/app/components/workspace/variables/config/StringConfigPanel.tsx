@@ -11,6 +11,7 @@ import { ShieldAlert, Sparkles, Braces, Code } from 'lucide-react';
 
 import { ListReferenceSelector } from './ListReferenceSelector';
 import { findTemplatePlaceholders } from '../../../../core/templatePlaceholders';
+import { DEFAULT_STRING_MASKS, stringModeDefaults } from './defaultConfigs';
 
 interface StringConfigPanelProps {
   config: StringVariableConfig;
@@ -45,6 +46,9 @@ export const StringConfigPanel: React.FC<StringConfigPanelProps> = ({
   variableScope,
 }) => {
   const currentPattern = config.pattern || 'RANDOM_STRING';
+  // Effective mask type: the Core uses ALPHANUMERIC when none is set
+  const maskType: StringFormattedMaskType = config.formattedMaskType ?? 'ALPHANUMERIC';
+  const usesMaskPattern = maskType === 'CUSTOM_MASK' || maskType === 'ALPHANUMERIC';
   
   // Autocomplete Logic
   const { state } = useApp();
@@ -242,7 +246,8 @@ export const StringConfigPanel: React.FC<StringConfigPanelProps> = ({
         <Label className="text-[10px] uppercase text-[var(--c-tx4)]">String Generation Mode</Label>
         <Tabs
           value={currentPattern}
-          onValueChange={(val: any) => onChange({ pattern: val })}
+          // Switching mode also writes the settings it needs to generate non-empty text
+          onValueChange={(val) => onChange({ pattern: val, ...stringModeDefaults(val, config) })}
           className="w-full"
         >
           <TabsList className="bg-[var(--c-bg4)] border-[var(--c-br1)] h-8 p-0.5 grid grid-cols-5">
@@ -435,13 +440,21 @@ export const StringConfigPanel: React.FC<StringConfigPanelProps> = ({
               <Label htmlFor="mask-type">Preset Format Mask</Label>
               <CustomDropdown
                 id="mask-type"
-                value={config.formattedMaskType ?? 'ALPHANUMERIC'}
-                onChange={(val) => onChange({ formattedMaskType: val as StringFormattedMaskType })}
+                value={maskType}
+                onChange={(val) => {
+                  const nextType = val as StringFormattedMaskType;
+                  const mask = DEFAULT_STRING_MASKS[nextType];
+                  onChange({
+                    formattedMaskType: nextType,
+                    // A pattern-based mask with an empty pattern would generate empty strings
+                    ...(mask && !config.customMask ? { customMask: mask } : {}),
+                  });
+                }}
                 options={MASK_OPTIONS}
               />
             </div>
             
-            {(config.formattedMaskType === 'CUSTOM_MASK' || config.formattedMaskType === 'ALPHANUMERIC') && (
+            {usesMaskPattern && (
               <div className="space-y-2 p-3 bg-[var(--c-bg4)] border border-[var(--c-br1)] rounded">
                 <Label htmlFor="custom-mask" className="flex items-center gap-1"><Code className="w-3 h-3" /> Custom Format Pattern</Label>
                 <Input
@@ -452,6 +465,11 @@ export const StringConfigPanel: React.FC<StringConfigPanelProps> = ({
                   onChange={(e) => onChange({ customMask: e.target.value })}
                   className="bg-[var(--c-bg2)] border-[var(--c-br1)] h-8 text-[11px] font-mono uppercase"
                 />
+                {!config.customMask && (
+                  <p role="alert" className="text-[9px] text-amber-500">
+                    An empty pattern generates empty strings: enter a pattern such as {DEFAULT_STRING_MASKS[maskType]}.
+                  </p>
+                )}
                 <p className="text-[9px] text-[var(--c-tx4)] leading-relaxed">
                   <span><strong className="text-[var(--c-tx2)]">#</strong> = Digit (0-9) &nbsp;&bull;&nbsp;</span>
                   <span><strong className="text-[var(--c-tx2)]">X</strong> = Hex (0-F) &nbsp;&bull;&nbsp;</span>

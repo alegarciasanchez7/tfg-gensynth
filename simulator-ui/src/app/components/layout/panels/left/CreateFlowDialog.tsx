@@ -16,6 +16,8 @@ import { ConnectorConfigForm } from '../../../common/ConnectorConfigForm';
 import { NamingPatternFields } from '../../../common/NamingPatternFields';
 import { buildPatternNames } from '../../../../core/namingPattern';
 import { defaultConnectorConfig, validateConnectorConfig } from '../../../../core/connectorFields';
+import { findFlowNameConflict } from '../../../../core/flowNames';
+import { commandErrorMessage } from '../../../../core/errorMessage';
 
 const DEFAULT_REPEAT_COUNT = '2';
 const DEFAULT_REPEAT_PATTERN = '${name} ${index}';
@@ -28,8 +30,10 @@ function isPositiveInteger(value: string): boolean {
 interface CreateFlowDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  groups?: Group[]; // If provided, shows group selector
-  groupId?: string; // If provided, binds directly to this group
+  /** Groups of the project: used to check duplicate flow names and, without `groupId`, to pick the group. */
+  groups?: Group[];
+  /** If provided, binds directly to this group and hides the group selector. */
+  groupId?: string;
   latestConnectors: ConnectorPluginDescriptor[];
   onCreateFlow: (
     groupId: string,
@@ -43,6 +47,7 @@ interface CreateFlowDialogProps {
     template?: string,
     connectorConfig?: Record<string, unknown>,
     everyTicks?: number,
+    autoRename?: boolean,
   ) => Promise<Flow>;
   onSelectFlow?: (groupId: string, flowId: string) => void;
   /** Repeater mode: creates N flows with the same initial configuration and a naming pattern. */
@@ -106,9 +111,16 @@ export function CreateFlowDialog({
   const connectorValid = Boolean(selectedConnector)
     && Object.keys(validateConnectorConfig(selectedConnector?.fields ?? [], connectorConfig)).length === 0;
 
+  // Flow names must be unique inside the group (the Core rejects duplicates too). The Repeater
+  // instead asks the Core to rename taken names with a " (2)" suffix, shown in its preview
+  const targetGroup = groups?.find((g) => g.id === (groupId || selectedGroupId));
+  const existingFlows = targetGroup?.flows ?? [];
+  const existingNames = existingFlows.map((f) => f.name);
+  const nameError = repeat ? null : findFlowNameConflict(existingFlows, flowName);
+
   const handleCreateFlow = async (event?: FormEvent<HTMLFormElement>) => {
     event?.preventDefault();
-    if (isSubmitting || !everyTicksValid || !repeatValid || !connectorValid || !selectedConnector) return;
+    if (isSubmitting || !everyTicksValid || !repeatValid || !connectorValid || !selectedConnector || nameError) return;
     const targetGroupId = groupId || selectedGroupId;
     if (!targetGroupId) {
       toast.error('Please select a group first');
@@ -137,11 +149,15 @@ export function CreateFlowDialog({
           '{}',
           connectorConfig,
           everyTicks,
+          repeat, // autoRename: the Repeater never fails on a taken name
         ));
       }
-      toast.success(repeat ? `${created.length} flows created` : `Flow "${created[0].name}" created`);
+      // With autoRename the Core answers with the final name of each flow
+      const renamed = created.filter((flow, i) => flow.name !== names[i].trim()).length;
+      const renamedNote = renamed > 0 ? ` (${renamed} renamed to keep the names unique)` : '';
+      toast.success(repeat ? `${created.length} flows created${renamedNote}` : `Flow "${created[0].name}" created`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to create flow';
+      const message = commandErrorMessage(error, 'Unable to create flow');
       toast.error(repeat ? `Created ${created.length} of ${names.length} flows: ${message}` : message);
       if (created.length === 0) {
         setIsSubmitting(false);
@@ -164,7 +180,9 @@ export function CreateFlowDialog({
             <DialogDescription className="text-[var(--c-tx4)]">
               {repeat
                 ? 'Create several flows with the same initial configuration.'
-                : groupId ? 'Create a new flow inside this group.' : 'Create a new flow. Select a group first.'}
+                : groupId
+                  ? `Create a new flow inside ${targetGroup ? `"${targetGroup.name}"` : 'this group'}.`
+                  : 'Create a new flow. Select a group first.'}
             </DialogDescription>
           </DialogHeader>
 
@@ -200,11 +218,18 @@ export function CreateFlowDialog({
                   id="flow-name"
                   value={flowName}
                   onChange={(event) => setFlowName(event.target.value)}
-                  placeholder="Orders → Kafka"
+                  placeholder="Sensor 1"
+                  aria-invalid={nameError !== null}
+                  aria-describedby={nameError ? 'flow-name-error' : undefined}
                   className="bg-[var(--c-bg1)] border-[var(--c-br1)] text-[var(--c-tx1)] placeholder-[var(--c-tx4)]"
                   autoFocus
                   required
                 />
+                {nameError && (
+                  <p id="flow-name-error" role="alert" className="text-[10px] text-red-500">
+                    {nameError}
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2 sm:col-span-2">
@@ -268,6 +293,8 @@ export function CreateFlowDialog({
                   itemName={flowName.trim() || 'Flow'}
                   countLabel="Number of flows"
                   itemsNoun="flows"
+                  existingNames={existingNames}
+                  collisionMode="rename"
                   onSubmit={() => void handleCreateFlow()}
                 />
               </div>
@@ -293,6 +320,7 @@ export function CreateFlowDialog({
                 || !everyTicksValid
                 || !repeatValid
                 || !connectorValid
+                || nameError !== null
               }
               className="bg-cyan-600 hover:bg-cyan-700 text-white"
             >

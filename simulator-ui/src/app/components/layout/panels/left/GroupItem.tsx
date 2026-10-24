@@ -39,6 +39,8 @@ import { ConfirmDeleteDialog } from '../../../common/ConfirmDeleteDialog';
 import { FlowItem } from './FlowItem';
 import { CreateFlowDialog } from './CreateFlowDialog';
 import { formatRate, groupRate } from '../../../../core/metricsFormat';
+import { commandErrorMessage } from '../../../../core/errorMessage';
+import { normalizeGroupStatus } from '../../../../core/entityStatus';
 
 interface GroupItemProps {
   group: Group;
@@ -60,6 +62,7 @@ interface GroupItemProps {
     template?: string,
     connectorConfig?: Record<string, unknown>,
     everyTicks?: number,
+    autoRename?: boolean,
   ) => Promise<Flow>;
   onUpdateGroupConfig: (groupId: string, config: any, name?: string) => Promise<void>;
   onUpdateFlowConfig: (groupId: string, flowId: string, config: any, name?: string) => Promise<void>;
@@ -67,6 +70,8 @@ interface GroupItemProps {
   onCloneFlow: (groupId: string, flowId: string, count: number, namingPattern?: string) => void;
   onDeleteFlow: (groupId: string, flowId: string) => Promise<void>;
   latestConnectors: ConnectorPluginDescriptor[];
+  /** Names of every group, to preview clone names that collide (group names are unique). */
+  groupNames?: readonly string[];
 }
 
 const groupStatusCfg: Record<GroupStatus, { color: string; icon: React.ReactNode; bg: string }> = {
@@ -90,22 +95,25 @@ export function GroupItem({
   onCloneFlow,
   onDeleteFlow,
   latestConnectors,
+  groupNames,
 }: GroupItemProps) {
   const { state } = useApp();
   const isDirty = state?.dirtyItems?.groupIds?.has(group.id) ?? false;
-  const gCfg = groupStatusCfg[group.status];
+  // Normalised: an unknown status from the Core must not crash the whole panel
+  const gCfg = groupStatusCfg[normalizeGroupStatus(group.status)];
   const selectedGroup = selection.type === 'group' && selection.groupId === group.id;
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [isCloneOpen, setIsCloneOpen] = useState(false);
   const [isCreateFlowOpen, setIsCreateFlowOpen] = useState(false);
   const [isRepeaterOpen, setIsRepeaterOpen] = useState(false);
+  const flowNames = group.flows.map(f => f.name);
 
   const handleDeleteConfirm = async () => {
     try {
       await onDeleteGroup(group.id);
       toast.success(`Group "${group.name}" deleted`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to delete group';
+      const message = commandErrorMessage(error, 'Unable to delete group');
       toast.error(message);
     } finally {
       setIsDeleteConfirmOpen(false);
@@ -160,6 +168,16 @@ export function GroupItem({
                 >
                   {group.name}
                 </span>
+                {!group.enabled && (
+                  <span
+                    role="img"
+                    aria-label="Locked group"
+                    title="Locked: its flows do not generate messages. Unlock it from the group menu (⋮)."
+                    className="inline-flex items-center text-amber-500 shrink-0"
+                  >
+                    <Lock size={10} />
+                  </span>
+                )}
                 {isDirty && <span className="text-amber-400 font-bold text-xs" title="Unsaved changes">*</span>}
 
                 <DropdownMenu>
@@ -225,6 +243,7 @@ export function GroupItem({
                   onConfirm={(count, pattern) => onCloneGroup(group.id, count, pattern)}
                   title="Clone Group"
                   itemName={group.name}
+                  existingNames={groupNames}
                 />
               </div>
               <div className="flex items-center gap-2 pl-3">
@@ -256,6 +275,7 @@ export function GroupItem({
         repeat
         open={isRepeaterOpen}
         onOpenChange={setIsRepeaterOpen}
+        groups={[group]}
         groupId={group.id}
         latestConnectors={latestConnectors}
         onCreateFlow={onCreateFlow}
@@ -284,6 +304,7 @@ export function GroupItem({
               onClone={onCloneFlow}
               onDelete={onDeleteFlow}
               formatTemplate={formatTemplate}
+              siblingNames={flowNames}
             />
           ))}
           <button
@@ -296,6 +317,7 @@ export function GroupItem({
           <CreateFlowDialog
             open={isCreateFlowOpen}
             onOpenChange={setIsCreateFlowOpen}
+            groups={[group]}
             groupId={group.id}
             latestConnectors={latestConnectors}
             onCreateFlow={onCreateFlow}
