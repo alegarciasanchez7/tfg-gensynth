@@ -361,6 +361,9 @@ public class SystemCommandHandler implements CommandHandler {
 
     /**
      * Builds a payload map representing the current system performance metrics.
+     * {@code memory} is the heap in use (MB), {@code heap} the heap the JVM has reserved now
+     * and {@code maxHeap} the most it may reserve (the JVM limit, by default a quarter of the
+     * computer's RAM).
      *
      * @param commandId the command identifier (can be null)
      * @return the metrics payload map
@@ -391,6 +394,7 @@ public class SystemCommandHandler implements CommandHandler {
         payload.put("cpu", cpuLoad * 100.0);
         payload.put("memory", bytesToMb(usedMemory));
         payload.put("heap", bytesToMb(runtime.totalMemory()));
+        payload.put("maxHeap", bytesToMb(runtime.maxMemory()));
         payload.put("threads", Thread.activeCount());
         payload.put("messagesPerSecond", ctx.getMessagesPerSecond());
         payload.put("totalMessages", ctx.getTotalMessages().get());
