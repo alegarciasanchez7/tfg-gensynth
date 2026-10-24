@@ -3,6 +3,7 @@ import { useApp } from '../../../../context';
 import { BaseVariableConfig, ListReferenceSelectionMode, Variable, VariableScope, VariableType } from '../../../../types';
 import { Label } from '../../../ui/label';
 import { Input } from '../../../ui/input';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../../../ui/tooltip';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 
 interface ListReferenceSelectorProps {
@@ -66,6 +67,12 @@ export const ListReferenceSelector: React.FC<ListReferenceSelectorProps> = ({
   });
 
   const isEnabled = !!config.sourceListVariableId;
+  // Without a list to read from there is nothing to inherit (an enabled box can still be cleared)
+  const noListToInherit = !isEnabled && accessibleListVariables.length === 0;
+  const sourceScopes = variableScope === 'global' ? 'Global' : 'Global or Group';
+  const missingListHint = variableScope === 'global'
+    ? 'Create another GLOBAL List variable first: a GLOBAL variable can only inherit from GLOBAL lists.'
+    : 'Create a GLOBAL List variable, or a GROUP List variable in this group, first.';
   const selectedList = accessibleListVariables.find((v: Variable) => v.id === config.sourceListVariableId || v.name === config.sourceListVariableId);
 
   // Get items of selected list
@@ -116,16 +123,32 @@ export const ListReferenceSelector: React.FC<ListReferenceSelectorProps> = ({
               {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
             </button>
           )}
-          <input
-            type="checkbox"
-            id="enable-list-ref"
-            checked={isEnabled}
-            onChange={(e) => handleToggle(e.target.checked)}
-            className="h-3.5 w-3.5 rounded border-[var(--c-br2)] bg-[var(--c-bg1)] text-violet-500 focus:ring-violet-500/30"
-          />
-          <Label htmlFor="enable-list-ref" className="font-mono text-xs font-semibold text-[var(--c-tx1)] cursor-pointer">
-            Inherit value from parent-scope List
-          </Label>
+          <Tooltip>
+            {/* A disabled check box gets no hover events: the wrapper shows why it is disabled */}
+            <TooltipTrigger asChild>
+              <span className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="enable-list-ref"
+                  checked={isEnabled}
+                  disabled={noListToInherit}
+                  onChange={(e) => handleToggle(e.target.checked)}
+                  className="h-3.5 w-3.5 rounded border-[var(--c-br2)] bg-[var(--c-bg1)] text-violet-500 focus:ring-violet-500/30 disabled:cursor-not-allowed disabled:opacity-40"
+                />
+                <Label
+                  htmlFor="enable-list-ref"
+                  className={`font-mono text-xs font-semibold ${noListToInherit ? 'text-[var(--c-tx4)] cursor-not-allowed' : 'text-[var(--c-tx1)] cursor-pointer'}`}
+                >
+                  Inherit value from parent-scope List
+                </Label>
+              </span>
+            </TooltipTrigger>
+            {noListToInherit && (
+              <TooltipContent side="bottom" className="max-w-[280px] text-[11px] leading-relaxed">
+                No List variable to inherit from. {missingListHint}
+              </TooltipContent>
+            )}
+          </Tooltip>
         </div>
         {isEnabled && accessibleListVariables.length === 0 && (
           <span className="text-[10px] text-amber-400 font-mono">No accessible lists</span>
@@ -136,7 +159,7 @@ export const ListReferenceSelector: React.FC<ListReferenceSelectorProps> = ({
         <div className="space-y-3 pt-1 pl-5 border-l border-violet-500/20">
           <div>
             <Label className="text-[11px] text-[var(--c-tx3)] font-mono mb-1 block">
-              Source List Variable ({variableScope === 'local' ? 'Global or Group' : 'Global'})
+              Source List Variable ({sourceScopes})
             </Label>
             <select
               value={config.sourceListVariableId || ''}
