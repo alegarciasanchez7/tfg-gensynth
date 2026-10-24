@@ -58,9 +58,11 @@ const PATH_COLOR = '#22d3ee';
 const INVALID_COLOR = '#fb7185';
 /** The dragged waypoint and segments while the drop would be rejected. */
 const REJECTED_COLOR = '#ef4444';
-const REGION_STYLE: L.PathOptions = { color: '#06b6d4', fillColor: '#06b6d4', fillOpacity: 0.12, weight: 2, interactive: false };
-const PATH_STYLE: L.PathOptions = { color: PATH_COLOR, weight: 3, interactive: false };
-const CLOSING_STYLE: L.PathOptions = { color: PATH_COLOR, weight: 2, dashArray: '6, 6', opacity: 0.7, interactive: false };
+// The layers below are drawn with interactive={false} (a prop: react-leaflet only applies pathOptions
+// as a style), so clicks and drags always reach the map
+const REGION_STYLE: L.PathOptions = { color: '#06b6d4', fillColor: '#06b6d4', fillOpacity: 0.12, weight: 2 };
+const PATH_STYLE: L.PathOptions = { color: PATH_COLOR, weight: 3 };
+const CLOSING_STYLE: L.PathOptions = { color: PATH_COLOR, weight: 2, dashArray: '6, 6', opacity: 0.7 };
 /** Inline style added to the dot of a dragged marker while its drop would be rejected. */
 const REJECTED_DOT_CSS = `background:${REJECTED_COLOR}; color:#ffffff; border-color:#ffffff; box-shadow:0 0 10px rgba(239,68,68,0.9);`;
 
@@ -376,7 +378,7 @@ export const WaypointMap: React.FC<WaypointMapProps> = ({
 
         {/* Region: the polygon, or the min/max box when there is none */}
         {hasPolygon ? (
-          <LeafletPolygon positions={polygon.map((p) => [p.x ?? 0, p.y ?? p.x ?? 0])} pathOptions={REGION_STYLE} />
+          <LeafletPolygon positions={polygon.map((p) => [p.x ?? 0, p.y ?? p.x ?? 0])} pathOptions={REGION_STYLE} interactive={false} />
         ) : (
           <LeafletRectangle
             bounds={[
@@ -384,6 +386,7 @@ export const WaypointMap: React.FC<WaypointMapProps> = ({
               [maxPoint.x ?? 0, maxPoint.y ?? 0],
             ]}
             pathOptions={REGION_STYLE}
+            interactive={false}
           />
         )}
 
@@ -393,7 +396,7 @@ export const WaypointMap: React.FC<WaypointMapProps> = ({
             const positions = obs.points.map((p): [number, number] => [p.x ?? 0, p.y ?? p.x ?? 0]);
             if (obs.type === 'WALL_SEGMENT' && positions.length >= 2) {
               return (
-                <LeafletPolyline key={obs.id} positions={positions} pathOptions={{ color: '#f43f5e', weight: 3, dashArray: '4, 4', interactive: false }} />
+                <LeafletPolyline key={obs.id} positions={positions} pathOptions={{ color: '#f43f5e', weight: 3, dashArray: '4, 4' }} interactive={false} />
               );
             }
             if (positions.length >= 3) {
@@ -401,21 +404,23 @@ export const WaypointMap: React.FC<WaypointMapProps> = ({
                 <LeafletPolygon
                   key={obs.id}
                   positions={positions}
-                  pathOptions={{ color: '#f43f5e', fillColor: '#f43f5e', fillOpacity: 0.22, weight: 1.5, interactive: false }}
+                  pathOptions={{ color: '#f43f5e', fillColor: '#f43f5e', fillOpacity: 0.22, weight: 1.5 }}
+                  interactive={false}
                 />
               );
             }
             return null;
           })}
 
-        {n >= 2 && <LeafletPolyline positions={pathPositions} pathOptions={PATH_STYLE} />}
-        {loopPath && n >= 3 && <LeafletPolyline positions={[pathPositions[n - 1], pathPositions[0]]} pathOptions={CLOSING_STYLE} />}
+        {n >= 2 && <LeafletPolyline positions={pathPositions} pathOptions={PATH_STYLE} interactive={false} />}
+        {loopPath && n >= 3 && <LeafletPolyline positions={[pathPositions[n - 1], pathPositions[0]]} pathOptions={CLOSING_STYLE} interactive={false} />}
         {/* Segments that leave the region or cross an obstacle, drawn over the path */}
         {flaggedSegments.map(({ index, color }) => (
           <LeafletPolyline
             key={`bad-${index}-${color}`}
             positions={[pathPositions[index], pathPositions[(index + 1) % n]]}
-            pathOptions={{ color, weight: 4, interactive: false }}
+            pathOptions={{ color, weight: 4 }}
+            interactive={false}
           />
         ))}
 

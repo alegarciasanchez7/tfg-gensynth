@@ -43,8 +43,9 @@ vi.mock('react-leaflet', async () => {
       h.tileHandlers = eventHandlers;
       return null;
     },
-    Polygon: ({ positions }: { positions: [number, number][] }) => (
-      <div data-testid="polygon" data-positions={JSON.stringify(positions)} />
+    // interactive must be a prop: react-leaflet only applies pathOptions as a style, after creating the layer
+    Polygon: ({ positions, interactive }: { positions: [number, number][]; interactive?: boolean }) => (
+      <div data-testid="polygon" data-positions={JSON.stringify(positions)} data-interactive={String(interactive)} />
     ),
     Marker: ({
       position,
@@ -182,6 +183,12 @@ describe('GeospatialMapBoundaryEditor', () => {
     expect(h.map.dragging.enable).toHaveBeenCalled();
     expect(screen.queryByTestId('selection-box')).not.toBeInTheDocument();
     expect(h.map.fitBounds).toHaveBeenCalledTimes(2);
+  });
+
+  it('draws the region without catching the pointer, so a new box can start inside it', () => {
+    renderEditor();
+
+    expect(screen.getByTestId('polygon')).toHaveAttribute('data-interactive', 'false');
   });
 
   it('closes the New Box Region confirmation with Escape, keeping the region and draw mode off', () => {

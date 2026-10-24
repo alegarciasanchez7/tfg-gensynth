@@ -225,9 +225,6 @@ const REGION_STYLE: L.PathOptions = {
   weight: 2,
 };
 
-/** The min/max box drawn when there is no polygon: not interactive, so clicks always reach the map. */
-const REGION_BOX_STYLE: L.PathOptions = { ...REGION_STYLE, interactive: false };
-
 type GraphTool = 'ADD_EXTEND' | 'CONNECT' | 'SELECT' | 'DELETE';
 
 /** One-line hint shown for each tool. */
@@ -1080,7 +1077,9 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
                     [minPoint.x ?? 0, minPoint.y ?? 0],
                     [maxPoint.x ?? 0, maxPoint.y ?? 0],
                   ]}
-                  pathOptions={REGION_BOX_STYLE}
+                  pathOptions={REGION_STYLE}
+                  // Not interactive, so clicks always reach the map (a prop: pathOptions is only a style)
+                  interactive={false}
                 />
               )}
 

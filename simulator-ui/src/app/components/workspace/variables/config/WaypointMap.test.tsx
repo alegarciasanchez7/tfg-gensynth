@@ -30,15 +30,17 @@ vi.mock('react-leaflet', async () => {
       <div data-testid="map" data-double-click-zoom={String(doubleClickZoom)}>{children}</div>
     ),
     TileLayer: () => <div data-testid="tiles" />,
-    Polygon: () => <div data-testid="polygon" />,
-    Rectangle: ({ bounds }: { bounds: [number, number][] }) => (
-      <div data-testid="region-box" data-bounds={JSON.stringify(bounds)} />
+    // interactive must be a prop: react-leaflet only applies pathOptions as a style, after creating the layer
+    Polygon: ({ interactive }: { interactive?: boolean }) => <div data-testid="polygon" data-interactive={String(interactive)} />,
+    Rectangle: ({ bounds, interactive }: { bounds: [number, number][]; interactive?: boolean }) => (
+      <div data-testid="region-box" data-bounds={JSON.stringify(bounds)} data-interactive={String(interactive)} />
     ),
-    Polyline: ({ positions, pathOptions }: { positions: [number, number][]; pathOptions: { dashArray?: string; color?: string } }) => (
+    Polyline: ({ positions, pathOptions, interactive }: { positions: [number, number][]; pathOptions: { dashArray?: string; color?: string }; interactive?: boolean }) => (
       <div
         data-testid={pathOptions.dashArray ? 'dashed-line' : 'line'}
         data-positions={JSON.stringify(positions)}
         data-color={pathOptions.color}
+        data-interactive={String(interactive)}
       />
     ),
     Marker: ({ position, eventHandlers, icon }: { position: [number, number]; eventHandlers: HandlerMap; icon: { options: { html?: string } } }) => {
@@ -128,6 +130,13 @@ describe('WaypointMap', () => {
     expect(screen.getByTestId('dashed-line')).toHaveAttribute('data-positions', JSON.stringify([[40.5, -3.7], [40.4, -3.7]]));
     expect(screen.getByTestId('map')).toHaveAttribute('data-double-click-zoom', 'false');
     expect(h.map.fitBounds).toHaveBeenCalledTimes(1);
+  });
+
+  it('draws the region and the path without catching the pointer, so clicks inside them reach the map', () => {
+    renderMap();
+
+    const layers = [screen.getByTestId('region-box'), ...screen.getAllByTestId('line'), screen.getByTestId('dashed-line')];
+    for (const layer of layers) expect(layer).toHaveAttribute('data-interactive', 'false');
   });
 
   it('appends a waypoint where the map is clicked, rounded and clamped', () => {

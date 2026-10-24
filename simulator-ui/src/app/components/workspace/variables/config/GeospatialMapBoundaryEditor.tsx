@@ -73,7 +73,6 @@ const POLYGON_STYLE: L.PathOptions = {
   fillColor: '#8b5cf6',
   fillOpacity: 0.2,
   weight: 2,
-  interactive: false,
 };
 
 const SELECTION_STYLE: L.PathOptions = {
@@ -236,6 +235,7 @@ function MapEventsHelper({
         [selection.current.lat, selection.current.lng],
       ]}
       pathOptions={SELECTION_STYLE}
+      interactive={false}
     />
   ) : null;
 }
@@ -398,7 +398,9 @@ function GeofenceLayers({
 
   return (
     <>
-      {positions.length >= 3 && <Polygon positions={positions} pathOptions={POLYGON_STYLE} />}
+      {/* Not interactive, so a new box can also start inside the current region. The option is a prop:
+          react-leaflet only applies pathOptions as a style, after the layer is created */}
+      {positions.length >= 3 && <Polygon positions={positions} pathOptions={POLYGON_STYLE} interactive={false} />}
       {points.map((pt, i) => (
         // Index keys stay stable while dragging; inserts/deletes only move the following markers
         <VertexMarker

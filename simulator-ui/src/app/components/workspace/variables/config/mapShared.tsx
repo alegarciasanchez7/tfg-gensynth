@@ -11,7 +11,7 @@ export function OfflineGridOverlay() {
   const map = useMap();
   const palette = useCanvasPalette();
   const gridLineStyle = useMemo<L.PathOptions>(
-    () => ({ color: palette.mapGrid, weight: 1, dashArray: '3, 3', interactive: false }),
+    () => ({ color: palette.mapGrid, weight: 1, dashArray: '3, 3' }),
     [palette],
   );
   const [gridItems, setGridItems] = useState<{ positions: [number, number][]; label: string }[]>([]);
@@ -61,7 +61,7 @@ export function OfflineGridOverlay() {
   return (
     <>
       {gridItems.map((item, idx) => (
-        <Polyline key={idx} positions={item.positions} pathOptions={gridLineStyle} />
+        <Polyline key={idx} positions={item.positions} pathOptions={gridLineStyle} interactive={false} />
       ))}
     </>
   );

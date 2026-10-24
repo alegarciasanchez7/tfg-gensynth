@@ -30,11 +30,12 @@ vi.mock('react-leaflet', async () => {
     Polygon: ({ positions }: { positions: [number, number][] }) => (
       <div data-testid="region-polygon" data-positions={JSON.stringify(positions)} />
     ),
-    Rectangle: ({ bounds, pathOptions }: { bounds: [number, number][]; pathOptions: { interactive?: boolean; color?: string } }) => (
+    // interactive must be a prop: react-leaflet only applies pathOptions as a style, after creating the layer
+    Rectangle: ({ bounds, pathOptions, interactive }: { bounds: [number, number][]; pathOptions: { color?: string }; interactive?: boolean }) => (
       <div
         data-testid="region-box"
         data-bounds={JSON.stringify(bounds)}
-        data-interactive={String(pathOptions.interactive)}
+        data-interactive={String(interactive)}
         data-color={pathOptions.color}
       />
     ),
