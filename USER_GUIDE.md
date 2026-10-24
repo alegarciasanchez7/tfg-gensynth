@@ -115,7 +115,7 @@ inside GenSynth (see [Importing a plugin](#importing-a-plugin)); there is nothin
 |---|---|
 | **Top bar** | Project name (a `*` means unsaved changes), status (**RUNNING** / **STOPPED**), **START** / **STOP**, **New**, **Load**, **Save**, **Save as**, **Connectors (N)** (catalog), **+** (import a plugin), **Feedback**, the version and the ⚙ **Settings** button. |
 | **Resource bar** | Live metrics, see below. |
-| **Left panel – GROUPS & FLOWS** | Your groups and the flows inside them. **+ ADD** opens a menu with **Add Group** and **Add Flow**. Each flow shows its live **msg/s**, **sent** (messages delivered), **fails** (messages that could not be generated or sent) and, when above 0, **dropped** in amber (messages lost on purpose by [event loss](#event-loss)), plus chips with the variables its template uses. The footer shows how many groups are running. |
+| **Left panel – GROUPS & FLOWS** | Your groups and the flows inside them. **+ ADD** opens a menu with **Add Group** and **Add Flow**. Each flow shows its live **msg/s**, **sent** (messages delivered), **fails** (messages that could not be generated or sent) and, when above 0, **dropped** in amber (messages lost on purpose by [event loss](#event-loss)), plus chips with the variables its template uses. A locked group shows a lock icon. The footer shows how many groups are running (locked groups never count) and how many are locked. |
 | **Center** | The editor of the selected group, flow or variable, with a breadcrumb at the top. |
 | **Right panel – VARIABLES** | The variables, split in **LOCAL**, **GROUP** and **GLOBAL** tabs. **+ ADD** creates a variable; the **→** button on a variable inserts it in the template you are editing. |
 | **Bottom panel** | **Logs**, **Statistics** and **Preview** of the generated messages. |
@@ -268,7 +268,7 @@ Click a group to open its workspace:
 
 | Action | What it does |
 |---|---|
-| **Lock group** / **Unlock group** | Lock disables every flow of the group: while the simulation runs, they stop generating messages. Unlock enables them again. Useful to silence a site without deleting it. |
+| **Lock group** / **Unlock group** | Lock disables every flow of the group: while the simulation runs, they stop generating messages, and the group workspace shows a **LOCKED** badge instead of its run status. A group locked when you click **START** does not open its connectors, so it creates no output file. Unlock enables the flows again, even while the simulation runs. Useful to silence a site without deleting it. |
 | **Clone group** | Creates copies of the group with all its flows (same flow names and settings, event loss included), their LOCAL variables and the GROUP variables. The group names follow a [naming pattern](#naming-patterns). |
 | **Repeater** | Creates several new flows at once in this group, see below. |
 | **Delete group** | Deletes the group and its flows (also available with right-click). |
@@ -291,13 +291,17 @@ Clone and Repeater name the new items with a pattern:
 
 | Token | Replaced by | Example (base name `Station 1`, 3 copies) |
 |---|---|---|
-| `${name}` | The original or base name | `${name} copy` → *Station 1 copy* (×3) |
+| `${name}` | The original or base name | `${name} copy` → *Station 1 copy*, *Station 1 copy (2)*, *Station 1 copy (3)* |
 | `${index}` | The position of the copy: 1, 2, 3… | `Station ${index}` → *Station 1, Station 2, Station 3* |
 | `${index+K}` / `${index-K}` | The position shifted by K | `Station ${index+1}` → *Station 2, Station 3, Station 4* |
 
 The default clone pattern is `${name} (Clone ${index})`; the Repeater default is
 `${name} ${index}`. Click **+ ${name}** / **+ ${index}** to append a token, and check the
 **Live Preview** before confirming. You can create 1 to 50 copies at a time.
+
+Names must be unique: two flows of the same group, or two groups, cannot share a name (spaces at
+the ends and upper/lower case are ignored). When a generated name is already taken, ` (2)`,
+` (3)`… is added with the first free number, and the **Live Preview** shows the final names.
 
 ---
 
@@ -310,7 +314,7 @@ Use **+ add flow** under a group, **+ ADD → Add Flow** or the Repeater.
 | Field | What it does | Default / range |
 |---|---|---|
 | **Group** | Group of the flow (only shown when no group is selected). | — |
-| **Name** | Name of the flow; available in templates as `{{flow.name}}`. | Required |
+| **Name** | Name of the flow; available in templates as `{{flow.name}}`. It must be unique in its group (spaces at the ends and case are ignored): a duplicate is reported and the flow cannot be created. The same name can be used in another group. | Required |
 | **Every N ticks** | The flow sends one message every N ticks of the global clock. | 1 (whole number ≥ 1) |
 | **Connector** | Destination of the messages. Its fields appear below it. | Required |
 
@@ -328,8 +332,11 @@ The flow cannot be created until every required connector field (marked with **\
   [Event loss](#event-loss)).
 - **Message Format:** the template editor, with the **JSON / XML / CSV / PLAIN** buttons.
 
-In the left panel, the **⋮** menu of a flow offers **Clone flow** (copies the template, the
-connector settings, *Every N ticks*, the event loss and the LOCAL variables) and **Delete flow**.
+In the left panel, the **⋮** menu of a flow offers **Lock flow** / **Unlock flow**, **Clone flow**
+(copies the template, the connector settings, *Every N ticks*, the event loss and the LOCAL
+variables) and **Delete flow**. A locked flow generates nothing and opens no connector, so it
+never takes the output file of another flow; unlocking it while the simulation runs makes it start
+sending.
 
 Changes to the template, to *Every N ticks* and to the event loss of a running flow apply live.
 Changes to the connector or its fields take effect the next time you click **START**.
@@ -342,7 +349,8 @@ The template is the exact text of each message. Every `{{…}}` placeholder is r
 message is generated; everything else is copied as is.
 
 - Type `{{` to open the autocomplete: it lists the built-ins, the variables the flow can reach
-  and their sub-properties. Use the arrow keys and **Enter** or **Tab** to insert.
+  and their sub-properties, filtered by what you type after `{{` (names that start with it come
+  first). Use the arrow keys and **Enter** or **Tab** to insert.
 - Placeholders are highlighted: green when valid, red when the variable does not exist or is not
   reachable from this flow.
 - **Tab** outside the autocomplete inserts two spaces.
@@ -398,7 +406,8 @@ Rules worth remembering:
 
 Temporal sub-properties use the instant the variable generated for this message, whatever its
 output format, so `{{readingTime}}` and `{{readingTime.hour}}` always describe the same moment.
-Hours, days and months are given in the variable's **Time Zone**, or in UTC when it is empty.
+Hours, days and months are given in the variable's **Time Zone**, or in the computer's zone when
+it is empty (the same zone used to format the value).
 
 The autocomplete offers the List sub-properties only for **Fixed Subset** lists (a list without a
 strategy counts as Weighted Random), and `.item0`, `.item1`… on any other list are highlighted in
@@ -406,15 +415,23 @@ red.
 
 ### Converting the format
 
-Click **JSON**, **XML**, **CSV** or **PLAIN** above the editor to open **Convert Message Format**.
-It shows the **Source Format** (current), lets you pick the **Target Format** and previews the
-result before you apply it. The conversion rewrites the template text:
+The highlighted button is the format of the template, detected from its text. Click **JSON**,
+**XML**, **CSV** or **PLAIN** above the editor to open **Convert Message Format**. It shows the
+**Source Format** (current), lets you pick the **Target Format** and previews the result before
+you apply it. When the template is already valid in the target format, only the label changes.
+Otherwise the conversion rewrites the template text (clicking the highlighted button does
+nothing):
 
-- From JSON, the template must be valid JSON. A placeholder without quotes (`"t": {{temp}}`) is
-  not valid JSON, so the converter leaves the text unchanged; quote the placeholders before
-  converting and remove the quotes afterwards if needed.
-- From CSV, the first line is read as the header.
-- XML and plain text are wrapped as a single `message` field.
+- From JSON, placeholders may be quoted or not (`"t": {{temp}}`). JSON with nested objects or
+  lists cannot become CSV: the dialog says which field to flatten.
+- From CSV, the first line is the header; text without data rows is converted as plain text.
+- From XML, each child element becomes a field (repeated elements become a list). XML with
+  attributes, comments or text mixed with elements is not converted, so nothing is lost.
+- Plain text becomes a single `message` field.
+- The result must be valid in the target format; otherwise the dialog explains why and **Apply**
+  stays disabled. JSON or XML content always keeps its label, so it is not converted to **PLAIN**.
+- Converting CSV or XML to JSON writes the placeholders between quotes, so a number arrives as
+  text; remove the quotes of numeric placeholders afterwards if needed.
 
 The selected format is only a label for the editor: GenSynth sends exactly the text of the
 template, whatever button is highlighted.
@@ -471,9 +488,11 @@ Good to know:
 
 ![Statistics](docs-assets/user-guide/33-bottom-statistics.png)
 
-- **Statistics:** **TOTAL SENT**, **ERRORS**, **DROPPED** (messages of all flows lost on purpose
-  by [event loss](#event-loss); 0 while not running), **ACTIVE FLOWS**, **AVG LATENCY** (time the
-  connector takes to confirm a message) and the throughput by technology.
+- **Statistics:** **TOTAL SENT** and **ERRORS** (kept after **STOP**, until GenSynth is closed;
+  ERRORS also counts connector and command errors, so it can be higher than the sum of the flows'
+  fails), **DROPPED** (messages of all flows lost on purpose by [event loss](#event-loss); 0 while
+  not running), **ACTIVE FLOWS**, **AVG LATENCY** (time the connector takes to confirm a message)
+  and the throughput by technology.
 
 ![Preview](docs-assets/user-guide/34-bottom-preview.png)
 
@@ -514,6 +533,10 @@ For example, with the Text format a flow *Sensor 1* in group *Plant A* writes to
 Good to know:
 
 - Every **START** creates a new session folder, so each run has its own files.
+- Two flows cannot write to the same file at once. Names that turn into the same file name
+  (*Sensor 1* and *Sensor_1*), two flows with the same **File name**, or groups that map to the
+  same folder (*Plant A* and *Plant_A*) make the second flow fail to start with *File "…" is
+  already used by another flow*; give it a different name or **File name**.
 - With *JSON array* the `[` … `]` is closed when you click **STOP**. If you set an **Output
   directory**, a new run appends a second array to the same file; use *Text* if you want a file
   you can keep appending to (one JSON object per line).
@@ -657,7 +680,7 @@ In the right panel, choose the scope tab, click **+ ADD** and pick the type.
 
 | Field | What it does |
 |---|---|
-| **Identification Name** | The name you use in templates (`{{name}}`). It must be unique in its place (flow, group or globally); GenSynth reports a duplicate name before you create the variable. |
+| **Identification Name** | The name you use in templates (`{{name}}`). It must be unique in its place (flow, group or globally); GenSynth reports a duplicate name before you create the variable. In the variable editor, an empty or taken name is not applied: a warning appears and the variable keeps its previous name until you type a free one. |
 | **Base Type** | Numeric, String, List, Temporal, Point or Boolean. |
 | **Accessibility Scope** | LOCAL, GROUP or GLOBAL (see below). |
 | **Description (Optional)** | A note for yourself (not saved in the project file in 0.5.1). |
@@ -938,21 +961,27 @@ Choose the **String Generation Mode** with the tabs:
 | **Template** | **Dynamic Template String** | A text built from other variables, e.g. `DEV-{{site}}-{{zone}}`. Use bare names (no scope, no sub-properties); type `{{` to autocomplete. |
 | **Mask/IoT** | **Preset Format Mask**, **Custom Format Pattern**, **Case Formatting** | Formatted identifiers, see below. |
 
+When you switch to a mode whose field is empty, GenSynth fills in a working example (Regex
+`[A-Z]{3}-[0-9]{4}`, Fixed `active`, Template `DEV-001`, Mask/IoT **Random Alphanumeric**
+`????????`).
+
 #### String: masks
 
 **Mask/IoT presets:** **MAC Address**, **IPv4 Address**, **IPv6 Address**, **UUID v4**,
-**Random Alphanumeric** and **Custom Format Mask**. The last two use the **Custom Format Pattern**:
+**Random Alphanumeric** and **Custom Format Mask**. The last two use the **Custom Format Pattern**
+(default `????????` and `SENSOR-####-XXXX`; an empty pattern generates empty strings):
 
 | Symbol | Replaced by |
 |---|---|
 | `#` | A digit 0–9 |
 | `X` / `x` | A hexadecimal digit, upper / lower case |
 | `A` / `a` | A letter, upper / lower case |
-| `?` | An upper-case letter or a digit |
+| `?` | A letter or a digit (upper-case letters only, unless Case Formatting is **Mixed Case**) |
 | Anything else | Copied as is |
 
-For example `SN-####-XXXX` → `SN-0417-9F3A`. **Case Formatting** (**Mixed Case**, **UPPERCASE**,
-**lowercase**) is applied to the whole result.
+For example `SN-####-XXXX` → `SN-0417-9F3A`. **Case Formatting**: **UPPERCASE** and **lowercase**
+apply to the whole result; **Mixed Case** keeps the case of each symbol, so `?????` can give
+`aB3kZ`.
 
 #### String: data corruption
 
@@ -1086,7 +1115,7 @@ are ignored).
 |---|---|---|
 | **Output Category** | **Date Only**, **Full Timestamp** or **Time Only**. Changing it selects the first preset of the category. | Full Timestamp |
 | **Format Preset** | Date only: `yyyy-MM-dd`, `dd/MM/yyyy`, `MM-dd-yyyy`, `yyyy.MM.dd`. Full: `yyyy-MM-dd'T'HH:mm:ss.SSSZ`, `ISO_INSTANT`, `UNIX_TIMESTAMP`, `yyyy-MM-dd HH:mm:ss`. Time only: `HH:mm:ss`, `HH:mm`, `HH:mm:ss.SSS`, `hh:mm a`. | `yyyy-MM-dd'T'HH:mm:ss.SSSZ` |
-| **Custom Format** | Any Java `DateTimeFormatter` pattern, or `UNIX_TIMESTAMP` for epoch milliseconds (a number). | — |
+| **Custom Format** | Any Java `DateTimeFormatter` pattern, or `UNIX_TIMESTAMP` for epoch milliseconds (a number). Month and day names (`MMMM`, `EEEE`) are always in English, whatever the computer's language. | — |
 | **Time Zone** | Zone used to format the date, e.g. `UTC`, `Europe/Madrid`, `-05:00`. Empty: the computer's zone. | Empty |
 
 > **Tip:** for event time, use `UNIX_TIMESTAMP` (a number, no quotes in JSON). For readable text,
@@ -1438,6 +1467,8 @@ Clone the whole group to replicate a site with all its devices.
 - **Auto-save** can be enabled in **Settings → Save & Storage**: it saves the open file every N
   seconds while there are changes.
 - Projects from older GenSynth versions still open; settings they do not have get their defaults.
+  If an old project has two flows with the same name in a group, rename one: with File Output
+  they would write to the same file.
 
 ---
 
@@ -1480,11 +1511,13 @@ Limitations of the design:
 
 | Problem | Solution |
 |---|---|
+| The window shows *Something went wrong* with a **Reload** button | The interface hit an unexpected error; it is written to the log. Click **Reload**: the project stays in GenSynth, but save it first if you can. |
 | The first start shows *"GenSynth could not set up its embedded browser"* | The embedded browser could not be downloaded. Check your internet connection (and proxy or firewall) and click **Retry**. |
 | The logs show *Invalid connector configuration…* when starting a group | A required connector field is empty or invalid; the message says which one. |
 | A plugin is rejected as "built for the legacy plugin API" | That plugin was made for an older GenSynth; it must be rebuilt by its author. |
 | Messages are missing, or **dropped** grows | Check the [event loss](#event-loss) of the flow (**Random loss (%)** and the outages). |
 | *fails* keeps growing | Check the logs panel (bottom): it shows why the message could not be generated or why the destination rejected it. |
+| START shows *Cannot start the simulation: …* and nothing starts | A variable has an invalid configuration (for example an unknown **Time Zone**, or Minimum above Maximum); the message names it. Fix it and click **START** again. |
 | START warns about *validation errors or circular dependencies* | A formula, template variable or conditional rule refers to a variable that does not exist, or two variables refer to each other. Fix the red references. |
 | RabbitMQ: *Connection refused* | The broker is not running or Host/Port are wrong. Check `docker ps` and that port 5672 is published. |
 | RabbitMQ: *ACCESS_REFUSED* with user `guest` | `guest` only works on the same computer as the broker. Create a user in the management UI (Admin → Users, with permissions on the virtual host) and use it. |
