@@ -47,7 +47,7 @@ This guide covers GenSynth **0.5.1**. For a quick overview, see the [README](REA
 11. [Saving and loading](#saving-and-loading)
 12. [Feedback](#feedback)
 13. [Keyboard shortcuts](#keyboard-shortcuts)
-14. [Known limitations and issues](#known-limitations-and-issues)
+14. [Limitations](#limitations)
 15. [Troubleshooting](#troubleshooting)
 
 ---
@@ -421,8 +421,7 @@ The highlighted button is the format of the template, detected from its text. Cl
 **XML**, **CSV** or **PLAIN** above the editor to open **Convert Message Format**. It shows the
 **Source Format** (current), lets you pick the **Target Format** and previews the result before
 you apply it. When the template is already valid in the target format, only the label changes.
-Otherwise the conversion rewrites the template text (clicking the highlighted button does
-nothing):
+Otherwise the conversion rewrites the template text:
 
 - From JSON, placeholders may be quoted or not (`"t": {{temp}}`). JSON with nested objects or
   lists cannot become CSV: the dialog says which field to flatten.
@@ -469,7 +468,7 @@ Good to know:
 
 - The fields are applied when you leave them or press `Enter`; a running flow uses them from the
   next tick. They mark the flow as unsaved (`*`), **Discard** reverts them and they are saved in
-  the `.gsynth` file (projects from older versions open with no loss).
+  the `.gsynth` file.
 - **Clone flow** and **Clone group** copy them. The **Add flow** dialog does not show them: new
   flows start without loss.
 - Lost messages still use `{{n}}` and advance the variables of the message, so a LOCAL counter
@@ -685,7 +684,7 @@ In the right panel, choose the scope tab, click **+ ADD** and pick the type.
 | **Identification Name** | The name you use in templates (`{{name}}`). It must be unique in its place (flow, group or globally); GenSynth reports a duplicate name before you create the variable. In the variable editor, an empty or taken name is not applied: a warning appears and the variable keeps its previous name until you type a free one. |
 | **Base Type** | Numeric, String, List, Temporal, Point or Boolean. |
 | **Accessibility Scope** | LOCAL, GROUP or GLOBAL (see below). |
-| **Description (Optional)** | A note for yourself (not saved in the project file in 0.5.1). |
+| **Description (Optional)** | A note for yourself (not saved in the project file). |
 | **Target Flow Assignment** / **Target Group Assignment** | The flow (LOCAL) or group (GROUP) the variable belongs to. |
 
 > **Tip:** use names made of letters, digits and underscores (`wind_speed`, `windSpeed`). Dots
@@ -1468,9 +1467,6 @@ Clone the whole group to replicate a site with all its devices.
 - **Discard** (or `Ctrl + Z`) reverts the selected item to its last saved state.
 - **Auto-save** can be enabled in **Settings → Save & Storage**: it saves the open file every N
   seconds while there are changes.
-- Projects from older GenSynth versions still open; settings they do not have get their defaults.
-  If an old project has two flows with the same name in a group, rename one: with File Output
-  they would write to the same file.
 
 ---
 
@@ -1490,9 +1486,7 @@ browser. It only takes a couple of minutes, and your opinion helps to improve th
 
 ---
 
-## Known limitations and issues
-
-Limitations of the design:
+## Limitations
 
 - **GROUP and GLOBAL variables are shared generators.** Every flow that uses them takes the next
   value, so per-device sensors must be LOCAL ([Scopes](#scopes)).
@@ -1516,7 +1510,7 @@ Limitations of the design:
 | The window shows *Something went wrong* with a **Reload** button | The interface hit an unexpected error; it is written to the log. Click **Reload**: the project stays in GenSynth, but save it first if you can. |
 | The first start shows *"GenSynth could not set up its embedded browser"* | The embedded browser could not be downloaded. Check your internet connection (and proxy or firewall) and click **Retry**. |
 | The logs show *Invalid connector configuration…* when starting a group | A required connector field is empty or invalid; the message says which one. |
-| A plugin is rejected as "built for the legacy plugin API" | That plugin was made for an older GenSynth; it must be rebuilt by its author. |
+| A plugin is rejected as "built for the legacy plugin API" | The plugin was built for another plugin API; it must be rebuilt by its author. |
 | Messages are missing, or **dropped** grows | Check the [event loss](#event-loss) of the flow (**Random loss (%)** and the outages). |
 | *fails* keeps growing | Check the logs panel (bottom): it shows why the message could not be generated or why the destination rejected it. |
 | START shows *Cannot start the simulation: …* and nothing starts | A variable has an invalid configuration (for example an unknown **Time Zone**, or Minimum above Maximum); the message names it. Fix it and click **START** again. |
