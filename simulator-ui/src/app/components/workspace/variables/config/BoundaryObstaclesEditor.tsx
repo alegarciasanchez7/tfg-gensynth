@@ -5,6 +5,7 @@ import { Button } from '../../../ui/button';
 import { Input } from '../../../ui/input';
 import { Label } from '../../../ui/label';
 import { centerOf } from '../../../../core/pointDefaults';
+import { randomUUID } from '../../../../core/randomId';
 
 interface BoundaryObstaclesEditorProps {
   obstacles: BoundaryObstacle[];
@@ -48,7 +49,7 @@ export const BoundaryObstaclesEditor: React.FC<BoundaryObstaclesEditorProps> = (
           ];
 
     const newObs: BoundaryObstacle = {
-      id: `obs_${crypto.randomUUID()}`,
+      id: `obs_${randomUUID()}`,
       name,
       type: newObstacleType,
       points: defaultPoints,

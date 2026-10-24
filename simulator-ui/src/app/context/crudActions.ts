@@ -18,6 +18,7 @@ import bridge from '../core/bridge';
 import type { Group, Flow, Variable } from '../types';
 import type { GroupState, FlowState, VariableState } from '../core/types';
 import type { OptimisticManager } from './optimisticManager';
+import { randomUUID } from '../core/randomId';
 
 // ─────────────────────────────────────────────────────────────
 // Helper Types
@@ -45,7 +46,7 @@ function throwValidationError(field: string, reason: string): never {
 }
 
 function generateId(): string {
-  return crypto.randomUUID().replace(/-/g, '').substring(0, 9);
+  return randomUUID().replace(/-/g, '').substring(0, 9);
 }
 
 function extractCommandError(error: unknown): CRUDError {
