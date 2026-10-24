@@ -364,6 +364,26 @@ public class TemporalVariableConfig extends VariableConfiguration {
         return lastInstant;
     }
 
+    /**
+     * Resolves the zone a temporal variable is formatted and read in: its Time Zone, or the
+     * computer's zone ({@link ZoneId#systemDefault()}) when it is empty or not a valid zone id.
+     * Both the formatted value and its sub-properties ({@code .hour}, {@code .timezone}...) use
+     * this zone, so they always agree.
+     *
+     * @param timeZone the configured Time Zone (may be {@code null} or blank)
+     * @return the zone to use, never {@code null}
+     */
+    public static ZoneId resolveZone(String timeZone) {
+        if (timeZone != null && !timeZone.trim().isEmpty()) {
+            try {
+                return ZoneId.of(timeZone.trim());
+            } catch (java.time.DateTimeException e) {
+                // Invalid ids are rejected by validate(); fall back to the computer's zone
+            }
+        }
+        return ZoneId.systemDefault();
+    }
+
     private Object formatOutput(Instant instant) {
         lastInstant = instant;
         if (dateFormat == null || dateFormat.trim().isEmpty()) {
@@ -377,10 +397,9 @@ public class TemporalVariableConfig extends VariableConfiguration {
         }
 
         if (formatter == null) {
-            ZoneId zone = (timeZone != null && !timeZone.trim().isEmpty()) 
-                ? ZoneId.of(timeZone) 
-                : ZoneId.systemDefault();
-            formatter = DateTimeFormatter.ofPattern(dateFormat).withZone(zone);
+            // English month and day names, like the .monthText / .dayOfWeek sub-properties,
+            // so the output does not depend on the computer's language
+            formatter = DateTimeFormatter.ofPattern(dateFormat, java.util.Locale.ENGLISH).withZone(resolveZone(timeZone));
         }
         return formatter.format(instant);
     }

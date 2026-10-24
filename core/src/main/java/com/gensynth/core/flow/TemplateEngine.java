@@ -1,5 +1,7 @@
 package com.gensynth.core.flow;
 
+import com.gensynth.core.flow.variables.VariableType;
+import com.gensynth.core.flow.variables.config.TemporalVariableConfig;
 import com.gensynth.core.model.Variable;
 
 import java.time.Instant;
@@ -156,7 +158,7 @@ public class TemplateEngine {
                         }
                     }
 
-                    if (itemIndex != null && "list".equalsIgnoreCase(variable.getType())) {
+                    if (itemIndex != null && VariableType.LIST.matches(variable.getType())) {
                         Object stratObj = varConfig != null ? varConfig.get("selectionStrategy") : null;
                         if (stratObj != null && !"FIXED_SUBSET".equalsIgnoreCase(stratObj.toString())) {
                             throw new IllegalStateException("Invalid item reference: Variable '" + variable.getName() + "' uses selection strategy '" + stratObj + "' (not 'FIXED_SUBSET') and cannot be referenced with sub-item index (.itemX).");
@@ -164,7 +166,7 @@ public class TemplateEngine {
                     }
 
                     Object targetObj = generatedValue;
-                    if (propertyPart != null && "temporal".equalsIgnoreCase(variable.getType())) {
+                    if (propertyPart != null && VariableType.TEMPORAL.matches(variable.getType())) {
                         // Read date parts from the generated instant, not from the formatted text
                         java.time.Instant instant = lastInstantOf(context.get(variable.getId() + "_config"));
                         if (instant != null) {
@@ -180,7 +182,7 @@ public class TemplateEngine {
                         }
                     }
                     if (itemIndex == null && isListCollectionProperty(propertyPart)
-                            && "list".equalsIgnoreCase(variable.getType())
+                            && VariableType.LIST.matches(variable.getType())
                             && !(targetObj instanceof java.util.List<?>)) {
                         // Single-item strategies yield one item, not a list: answer as a one-item list
                         targetObj = targetObj != null ? java.util.List.of(targetObj) : java.util.List.of();
@@ -191,26 +193,8 @@ public class TemplateEngine {
                         replacement = propResolved != null ? propResolved : "";
                     } else if (itemIndex != null && propertyPart == null) {
                         replacement = targetObj != null ? targetObj.toString() : "";
-                    } else if (generatedValue instanceof java.util.List<?>) {
-                        replacement = formatListToJson((java.util.List<?>) generatedValue);
-                    } else if (generatedValue instanceof Map<?, ?>) {
-                        replacement = formatMapToJson((Map<?, ?>) generatedValue);
-                    } else if (isConstantPattern && generatedValue instanceof Double) {
-                        double d = (Double) generatedValue;
-                        if (d % 1.0 == 0.0) {
-                            replacement = String.format(java.util.Locale.US, "%.0f", d);
-                        } else {
-                            replacement = String.valueOf(generatedValue);
-                        }
-                    } else if (isConstantPattern && generatedValue instanceof Float) {
-                        float f = (Float) generatedValue;
-                        if (f % 1.0f == 0.0f) {
-                            replacement = String.format(java.util.Locale.US, "%.0f", (double) f);
-                        } else {
-                            replacement = String.valueOf(generatedValue);
-                        }
                     } else {
-                        replacement = String.valueOf(generatedValue);
+                        replacement = formatValue(generatedValue, isConstantPattern);
                     }
                 } else {
                     // Unknown or inaccessible variable, leave it as is or replace with empty
@@ -248,7 +232,7 @@ public class TemplateEngine {
     private String resolveVariableProperty(Object targetObj, String propertyPart, Variable variable) {
         if (propertyPart == null) return null;
         String prop = propertyPart.toLowerCase(java.util.Locale.ROOT);
-        String varType = variable != null && variable.getType() != null ? variable.getType().toLowerCase(java.util.Locale.ROOT) : "";
+        VariableType varType = variable != null ? VariableType.fromName(variable.getType()) : null;
 
         // 1. Map target object (Point, Graph route node, custom map)
         if (targetObj instanceof Map<?, ?> map) {
@@ -286,7 +270,7 @@ public class TemplateEngine {
         }
 
         // 2. TEMPORAL Variable Attributes
-        if ("temporal".equals(varType) || targetObj instanceof java.time.Instant || targetObj instanceof java.util.Date) {
+        if (varType == VariableType.TEMPORAL || targetObj instanceof java.time.Instant || targetObj instanceof java.util.Date) {
             java.time.Instant instant = null;
             if (targetObj instanceof java.time.Instant ins) {
                 instant = ins;
@@ -306,12 +290,11 @@ public class TemplateEngine {
                 instant = java.time.Instant.now();
             }
 
-            java.time.ZoneId zone = java.time.ZoneId.of("UTC");
-            if (variable != null && variable.getConfig() != null && variable.getConfig().get("timeZone") != null) {
-                try {
-                    zone = java.time.ZoneId.of(variable.getConfig().get("timeZone").toString());
-                } catch (Exception ignored) {}
-            }
+            // Same zone as the formatted value: the variable's Time Zone, or the computer's zone
+            Object configuredZone = variable != null && variable.getConfig() != null
+                    ? variable.getConfig().get("timeZone") : null;
+            java.time.ZoneId zone = TemporalVariableConfig.resolveZone(
+                    configuredZone != null ? configuredZone.toString() : null);
 
             java.time.ZonedDateTime zdt = instant.atZone(zone);
 
@@ -368,7 +351,7 @@ public class TemplateEngine {
         }
 
         // 3. NUMERIC Variable Attributes
-        if ("numeric".equals(varType) || targetObj instanceof Number) {
+        if (varType == VariableType.NUMERIC || targetObj instanceof Number) {
             double val = 0.0;
             if (targetObj instanceof Number num) {
                 val = num.doubleValue();
@@ -415,7 +398,7 @@ public class TemplateEngine {
         }
 
         // 4. STRING Variable Attributes
-        if ("string".equals(varType) || targetObj instanceof String) {
+        if (varType == VariableType.STRING || targetObj instanceof String) {
             String str = targetObj != null ? targetObj.toString() : "";
             switch (prop) {
                 case "length":
@@ -441,7 +424,7 @@ public class TemplateEngine {
         }
 
         // 5. BOOLEAN Variable Attributes
-        if ("boolean".equals(varType) || targetObj instanceof Boolean) {
+        if (varType == VariableType.BOOLEAN || targetObj instanceof Boolean) {
             boolean bool = false;
             if (targetObj instanceof Boolean b) {
                 bool = b;
@@ -470,7 +453,7 @@ public class TemplateEngine {
         }
 
         // 6. LIST Variable Attributes
-        if ("list".equals(varType) || targetObj instanceof java.util.List<?>) {
+        if (varType == VariableType.LIST || targetObj instanceof java.util.List<?>) {
             if (targetObj instanceof java.util.List<?> list) {
                 switch (prop) {
                     case "size":
@@ -653,7 +636,33 @@ public class TemplateEngine {
         }
     }
 
-    private String formatListToJson(java.util.List<?> list) {
+    /**
+     * Formats a generated value the way it is written into a message: lists and maps as JSON,
+     * whole numbers of a Constant numeric variable without decimals ({@code 42}, not {@code 42.0}),
+     * and anything else with {@link String#valueOf(Object)}. Shared by flow templates and the
+     * String variable's Template mode so both render a value identically.
+     *
+     * @param value           the generated value (may be {@code null})
+     * @param constantPattern whether the value comes from a numeric variable with the Constant pattern
+     * @return the text written for the value
+     */
+    public static String formatValue(Object value, boolean constantPattern) {
+        if (value instanceof java.util.List<?> list) {
+            return formatListToJson(list);
+        }
+        if (value instanceof Map<?, ?> map) {
+            return formatMapToJson(map);
+        }
+        if (constantPattern && value instanceof Double d && d % 1.0 == 0.0) {
+            return String.format(java.util.Locale.ROOT, "%.0f", d);
+        }
+        if (constantPattern && value instanceof Float f && f % 1.0f == 0.0f) {
+            return String.format(java.util.Locale.ROOT, "%.0f", (double) f);
+        }
+        return String.valueOf(value);
+    }
+
+    private static String formatListToJson(java.util.List<?> list) {
         StringBuilder sb = new StringBuilder("[");
         for (int i = 0; i < list.size(); i++) {
             if (i > 0) sb.append(", ");
@@ -671,7 +680,7 @@ public class TemplateEngine {
         return sb.toString();
     }
 
-    private String formatMapToJson(Map<?, ?> map) {
+    private static String formatMapToJson(Map<?, ?> map) {
         StringBuilder sb = new StringBuilder("{");
         boolean first = true;
         for (Map.Entry<?, ?> entry : map.entrySet()) {

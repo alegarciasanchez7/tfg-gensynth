@@ -143,7 +143,7 @@ public class PluginInstallerImpl implements IPluginInstaller {
 
     private void createRollbackMarker(Path jarPath, String pluginId) {
         Path markerPath = pluginsDirectory.resolve(AppPaths.PENDING_INSTALL_MARKER);
-        String json = String.format("{\"path\": \"%s\", \"pluginId\": \"%s\", \"timestamp\": %d}", 
+        String json = String.format(java.util.Locale.ROOT, "{\"path\": \"%s\", \"pluginId\": \"%s\", \"timestamp\": %d}", 
                 jarPath.toAbsolutePath().toString().replace("\\", "\\\\"), 
                 pluginId, 
                 System.currentTimeMillis());

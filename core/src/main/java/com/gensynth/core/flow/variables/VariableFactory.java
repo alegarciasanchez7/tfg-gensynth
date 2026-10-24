@@ -151,8 +151,12 @@ public class VariableFactory {
             configMap = Map.of();
         }
 
-        switch (type.toUpperCase()) {
-            case "NUMERIC":
+        VariableType variableType = VariableType.fromName(type);
+        if (variableType == null) {
+            throw new IllegalArgumentException("Unknown variable type: " + type);
+        }
+        switch (variableType) {
+            case NUMERIC:
                 NumericVariableConfig numConfig = createNumeric(id);
                 if (configMap.containsKey("min"))
                     numConfig.from(((Number) configMap.get("min")).doubleValue());
@@ -258,7 +262,7 @@ public class VariableFactory {
                 }
                 return numConfig;
 
-            case "STRING":
+            case STRING:
                 StringVariableConfig strConfig = createString(id);
                 if (configMap.containsKey("fixedLength"))
                     strConfig.fixedSize(((Number) configMap.get("fixedLength")).intValue());
@@ -296,7 +300,7 @@ public class VariableFactory {
                 }
                 return strConfig;
 
-            case "LIST":
+            case LIST:
                 ListVariableConfig listConfig = createList(id);
                 if (configMap.containsKey("items") && configMap.get("items") instanceof List) {
                     List<?> rawItems = (List<?>) configMap.get("items");
@@ -365,7 +369,7 @@ public class VariableFactory {
                 }
                 return listConfig;
 
-            case "BOOLEAN":
+            case BOOLEAN:
                 BooleanVariableConfig boolConfig = createBoolean(id);
                 if (configMap.containsKey("pattern") && configMap.get("pattern") != null) {
                     try {
@@ -394,8 +398,7 @@ public class VariableFactory {
                     boolConfig.pFalseToTrue(((Number) configMap.get("pFalseToTrue")).doubleValue());
                 return boolConfig;
 
-            case "DATE":
-            case "TEMPORAL":
+            case TEMPORAL:
                 TemporalVariableConfig dateConfig = createTemporal(id);
                 if (configMap.containsKey("dateFormat"))
                     dateConfig.dateFormat((String) configMap.get("dateFormat"));
@@ -438,7 +441,7 @@ public class VariableFactory {
                 }
                 return dateConfig;
 
-            case "POINT":
+            case POINT:
                 PointVariableConfig pointConfig = createPoint(id);
                 if (configMap.containsKey("pattern")) {
                     try {
