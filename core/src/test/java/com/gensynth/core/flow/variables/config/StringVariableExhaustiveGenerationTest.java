@@ -102,9 +102,9 @@ public class StringVariableExhaustiveGenerationTest {
         assertTrue(alpha.length() > 0);
 
         // Custom
-        config.formattedMaskType("CUSTOM_MASK").customMask("A#X?");
+        config.formattedMaskType("CUSTOM_MASK").customMask("@#$?");
         String custom = (String) config.generateNextValue();
-        // A -> A-Z, # -> 0-9, X -> 0-F, ? -> Alphanumeric
+        // @ -> letter, # -> 0-9, $ -> 0-F, ? -> letter or digit
         assertTrue(Character.isLetter(custom.charAt(0)));
         assertTrue(Character.isDigit(custom.charAt(1)));
     }

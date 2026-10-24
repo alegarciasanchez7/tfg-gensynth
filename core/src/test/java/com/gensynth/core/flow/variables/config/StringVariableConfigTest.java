@@ -199,27 +199,59 @@ public class StringVariableConfigTest {
         String ip = (String) config.generateNextValue();
         assertTrue(ip.matches("\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}"));
         
-        config.formattedMaskType("CUSTOM_MASK").customMask("AA-##-xx");
+        config.formattedMaskType("CUSTOM_MASK").customMask("@@-##-$$").alphanumericCase("UPPER");
         String custom = (String) config.generateNextValue();
-        assertTrue(custom.matches("[A-Z]{2}-\\d{2}-[0-9a-f]{2}"));
+        assertTrue(custom, custom.matches("[A-Z]{2}-\\d{2}-[0-9A-F]{2}"));
     }
 
     @Test
-    public void questionMarkFollowsTheCaseFormatting() {
-        String mask = "?".repeat(300);
-        config.pattern(GenerationPattern.FORMATTED_MASK).formattedMaskType("ALPHANUMERIC").customMask(mask);
+    public void lettersAndDigitsOfTheMaskAreCopiedAsWritten() {
+        config.pattern(GenerationPattern.FORMATTED_MASK).formattedMaskType("CUSTOM_MASK")
+              .customMask("MENSAJE-###-?").alphanumericCase("UPPER");
+
+        for (int i = 0; i < 200; i++) {
+            String value = (String) config.generateNextValue();
+            assertTrue(value, value.matches("MENSAJE-\\d{3}-[A-Z0-9]"));
+        }
+
+        // Former symbols (A, a, X, x) are plain text now
+        config.customMask("TAXI-Aa-Xx");
+        assertEquals("TAXI-Aa-Xx", config.generateNextValue());
+    }
+
+    @Test
+    public void caseFormattingOnlyChangesTheGeneratedCharacters() {
+        String generated = "@@@@@@@@@@$$$$$$$$$$??????????".repeat(10);
+        config.pattern(GenerationPattern.FORMATTED_MASK).formattedMaskType("CUSTOM_MASK")
+              .customMask("Mensaje-" + generated);
+
+        config.alphanumericCase("UPPER");
+        String upper = (String) config.generateNextValue();
+        assertTrue(upper, upper.matches("Mensaje-[A-Z0-9]{300}"));
+
+        config.alphanumericCase("LOWER");
+        String lower = (String) config.generateNextValue();
+        assertTrue(lower, lower.matches("Mensaje-[a-z0-9]{300}"));
 
         config.alphanumericCase("MIXED");
         String mixed = (String) config.generateNextValue();
-        assertTrue(mixed, mixed.matches("[A-Za-z0-9]{300}"));
-        assertTrue("Mixed Case must give lower-case letters too: " + mixed, mixed.matches(".*[a-z].*"));
-        assertTrue("Mixed Case must give upper-case letters too: " + mixed, mixed.matches(".*[A-Z].*"));
+        assertTrue(mixed, mixed.startsWith("Mensaje-"));
+        assertTrue("Mixed Case must give lower-case letters: " + mixed, mixed.substring(8).matches(".*[a-z].*"));
+        assertTrue("Mixed Case must give upper-case letters: " + mixed, mixed.substring(8).matches(".*[A-Z].*"));
+    }
 
-        config.alphanumericCase("UPPER");
-        assertTrue(((String) config.generateNextValue()).matches("[A-Z0-9]{300}"));
+    @Test
+    public void eachSymbolGivesItsKindOfCharacter() {
+        config.pattern(GenerationPattern.FORMATTED_MASK).formattedMaskType("CUSTOM_MASK").alphanumericCase("UPPER");
 
-        config.alphanumericCase("LOWER");
-        assertTrue(((String) config.generateNextValue()).matches("[a-z0-9]{300}"));
+        config.customMask("#".repeat(200));
+        assertTrue(((String) config.generateNextValue()).matches("[0-9]{200}"));
+        config.customMask("@".repeat(200));
+        assertTrue(((String) config.generateNextValue()).matches("[A-Z]{200}"));
+        config.customMask("$".repeat(200));
+        assertTrue(((String) config.generateNextValue()).matches("[0-9A-F]{200}"));
+        config.customMask("?".repeat(200));
+        assertTrue(((String) config.generateNextValue()).matches("[A-Z0-9]{200}"));
     }
 
     @Test

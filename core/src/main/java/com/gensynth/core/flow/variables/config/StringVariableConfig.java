@@ -33,7 +33,7 @@ public class StringVariableConfig extends VariableConfiguration {
 
     // Formatted Mask Mode
     private String formattedMaskType; // MAC_ADDRESS, IPV4, IPV6, UUID_V4, CUSTOM_MASK, ALPHANUMERIC
-    private String customMask;
+    private String customMask; // # digit, @ letter, $ hex digit, ? letter or digit; anything else is copied
     private String alphanumericCase; // UPPER, LOWER, MIXED
 
     // Data Corruption Simulation
@@ -52,6 +52,7 @@ public class StringVariableConfig extends VariableConfiguration {
     private static final String LOWERCASE_CHARS = "abcdefghijklmnopqrstuvwxyz";
     private static final String UPPERCASE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     private static final String NUMBER_CHARS = "0123456789";
+    private static final String HEX_CHARS = "0123456789ABCDEF";
     private static final String SYMBOL_CHARS = "!@#$%^&*()_+-=[]{}|;:,.<>?";
     
     // Performance optimization: pre-computed flat character pool
@@ -209,32 +210,34 @@ public class StringVariableConfig extends VariableConfiguration {
             return java.util.UUID.randomUUID().toString();
         } else if ("CUSTOM_MASK".equals(formattedMaskType) || "ALPHANUMERIC".equals(formattedMaskType)) {
             if (customMask == null || customMask.isEmpty()) return "";
+            // The symbols are never letters or digits, so the text around them is copied as written
             StringBuilder sb = new StringBuilder(customMask.length());
             for (char c : customMask.toCharArray()) {
-                if (c == '#') {
-                    sb.append(NUMBER_CHARS.charAt(random.nextInt(NUMBER_CHARS.length())));
-                } else if (c == 'X' || c == 'x') {
-                    char hex = "0123456789ABCDEF".charAt(random.nextInt(16));
-                    sb.append(c == 'x' ? Character.toLowerCase(hex) : hex);
-                } else if (c == 'A' || c == 'a') {
-                    char letter = UPPERCASE_CHARS.charAt(random.nextInt(UPPERCASE_CHARS.length()));
-                    sb.append(c == 'a' ? Character.toLowerCase(letter) : letter);
-                } else if (c == '?') {
-                    // Mixed Case keeps each symbol's case, so only here can '?' be a lower-case letter
-                    String alpha = "MIXED".equals(alphanumericCase)
-                        ? UPPERCASE_CHARS + LOWERCASE_CHARS + NUMBER_CHARS
-                        : UPPERCASE_CHARS + NUMBER_CHARS;
-                    sb.append(alpha.charAt(random.nextInt(alpha.length())));
-                } else {
-                    sb.append(c);
+                switch (c) {
+                    case '#' -> sb.append(randomChar(NUMBER_CHARS, random));
+                    case '@' -> sb.append(applyCase(randomChar(UPPERCASE_CHARS, random), random));
+                    case '$' -> sb.append(applyCase(randomChar(HEX_CHARS, random), random));
+                    case '?' -> sb.append(applyCase(randomChar(UPPERCASE_CHARS + NUMBER_CHARS, random), random));
+                    default -> sb.append(c);
                 }
             }
-            String res = sb.toString();
-            if ("LOWER".equals(alphanumericCase)) return res.toLowerCase();
-            if ("UPPER".equals(alphanumericCase)) return res.toUpperCase();
-            return res;
+            return sb.toString();
         }
         return "";
+    }
+
+    private static char randomChar(String chars, ThreadLocalRandom random) {
+        return chars.charAt(random.nextInt(chars.length()));
+    }
+
+    /**
+     * Case Formatting of a generated mask letter: UPPER and LOWER force it, MIXED picks either
+     * case at random. Only generated characters are affected, never the literal text of the mask.
+     */
+    private char applyCase(char c, ThreadLocalRandom random) {
+        if ("LOWER".equals(alphanumericCase)) return Character.toLowerCase(c);
+        if ("UPPER".equals(alphanumericCase)) return c;
+        return random.nextBoolean() ? c : Character.toLowerCase(c);
     }
 
     private String applyDataCorruption(String input) {

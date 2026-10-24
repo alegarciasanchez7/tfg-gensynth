@@ -27,7 +27,8 @@
   - Waypoint Navigation sends each waypoint once per lap, followed by Interpolation Steps − 1 points towards the next one;
   - Circular Orbit always turns around the centre of the region, unless an explicit orbit centre is set;
   - 3D points fill the drawn shape instead of a fixed 100 × 100 × 100 box;
-  - Random Walk starts at the Fixed Point only when it is inside the region and outside obstacles, otherwise at a random valid position.
+  - Random Walk starts at the Fixed Point only when it is inside the region and outside obstacles, otherwise at a random valid position;
+  - String masks use `@` for a letter and `$` for a hexadecimal digit, so letters and digits in a pattern are copied as written (`A`, `a`, `X` and `x` are plain text); Case Formatting only changes the generated letters.
 - **[User guide](https://github.com/alegarciasanchez7/tfg-gensynth/blob/main/USER_GUIDE.md)** rewritten with screenshots.
 
 ## Download and install
