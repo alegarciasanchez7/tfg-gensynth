@@ -1,6 +1,6 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, it, expect, vi } from 'vitest';
+import { beforeAll, describe, it, expect, vi } from 'vitest';
 import { StringConfigPanel } from './StringConfigPanel';
 import { StringVariableConfig } from '../../../../types';
 
@@ -9,6 +9,15 @@ vi.mock('../../../../context', () => ({
 }));
 
 describe('StringConfigPanel', () => {
+  beforeAll(() => {
+    // Radix tooltips measure their trigger; jsdom has no ResizeObserver
+    globalThis.ResizeObserver ??= class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    };
+  });
+
   const defaultConfig: StringVariableConfig = {
     fixedLength: 10,
     regexPattern: '',
@@ -113,5 +122,32 @@ describe('StringConfigPanel', () => {
     await user.click(screen.getByRole('tab', { name: 'Regex' }));
 
     expect(handleChange).toHaveBeenCalledWith({ pattern: 'REGEX' });
+  });
+
+  it.each([
+    ['Random', 'Random letters and digits (A-Z, a-z, 0-9) of a fixed length.'],
+    ['Regex', 'A random text that matches a regular expression'],
+    ['Fixed', 'Always the same text.'],
+    ['Template', 'Text built from other variables'],
+    ['Mask/IoT', 'Formatted identifiers: MAC, IPv4, IPv6, UUID'],
+  ])('describes the %s mode on hover', async (tab, description) => {
+    const user = userEvent.setup();
+    render(<StringConfigPanel config={defaultConfig} onChange={vi.fn()} />);
+
+    await user.hover(screen.getByRole('tab', { name: tab }));
+
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(description);
+  });
+
+  it('keeps the template text visible in light mode: the input is transparent over its highlighted copy', () => {
+    render(
+      <StringConfigPanel config={{ ...defaultConfig, pattern: 'TEMPLATE', template: 'DEV-{{id}}' }} onChange={vi.fn()} />
+    );
+
+    const input = screen.getByLabelText('Dynamic Template String');
+    expect(input).toHaveClass('bg-transparent', 'text-transparent');
+    expect(input).not.toHaveClass('bg-[var(--c-bg2)]');
+    expect(input.parentElement).toHaveClass('bg-[var(--c-bg2)]');
+    expect(screen.getByText('DEV-')).toBeInTheDocument();
   });
 });
