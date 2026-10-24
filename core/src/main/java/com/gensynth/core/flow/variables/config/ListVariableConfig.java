@@ -94,8 +94,6 @@ public class ListVariableConfig extends VariableConfiguration {
     private List<Integer> shuffleIndices = new ArrayList<>();
     private int currentShufflePointer = 0;
     private String currentMarkovStateId = null;
-    /** Items drawn by an inherited "N Random" subset, kept for the whole run by the strategies that follow an order. */
-    private List<ListItem> keptRandomSubset = null;
 
     // Fast cache arrays for WEIGHTED_RANDOM
     private double[] cachedWeights;
@@ -239,9 +237,8 @@ public class ListVariableConfig extends VariableConfiguration {
             }
             Collections.shuffle(shuffleIndices);
         }
-        // The chain starts in the first item shown, which may be an inherited or reordered one
+        // The chain starts in the first item shown, which may be a reordered one
         this.currentMarkovStateId = null;
-        this.keptRandomSubset = null;
     }
 
     @Override
@@ -310,59 +307,14 @@ public class ListVariableConfig extends VariableConfiguration {
         return (selectedItem != null) ? selectedItem.generateValue() : null;
     }
 
+    /**
+     * The items of this list in the chosen order. A list only has its own items: it cannot inherit
+     * items from another list.
+     *
+     * @return the items, reordered by the item order when one is set
+     */
     public List<ListItem> getEffectiveItems() {
-        List<ListItem> effective = new ArrayList<>();
-        if (sourceListVariableId != null && !sourceListVariableId.trim().isEmpty() && currentContext != null) {
-            String refId = sourceListVariableId.trim();
-            Object varObj = currentContext.get(refId + "_config");
-            if (varObj == null) {
-                varObj = currentContext.get(refId);
-            }
-            ListVariableConfig sourceListConfig = null;
-            if (varObj instanceof com.gensynth.core.flow.variables.ConfigurableVariable) {
-                VariableConfiguration cfg = ((com.gensynth.core.flow.variables.ConfigurableVariable) varObj).getConfiguration();
-                if (cfg instanceof ListVariableConfig) {
-                    sourceListConfig = (ListVariableConfig) cfg;
-                }
-            } else if (varObj instanceof ListVariableConfig) {
-                sourceListConfig = (ListVariableConfig) varObj;
-            }
-
-            if (sourceListConfig != null && !sourceListConfig.getEffectiveItems().isEmpty()) {
-                List<ListItem> parentItems = sourceListConfig.getEffectiveItems();
-                if ("SUBSET_SPECIFIC".equalsIgnoreCase(sourceListSelectionMode) && selectedListItemIds != null && !selectedListItemIds.isEmpty()) {
-                    Map<String, ListItem> parentMap = new HashMap<>();
-                    for (ListItem pItem : parentItems) {
-                        parentMap.put(pItem.getId(), pItem);
-                        if (pItem.getValue() != null) {
-                            parentMap.put(String.valueOf(pItem.getValue()), pItem);
-                        }
-                    }
-                    for (String sid : selectedListItemIds) {
-                        ListItem matched = parentMap.get(sid);
-                        if (matched != null && !effective.contains(matched)) {
-                            effective.add(matched);
-                        }
-                    }
-                } else if ("SUBSET_RANDOM".equalsIgnoreCase(sourceListSelectionMode)) {
-                    effective.addAll(randomSubsetOf(parentItems));
-                } else if ("FIXED_ITEM".equalsIgnoreCase(sourceListSelectionMode) && selectedListItemId != null) {
-                    for (ListItem pItem : parentItems) {
-                        if (selectedListItemId.equals(pItem.getId()) || (pItem.getValue() != null && selectedListItemId.equals(String.valueOf(pItem.getValue())))) {
-                            effective.add(pItem);
-                            break;
-                        }
-                    }
-                } else {
-                    effective.addAll(parentItems);
-                }
-            }
-        }
-
-        // Add local items
-        if (items != null && !items.isEmpty()) {
-            effective.addAll(items);
-        }
+        List<ListItem> effective = items != null ? new ArrayList<>(items) : new ArrayList<>();
 
         // Reorder by itemOrder if specified
         if (itemOrder != null && !itemOrder.isEmpty()) {
@@ -396,23 +348,19 @@ public class ListVariableConfig extends VariableConfiguration {
     }
 
     /**
-     * Random items of the parent list. Weighted Random and Fixed Subset draw them again for every
-     * value; Sequential, Shuffle and Markov keep the first draw, or their order would be lost.
+     * A new list with the same items, strategy, matrix and order, starting from the beginning:
+     * it picks items as this list does without moving this list's position.
+     *
+     * @return the copy
      */
-    private List<ListItem> randomSubsetOf(List<ListItem> parentItems) {
-        boolean keepsDraw = selectionStrategy == SelectionStrategy.SEQUENTIAL
-                || selectionStrategy == SelectionStrategy.SHUFFLE
-                || selectionStrategy == SelectionStrategy.MARKOV_CHAIN;
-        // A parent edited during the run has new items: draw again from them
-        if (keepsDraw && keptRandomSubset != null && parentItems.containsAll(keptRandomSubset)) {
-            return keptRandomSubset;
-        }
-        List<ListItem> copy = new ArrayList<>(parentItems);
-        Collections.shuffle(copy);
-        int count = Math.min(randomSubsetCount > 0 ? randomSubsetCount : 1, copy.size());
-        List<ListItem> drawn = new ArrayList<>(copy.subList(0, count));
-        keptRandomSubset = keepsDraw ? drawn : null;
-        return drawn;
+    public ListVariableConfig copyGenerator() {
+        ListVariableConfig copy = new ListVariableConfig()
+                .identifier(identifier)
+                .selectionStrategy(selectionStrategy)
+                .items(items)
+                .transitionMatrix(transitionMatrix);
+        copy.setItemOrder(itemOrder);
+        return copy;
     }
 
     public List<String> getItemOrder() {
@@ -510,7 +458,7 @@ public class ListVariableConfig extends VariableConfiguration {
 
         Map<String, Double> transitions = transitionMatrix.get(currentMarkovStateId);
         if (transitions == null) {
-            // A state without a row (e.g. an item inherited after the matrix was filled) moves to any item
+            // A state without a row (e.g. a matrix edited by hand) moves to any item
             currentMarkovStateId = activeItems.get(ThreadLocalRandom.current().nextInt(activeItems.size())).getId();
         } else if (!transitions.isEmpty()) {
             double sum = 0.0;

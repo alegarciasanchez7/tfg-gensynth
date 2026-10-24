@@ -1,31 +1,40 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { useState } from 'react';
-import { describe, it, expect, vi } from 'vitest';
+import { beforeAll, describe, it, expect, vi } from 'vitest';
 import { ListConfigPanel } from './ListConfigPanel';
 import { ListVariableConfig } from '../../../../types';
 
-// A GLOBAL list other lists can inherit from
-const parentList = {
-  id: 'parent', name: 'parent', scope: 'global', type: 'list',
-  config: { items: [{ id: 'p1', value: 'P1', weight: 1 }, { id: 'p2', value: 'P2', weight: 1 }] },
+// A GLOBAL list a variable could inherit from
+const otherList = {
+  id: 'other', name: 'other', scope: 'global', type: 'list',
+  config: { items: [{ id: 'p1', value: 'P1', weight: 1 }] },
 };
 
 // Picking Dynamic Generator opens the generator editor, whose panels read the app state
 vi.mock('../../../../context', () => ({
-  useApp: () => ({ state: { variables: [parentList], groups: [], flows: [] } }),
+  useApp: () => ({ state: { variables: [otherList], groups: [], flows: [] } }),
 }));
 
 /** The panel inside an editor that keeps its changes, so several edits can follow each other. */
 function EditedList({ initial, onConfig }: { initial: ListVariableConfig; onConfig: (config: ListVariableConfig) => void }) {
   const [config, setConfig] = useState(initial);
   onConfig(config);
-  return <ListConfigPanel config={config} variableScope="global" onChange={(patch) => setConfig(current => ({ ...current, ...patch }))} />;
+  return <ListConfigPanel config={config} onChange={(patch) => setConfig(current => ({ ...current, ...patch }))} />;
 }
 
 const rowSums = (matrix: Record<string, Record<string, number>> = {}) =>
   Object.fromEntries(Object.entries(matrix).map(([from, row]) => [from, Object.values(row).reduce((a, p) => a + p, 0)]));
 
 describe('ListConfigPanel', () => {
+  beforeAll(() => {
+    // Radix tooltips of the item generator panels measure their trigger; jsdom has no ResizeObserver
+    globalThis.ResizeObserver ??= class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    };
+  });
+
   const defaultConfig: ListVariableConfig = {
     selectionStrategy: 'WEIGHTED_RANDOM',
     items: [
@@ -235,30 +244,46 @@ describe('ListConfigPanel', () => {
     expect(config.items?.map(item => item.value)).toEqual(['Item 1', 'Item 3', 'Item 4']);
   });
 
-  it('shows an inherited state without a row as even, as the Core reads it, and keeps it when editing one cell', () => {
+  it('shows a state without a row as even, as the Core reads it, and keeps it when editing one cell', () => {
     const handleChange = vi.fn();
     render(
       <ListConfigPanel
         config={{
           selectionStrategy: 'MARKOV_CHAIN',
-          items: [{ id: 'l1', value: 'L1' }],
-          transitionMatrix: { l1: { l1: 1 } },
-          sourceListVariableId: 'parent',
-          sourceListSelectionMode: 'SUBSET_SPECIFIC',
+          items: [{ id: 'a', value: 'A' }, { id: 'b', value: 'B' }, { id: 'c', value: 'C' }],
+          transitionMatrix: { c: { c: 1 } },
         }}
-        variableScope="global"
         onChange={handleChange}
       />
     );
 
-    // Rows P1, P2, L1 (3 x 3): the inherited P1 and P2 have no row yet
+    // Rows A and B are missing (e.g. a matrix edited by hand)
     const cells = screen.getAllByLabelText('Transition probability');
     expect(cells.slice(0, 3).map(c => (c as HTMLInputElement).value)).toEqual(['0.333', '0.333', '0.333']);
     expect(cells.slice(6).map(c => (c as HTMLInputElement).value)).toEqual(['0', '0', '1']);
 
     fireEvent.change(cells[0], { target: { value: '0.5' } });
     expect(handleChange).toHaveBeenLastCalledWith({
-      transitionMatrix: { l1: { l1: 1 }, p1: { p1: 0.5, p2: 1 / 3, l1: 1 / 3 } },
+      transitionMatrix: { c: { c: 1 }, a: { a: 0.5, b: 1 / 3, c: 1 / 3 } },
+    });
+  });
+
+  it('does not offer list inheritance: a list only has its own items', () => {
+    render(<ListConfigPanel config={defaultConfig} onChange={vi.fn()} />);
+
+    expect(screen.queryByLabelText(/Inherit value from parent-scope List/i)).not.toBeInTheDocument();
+    expect(screen.queryByText('Inherited')).not.toBeInTheDocument();
+  });
+
+  it('moves an item by reordering the items and writing the order', () => {
+    const handleChange = vi.fn();
+    render(<ListConfigPanel config={defaultConfig} onChange={handleChange} />);
+
+    fireEvent.click(screen.getAllByTitle('Move Down')[0]);
+
+    expect(handleChange).toHaveBeenCalledWith({
+      itemOrder: ['item2', 'item1'],
+      items: [expect.objectContaining({ id: 'item2' }), expect.objectContaining({ id: 'item1' })],
     });
   });
 
@@ -278,5 +303,20 @@ describe('ListConfigPanel', () => {
       selectionStrategy: 'MARKOV_CHAIN',
       transitionMatrix: { a: { b: 1 }, b: { a: 0.5, b: 0.5 } },
     });
+  });
+
+  it('does not offer list inheritance inside the generator of a Dynamic Generator item', () => {
+    render(
+      <ListConfigPanel
+        config={{ selectionStrategy: 'SEQUENTIAL', items: [{ id: 'g', value: '', isEmbedded: true, embeddedType: 'string', embeddedConfig: {} }] }}
+        onChange={vi.fn()}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Configure Item/i }));
+
+    // The String generator is shown, without the inheritance box (a list in the app could be inherited from)
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Random' })).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Inherit value from parent-scope List/i)).not.toBeInTheDocument();
   });
 });

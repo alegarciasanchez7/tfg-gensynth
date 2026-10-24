@@ -184,53 +184,7 @@ public class TemplateEngineTest {
     }
 
     @Test
-    public void testListVariableFormatting_InheritedSourceList() {
-        Variable parentListVar = new Variable(
-                "v0000002-0000-4000-8000-000000000099",
-                "available_vegetables",
-                "GROUP",
-                "list",
-                List.of(),
-                Map.of(
-                        "selectionStrategy", "WEIGHTED_RANDOM",
-                        "items", List.of(
-                                Map.of("id", "veg-1", "value", "Tomato", "weight", 1.0),
-                                Map.of("id", "veg-2", "value", "Lettuce", "weight", 1.0),
-                                Map.of("id", "veg-3", "value", "Carrot", "weight", 1.0)
-                        )
-                ),
-                null,
-                "group-1"
-        );
-
-        Variable childListVar = new Variable(
-                "v_child",
-                "vegetables_1",
-                "LOCAL",
-                "list",
-                List.of(),
-                Map.of(
-                        "selectionStrategy", "FIXED_SUBSET",
-                        "sourceListVariableId", "v0000002-0000-4000-8000-000000000099",
-                        "sourceListSelectionMode", "SUBSET_SPECIFIC",
-                        "selectedListItemIds", List.of("veg-1", "veg-3"),
-                        "items", List.of()
-                ),
-                "flow-1",
-                "group-1"
-        );
-
-        variables.put(parentListVar.getId(), parentListVar);
-        variables.put(childListVar.getId(), childListVar);
-
-        String template = "{\"veggies\": {{local.vegetables_1}} }";
-        String result = engine.evaluate(template, 1, variables, "flow-1", "group-1");
-
-        assertEquals("{\"veggies\": [\"Tomato\", \"Carrot\"] }", result);
-    }
-
-    @Test
-    public void testListVariableFormatting_ItemOrderPreserved() {
+    public void listSavedInheritingFromAnotherListKeepsOnlyItsOwnItems() {
         Variable parentListVar = new Variable(
                 "v_parent",
                 "available_vegetables",
@@ -239,19 +193,15 @@ public class TemplateEngineTest {
                 List.of(),
                 Map.of(
                         "selectionStrategy", "WEIGHTED_RANDOM",
-                        "items", List.of(
-                                Map.of("id", "veg-3", "value", "Carrot", "weight", 1.0),
-                                Map.of("id", "veg-5", "value", "Onion", "weight", 1.0),
-                                Map.of("id", "veg-7", "value", "Spinach", "weight", 1.0)
-                        )
+                        "items", List.of(Map.of("id", "veg-1", "value", "Tomato", "weight", 1.0))
                 ),
                 null,
                 "group-1"
         );
-
+        // Written by a version where a list could inherit items from another list
         Variable childListVar = new Variable(
-                "v_child7",
-                "vegetables_7",
+                "v_child",
+                "vegetables_1",
                 "LOCAL",
                 "list",
                 List.of(),
@@ -259,11 +209,8 @@ public class TemplateEngineTest {
                         "selectionStrategy", "FIXED_SUBSET",
                         "sourceListVariableId", "v_parent",
                         "sourceListSelectionMode", "SUBSET_SPECIFIC",
-                        "selectedListItemIds", List.of("veg-3", "veg-5", "veg-7"),
-                        "items", List.of(
-                                Map.of("id", "item_1", "value", "Paco", "weight", 1.0)
-                        ),
-                        "itemOrder", List.of("veg-3", "item_1", "veg-5", "veg-7")
+                        "selectedListItemIds", List.of("veg-1"),
+                        "items", List.of(Map.of("id", "item_1", "value", "Paco", "weight", 1.0))
                 ),
                 "flow-1",
                 "group-1"
@@ -272,10 +219,37 @@ public class TemplateEngineTest {
         variables.put(parentListVar.getId(), parentListVar);
         variables.put(childListVar.getId(), childListVar);
 
-        String template = "{\"veggies\": {{local.vegetables_7}} }";
-        String result = engine.evaluate(template, 1, variables, "flow-1", "group-1");
+        String result = engine.evaluate("{\"veggies\": {{local.vegetables_1}} }", 1, variables, "flow-1", "group-1");
 
-        assertEquals("{\"veggies\": [\"Carrot\", \"Paco\", \"Onion\", \"Spinach\"] }", result);
+        assertEquals("{\"veggies\": [\"Paco\"] }", result);
+    }
+
+    @Test
+    public void testListVariableFormatting_ItemOrderPreserved() {
+        Variable listVar = new Variable(
+                "v_list7",
+                "vegetables_7",
+                "LOCAL",
+                "list",
+                List.of(),
+                Map.of(
+                        "selectionStrategy", "FIXED_SUBSET",
+                        "items", List.of(
+                                Map.of("id", "veg-3", "value", "Carrot", "weight", 1.0),
+                                Map.of("id", "veg-5", "value", "Onion", "weight", 1.0),
+                                Map.of("id", "item_1", "value", "Paco", "weight", 1.0)
+                        ),
+                        "itemOrder", List.of("veg-3", "item_1", "veg-5")
+                ),
+                "flow-1",
+                "group-1"
+        );
+
+        variables.put(listVar.getId(), listVar);
+
+        String result = engine.evaluate("{\"veggies\": {{local.vegetables_7}} }", 1, variables, "flow-1", "group-1");
+
+        assertEquals("{\"veggies\": [\"Carrot\", \"Paco\", \"Onion\"] }", result);
     }
 
     @Test
@@ -663,5 +637,26 @@ public class TemplateEngineTest {
         assertEquals("42.0", TemplateEngine.formatValue(42.0, false));
         assertEquals("[1, \"a\"]", TemplateEngine.formatValue(List.of(1, "a"), false));
         assertEquals("null", TemplateEngine.formatValue(null, false));
+    }
+
+    @Test
+    public void inheritedGenerationFollowsTheListSequenceInMessages() {
+        Map<String, Object> listConfig = new HashMap<>();
+        listConfig.put("selectionStrategy", "SEQUENTIAL");
+        listConfig.put("items", List.of(Map.of("id", "a", "value", "A"), Map.of("id", "b", "value", "B")));
+        variables.put("list1", new Variable("list1", "zones", "GLOBAL", "list", "", listConfig, null, null));
+        Map<String, Object> stringConfig = new HashMap<>();
+        stringConfig.put("pattern", "CONSTANT");
+        stringConfig.put("constantValue", "none");
+        stringConfig.put("sourceListVariableId", "list1");
+        stringConfig.put("sourceListSelectionMode", "INHERITED_GENERATION");
+        variables.put("s1", new Variable("s1", "zone", "GLOBAL", "string", "", stringConfig, null, null));
+
+        StringBuilder sent = new StringBuilder();
+        for (int n = 1; n <= 3; n++) {
+            sent.append(engine.evaluate("{{zone}}", n, variables, "f1", "g1"));
+        }
+
+        assertEquals("ABA", sent.toString());
     }
 }

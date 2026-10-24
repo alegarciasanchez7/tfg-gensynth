@@ -20,6 +20,8 @@ interface StringConfigPanelProps {
   flowId?: string;
   groupId?: string;
   variableScope?: VariableScope;
+  /** Set when the panel edits the generator of a list item, which cannot inherit from a list. */
+  inListItem?: boolean;
 }
 
 const MASK_OPTIONS = [
@@ -54,6 +56,7 @@ export const StringConfigPanel: React.FC<StringConfigPanelProps> = ({
   flowId,
   groupId,
   variableScope,
+  inListItem = false,
 }) => {
   const currentPattern = config.pattern || 'RANDOM_STRING';
   // Effective mask type: the Core uses ALPHANUMERIC when none is set
@@ -243,14 +246,16 @@ export const StringConfigPanel: React.FC<StringConfigPanelProps> = ({
 
   return (
     <div className="space-y-4">
-      <ListReferenceSelector
-        config={config}
-        onChange={onChange}
-        variableScope={variableScope || 'local'}
-        variableType="string"
-        flowId={flowId}
-        groupId={groupId}
-      />
+      {!inListItem && (
+        <ListReferenceSelector
+          config={config}
+          onChange={onChange}
+          variableScope={variableScope || 'local'}
+          variableType="string"
+          flowId={flowId}
+          groupId={groupId}
+        />
+      )}
 
       <div className="space-y-2">
         <Label className="text-[10px] uppercase text-[var(--c-tx4)]">String Generation Mode</Label>

@@ -17,7 +17,8 @@ export interface ConditionalRule {
   overrides: Record<string, any>;
 }
 
-export type ListReferenceSelectionMode = 'RANDOM_ITEM' | 'FIXED_ITEM' | 'SUBSET_SPECIFIC' | 'SUBSET_RANDOM';
+/** How a variable that is not a List takes its value from a list (a List cannot inherit from another list). */
+export type ListReferenceSelectionMode = 'RANDOM_ITEM' | 'FIXED_ITEM' | 'INHERITED_GENERATION';
 
 export interface BaseVariableConfig {
   pattern?: string;
@@ -25,8 +26,6 @@ export interface BaseVariableConfig {
   sourceListVariableId?: string;
   sourceListSelectionMode?: ListReferenceSelectionMode;
   selectedListItemId?: string;
-  selectedListItemIds?: string[];
-  randomSubsetCount?: number;
   [key: string]: any;
 }
 

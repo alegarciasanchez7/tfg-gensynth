@@ -15,6 +15,8 @@ interface BooleanConfigPanelProps {
   flowId?: string;
   groupId?: string;
   variableScope?: VariableScope;
+  /** Set when the panel edits the generator of a list item, which cannot inherit from a list. */
+  inListItem?: boolean;
 }
 
 const PATTERN_OPTIONS = [
@@ -37,7 +39,7 @@ const PATTERN_DESCRIPTIONS: Record<BooleanGenerationPattern, string> = {
   ALTERNATING_BOOLEAN: 'Toggles between TRUE and FALSE every N ticks.',
 };
 
-export const BooleanConfigPanel: React.FC<BooleanConfigPanelProps> = ({ config, onChange, flowId, groupId, variableScope }) => {
+export const BooleanConfigPanel: React.FC<BooleanConfigPanelProps> = ({ config, onChange, flowId, groupId, variableScope, inListItem = false }) => {
   const currentPattern: BooleanGenerationPattern = config.pattern ?? 'CONSTANT_BOOLEAN';
   // OFF without an Initial State, the same default as the Core
   const currentValue = config.currentValue ?? false;
@@ -49,14 +51,16 @@ export const BooleanConfigPanel: React.FC<BooleanConfigPanelProps> = ({ config, 
 
   return (
     <div className="space-y-5">
-      <ListReferenceSelector
-        config={config}
-        onChange={onChange}
-        variableScope={variableScope || 'local'}
-        variableType="boolean"
-        flowId={flowId}
-        groupId={groupId}
-      />
+      {!inListItem && (
+        <ListReferenceSelector
+          config={config}
+          onChange={onChange}
+          variableScope={variableScope || 'local'}
+          variableType="boolean"
+          flowId={flowId}
+          groupId={groupId}
+        />
+      )}
       {/* Pattern Selection */}
       <div className="space-y-1.5">
         <div className="flex items-center gap-1.5">

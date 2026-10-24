@@ -6,6 +6,7 @@
 - **Conditional rules** can override a variable with a full generator (e.g. Random 40–120), not only with a fixed value.
 - **Event loss per flow:** lose a random share of the messages and schedule outages (the last ticks of every N); lost messages are counted as **dropped** in the flow list and in Statistics.
 - **Waypoint editor:** Waypoint Navigation is now usable, with a visual editor on the 2D plane or the map (also in fullscreen) and a coordinate table; waypoints outside the region or in a forbidden zone are flagged in red.
+- **Inherited Generation** in *Inherit value from parent-scope List*: a variable picks items as the source list does (its strategy, weights, order and Markov matrix), with its own position.
 - **3D shapes define the generation region:** the cube, pyramid, cone or sphere drawn in the 3D view is where points are generated.
 - **Fixes:**
   - a variable has a single value per message (repeated references, formulas and conditional rules all see the same value);
@@ -23,8 +24,9 @@
   - Temporal variables without a Time Zone use the computer's zone; dates use English month and day names on every computer; two flows that map to the same output file get a clear error; locked groups and flows no longer take or create output files;
   - START shows why it cannot start (naming the variable) and starts nothing; format conversion keeps the content and reads quoted CSV fields; String masks give a value right after switching mode, and Mixed Case gives both cases; the Logs bin clears the list; a save or load dialog left open for a while no longer opens a second one;
   - the route editor uses the same scale on both axes; `Esc` closes the New Region and New Box Region confirmations; the Spatial Boundaries editor opens directly in fullscreen with a single button.
-  - Markov lists start on the first item shown, rows keep adding up to 1 when items are added or deleted, and inherited items without a row move evenly instead of getting stuck; a Markov list without a matrix no longer sends empty values; an inherited N Random subset keeps the order of Sequential, Shuffle and Markov; Inherit value from parent-scope List is disabled (with the reason) while there is no list to read from.
+  - Markov lists start on the first item shown, rows keep adding up to 1 when items are added or deleted, and items without a row move evenly instead of getting stuck; a Markov list without a matrix no longer sends empty values; Inherit value from parent-scope List is disabled (with the reason) while there is no list to read from, and is no longer offered inside Dynamic Generator items, where it had no effect.
 - **Behaviour changes for existing projects:**
+  - a List variable can no longer inherit items from another list: a list saved that way keeps only its own items (the other variable types still inherit from lists);
   - Waypoint Navigation sends each waypoint once per lap, followed by Interpolation Steps − 1 points towards the next one;
   - Circular Orbit always turns around the centre of the region, unless an explicit orbit centre is set;
   - 3D points fill the drawn shape instead of a fixed 100 × 100 × 100 box;

@@ -101,7 +101,8 @@ public class VariableFactory {
             }
         }
         
-        if (finalConfig != null) {
+        // A list cannot inherit from another list: projects saved when it could keep only their own items
+        if (finalConfig != null && !(finalConfig instanceof ListVariableConfig)) {
             if (configMap.containsKey("sourceListVariableId") && configMap.get("sourceListVariableId") != null) {
                 finalConfig.setSourceListVariableId(String.valueOf(configMap.get("sourceListVariableId")));
             }
@@ -111,17 +112,8 @@ public class VariableFactory {
             if (configMap.containsKey("selectedListItemId") && configMap.get("selectedListItemId") != null) {
                 finalConfig.setSelectedListItemId(String.valueOf(configMap.get("selectedListItemId")));
             }
-            if (configMap.get("selectedListItemIds") instanceof List<?> list) {
-                List<String> strList = new ArrayList<>();
-                for (Object item : list) {
-                    if (item != null) strList.add(String.valueOf(item));
-                }
-                finalConfig.setSelectedListItemIds(strList);
-            }
-            if (configMap.containsKey("randomSubsetCount") && configMap.get("randomSubsetCount") instanceof Number) {
-                finalConfig.setRandomSubsetCount(((Number) configMap.get("randomSubsetCount")).intValue());
-            }
-
+        }
+        if (finalConfig != null) {
             List<String> errors = finalConfig.validate();
             if (!errors.isEmpty()) {
                 throw new InvalidVariableConfigException(id, type, errors);

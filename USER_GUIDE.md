@@ -723,18 +723,20 @@ its initial state (a sequence starts again, a drift goes back to its start value
 
 #### Inherit value from parent-scope List
 
-Numeric, String, Boolean, Temporal, Point and List variables start with the check box **Inherit
-value from parent-scope List**. When it is ticked, the variable takes its value from a GLOBAL or
-GROUP List variable instead of its own pattern. The check box is disabled while there is no list
-the variable can read from; hovering over it says which list to create first.
+Numeric, String, Boolean, Temporal and Point variables start with the check box **Inherit value
+from parent-scope List**. When it is ticked, the variable takes its value from a GLOBAL or GROUP
+List variable instead of its own pattern. The check box is disabled while there is no list the
+variable can read from; hovering over it says which list to create first. List variables do not
+have it (a list only has its own items), and neither does the generator of a list's Dynamic
+Generator item.
 
 | Field | What it does |
 |---|---|
 | **Source List Variable** | The list to read from. A GLOBAL variable reads only GLOBAL lists; a GROUP or LOCAL variable also reads the GROUP lists of its group. LOCAL lists cannot be shared. |
-| **Item Selection Mode** (non-list variables) | **Random Item:** a random item of the list on every value. **Specific Fixed:** always the item chosen in **Compatible Specific Item**. |
-| **Source List Subset** (List variables) | **Fixed Subset:** tick the items to include. **N Random:** a random selection of **Number of random items to select** items. With Weighted Random and Fixed Subset they are drawn again for every value; with Sequential, Shuffle and Markov they are drawn once when the simulation starts, so the order is kept. |
+| **Item Selection Mode** | **Random Item:** a random item of the list on every value. **Specific Fixed:** always the item chosen in **Compatible Specific Item**. **Inherited Generation:** items are picked as the list picks them (its strategy, weights, order and Markov matrix), but the variable keeps its own position, so it does not move the list's sequence. Not available for a **Fixed Subset** list, which returns all its items at once. |
 
-The item is chosen independently of the parent list's own strategy. Literal items are text (a
+With Random Item and Specific Fixed the item is chosen independently of the parent list's own
+strategy. Literal items are text (a
 Numeric variable converts them to a number, a Boolean reads `true`); dynamic items generate a new
 value each time. If the item cannot be converted, the variable falls back to its own pattern.
 
@@ -1025,9 +1027,8 @@ A list picks values from items that you define.
 | **Fixed Subset / Entire List (Returns array of items)** | Returns all the items at once, as a JSON array. Reach single items with `{{name.item0}}`, `{{name.item1}}`… | Sending a vector of readings, or several related values that change together. |
 
 Literal items are inserted as written: in JSON, quote text items (`"{{condition}}"`) and leave
-numeric items unquoted. Dynamic items generate a new value each time they are picked. A list can
-also inherit items from a GLOBAL or GROUP list ([see above](#inherit-value-from-parent-scope-list));
-inherited items appear first, marked *Inherited*.
+numeric items unquoted. Dynamic items generate a new value each time they are picked. A list only
+has its own items: it cannot inherit items from another list.
 
 #### List: Markov chain
 
@@ -1040,11 +1041,11 @@ three decimals, and an empty cell counts as 0. Rows are normalised, so they do n
 to exactly 1. Adding or deleting an item rescales the other probabilities of each row so that it
 still adds up to 1.
 
-- The chain starts in the first item of the list as shown (after Move Up / Move Down, and
-  inherited items first), and the first value sent is that item.
+- The chain starts in the first item of the list as shown (after Move Up / Move Down), and the
+  first value sent is that item.
 - A row with all zeros is a dead end: the chain stays in that state forever.
-- An item that has no row yet, such as an item inherited after the matrix was filled, shows an
-  even row: it moves to any item with the same probability until you edit it.
+- An item without a row (for example in a project file edited by hand) shows an even row: it
+  moves to any item with the same probability until you edit it.
 - A high value on the diagonal makes states "sticky" (long runs of the same state).
 
 Example for a machine (rows = from, columns = to):

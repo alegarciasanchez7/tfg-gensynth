@@ -53,43 +53,11 @@ public class ListVariableConfigMarkovTest {
     }
 
     @Test
-    public void markovStartsOnTheFirstInheritedItem() {
-        ListVariableConfig parent = cycleABC();
-        ListVariableConfig child = VariableFactory.createList("child")
-                .selectionStrategy(ListVariableConfig.SelectionStrategy.MARKOV_CHAIN)
-                .items(List.of(new ListVariableConfig.ListItem("l", "L", 1.0)))
-                .transitionMatrix(Map.of("b", Map.of("l", 1.0), "l", Map.of("b", 1.0)));
-        child.setSourceListVariableId("parent");
-        child.setSourceListSelectionMode("SUBSET_SPECIFIC");
-        child.setSelectedListItemIds(List.of("b"));
-        child.setContext(Map.of("parent", parent));
-
-        assertEquals(List.of("B", "L", "B", "L"), next(child, 4));
-    }
-
-    @Test
     public void markovStateWithoutARowMovesToAnyItem() {
         ListVariableConfig config = cycleABC();
 
         assertTrue(config.validate().isEmpty());
         assertEquals(Set.of("A", "B", "C"), new HashSet<>(next(config, 200)));
-    }
-
-    @Test
-    public void inheritedRandomSubsetKeepsItsDrawWhileTheSequenceRuns() {
-        ListVariableConfig child = VariableFactory.createList("child")
-                .selectionStrategy(ListVariableConfig.SelectionStrategy.SEQUENTIAL)
-                .items(List.of(new ListVariableConfig.ListItem("l", "L", 1.0)));
-        child.setSourceListVariableId("parent");
-        child.setSourceListSelectionMode("SUBSET_RANDOM");
-        child.setRandomSubsetCount(2);
-        child.setContext(Map.of("parent", cycleABC()));
-
-        List<Object> values = next(child, 30);
-        for (int i = 3; i < values.size(); i++) {
-            assertEquals("value " + i + " of " + values, values.get(i - 3), values.get(i));
-        }
-        assertEquals(3, new HashSet<>(values).size());
     }
 
     private static ListVariableConfig cycleABC() {

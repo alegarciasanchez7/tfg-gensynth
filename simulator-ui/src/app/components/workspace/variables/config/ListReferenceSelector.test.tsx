@@ -180,4 +180,58 @@ describe('ListReferenceSelector', () => {
     fireEvent.click(checkbox);
     expect(handleChange).toHaveBeenCalledWith(expect.objectContaining({ sourceListVariableId: undefined }));
   });
+
+  it('offers Random Item, Specific Fixed and Inherited Generation, without emojis', () => {
+    const handleChange = vi.fn();
+    render(
+      <ListReferenceSelector
+        config={{ sourceListVariableId: 'var_list_global_1', sourceListSelectionMode: 'RANDOM_ITEM' }}
+        onChange={handleChange}
+        variableScope="local"
+        variableType="string"
+        flowId="flow_1"
+        groupId="group_1"
+      />
+    );
+
+    expect(['Random Item', 'Specific Fixed', 'Inherited Generation'].map(name => screen.getByRole('button', { name }).textContent))
+      .toEqual(['Random Item', 'Specific Fixed', 'Inherited Generation']);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Inherited Generation' }));
+    expect(handleChange).toHaveBeenCalledWith({ sourceListSelectionMode: 'INHERITED_GENERATION' });
+  });
+
+  it('names the strategy of the list that Inherited Generation follows', () => {
+    mockUseApp.mockReturnValue({
+      state: { ...mockState, variables: [{ ...mockState.variables[0], config: { ...mockState.variables[0].config, selectionStrategy: 'MARKOV_CHAIN' } }] },
+      actions: {},
+    });
+    render(
+      <ListReferenceSelector
+        config={{ sourceListVariableId: 'var_list_global_1', sourceListSelectionMode: 'INHERITED_GENERATION' }}
+        onChange={vi.fn()}
+        variableScope="global"
+        variableType="numeric"
+      />
+    );
+
+    expect(screen.getByText(/Items are picked as the list picks them \(Markov Chain\)/)).toBeInTheDocument();
+  });
+
+  it('does not offer Inherited Generation for a Fixed Subset list, which returns all its items at once', () => {
+    mockUseApp.mockReturnValue({
+      state: { ...mockState, variables: [{ ...mockState.variables[0], config: { ...mockState.variables[0].config, selectionStrategy: 'FIXED_SUBSET' } }] },
+      actions: {},
+    });
+    render(
+      <ListReferenceSelector
+        config={{ sourceListVariableId: 'var_list_global_1' }}
+        onChange={vi.fn()}
+        variableScope="global"
+        variableType="string"
+      />
+    );
+
+    expect(screen.getByRole('button', { name: 'Inherited Generation' })).toBeDisabled();
+  });
 });
