@@ -51,6 +51,19 @@ public class SystemCommandHandler implements CommandHandler {
     public void handleStartSystem(WebSocket conn, String commandId) {
         UiBridgeWebSocketServer server = ctx.getServer();
         synchronized (ctx.getStateLock()) {
+            // All or nothing: check every group before starting any, so a group that cannot
+            // start never leaves the ones before it running (and writing files)
+            try {
+                for (GroupRuntime group : ctx.getGroupsById().values()) {
+                    if (!"running".equals(group.status)) {
+                        server.flowCommandHandler.validateGroupForStart(group);
+                    }
+                }
+            } catch (IllegalStateException ex) {
+                FlowCommandHandler.sendStartError(server, conn, commandId, ex);
+                return;
+            }
+
             ctx.setSystemRunning(true);
             ctx.setSystemStartedAt(System.currentTimeMillis());
             ctx.setCurrentOutputDir(AppPaths.current().newSessionOutputDir());

@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gensynth.core.model.GroupDefinition;
 import com.gensynth.core.model.ProjectSettings;
 import com.gensynth.core.model.Variable;
+import com.gensynth.core.util.UniqueNames;
 import com.gensynth.core.ws.BridgeContext;
 import com.gensynth.core.ws.UiBridgeWebSocketServer;
 import com.gensynth.core.ws.runtime.GroupRuntime;
@@ -15,6 +16,7 @@ import org.slf4j.LoggerFactory;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -142,6 +144,7 @@ public class StateCommandHandler implements CommandHandler {
                 for (Variable var : newVariables) {
                     ctx.getVariablesById().put(var.getId(), var);
                 }
+                logDuplicateNames(ctx.getGroupsById().values());
 
                 ctx.setSystemRunning(false);
                 ctx.applyProjectSettings(settings);
@@ -245,6 +248,7 @@ public class StateCommandHandler implements CommandHandler {
                     for (GroupDefinition definition : persistedGroups) {
                         ctx.getGroupsById().put(definition.getGroupId(), GroupRuntime.fromDefinition(definition));
                     }
+                    logDuplicateNames(ctx.getGroupsById().values());
                 }
 
                 for (Variable variable : persistedVariables) {
@@ -255,6 +259,38 @@ public class StateCommandHandler implements CommandHandler {
             } catch (Exception e) {
                 ctx.setSystemRunning(false);
             }
+        }
+    }
+
+    /**
+     * Describes the repeated names of a loaded project: groups with the same name and flows with
+     * the same name in one group (same name = equal after trimming, ignoring case). New names are
+     * checked by the commands, but older projects may contain them; they are still loaded as they
+     * are, since renaming would change their outputs.
+     *
+     * @param groups the loaded groups
+     * @return one warning per repeated name, empty when every name is unique
+     */
+    public static List<String> duplicateNameWarnings(Collection<GroupRuntime> groups) {
+        List<String> warnings = new ArrayList<>();
+        List<String> groupNames = new ArrayList<>();
+        for (GroupRuntime group : groups) {
+            groupNames.add(group.name);
+            for (String name : UniqueNames.duplicates(group.flowNames(null))) {
+                warnings.add("Group '" + group.name + "' has several flows named '" + name
+                    + "': with file output they write to the same file. Rename them.");
+            }
+        }
+        for (String name : UniqueNames.duplicates(groupNames)) {
+            warnings.add("Several groups are named '" + name
+                + "': with file output their flows can write to the same files. Rename them.");
+        }
+        return warnings;
+    }
+
+    private static void logDuplicateNames(Collection<GroupRuntime> groups) {
+        for (String warning : duplicateNameWarnings(groups)) {
+            logger.warn("[SYSTEM] {}", warning);
         }
     }
 
