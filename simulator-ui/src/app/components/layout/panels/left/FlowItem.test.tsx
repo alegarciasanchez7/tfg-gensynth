@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { Flow } from '../../../../types';
+import type { Flow, Variable } from '../../../../types';
 import type { FlowMetricsPayload } from '../../../../core/types';
 
 const { mockUseApp } = vi.hoisted(() => ({ mockUseApp: vi.fn() }));
@@ -38,18 +38,24 @@ const metrics: FlowMetricsPayload = {
   connectionStatus: 'connected',
 };
 
-function renderItem(flowMetrics: Record<string, FlowMetricsPayload> | undefined, onSelect = vi.fn()) {
-  mockUseApp.mockReturnValue({ state: { variables: [], flowMetrics, dirtyItems: undefined } });
+function renderItem(
+  flowMetrics: Record<string, FlowMetricsPayload> | undefined,
+  onSelect = vi.fn(),
+  template = '',
+  variables: Variable[] = [],
+  item: Flow = flow,
+) {
+  mockUseApp.mockReturnValue({ state: { variables, flowMetrics, dirtyItems: undefined } });
   return render(
     <FlowItem
-      flow={flow}
+      flow={item}
       selected={false}
       groupId="g1"
       onSelect={onSelect}
       onToggleEnabled={vi.fn()}
       onClone={vi.fn()}
       onDelete={vi.fn(async () => undefined)}
-      formatTemplate={{}}
+      formatTemplate={{ f1: template }}
     />,
   );
 }
@@ -82,6 +88,16 @@ describe('FlowItem', () => {
     expect(screen.getByTestId('flow-metrics')).not.toHaveTextContent('dropped');
   });
 
+  it('shows the flow name as typed, even with a "·" in it', () => {
+    renderItem(undefined, vi.fn(), '', [], { ...flow, name: 'Line A · Station 2' });
+    expect(screen.getByText('Line A · Station 2')).toBeInTheDocument();
+    cleanup();
+
+    // Only a leading "<technology> · " prefix (mock data) is dropped, as the badge shows it
+    renderItem(undefined, vi.fn(), '', [], { ...flow, name: 'file · out' });
+    expect(screen.getByText('out')).toBeInTheDocument();
+  });
+
   it('shows zeros before any metrics arrive', () => {
     renderItem(undefined);
     const row = screen.getByTestId('flow-metrics');
@@ -104,5 +120,18 @@ describe('FlowItem', () => {
     fireEvent.keyDown(row, { key: 'a' });
     fireEvent.keyDown(row.querySelector('button') as HTMLElement, { key: 'Enter' });
     expect(onSelect).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows chips for unscoped placeholders, resolved to the closest scope like the Core', () => {
+    const variables: Variable[] = [
+      { id: 'v1', name: 'temperature', scope: 'global', type: 'numeric', config: {} },
+      { id: 'v2', name: 'temperature', scope: 'local', type: 'numeric', config: {}, flowId: 'f1', groupId: 'g1' },
+      { id: 'v3', name: 'site', scope: 'group', type: 'string', config: {}, groupId: 'g1' },
+    ];
+    renderItem(undefined, vi.fn(), '{"t": {{temperature}}, "r": {{temperature.round}}, "s": "{{site}}", "id": "{{uuid}}", "x": {{nope}}}', variables);
+
+    expect(screen.getByTitle('local · {{local.temperature}}')).toHaveTextContent('temperature');
+    expect(screen.getByTitle('group · {{group.site}}')).toHaveTextContent('site');
+    expect(screen.queryByTitle(/uuid|nope/)).not.toBeInTheDocument();
   });
 });

@@ -148,7 +148,57 @@ describe('LeftPanel', () => {
         format: 'json',
       },
       1, // everyTicks
+      false, // autoRename: only the Repeater renames taken names
     );
+  });
+
+  it('ADD → Add Flow targets the selected group and hides the group selector', async () => {
+    const user = userEvent.setup();
+    const other: Group = { ...group, id: 'g2', name: 'Payments', expanded: false };
+
+    render(<LeftPanel {...baseProps} groups={[group, other]} selection={{ type: 'group', groupId: 'g2' }} />);
+
+    await user.click(screen.getByRole('button', { name: 'Add group or flow' }));
+    await user.click(screen.getByRole('button', { name: 'Add Flow' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Add flow' });
+    expect(dialog).toHaveTextContent('Create a new flow inside "Payments".');
+    expect(screen.queryByLabelText('Group')).not.toBeInTheDocument();
+
+    await user.selectOptions(screen.getByRole('combobox', { name: /connector/i }), 'file');
+    await user.type(screen.getByLabelText(/^name$/i), 'Sensor 1');
+    await user.click(screen.getByRole('button', { name: /create flow/i }));
+
+    expect(baseProps.onCreateFlow.mock.calls[0][0]).toBe('g2');
+  });
+
+  it('ADD → Add Flow uses the group of the selected flow, and asks for one when nothing is selected', async () => {
+    const user = userEvent.setup();
+    const { unmount } = render(
+      <LeftPanel {...baseProps} groups={[{ ...group, expanded: false }]} selection={{ type: 'flow', groupId: 'g1', flowId: 'f1' }} />,
+    );
+    await user.click(screen.getByRole('button', { name: 'Add group or flow' }));
+    await user.click(screen.getByRole('button', { name: 'Add Flow' }));
+    expect(await screen.findByRole('dialog', { name: 'Add flow' })).toHaveTextContent('inside "Orders"');
+    unmount();
+
+    render(<LeftPanel {...baseProps} groups={[{ ...group, expanded: false }]} selection={{ type: 'none' }} />);
+    await user.click(screen.getByRole('button', { name: 'Add group or flow' }));
+    await user.click(screen.getByRole('button', { name: 'Add Flow' }));
+    expect(await screen.findByLabelText('Group')).toHaveValue('');
+  });
+
+  it('does not count locked groups as running in the footer', () => {
+    const locked: Group = { ...group, id: 'g2', name: 'Payments', enabled: false, expanded: false };
+
+    render(<LeftPanel {...baseProps} groups={[group, locked]} />);
+
+    expect(screen.getByText(/running/)).toHaveTextContent('1/2 running (1 locked)');
+  });
+
+  it('shows no locked count when no group is locked', () => {
+    render(<LeftPanel {...baseProps} />);
+    expect(screen.getByText(/running/)).toHaveTextContent(/^1\/1 running$/);
   });
 
   it('opens the Repeater from the group menu even when the group is collapsed', async () => {

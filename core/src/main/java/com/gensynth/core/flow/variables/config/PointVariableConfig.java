@@ -1272,7 +1272,8 @@ public class PointVariableConfig extends VariableConfiguration {
         int minutes = (int) minutesRemainder;
         double seconds = (minutesRemainder - minutes) * 60.0;
 
-        return String.format("%d° %d' %.2f\" %c", degrees, minutes, seconds, direction);
+        // Locale.ROOT: generated data must not depend on the computer's language (no "5,10")
+        return String.format(java.util.Locale.ROOT, "%d° %d' %.2f\" %c", degrees, minutes, seconds, direction);
     }
 
     private double randomInRange(double min, double max) {

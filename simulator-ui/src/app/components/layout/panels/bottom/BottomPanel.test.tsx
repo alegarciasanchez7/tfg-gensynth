@@ -109,4 +109,19 @@ describe('BottomPanel', () => {
     expect(screen.queryAllByText('RabbitMQ Connector@1.0.0:healthy')).toHaveLength(0)
     expect(screen.getByText('File output -> {"value":1}')).toBeInTheDocument()
   })
+
+  it('clears the logs with the trash button', () => {
+    const clearLogs = vi.fn()
+    mockUseApp.mockReturnValue({ ...mockUseApp(), actions: { clearLogs } })
+    render(
+      <BottomPanel
+        tab="logs"
+        onTabChange={vi.fn()}
+        systemStatus="running"
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear logs' }))
+    expect(clearLogs).toHaveBeenCalledTimes(1)
+  })
 })

@@ -7,6 +7,7 @@ import { Group, Variable, Flow, ProjectSettings } from '../types';
 import { normalizeProjectSettings } from './tickSettings';
 import { normalizeOutputMode } from './outputMode';
 import { randomUUID } from './randomId';
+import { normalizeConnectionStatus, normalizeGroupStatus } from './entityStatus';
 
 /** Extension of GenSynth project files. Must match ProjectFileFormat.EXTENSION in the Core. */
 export const PROJECT_FILE_EXTENSION = '.gsynth';
@@ -89,7 +90,7 @@ export function normalizeFlowFromSnapshot(flow: Partial<Flow>): Flow {
     id: flow.id ?? randomUUID(),
     name: flow.name ?? 'Unnamed Flow',
     technology: flow.technology ?? 'unknown',
-    connectionStatus: flow.connectionStatus ?? 'disconnected',
+    connectionStatus: normalizeConnectionStatus(flow.connectionStatus),
     throughput: flow.throughput ?? '0 msg/s',
     hasError: flow.hasError ?? false,
     errorMessage: flow.errorMessage,
@@ -118,7 +119,7 @@ export function normalizeGroupFromSnapshot(group: Partial<Group>): Group {
   return {
     id: group.id ?? randomUUID(),
     name: group.name ?? 'Unnamed Group',
-    status: group.status ?? 'stopped',
+    status: normalizeGroupStatus(group.status),
     throughput: group.throughput ?? '0 msg/s',
     description: group.description ?? '',
     threads: typeof group.threads === 'number' ? group.threads : 1,

@@ -54,4 +54,44 @@ describe('ResourceBar', () => {
 
     expect(screen.getByText('--:--:--')).toBeTruthy();
   });
+
+  it('formats MSG/S compactly instead of with locale separators', () => {
+    mockUseSystemStatus.mockReturnValue('running');
+    mockUseMetrics.mockReturnValue({
+      metrics: {
+        cpu: 1, memory: 256, heap: 1024, networkUp: 0, networkDown: 0, messagesPerSecond: 18441,
+        totalMessages: 500, uptime: 5, ticksPerSecond: 1, totalTicks: 5,
+      },
+    });
+    render(<ResourceBar />);
+    expect(screen.getByText('18.4K')).toBeTruthy();
+    expect(screen.queryByText('18,441')).toBeNull();
+    expect(screen.queryByText('18.441')).toBeNull();
+  });
+
+  it('measures the RAM bar against the most the JVM may use, not the heap reserved now', () => {
+    mockUseSystemStatus.mockReturnValue('running');
+    mockUseMetrics.mockReturnValue({
+      metrics: {
+        cpu: 1, memory: 256, heap: 300, maxHeap: 2048, networkUp: 0, networkDown: 0, messagesPerSecond: 0,
+        totalMessages: 0, uptime: 5, ticksPerSecond: 1, totalTicks: 5,
+      },
+    });
+    render(<ResourceBar />);
+
+    const ram = screen.getByTitle('Memory used by GenSynth out of the most it may use (2048 MB)');
+    const fill = ram.querySelector<HTMLElement>('[style*="width"]');
+    expect(fill?.style.width).toBe('12.5%');
+  });
+
+  it('falls back to the reserved heap when an older core sends no maxHeap', () => {
+    mockUseSystemStatus.mockReturnValue('running');
+    mockUseMetrics.mockReturnValue({
+      metrics: { cpu: 0, memory: 256, heap: 1024, networkUp: 0, networkDown: 0, messagesPerSecond: 0, totalMessages: 0, uptime: 1 },
+    });
+    render(<ResourceBar />);
+
+    const ram = screen.getByTitle('Memory used by GenSynth out of the most it may use (1024 MB)');
+    expect(ram.querySelector<HTMLElement>('[style*="width"]')?.style.width).toBe('25%');
+  });
 });

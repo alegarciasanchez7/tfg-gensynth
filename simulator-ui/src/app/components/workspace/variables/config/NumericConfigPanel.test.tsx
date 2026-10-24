@@ -144,6 +144,29 @@ describe('NumericConfigPanel', () => {
     expect(screen.queryByText('{{otherLocal}}')).not.toBeInTheDocument();
   });
 
+  it('does not suggest the variable being edited in its own formula', async () => {
+    const TestWrapper = () => {
+      const [cfg, setCfg] = useState<NumericVariableConfig>(defaultConfig);
+      return (
+        <NumericConfigPanel
+          config={cfg}
+          onChange={(newCfg) => setCfg(prev => ({ ...prev, ...newCfg }))}
+          flowId="f1"
+          groupId="g1"
+          variableId="v_local"
+        />
+      );
+    };
+    render(<TestWrapper />);
+
+    const formulaInput = screen.getByTestId('numeric-formula-input');
+    fireEvent.change(formulaInput, { target: { value: '{{', selectionStart: 2 } });
+    fireEvent.keyDown(formulaInput, { key: '{' });
+
+    expect(await screen.findByText('{{globalVar}}')).toBeInTheDocument();
+    expect(screen.queryByText('{{localVar}}')).not.toBeInTheDocument();
+  });
+
   it('selects and inserts a variable from the autocomplete list on click', async () => {
     const handleChange = vi.fn();
     const TestWrapper = () => {

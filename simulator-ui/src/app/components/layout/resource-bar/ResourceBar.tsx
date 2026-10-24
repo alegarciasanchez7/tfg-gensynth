@@ -1,6 +1,7 @@
 import { Cpu, MemoryStick, ArrowUpRight, ArrowDownLeft, Server, Clock4, Timer } from 'lucide-react';
 import { useSystemStatus, useMetrics } from '../../../context';
 import { formatTickRate } from '../../../core/tickSettings';
+import { formatRate } from '../../../core/metricsFormat';
 
 interface Metric {
   icon: React.ReactNode;
@@ -9,6 +10,7 @@ interface Metric {
   unit: string;
   color: string;
   barPct?: number;
+  title?: string;
 }
 
 function formatBytes(bytes: number): { value: string; unit: string } {
@@ -47,7 +49,9 @@ export function ResourceBar() {
 
   const cpuValue = metrics?.cpu ?? 0;
   const memoryValue = metrics?.memory ?? 0;
-  const heapValue = metrics?.heap ?? 1; // avoid division by zero
+  // The RAM bar is measured against the most the JVM may use, a fixed limit; the reserved heap
+  // (older cores) grows on demand, so a full bar against it says nothing
+  const memoryLimit = metrics?.maxHeap || metrics?.heap || 1;
   const networkUp = metrics?.networkUp ?? 0;
   const networkDown = metrics?.networkDown ?? 0;
   const msgs = metrics?.messagesPerSecond ?? 0;
@@ -59,7 +63,7 @@ export function ResourceBar() {
   const formattedNetUp = formatBytes(networkUp);
   const formattedNetDown = formatBytes(networkDown);
 
-  const memoryPct = Math.min(100, (memoryValue / heapValue) * 100);
+  const memoryPct = Math.min(100, (memoryValue / memoryLimit) * 100);
 
   const uiMetrics: Metric[] = [
     {
@@ -69,6 +73,7 @@ export function ResourceBar() {
       unit: '%',
       color: running ? 'text-cyan-500' : 'text-slate-400',
       barPct: running ? Math.min(100, cpuValue) : 0,
+      title: "Share of the computer's whole CPU (all cores) used by GenSynth",
     },
     {
       icon: <MemoryStick size={11} />,
@@ -77,6 +82,7 @@ export function ResourceBar() {
       unit: 'MB',
       color: running ? 'text-violet-500' : 'text-slate-400',
       barPct: running ? memoryPct : 0,
+      title: `Memory used by GenSynth out of the most it may use (${memoryLimit} MB)`,
     },
     {
       icon: <ArrowUpRight size={11} />,
@@ -95,7 +101,8 @@ export function ResourceBar() {
     {
       icon: <Server size={11} />,
       label: 'MSG/S',
-      value: running ? `${msgs.toLocaleString()}` : '0',
+      // Compact like the flow rates (18.4K), never locale separators: "18.441" read as 18 msg/s
+      value: running ? formatRate(msgs) : '0',
       unit: running ? `(${formatShortNumber(totalMsgs)} total)` : '',
       color: running ? 'text-amber-500' : 'text-slate-400',
     },
@@ -122,7 +129,7 @@ export function ResourceBar() {
       data-testid="resource-bar"
     >
       {uiMetrics.map((m, i) => (
-        <div key={i} className="flex shrink-0 items-center gap-2 pr-2.5 mr-0.5 border-r border-[var(--c-br2)] last:border-r-0">
+        <div key={i} title={m.title} className="flex shrink-0 items-center gap-2 pr-2.5 mr-0.5 border-r border-[var(--c-br2)] last:border-r-0">
           <div className="flex items-center gap-1">
             <span className={`${m.color} opacity-70`}>{m.icon}</span>
             <span className="text-[10px] text-[var(--c-tx4)] tracking-wider" style={{ fontFamily: 'JetBrains Mono, monospace' }}>

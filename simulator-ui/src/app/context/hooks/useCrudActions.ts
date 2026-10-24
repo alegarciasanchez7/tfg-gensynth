@@ -197,6 +197,7 @@ export function useCrudActions({
     template?: string,
     connectorConfig?: Record<string, unknown>,
     everyTicks?: number,
+    autoRename?: boolean,
   ) => {
     const optimisticId = generateOptimisticId('flow');
     const optimisticFlow = createOptimisticFlow(
@@ -265,7 +266,8 @@ export function useCrudActions({
               template,
               connectorConfig,
               onResponse,
-              everyTicks
+              everyTicks,
+              autoRename
             ),
           reconcileId: (serverFlow) => {
             const mappedFlow = mapFlowFromCore(serverFlow as FlowState);

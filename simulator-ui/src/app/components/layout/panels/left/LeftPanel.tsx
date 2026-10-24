@@ -16,6 +16,7 @@ import type { Group, Flow, Selection, Variable } from '../../../../types';
 import type { ConnectorPluginDescriptor } from '../../../../core/types';
 import { GroupItem } from './GroupItem';
 import { CreateFlowDialog } from './CreateFlowDialog';
+import { commandErrorMessage } from '../../../../core/errorMessage';
 
 interface LeftPanelProps {
   groups: Group[];
@@ -41,6 +42,7 @@ interface LeftPanelProps {
     template?: string,
     connectorConfig?: Record<string, unknown>,
     everyTicks?: number,
+    autoRename?: boolean,
   ) => Promise<Flow>;
   onUpdateGroupConfig: (groupId: string, config: any, name?: string) => Promise<void>;
   onUpdateFlowConfig: (groupId: string, flowId: string, config: any, name?: string) => Promise<void>;
@@ -77,6 +79,14 @@ export function LeftPanel({
 
   const startX = useRef(0);
   const startW = useRef(0);
+
+  // ADD → Add Flow targets the selected group (or the group of the selected flow); the dialog
+  // only asks for the group when none is selected
+  const selectedGroupId = selection.groupId && groups.some(g => g.id === selection.groupId)
+    ? selection.groupId
+    : undefined;
+  const groupNames = groups.map(g => g.name);
+  const lockedGroupCount = groups.filter(g => !g.enabled).length;
 
   const handleMouseDownResizer = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -130,7 +140,7 @@ export function LeftPanel({
       setIsCreateGroupOpen(false);
       resetCreateGroupForm();
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to create group';
+      const message = commandErrorMessage(error, 'Unable to create group');
       toast.error(message);
     }
   };
@@ -281,6 +291,7 @@ export function LeftPanel({
         open={isCreateFlowOpen}
         onOpenChange={setIsCreateFlowOpen}
         groups={groups}
+        groupId={selectedGroupId}
         latestConnectors={latestConnectors}
         onCreateFlow={onCreateFlow}
         onSelectFlow={onSelectFlow}
@@ -307,6 +318,7 @@ export function LeftPanel({
             onCloneFlow={onCloneFlow}
             onDeleteFlow={onDeleteFlow}
             latestConnectors={latestConnectors}
+            groupNames={groupNames}
           />
         ))}
       </div>
@@ -314,7 +326,9 @@ export function LeftPanel({
       {/* Footer stats */}
       <div className="px-3 py-2 border-t border-[var(--c-br2)] flex items-center gap-3 shrink-0">
         <span className="text-[10px] text-[var(--c-tx4)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-          {groups.filter(g => g.status === 'running').length}/{groups.length} running
+          {/* A locked group generates nothing, so it never counts as running */}
+          {groups.filter(g => g.status === 'running' && g.enabled).length}/{groups.length} running
+          {lockedGroupCount > 0 && ` (${lockedGroupCount} locked)`}
         </span>
         <span className="text-[10px] text-[var(--c-tx4)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
           {groups.reduce((s, g) => s + g.flows.length, 0)} flows total

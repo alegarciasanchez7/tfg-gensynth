@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { ArrowRightLeft, RefreshCw } from 'lucide-react';
+import { AlertTriangle, ArrowRightLeft, Info, RefreshCw } from 'lucide-react';
 import { Button } from '../../ui/button';
 import {
   Dialog,
@@ -10,117 +10,61 @@ import {
   DialogTitle,
 } from '../../ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
+import { isTemplateInFormat, resolveTemplateFormat, type TemplateFormat } from './templateFormat';
+import { convertTemplate } from './templateConversion';
 
 export interface FormatConverterModalProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
   currentContent: string;
-  currentFormat: 'json' | 'xml' | 'csv' | 'plain';
-  initialTargetFormat?: 'json' | 'xml' | 'csv' | 'plain';
-  onApplyConversion: (convertedContent: string, newFormat: 'json' | 'xml' | 'csv' | 'plain') => void;
+  currentFormat: TemplateFormat;
+  initialTargetFormat?: TemplateFormat;
+  onApplyConversion: (convertedContent: string, newFormat: TemplateFormat) => void;
+}
+
+/** What applying the selected target format does to the template. */
+type ConversionKind = 'convert' | 'label-only' | 'unchanged';
+
+/**
+ * Why a label-only change does not apply: the editor label follows the content (see
+ * resolveTemplateFormat), so JSON or XML content keeps its label whatever is stored.
+ */
+function labelLockedReason(source: TemplateFormat, target: TemplateFormat): string {
+  const src = source.toUpperCase();
+  return `${src} content always keeps the ${src} label. ${target.toUpperCase()} would send the template exactly as it is now, so there is nothing to convert.`;
+}
+
+interface ConversionPreview {
+  convertedPreview: string;
+  kind: ConversionKind;
+  /** Why the conversion cannot be applied, or null when it can. */
+  blockedReason: string | null;
 }
 
 /**
- * Client-side conversion fallback utility for instant preview in UI.
+ * Works out what applying the target format does: nothing (same format), only the label (the
+ * content already is valid in the target), or a conversion. A conversion that would lose content
+ * or produce invalid text, or a label that the content would override, is blocked with a reason.
  */
-export function convertFormatClientSide(content: string, src: string, tgt: string): string {
-  if (!content || !content.trim()) return content || '';
-  const s = src.toLowerCase();
-  const t = tgt.toLowerCase();
-  if (s === t) return content;
-
-  try {
-    let parsed: any;
-
-    if (s === 'json') {
-      parsed = JSON.parse(content);
-    } else if (s === 'csv') {
-      const lines = content.trim().split('\n');
-      if (lines.length > 0) {
-        const headers = lines[0].split(',').map(h => h.trim());
-        parsed = lines.slice(1).map(line => {
-          const vals = line.split(',').map(v => v.trim());
-          const obj: Record<string, any> = {};
-          headers.forEach((h, idx) => {
-            const v = vals[idx] !== undefined ? vals[idx] : '';
-            if (v.toLowerCase() === 'true' || v.toLowerCase() === 'false') {
-              obj[h] = v.toLowerCase() === 'true';
-            } else if (!Number.isNaN(Number(v)) && v !== '') {
-              obj[h] = Number(v);
-            } else {
-              obj[h] = v;
-            }
-          });
-          return obj;
-        });
-        if (parsed.length === 1) parsed = parsed[0];
-      }
-    } else {
-      // Basic text / XML fallback parsing
-      parsed = { message: content.trim() };
-    }
-
-    if (t === 'json') {
-      return JSON.stringify(parsed, null, 2);
-    }
-
-    if (t === 'xml') {
-      const toXmlNode = (key: string, val: any, indent = '  '): string => {
-        if (val === null || val === undefined) return `${indent}<${key}/>\n`;
-        if (typeof val === 'object' && !Array.isArray(val)) {
-          let inner = ``;
-          Object.keys(val).forEach(k => {
-            inner += toXmlNode(k, val[k], indent + '  ');
-          });
-          return `${indent}<${key}>\n${inner}${indent}</${key}>\n`;
-        }
-        if (Array.isArray(val)) {
-          let inner = ``;
-          val.forEach(item => {
-            inner += toXmlNode('item', item, indent + '  ');
-          });
-          return `${indent}<${key}>\n${inner}${indent}</${key}>\n`;
-        }
-        return `${indent}<${key}>${val}</${key}>\n`;
-      };
-
-      let xml = `<?xml version="1.0" encoding="UTF-8"?>\n<root>\n`;
-      if (typeof parsed === 'object' && !Array.isArray(parsed)) {
-        Object.keys(parsed).forEach(k => {
-          xml += toXmlNode(k, parsed[k]);
-        });
-      } else if (Array.isArray(parsed)) {
-        parsed.forEach(item => {
-          xml += toXmlNode('item', item);
-        });
-      } else {
-        xml += `  <value>${parsed}</value>\n`;
-      }
-      xml += `</root>`;
-      return xml;
-    }
-
-    if (t === 'csv') {
-      const rows = Array.isArray(parsed) ? parsed : [parsed];
-      if (rows.length === 0 || typeof rows[0] !== 'object') {
-        return `value\n${content}`;
-      }
-      const headers = Array.from(new Set(rows.flatMap(r => Object.keys(r))));
-      let csv = headers.join(',') + '\n';
-      rows.forEach(r => {
-        const line = headers.map(h => {
-          const v = r[h] !== undefined ? r[h] : '';
-          return typeof v === 'object' ? JSON.stringify(v) : String(v);
-        }).join(',');
-        csv += line + '\n';
-      });
-      return csv.trim();
-    }
-
-    return String(content);
-  } catch {
-    return content;
+function previewConversion(content: string, source: TemplateFormat, target: TemplateFormat): ConversionPreview {
+  if (source === target) return { convertedPreview: content, kind: 'unchanged', blockedReason: null };
+  if (isTemplateInFormat(content, target)) {
+    const labelApplies = resolveTemplateFormat(target, content) === target;
+    return {
+      convertedPreview: content,
+      kind: 'label-only',
+      blockedReason: labelApplies ? null : labelLockedReason(source, target),
+    };
   }
+  const result = convertTemplate(content, source, target);
+  if (!result.ok) return { convertedPreview: '', kind: 'convert', blockedReason: result.reason };
+  // The label follows the content: a result the editor would not label as the target is useless
+  const labelApplies = resolveTemplateFormat(target, result.content) === target;
+  return {
+    convertedPreview: result.content,
+    kind: 'convert',
+    blockedReason: labelApplies ? null : `The result would not be recognised as ${target.toUpperCase()}.`,
+  };
 }
 
 export function FormatConverterModal({
@@ -132,7 +76,7 @@ export function FormatConverterModal({
   onApplyConversion,
 }: FormatConverterModalProps) {
   const sourceFormat = currentFormat || 'json';
-  const [targetFormat, setTargetFormat] = useState<'json' | 'xml' | 'csv' | 'plain'>(
+  const [targetFormat, setTargetFormat] = useState<TemplateFormat>(
     initialTargetFormat || (sourceFormat === 'xml' ? 'json' : 'xml')
   );
 
@@ -144,11 +88,14 @@ export function FormatConverterModal({
     }
   }, [isOpen, sourceFormat, initialTargetFormat]);
 
-  const convertedPreview = useMemo(() => {
-    return convertFormatClientSide(currentContent, sourceFormat, targetFormat);
-  }, [currentContent, sourceFormat, targetFormat]);
+  const { convertedPreview, kind, blockedReason } = useMemo(
+    () => previewConversion(currentContent, sourceFormat, targetFormat),
+    [currentContent, sourceFormat, targetFormat],
+  );
+  const blocked = blockedReason !== null;
 
   const handleApply = () => {
+    if (blocked) return;
     onApplyConversion(convertedPreview, targetFormat);
     onOpenChange(false);
   };
@@ -185,7 +132,7 @@ export function FormatConverterModal({
 
             <div className="space-y-1 flex-1">
               <label htmlFor="format-converter-target" className="text-[10px] text-[var(--c-tx4)] font-mono uppercase tracking-wider">Target Format</label>
-              <Select value={targetFormat} onValueChange={(val: any) => setTargetFormat(val)}>
+              <Select value={targetFormat} onValueChange={(val) => setTargetFormat(val as TemplateFormat)}>
                 <SelectTrigger id="format-converter-target" className="bg-[var(--c-bg2)] border-[var(--c-br1)] text-xs font-mono">
                   <SelectValue placeholder="Target Format" />
                 </SelectTrigger>
@@ -212,10 +159,23 @@ export function FormatConverterModal({
                 <RefreshCw size={10} className="animate-spin" /> Converted Preview ({targetFormat.toUpperCase()})
               </span>
               <pre className="h-48 p-2.5 bg-[var(--c-bg1)] border border-emerald-500/30 rounded font-mono text-xs text-emerald-600 dark:text-emerald-300 overflow-auto whitespace-pre-wrap break-all">
-                {convertedPreview || '(Empty)'}
+                {blocked ? '(Not converted)' : convertedPreview || '(Empty)'}
               </pre>
             </div>
           </div>
+
+          {blocked && (
+            <p role="alert" className="flex items-start gap-1.5 rounded border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-[11px] text-amber-500">
+              <AlertTriangle size={12} className="shrink-0 mt-0.5" />
+              {blockedReason}
+            </p>
+          )}
+          {!blocked && kind === 'label-only' && (
+            <p role="status" className="flex items-start gap-1.5 rounded border border-cyan-500/30 bg-cyan-500/10 px-2.5 py-1.5 text-[11px] text-cyan-500">
+              <Info size={12} className="shrink-0 mt-0.5" />
+              The template is already valid {targetFormat.toUpperCase()}: applying only changes the format label, the text stays the same.
+            </p>
+          )}
         </div>
 
         <DialogFooter className="gap-2">
@@ -224,9 +184,10 @@ export function FormatConverterModal({
           </Button>
           <Button
             onClick={handleApply}
+            disabled={blocked}
             className="bg-violet-600 hover:bg-violet-700 text-white shadow-lg shadow-violet-500/20"
           >
-            Apply to Flow Template
+            {kind === 'label-only' && !blocked ? `Set format to ${targetFormat.toUpperCase()}` : 'Apply to Flow Template'}
           </Button>
         </DialogFooter>
       </DialogContent>

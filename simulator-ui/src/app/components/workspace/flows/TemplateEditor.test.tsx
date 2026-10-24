@@ -206,4 +206,57 @@ describe('TemplateEditor', () => {
     expect(screen.getByText('pos.y')).toBeDefined();
     expect(screen.getByText('pos.z')).toBeDefined();
   });
+
+  it('filters by what the user typed: {{te + Enter inserts the variable, not {{uuid}}', () => {
+    const onChange = vi.fn();
+    const variables: Variable[] = [
+      { id: 't1', name: 'temperature', scope: 'local', type: 'numeric', flowId: 'f1', groupId: 'g1', config: {} },
+    ];
+    render(<TemplateEditor value={'{"x": {{te'} onChange={onChange} variables={variables} flowId="f1" groupId="g1" />);
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+    fireEvent.keyUp(textarea);
+
+    const options = screen.getAllByRole('option').map((o) => o.querySelector('span')?.textContent);
+    expect(options[0]).toBe('temperature');
+    expect(options).not.toContain('uuid');
+
+    fireEvent.keyDown(textarea, { key: 'Enter' });
+    expect(onChange).toHaveBeenCalledWith('{"x": {{local.temperature}}');
+  });
+
+  it('offers the documented sub-properties the Core supports', () => {
+    openAutocomplete('', [
+      { id: 'n', name: 'num', scope: 'local', type: 'numeric', flowId: 'f1', groupId: 'g1', config: {} },
+      { id: 's', name: 'str', scope: 'local', type: 'string', flowId: 'f1', groupId: 'g1', config: {} },
+      { id: 'b', name: 'flag', scope: 'local', type: 'boolean', flowId: 'f1', groupId: 'g1', config: {} },
+      { id: 'd', name: 'when', scope: 'local', type: 'temporal', flowId: 'f1', groupId: 'g1', config: {} },
+    ]);
+    for (const option of [
+      'num.floor', 'num.ceil', 'num.sign',
+      'str.trim', 'str.firstChar', 'str.lastChar',
+      'flag.asString', 'flag.upper',
+      'when.monthShort', 'when.dayOfWeekNumber', 'when.hour', 'when.minute', 'when.second', 'when.timezone',
+    ]) {
+      expect(screen.getByText(option)).toBeDefined();
+    }
+  });
+
+  it('highlights an unscoped sub-property against the closest variable', () => {
+    const { container } = render(
+      <TemplateEditor
+        value="{{temp.round}} {{route.targetNodeName}}"
+        onChange={vi.fn()}
+        variables={[
+          { id: 'g', name: 'temp', scope: 'global', type: 'string', config: {} },
+          { id: 'l', name: 'temp', scope: 'local', type: 'numeric', flowId: 'f1', groupId: 'g1', config: {} },
+          { id: 'p', name: 'route', scope: 'local', type: 'point', flowId: 'f1', groupId: 'g1', config: { pattern: 'GRAPH_ROUTE' } },
+        ]}
+        flowId="f1"
+        groupId="g1"
+      />
+    );
+    expect(container.querySelector('.bg-red-500\\/20')).toBeNull();
+    expect(container.querySelectorAll('.bg-emerald-500\\/20')).toHaveLength(2);
+  });
 });

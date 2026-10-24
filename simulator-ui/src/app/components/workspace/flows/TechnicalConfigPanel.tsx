@@ -12,6 +12,10 @@ interface TechnicalConfigPanelProps {
   activeTab: 'technical' | 'format';
   draftName: string;
   setDraftName: (val: string) => void;
+  /** Why the draft name is not applied (empty or used by another flow of the group), if it is not. */
+  nameError?: string | null;
+  /** Called when the name input loses focus (restores an invalid draft). */
+  onNameBlur?: () => void;
   /** Raw text of the "Every N ticks" input (may be temporarily invalid while typing). */
   draftEveryTicks: string;
   setDraftEveryTicks: (val: string) => void;
@@ -35,6 +39,8 @@ export function TechnicalConfigPanel({
   activeTab,
   draftName,
   setDraftName,
+  nameError = null,
+  onNameBlur,
   draftEveryTicks,
   setDraftEveryTicks,
   onEveryTicksBlur,
@@ -80,10 +86,20 @@ export function TechnicalConfigPanel({
               aria-label="Flow name"
               value={draftName}
               onChange={(event) => setDraftName(event.target.value)}
+              onBlur={onNameBlur}
               placeholder="Flow name"
-              className="bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded px-2.5 py-1.5 text-[11px] text-[var(--c-tx1)] outline-none focus:border-cyan-500/50 transition-all w-full"
+              aria-invalid={nameError !== null}
+              aria-describedby={nameError ? 'flow-name-warning' : undefined}
+              className={`bg-[var(--c-bg1)] border rounded px-2.5 py-1.5 text-[11px] text-[var(--c-tx1)] outline-none transition-all w-full ${
+                nameError ? 'border-red-500/60 focus:border-red-500/60' : 'border-[var(--c-br1)] focus:border-cyan-500/50'
+              }`}
               style={{ fontFamily: 'JetBrains Mono, monospace' }}
             />
+            {nameError && (
+              <span id="flow-name-warning" role="alert" className="text-[9px] text-red-500" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+                {nameError} · not applied
+              </span>
+            )}
           </FieldRow>
           <FieldRow label="Every N ticks" description="1 message every N ticks · tick rate in Settings → Simulation">
             <input

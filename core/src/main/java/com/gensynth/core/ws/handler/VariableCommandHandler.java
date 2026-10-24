@@ -7,6 +7,7 @@ import com.gensynth.core.model.Variable;
 import com.gensynth.core.ws.BridgeContext;
 import com.gensynth.core.ws.UiBridgeWebSocketServer;
 import com.gensynth.core.flow.variables.InvalidVariableConfigException;
+import com.gensynth.core.flow.variables.VariableType;
 import org.java_websocket.WebSocket;
 
 import java.util.LinkedHashMap;
@@ -95,7 +96,7 @@ public class VariableCommandHandler implements CommandHandler {
         if (clientRequestId != null) {
             response.put("clientRequestId", clientRequestId);
         }
-        response.put("status", "ok");
+        response.putIfAbsent("status", "ok");
         response.put("result", "variable_created");
         response.put("type", type);
         response.put("scope", scope.toLowerCase());
@@ -201,7 +202,7 @@ public class VariableCommandHandler implements CommandHandler {
      * @return the normalized core variable type
      */
     public static String normalizeVariableTypeForCore(String type) {
-        return "temporal".equalsIgnoreCase(type) ? "date" : type;
+        return VariableType.TEMPORAL.matches(type) ? "date" : type;
     }
 
     /**
@@ -213,7 +214,7 @@ public class VariableCommandHandler implements CommandHandler {
     public static Map<String, Object> normalizeVariablePayloadForUi(Map<String, Object> payload) {
         Map<String, Object> normalized = new LinkedHashMap<>(payload);
         Object type = normalized.get("type");
-        if (type instanceof String && "date".equalsIgnoreCase((String) type)) {
+        if (type instanceof String typeName && VariableType.TEMPORAL.matches(typeName)) {
             normalized.put("type", "temporal");
         }
         Object scope = normalized.get("scope");

@@ -565,4 +565,20 @@ public class UiBridgeWebSocketServerTest {
         assertEquals("sequential", server.groupsById.get("g-mode").outputMode);
         server.shutdown();
     }
+
+    @Test
+    public void metricsReportTheHeapInUseReservedAndMaximum() throws Exception {
+        Path tempDir = Files.createTempDirectory("gensynth-ws-test-metrics-");
+        UiBridgeWebSocketServer server = newServer(tempDir, new JsonStateRepositoryImpl(tempDir.toString()));
+
+        Map<String, Object> payload = server.systemCommandHandler.buildMetricsPayload(null);
+
+        int memory = (Integer) payload.get("memory");
+        int heap = (Integer) payload.get("heap");
+        int maxHeap = (Integer) payload.get("maxHeap");
+        assertEquals(Runtime.getRuntime().maxMemory() / (1024 * 1024), maxHeap);
+        assertTrue("in use <= reserved", memory <= heap);
+        assertTrue("reserved <= maximum", heap <= maxHeap);
+        server.shutdown();
+    }
 }

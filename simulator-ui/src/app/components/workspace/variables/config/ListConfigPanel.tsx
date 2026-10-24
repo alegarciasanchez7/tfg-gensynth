@@ -12,6 +12,7 @@ import { StringConfigPanel } from './StringConfigPanel';
 import { BooleanConfigPanel } from './BooleanConfigPanel';
 import { TemporalConfigPanel } from './TemporalConfigPanel';
 import { ListReferenceSelector } from './ListReferenceSelector';
+import { defaultConfigForType } from './defaultConfigs';
 import { useApp } from '../../../../context';
 
 interface ListConfigPanelProps {
@@ -483,7 +484,12 @@ export const ListConfigPanel: React.FC<ListConfigPanelProps> = ({
                         <div className="w-32">
                           <CustomDropdown
                             value={embeddedType}
-                            onChange={(newVal) => handleItemChange(localIdx, { embeddedType: newVal as VariableType })}
+                            onChange={(newVal) => {
+                              if (newVal === embeddedType) return;
+                              // Another type's settings mean nothing here: start from the new type's defaults
+                              const newType = newVal as VariableType;
+                              handleItemChange(localIdx, { embeddedType: newType, embeddedConfig: defaultConfigForType(newType) });
+                            }}
                             options={EMBEDDED_TYPE_OPTIONS}
                           />
                         </div>

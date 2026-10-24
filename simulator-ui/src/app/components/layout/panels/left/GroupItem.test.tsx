@@ -33,11 +33,12 @@ const group: Group = {
 function renderItem(
   onUpdateGroupConfig: (groupId: string, config: unknown, name?: string) => Promise<void>,
   onSelectGroup = vi.fn(),
+  item: Group = group,
 ) {
   mockUseApp.mockReturnValue({ state: { flowMetrics: undefined, dirtyItems: undefined } });
   return render(
     <GroupItem
-      group={group}
+      group={item}
       selection={{ type: 'none' }}
       formatTemplate={{}}
       onSelectGroup={onSelectGroup}
@@ -109,5 +110,21 @@ describe('GroupItem', () => {
 
     fireEvent.keyDown(menuButton, { key: 'Enter' });
     expect(onSelectGroup).toHaveBeenCalledTimes(2);
+  });
+
+  it('renders a group with an unknown status instead of crashing', () => {
+    // The Core used to answer CREATE_GROUP with the command status "ok" as the group status
+    renderItem(vi.fn(async () => undefined), vi.fn(), { ...group, status: 'ok' as Group['status'] });
+
+    expect(screen.getByText('Orders')).toBeInTheDocument();
+  });
+
+  it('shows a lock indicator only on locked groups', () => {
+    const { unmount } = renderItem(vi.fn(async () => undefined));
+    expect(screen.queryByRole('img', { name: 'Locked group' })).not.toBeInTheDocument();
+    unmount();
+
+    renderItem(vi.fn(async () => undefined), vi.fn(), { ...group, enabled: false });
+    expect(screen.getByRole('img', { name: 'Locked group' })).toBeInTheDocument();
   });
 });

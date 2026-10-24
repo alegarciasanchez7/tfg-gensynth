@@ -664,7 +664,7 @@ public class NumericVariableConfig extends VariableConfiguration {
             if (hasFormatSpec && numberFormat.matches("0*1?")) {
                 int padLen = numberFormat.length();
                 if (padLen > 0) {
-                    formattedNum = String.format("%0" + padLen + "d", intVal);
+                    formattedNum = String.format(Locale.ROOT, "%0" + padLen + "d", intVal);
                 } else {
                     formattedNum = String.valueOf(intVal);
                 }
@@ -715,7 +715,7 @@ public class NumericVariableConfig extends VariableConfiguration {
                     if (padLen > 0) {
                         try {
                             long intPartVal = Long.parseLong(intPartStr);
-                            intPartStr = String.format("%0" + padLen + "d", intPartVal);
+                            intPartStr = String.format(Locale.ROOT, "%0" + padLen + "d", intPartVal);
                         } catch (NumberFormatException e) {
                             // ignore, keep original
                         }

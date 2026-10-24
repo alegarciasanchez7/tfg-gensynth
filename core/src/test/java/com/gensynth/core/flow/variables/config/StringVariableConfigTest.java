@@ -205,6 +205,24 @@ public class StringVariableConfigTest {
     }
 
     @Test
+    public void questionMarkFollowsTheCaseFormatting() {
+        String mask = "?".repeat(300);
+        config.pattern(GenerationPattern.FORMATTED_MASK).formattedMaskType("ALPHANUMERIC").customMask(mask);
+
+        config.alphanumericCase("MIXED");
+        String mixed = (String) config.generateNextValue();
+        assertTrue(mixed, mixed.matches("[A-Za-z0-9]{300}"));
+        assertTrue("Mixed Case must give lower-case letters too: " + mixed, mixed.matches(".*[a-z].*"));
+        assertTrue("Mixed Case must give upper-case letters too: " + mixed, mixed.matches(".*[A-Z].*"));
+
+        config.alphanumericCase("UPPER");
+        assertTrue(((String) config.generateNextValue()).matches("[A-Z0-9]{300}"));
+
+        config.alphanumericCase("LOWER");
+        assertTrue(((String) config.generateNextValue()).matches("[a-z0-9]{300}"));
+    }
+
+    @Test
     public void testDataCorruption() {
         config.pattern(GenerationPattern.CONSTANT)
               .constant("HELLO_WORLD")

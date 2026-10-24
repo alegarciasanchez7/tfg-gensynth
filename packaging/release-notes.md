@@ -18,6 +18,10 @@
   - the Initial Value of numeric variables can be left empty; duplicate variable names are reported; fast typing no longer loses characters in the variable editors;
   - progressive clock drift works in every time mode; Circular Orbit turns around the centre of the region; Random Walk stays inside custom polygons and starts inside the region;
   - Graph Route Fixed Sequences can repeat nodes; list `.size`, `.first` and `.last` work with every strategy; Fixed Altitude uses its value in Geospatial;
+  - flow names are unique inside a group and clones get ` (2)`, ` (3)`… instead of repeating a name, so File Output flows never write to the same file; renaming a variable to a taken name is no longer applied;
+  - new Boolean variables start OFF as the editor shows; date sub-properties (`.hour`, `.year`…) work with every output format; the template autocomplete filters by what you type; the format buttons detect the template format;
+  - Temporal variables without a Time Zone use the computer's zone; dates use English month and day names on every computer; two flows that map to the same output file get a clear error; locked groups and flows no longer take or create output files;
+  - START shows why it cannot start (naming the variable) and starts nothing; format conversion keeps the content and reads quoted CSV fields; String masks give a value right after switching mode, and Mixed Case gives both cases; the Logs bin clears the list; a save or load dialog left open for a while no longer opens a second one;
   - the route editor uses the same scale on both axes; `Esc` closes the New Region and New Box Region confirmations; the Spatial Boundaries editor opens directly in fullscreen with a single button.
 - **Behaviour changes for existing projects:**
   - Waypoint Navigation sends each waypoint once per lap, followed by Interpolation Steps − 1 points towards the next one;

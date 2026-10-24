@@ -39,15 +39,21 @@ const sameCoords = (a: Point3DCoord | undefined, b: Point3DCoord) =>
  * - Cartesian ↔ Geospatial use incompatible units: bounds go back to the defaults of the new
  *   system, the region, obstacles, graph and fixed point are reset, and step/radius values are
  *   adapted to the new units.
+ *
+ * `confirmMessage` explains why the lost data is reset, and is only set when something is lost.
  */
 export function coordinateSystemSwitch(
   config: PointVariableConfig,
   target: CoordinateSystem,
-): { updates: Partial<PointVariableConfig>; lost: string[] } {
+): { updates: Partial<PointVariableConfig>; lost: string[]; confirmMessage?: string } {
   const source = config.coordinateSystem ?? 'CARTESIAN_3D';
   const lost: string[] = [];
   const updates: Partial<PointVariableConfig> = { coordinateSystem: target };
   if (source === target) return { updates: {}, lost };
+
+  const withMessage = (reason: string) => (lost.length === 0
+    ? { updates, lost }
+    : { updates, lost, confirmMessage: `${reason}, so ${joinList(lost)} will be reset. Continue?` });
 
   const graphNodes = config.graphNodes?.length ?? 0;
   const clearGraph = () => {
@@ -60,7 +66,7 @@ export function coordinateSystemSwitch(
       clearGraph();
       updates.pattern = 'RANDOM_POINT';
     }
-    return { updates, lost };
+    return withMessage('Graph Route is not available in 3D Cartesian');
   }
 
   const oldDefaults = defaultBoundsFor(source);
@@ -94,5 +100,10 @@ export function coordinateSystemSwitch(
     jitterRadius: 0,
   });
   if (target === 'CARTESIAN_3D' && config.pattern === 'GRAPH_ROUTE') updates.pattern = 'RANDOM_POINT';
-  return { updates, lost };
+  return withMessage('The new coordinate system uses different units');
+}
+
+/** "a", "a and b", "a, b and c". */
+function joinList(items: string[]): string {
+  return items.length > 1 ? `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}` : items[0];
 }

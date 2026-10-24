@@ -1,5 +1,6 @@
 package com.gensynth.core.flow.variables.config;
 
+import com.gensynth.core.flow.TemplateEngine;
 import com.gensynth.core.flow.variables.*;
 import com.github.curiousoddman.rgxgen.RgxGen;
 import java.util.*;
@@ -175,24 +176,33 @@ public class StringVariableConfig extends VariableConfiguration {
         while (matcher.find()) {
             String varName = matcher.group(1);
             Object value = currentContext.get(varName);
-            String replacement = value != null ? value.toString() : "";
+            // Same text as the flow template writes for this value (e.g. a Constant 42 is "42")
+            String replacement = value != null
+                ? TemplateEngine.formatValue(value, isConstantPattern(currentContext.get(varName + "_config")))
+                : "";
             matcher.appendReplacement(sb, Matcher.quoteReplacement(replacement));
         }
         matcher.appendTail(sb);
         return sb.toString();
     }
 
+    private static boolean isConstantPattern(Object generator) {
+        return generator instanceof ConfigurableVariable cv
+            && cv.getConfiguration() != null
+            && cv.getConfiguration().getPattern() == GenerationPattern.CONSTANT;
+    }
+
     private String generateFormattedMask() {
         ThreadLocalRandom random = ThreadLocalRandom.current();
         if ("MAC_ADDRESS".equals(formattedMaskType)) {
-            return String.format("%02X:%02X:%02X:%02X:%02X:%02X",
+            return String.format(Locale.ROOT, "%02X:%02X:%02X:%02X:%02X:%02X",
                 random.nextInt(256), random.nextInt(256), random.nextInt(256),
                 random.nextInt(256), random.nextInt(256), random.nextInt(256));
         } else if ("IPV4".equals(formattedMaskType)) {
             return random.nextInt(256) + "." + random.nextInt(256) + "." +
                    random.nextInt(256) + "." + random.nextInt(256);
         } else if ("IPV6".equals(formattedMaskType)) {
-            return String.format("%x:%x:%x:%x:%x:%x:%x:%x",
+            return String.format(Locale.ROOT, "%x:%x:%x:%x:%x:%x:%x:%x",
                 random.nextInt(65536), random.nextInt(65536), random.nextInt(65536), random.nextInt(65536),
                 random.nextInt(65536), random.nextInt(65536), random.nextInt(65536), random.nextInt(65536));
         } else if ("UUID_V4".equals(formattedMaskType)) {
@@ -210,7 +220,10 @@ public class StringVariableConfig extends VariableConfiguration {
                     char letter = UPPERCASE_CHARS.charAt(random.nextInt(UPPERCASE_CHARS.length()));
                     sb.append(c == 'a' ? Character.toLowerCase(letter) : letter);
                 } else if (c == '?') {
-                    String alpha = UPPERCASE_CHARS + NUMBER_CHARS;
+                    // Mixed Case keeps each symbol's case, so only here can '?' be a lower-case letter
+                    String alpha = "MIXED".equals(alphanumericCase)
+                        ? UPPERCASE_CHARS + LOWERCASE_CHARS + NUMBER_CHARS
+                        : UPPERCASE_CHARS + NUMBER_CHARS;
                     sb.append(alpha.charAt(random.nextInt(alpha.length())));
                 } else {
                     sb.append(c);

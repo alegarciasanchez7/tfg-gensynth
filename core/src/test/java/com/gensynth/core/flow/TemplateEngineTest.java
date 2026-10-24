@@ -645,4 +645,23 @@ public class TemplateEngineTest {
 
         assertEquals("2025-06-01T08:00:00Z", engine.evaluate("{{eventTime}}", 1, variables, "flow-1", "group-1"));
     }
+    @Test
+    public void stringTemplateModeFormatsValuesLikeTheFlowTemplate() {
+        variables.put("lvl", constantNumeric("lvl", "level", 42));
+        variables.put("ratio", constantNumeric("ratio", "ratio", 0.5));
+        variables.put("lbl", new Variable("lbl", "label", "LOCAL", "string", "", Map.of(
+                "pattern", "TEMPLATE", "template", "L-{{level}}-{{ratio}}"), "flow-1", "group-1"));
+
+        assertEquals("42|0.5|L-42-0.5", engine.evaluate("{{level}}|{{ratio}}|{{label}}", 1, variables, "flow-1", "group-1"));
+        // Rendered alone, the String variable generates its dependencies itself
+        assertEquals("L-42-0.5", engine.evaluate("{{label}}", 2, variables, "flow-1", "group-1"));
+    }
+
+    @Test
+    public void formatValueKeepsDecimalsOutsideTheConstantPattern() {
+        assertEquals("42", TemplateEngine.formatValue(42.0, true));
+        assertEquals("42.0", TemplateEngine.formatValue(42.0, false));
+        assertEquals("[1, \"a\"]", TemplateEngine.formatValue(List.of(1, "a"), false));
+        assertEquals("null", TemplateEngine.formatValue(null, false));
+    }
 }

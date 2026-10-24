@@ -39,6 +39,22 @@ public class GroupRuntime {
         this.enabled = enabled;
     }
 
+    /**
+     * Names of the flows of this group, in order.
+     *
+     * @param exceptFlowId id of a flow to leave out (the flow being renamed), or {@code null}
+     * @return the flow names
+     */
+    public List<String> flowNames(String exceptFlowId) {
+        List<String> names = new ArrayList<>();
+        for (FlowRuntime flow : flows) {
+            if (exceptFlowId == null || !exceptFlowId.equals(flow.id)) {
+                names.add(flow.name);
+            }
+        }
+        return names;
+    }
+
     public static GroupRuntime fromDefinition(GroupDefinition definition) {
         GroupRuntime runtime = new GroupRuntime(
             definition.getGroupId(),

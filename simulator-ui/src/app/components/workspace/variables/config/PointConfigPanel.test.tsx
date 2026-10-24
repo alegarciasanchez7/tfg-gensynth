@@ -94,6 +94,29 @@ describe('PointConfigPanel', () => {
     confirm.mockRestore();
   });
 
+  it('explains that Graph Route is not available in 3D (not a units change) before dropping the graph', () => {
+    const handleChange = vi.fn();
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const config: PointVariableConfig = {
+      coordinateSystem: 'CARTESIAN_2D', pattern: 'GRAPH_ROUTE', graphNodes: [{ id: 'a', name: 'A', x: 1, y: 1, z: 0 }],
+    };
+    render(<PointConfigPanel config={config} onChange={handleChange} />);
+
+    switchTo(/3D Cartesian \(X, Y, Z\)/);
+
+    const message = confirm.mock.calls[0][0] as string;
+    expect(message).toMatch(/^Graph Route is not available in 3D Cartesian, so the route graph \(1 nodes\) will be reset/);
+    expect(message).not.toMatch(/units/);
+    expect(handleChange).toHaveBeenCalledWith(expect.objectContaining({ coordinateSystem: 'CARTESIAN_3D', pattern: 'RANDOM_POINT' }));
+    confirm.mockRestore();
+  });
+
+  it('shows no empty settings box for Random Point', () => {
+    const { container } = render(<PointConfigPanel config={{ coordinateSystem: 'CARTESIAN_3D', pattern: 'RANDOM_POINT' }} onChange={vi.fn()} />);
+    const boxes = Array.from(container.querySelectorAll('.rounded.border.p-3'));
+    expect(boxes.filter(box => box.childElementCount === 0)).toHaveLength(0);
+  });
+
   it('shows the waypoint editor for Waypoint Navigation and commits steps only on blur', () => {
     const handleChange = vi.fn();
     render(

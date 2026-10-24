@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { mapFlowFromCore } from './groupHelpers';
-import type { FlowState } from '../../core/types';
+import { mapFlowFromCore, mapGroupFromCore } from './groupHelpers';
+import type { FlowState, GroupState } from '../../core/types';
+import type { Group } from '../../types';
 
 const coreFlow = (overrides: Partial<FlowState> = {}): FlowState => ({
   id: 'f1',
@@ -35,5 +36,37 @@ describe('mapFlowFromCore', () => {
     expect(flow.lossPercent).toBe(0);
     expect(flow.outageEveryTicks).toBe(0);
     expect(flow.outageDurationTicks).toBe(0);
+  });
+});
+
+const coreGroup = (overrides: Record<string, unknown> = {}): GroupState => ({
+  id: 'g1',
+  name: 'Group',
+  status: 'stopped',
+  throughput: 0,
+  description: '',
+  threads: 1,
+  outputMode: 'parallel',
+  enabled: true,
+  flows: [],
+  ...overrides,
+} as GroupState);
+
+describe('mapGroupFromCore', () => {
+  it('ignores the command status "ok" of a CREATE_GROUP response', () => {
+    expect(mapGroupFromCore(coreGroup({ status: 'ok' })).status).toBe('stopped');
+  });
+
+  it('keeps the previous status when the Core sends an unknown one', () => {
+    const previous = { ...mapGroupFromCore(coreGroup()), status: 'running' } as Group;
+
+    expect(mapGroupFromCore(coreGroup({ status: 'ok' }), previous).status).toBe('running');
+    expect(mapGroupFromCore(coreGroup({ status: 'paused' }), previous).status).toBe('paused');
+  });
+
+  it('normalises an unknown flow connection status', () => {
+    const group = mapGroupFromCore(coreGroup({ flows: [coreFlow({ connectionStatus: 'ok' as never })] }));
+
+    expect(group.flows[0].connectionStatus).toBe('disconnected');
   });
 });

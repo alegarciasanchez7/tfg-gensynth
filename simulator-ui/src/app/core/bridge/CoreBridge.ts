@@ -1,7 +1,7 @@
 import { CORE_PROTOCOL_VERSION } from '../types';
 import type { UICommandType, UICommandPayloadMap, UICommand } from '../types';
 import { BridgeConfig, DEFAULT_CONFIG } from './BridgeConfig';
-import { PendingCommand, EventMap, EventCallback } from './BridgeTypes';
+import { PendingCommand, EventMap, EventCallback, USER_DIALOG_COMMANDS } from './BridgeTypes';
 import { BridgeEventEmitter } from './BridgeEventEmitter';
 import { ConnectionManager } from './ConnectionManager';
 import { MessageHandler } from './MessageHandler';
@@ -153,7 +153,9 @@ export class CoreBridge {
 
       this.pendingCommands.set(id, pending);
       this.connectionManager.sendRaw(JSON.stringify(command));
-      scheduleAttempt();
+      if (!USER_DIALOG_COMMANDS.has(type)) {
+        scheduleAttempt();
+      }
     });
   }
 

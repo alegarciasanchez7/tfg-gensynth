@@ -11,6 +11,7 @@ import {
 } from '../../../../types';
 import { Input } from '../../../ui/input';
 import { Label } from '../../../ui/label';
+import { CustomDropdown } from '../../../ui/custom-dropdown';
 
 import { Info, Route, ArrowRight, X, Trash2 } from 'lucide-react';
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '../../../ui/tooltip';
@@ -28,81 +29,11 @@ interface PointConfigPanelProps {
   variableScope?: VariableScope;
 }
 
-interface CustomDropdownProps {
-  id?: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: Array<{ value: string; label: string }>;
-}
-
-const CustomDropdown: React.FC<CustomDropdownProps> = ({ id, value, onChange, options }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const containerRef = React.useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  const selectedOption = options.find((opt) => opt.value === value) || options[0];
-
-  return (
-    <div ref={containerRef} className={`relative w-full ${isOpen ? 'z-[9999]' : ''}`}>
-      <button
-        id={id}
-        type="button"
-        onClick={() => setIsOpen(!isOpen)}
-        className="flex h-8 w-full items-center justify-between rounded-md border border-input bg-input-background dark:bg-input/30 px-3 py-1 text-xs text-[var(--c-tx2)] outline-none hover:bg-[var(--c-bg5)] transition-colors cursor-pointer"
-      >
-        <span>{selectedOption.label}</span>
-        <svg aria-hidden="true"
-          className={`size-3.5 opacity-60 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
-          xmlns="http://www.w3.org/2000/svg"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          strokeWidth="2"
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-        </svg>
-      </button>
-
-      {isOpen && (
-        <div className="absolute left-0 right-0 mt-1 z-[9999] bg-[var(--c-bg2)] border border-[var(--c-br1)] rounded shadow-2xl max-h-[200px] overflow-y-auto">
-          <div className="p-1 space-y-0.5">
-            {options.map((opt) => (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => {
-                  onChange(opt.value);
-                  setIsOpen(false);
-                }}
-                className={`w-full text-left px-2.5 py-1.5 rounded text-xs transition-colors flex items-center justify-between cursor-pointer ${
-                  opt.value === value
-                    ? 'bg-violet-500/20 text-violet-400 font-semibold'
-                    : 'hover:bg-[var(--c-bg5)] text-[var(--c-tx2)]'
-                }`}
-              >
-                <span>{opt.label}</span>
-                {opt.value === value && (
-                  <svg aria-hidden="true" className="size-3.5 text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                  </svg>
-                )}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
+/** Patterns that show extra settings below the Movement Pattern selector. */
+const PATTERNS_WITH_SETTINGS = new Set([
+  'GRAPH_ROUTE', 'FIXED_POINT', 'RANDOM_WALK', 'CONTINUOUS_MOVEMENT', 'CIRCULAR_ORBIT',
+  'WAYPOINT_NAVIGATION', 'PATH_INTERPOLATOR',
+]);
 
 export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onChange, flowId, groupId, variableScope }) => {
   const coordSystem: CoordinateSystem = config.coordinateSystem ?? 'CARTESIAN_3D';
@@ -168,14 +99,9 @@ export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onCh
               id="point-coord-system"
               value={coordSystem}
               onChange={(val) => {
-                const { updates, lost } = coordinateSystemSwitch(config, val as CoordinateSystem);
+                const { updates, confirmMessage } = coordinateSystemSwitch(config, val as CoordinateSystem);
                 if (Object.keys(updates).length === 0) return;
-                const lostText = lost.length > 1 ? `${lost.slice(0, -1).join(', ')} and ${lost[lost.length - 1]}` : lost[0];
-                if (lost.length > 0 && !window.confirm(
-                  `The new coordinate system uses different units, so ${lostText} will be reset. Continue?`,
-                )) {
-                  return;
-                }
+                if (confirmMessage && !window.confirm(confirmMessage)) return;
                 onChange(updates);
               }}
               options={[
@@ -290,7 +216,8 @@ export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onCh
             />
         </div>
 
-        {/* 3. Conditional Pattern Settings */}
+        {/* 3. Conditional Pattern Settings (Random Point has none: no empty box) */}
+        {PATTERNS_WITH_SETTINGS.has(pattern) && (
         <div className="rounded border border-[var(--c-br1)] bg-[var(--c-bg2)] p-3 space-y-3 relative z-0">
           {pattern === 'GRAPH_ROUTE' && (
             <div className="space-y-4">
@@ -751,6 +678,7 @@ export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onCh
             <WaypointEditor config={config} onChange={onChange} />
           )}
         </div>
+        )}
 
         {/* 4. GPS Noise / Position Jitter */}
         <div className="rounded border border-[var(--c-br1)] bg-[var(--c-bg2)] p-3 space-y-2">

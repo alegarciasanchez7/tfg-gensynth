@@ -4,6 +4,8 @@ import com.gensynth.core.config.AppPaths;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.gensynth.core.model.OutputMode;
 import com.gensynth.core.model.Variable;
+import com.gensynth.core.util.NamingPattern;
+import com.gensynth.core.util.UniqueNames;
 import com.gensynth.core.ws.BridgeContext;
 import com.gensynth.core.ws.UiBridgeWebSocketServer;
 import com.gensynth.core.ws.runtime.FlowRuntime;
@@ -44,7 +46,7 @@ public class GroupCommandHandler implements CommandHandler {
 
         synchronized (ctx.getStateLock()) {
             for (GroupRuntime group : ctx.getGroupsById().values()) {
-                if (group.name.equalsIgnoreCase(name)) {
+                if (UniqueNames.sameName(group.name, name)) {
                     server.sendError(conn, commandId, clientRequestId, "INVALID_PAYLOAD", "Group name already exists", Map.of("name", name));
                     return;
                 }
@@ -123,7 +125,7 @@ public class GroupCommandHandler implements CommandHandler {
                 }
 
                 for (GroupRuntime existing : ctx.getGroupsById().values()) {
-                    if (!existing.id.equals(groupId) && existing.name.equalsIgnoreCase(newName)) {
+                    if (!existing.id.equals(groupId) && UniqueNames.sameName(existing.name, newName)) {
                         server.sendError(conn, commandId, "INVALID_PAYLOAD", "Group name already exists", Map.of("name", newName));
                         return;
                     }
@@ -154,6 +156,9 @@ public class GroupCommandHandler implements CommandHandler {
                 group.enabled = enabled;
                 for (FlowRuntime flow : group.flows) {
                     flow.enabled = enabled;
+                }
+                if (enabled) {
+                    flowHandler.openSessionsOfUnlockedFlows(group, group.flows);
                 }
             }
 
@@ -190,15 +195,7 @@ public class GroupCommandHandler implements CommandHandler {
                 flowHandler.startGroupInternal(group);
                 ctx.setSystemRunning(true);
             } catch (IllegalStateException ex) {
-                String errType = "INTERNAL_ERROR";
-                Map<String, Object> details = new java.util.HashMap<>();
-                if (ex.getCause() instanceof com.gensynth.core.flow.variables.CyclicDependencyException) {
-                    errType = "CYCLIC_DEPENDENCY_ERROR";
-                    details.put("cycle", ((com.gensynth.core.flow.variables.CyclicDependencyException) ex.getCause()).getCycle());
-                } else if (ex.getMessage() != null && ex.getMessage().contains("Broken reference")) {
-                    errType = "BROKEN_REFERENCE_ERROR";
-                }
-                server.sendError(conn, commandId, errType, ex.getMessage(), details);
+                FlowCommandHandler.sendStartError(server, conn, commandId, ex);
                 return;
             }
         }
@@ -271,7 +268,12 @@ public class GroupCommandHandler implements CommandHandler {
 
             for (int i = 1; i <= count; i++) {
                 String newGroupId = UUID.randomUUID().toString();
-                String newName = com.gensynth.core.util.NamingPattern.apply(namingPattern, original.name, i);
+                // Outputs are named after the group and its flows: a taken name gets the first free " (k)" suffix
+                List<String> groupNames = new ArrayList<>();
+                for (GroupRuntime existing : ctx.getGroupsById().values()) {
+                    groupNames.add(existing.name);
+                }
+                String newName = UniqueNames.makeUnique(NamingPattern.apply(namingPattern, original.name, i), groupNames);
 
                 GroupRuntime clone = new GroupRuntime(
                     newGroupId,
@@ -289,7 +291,8 @@ public class GroupCommandHandler implements CommandHandler {
 
                     FlowRuntime flowClone = new FlowRuntime(
                         newFlowId,
-                        originalFlow.name,
+                        // Unique already, unless an old project repeated a name in the original group
+                        UniqueNames.makeUnique(originalFlow.name, clone.flowNames(null)),
                         originalFlow.technology,
                         "disconnected",
                         0,

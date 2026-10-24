@@ -97,6 +97,8 @@ interface AppContextValue {
       template?: string,
       connectorConfig?: Record<string, unknown>,
       everyTicks?: number,
+      /** Rename a name already used in the group instead of failing (Repeater). */
+      autoRename?: boolean,
     ) => Promise<Flow>;
     deleteFlow: (groupId: string, flowId: string) => Promise<void>;
     updateFlowConfig: (

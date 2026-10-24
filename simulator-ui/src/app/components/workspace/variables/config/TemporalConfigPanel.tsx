@@ -7,6 +7,7 @@ import { Switch } from '../../../ui/switch';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../../ui/tooltip';
 import { Info } from 'lucide-react';
 
+import { DEFAULT_TEMPORAL_FORMAT } from './defaultConfigs';
 import { ListReferenceSelector } from './ListReferenceSelector';
 
 interface TemporalConfigPanelProps {
@@ -19,7 +20,7 @@ interface TemporalConfigPanelProps {
 
 const PRESETS: Record<TemporalType, string[]> = {
   DATE: ['yyyy-MM-dd', 'dd/MM/yyyy', 'MM-dd-yyyy', 'yyyy.MM.dd'],
-  TIMESTAMP: ["yyyy-MM-dd'T'HH:mm:ss.SSSZ", 'ISO_INSTANT', 'UNIX_TIMESTAMP', 'yyyy-MM-dd HH:mm:ss'],
+  TIMESTAMP: [DEFAULT_TEMPORAL_FORMAT, 'ISO_INSTANT', 'UNIX_TIMESTAMP', 'yyyy-MM-dd HH:mm:ss'],
   TIME: ['HH:mm:ss', 'HH:mm', 'HH:mm:ss.SSS', 'hh:mm a']
 };
 

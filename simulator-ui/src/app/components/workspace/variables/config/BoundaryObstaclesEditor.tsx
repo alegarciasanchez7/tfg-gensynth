@@ -99,9 +99,10 @@ export const BoundaryObstaclesEditor: React.FC<BoundaryObstaclesEditorProps> = (
           />
         </div>
 
-        <div className="w-[140px] space-y-1">
-          <Label className="text-[10px] text-[var(--c-tx4)]">Type</Label>
+        <div className="w-60 space-y-1">
+          <Label htmlFor="obs-type-select" className="text-[10px] text-[var(--c-tx4)]">Type</Label>
           <select
+            id="obs-type-select"
             value={newObstacleType}
             onChange={(e) => setNewObstacleType(e.target.value as ObstacleType)}
             className="w-full h-7 rounded border border-[var(--c-br1)] bg-[var(--c-bg4)] text-xs text-[var(--c-tx1)] px-2 font-mono"

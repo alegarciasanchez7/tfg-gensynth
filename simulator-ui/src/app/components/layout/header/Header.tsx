@@ -25,12 +25,15 @@ interface HeaderProps {
   variables: Variable[];
 }
 
+const systemStatusCfg: Record<SystemStatus, { color: string; dot: string; label: string; pulse: boolean }> = {
+  running: { color: 'text-emerald-400', dot: 'bg-emerald-400', label: 'RUNNING', pulse: true },
+  stopped: { color: 'text-slate-500', dot: 'bg-slate-400', label: 'STOPPED', pulse: false },
+  processing: { color: 'text-amber-400', dot: 'bg-amber-400', label: 'PROCESSING', pulse: true },
+};
+
 const StatusBadge = ({ status }: { status: SystemStatus }) => {
-  const cfg = {
-    running: { color: 'text-emerald-400', dot: 'bg-emerald-400', label: 'RUNNING', pulse: true },
-    stopped: { color: 'text-slate-500', dot: 'bg-slate-400', label: 'STOPPED', pulse: false },
-    processing: { color: 'text-amber-400', dot: 'bg-amber-400', label: 'PROCESSING', pulse: true },
-  }[status];
+  // The status comes from the Core: an unknown value must not crash the header
+  const cfg = systemStatusCfg[status] ?? systemStatusCfg.stopped;
 
   return (
     <div

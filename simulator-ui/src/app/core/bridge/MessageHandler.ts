@@ -1,5 +1,5 @@
 import type { BridgeConfig } from './BridgeConfig';
-import type { PendingCommand, EventMap } from './BridgeTypes';
+import { USER_DIALOG_COMMANDS, type PendingCommand, type EventMap } from './BridgeTypes';
 import type {
   CoreMessage,
   CoreCommandErrorPayload,
@@ -111,7 +111,8 @@ export class MessageHandler {
           const commandError = this.createError(message.payload as CoreCommandErrorPayload, responseId);
           const recoverable = (message.payload as CoreCommandErrorPayload)?.recoverable ?? false;
 
-          if (recoverable && pending.attempts < (this.config.maxCommandRetries ?? 0)) {
+          const resendable = !USER_DIALOG_COMMANDS.has(pending.command.type);
+          if (recoverable && resendable && pending.attempts < (this.config.maxCommandRetries ?? 0)) {
             pending.attempts += 1;
             const delay = Math.min(
               (this.config.retryBackoffMs ?? 500) * (2 ** (pending.attempts - 1)),

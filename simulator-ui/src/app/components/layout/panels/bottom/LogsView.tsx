@@ -24,9 +24,11 @@ interface LogsViewProps {
   entries: Array<{ id: string; timestamp: string; level: 'info' | 'warn' | 'error' | 'debug' | 'data'; source: string; message: string }>;
   connectorHealthSummary: ConnectorHealthSummary[];
   groups: Group[];
+  /** Empties the log list. */
+  onClear?: () => void;
 }
 
-export function LogsView({ entries, connectorHealthSummary, groups }: LogsViewProps) {
+export function LogsView({ entries, connectorHealthSummary, groups, onClear }: LogsViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const [filter, setFilter] = useState<string>('all');
@@ -184,7 +186,12 @@ export function LogsView({ entries, connectorHealthSummary, groups }: LogsViewPr
           only data
         </button>
         <div className="flex-1" />
-        <button className="p-1 rounded text-[var(--c-tx4)] hover:text-[var(--c-tx2)] hover:bg-[var(--c-bg6)] transition-all">
+        <button
+          onClick={onClear}
+          aria-label="Clear logs"
+          title="Clear logs"
+          className="p-1 rounded text-[var(--c-tx4)] hover:text-[var(--c-tx2)] hover:bg-[var(--c-bg6)] transition-all"
+        >
           <Trash2 size={10} />
         </button>
       </div>
@@ -204,7 +211,7 @@ export function LogsView({ entries, connectorHealthSummary, groups }: LogsViewPr
             });
 
             return filtered.map(entry => {
-              const cfg = levelCfg[entry.level];
+              const cfg = levelCfg[entry.level] ?? levelCfg.info;
               const sourceDisplay = sourceNameMap.get(entry.source) || entry.source;
               return (
                 <div key={entry.id} className="flex items-start gap-2 py-0.5 group hover:bg-[var(--c-bg4)] px-1 rounded">
@@ -213,7 +220,7 @@ export function LogsView({ entries, connectorHealthSummary, groups }: LogsViewPr
                   </span>
                   <span className={`flex items-center gap-0.5 text-[10px] shrink-0 pt-px ${cfg.color}`}
                     style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-                    {levelIcon[entry.level]}
+                    {levelIcon[entry.level] ?? levelIcon.info}
                     {cfg.label}
                   </span>
                   <span className="text-[10px] text-[var(--c-tx4)] shrink-0 pt-px" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
