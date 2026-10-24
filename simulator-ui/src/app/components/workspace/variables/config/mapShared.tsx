@@ -1,20 +1,19 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import type { Point3DCoord } from '../../../../types';
+import { useCanvasPalette } from './canvasPalette';
 
 /** Pieces shared by the Leaflet editors of geospatial points (route graph, waypoints). */
-
-const GRID_LINE_STYLE: L.PathOptions = {
-  color: '#334155',
-  weight: 1,
-  dashArray: '3, 3',
-  interactive: false,
-};
 
 /** Lat/lon grid drawn instead of the map tiles when the app is offline. */
 export function OfflineGridOverlay() {
   const map = useMap();
+  const palette = useCanvasPalette();
+  const gridLineStyle = useMemo<L.PathOptions>(
+    () => ({ color: palette.mapGrid, weight: 1, dashArray: '3, 3', interactive: false }),
+    [palette],
+  );
   const [gridItems, setGridItems] = useState<{ positions: [number, number][]; label: string }[]>([]);
 
   useEffect(() => {
@@ -62,7 +61,7 @@ export function OfflineGridOverlay() {
   return (
     <>
       {gridItems.map((item, idx) => (
-        <Polyline key={idx} positions={item.positions} pathOptions={GRID_LINE_STYLE} />
+        <Polyline key={idx} positions={item.positions} pathOptions={gridLineStyle} />
       ))}
     </>
   );

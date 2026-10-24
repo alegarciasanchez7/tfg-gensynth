@@ -17,6 +17,7 @@ import { centerOf, type FullPoint } from '../../../../core/pointDefaults';
 import { clampToRegion, isInsideRegion, roundIntoRegion } from '../../../../core/routeGeometry';
 import type { MoveCheck, PathIssues } from '../../../../core/waypointPath';
 import { MapAutoFit, OfflineGridOverlay } from './mapShared';
+import { useCanvasPalette } from './canvasPalette';
 import { cachedDivIcon } from './mapIcons';
 
 interface WaypointMapProps {
@@ -226,6 +227,7 @@ export const WaypointMap: React.FC<WaypointMapProps> = ({
   onViewChange,
 }) => {
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
+  const palette = useCanvasPalette();
   const [selected, setSelected] = useState<number | null>(null);
   const selectedIndex = selected !== null && selected < waypoints.length ? selected : null;
 
@@ -353,7 +355,7 @@ export const WaypointMap: React.FC<WaypointMapProps> = ({
         worldCopyJump={false}
         scrollWheelZoom={true}
         doubleClickZoom={false}
-        style={{ height: '100%', width: '100%', background: '#090d16' }}
+        style={{ height: '100%', width: '100%', background: palette.deepBackground }}
       >
         <WaypointMapClicks onClick={handleMapClick} />
         <MapResizeHandler />

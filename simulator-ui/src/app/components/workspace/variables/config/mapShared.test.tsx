@@ -1,7 +1,8 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MapAutoFit, OfflineGridOverlay } from './mapShared';
 import { cachedDivIcon } from './mapIcons';
+import { DARK_CANVAS_PALETTE, LIGHT_CANVAS_PALETTE } from './canvasPalette';
 
 // jsdom cannot run Leaflet maps: useMap returns a stub and Polyline renders its positions
 const h = vi.hoisted(() => ({
@@ -16,8 +17,8 @@ const h = vi.hoisted(() => ({
 
 vi.mock('react-leaflet', () => ({
   useMap: () => h.map,
-  Polyline: ({ positions }: { positions: [number, number][] }) => (
-    <div data-testid="grid-line" data-positions={JSON.stringify(positions)} />
+  Polyline: ({ positions, pathOptions }: { positions: [number, number][]; pathOptions: { color?: string } }) => (
+    <div data-testid="grid-line" data-positions={JSON.stringify(positions)} data-color={pathOptions.color} />
   ),
 }));
 
@@ -39,6 +40,20 @@ describe('OfflineGridOverlay', () => {
 
     unmount();
     expect(h.map.off).toHaveBeenCalledWith('moveend zoomend', expect.any(Function));
+  });
+
+  it('draws the grid in the colour of the light and the dark theme', async () => {
+    try {
+      render(<OfflineGridOverlay />);
+      expect(screen.getAllByTestId('grid-line')[0]).toHaveAttribute('data-color', LIGHT_CANVAS_PALETTE.mapGrid);
+
+      await act(async () => {
+        document.documentElement.classList.add('dark');
+      });
+      expect(screen.getAllByTestId('grid-line')[0]).toHaveAttribute('data-color', DARK_CANVAS_PALETTE.mapGrid);
+    } finally {
+      document.documentElement.classList.remove('dark');
+    }
   });
 });
 

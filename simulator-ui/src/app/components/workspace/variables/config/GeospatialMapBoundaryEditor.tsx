@@ -16,6 +16,7 @@ import { useBoundaryModalContext } from './BoundaryExpandModal';
 import { centerOf, defaultBoundsFor } from '../../../../core/pointDefaults';
 import { OfflineGridOverlay } from './mapShared';
 import { useDialogEscape } from './useDialogEscape';
+import { useCanvasPalette } from './canvasPalette';
 
 // Helper to format DMS coordinates for map tooltips & cursor HUD
 const formatDmsHelper = (val: number, isLat: boolean) => {
@@ -525,6 +526,7 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
   const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
   const feedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isOffline, setIsOffline] = useState(() => typeof navigator !== 'undefined' && navigator.onLine === false);
+  const palette = useCanvasPalette();
   const tileErrorCountRef = useRef(0);
   const [fitToken, setFitToken] = useState(0);
 
@@ -834,7 +836,7 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
           maxBoundsViscosity={1.0}
           worldCopyJump={false}
           scrollWheelZoom={true}
-          style={{ height: '100%', width: '100%', background: '#0f172a' }}
+          style={{ height: '100%', width: '100%', background: palette.background }}
         >
           {!isOffline && (
             <TileLayer
