@@ -6,6 +6,7 @@
 import { Group, Variable, Flow, ProjectSettings } from '../types';
 import { normalizeProjectSettings } from './tickSettings';
 import { normalizeOutputMode } from './outputMode';
+import { randomUUID } from './randomId';
 
 /** Extension of GenSynth project files. Must match ProjectFileFormat.EXTENSION in the Core. */
 export const PROJECT_FILE_EXTENSION = '.gsynth';
@@ -85,7 +86,7 @@ function isTickCount(value: unknown): value is number {
  */
 export function normalizeFlowFromSnapshot(flow: Partial<Flow>): Flow {
   return {
-    id: flow.id ?? crypto.randomUUID(),
+    id: flow.id ?? randomUUID(),
     name: flow.name ?? 'Unnamed Flow',
     technology: flow.technology ?? 'unknown',
     connectionStatus: flow.connectionStatus ?? 'disconnected',
@@ -115,7 +116,7 @@ export function normalizeFlowFromSnapshot(flow: Partial<Flow>): Flow {
  */
 export function normalizeGroupFromSnapshot(group: Partial<Group>): Group {
   return {
-    id: group.id ?? crypto.randomUUID(),
+    id: group.id ?? randomUUID(),
     name: group.name ?? 'Unnamed Group',
     status: group.status ?? 'stopped',
     throughput: group.throughput ?? '0 msg/s',
@@ -134,7 +135,7 @@ export function normalizeGroupFromSnapshot(group: Partial<Group>): Group {
  */
 export function normalizeVariableFromSnapshot(variable: Partial<Variable>): Variable {
   return {
-    id: variable.id ?? crypto.randomUUID(),
+    id: variable.id ?? randomUUID(),
     name: variable.name ?? 'Unnamed Variable',
     type: variable.type ?? 'string',
     scope: variable.scope ?? 'local',

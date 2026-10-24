@@ -12,6 +12,7 @@
 
 import type { Group, Flow, Variable, VariableType, VariableScope } from '../types';
 import { OptimisticManager, type OptimisticOperation } from './optimisticManager';
+import { randomUUID } from '../core/randomId';
 
 export interface CreateOptimisticContext {
   optimisticManager: OptimisticManager | null;
@@ -49,7 +50,7 @@ export interface CreateOptimisticContext {
  */
 export function generateOptimisticId(entityType: 'group' | 'flow' | 'var'): string {
   const timestamp = Date.now().toString(36);
-  const random = crypto.randomUUID().replace(/-/g, '').substring(0, 7);
+  const random = randomUUID().replace(/-/g, '').substring(0, 7);
   return `opt_${entityType}_${timestamp}_${random}`;
 }
 
