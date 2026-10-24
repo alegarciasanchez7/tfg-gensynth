@@ -89,7 +89,10 @@ export interface RollbackReportPayload {
 export interface MetricsPayload {
   cpu: number;
   memory: number;
+  /** Heap the JVM has reserved now, in MB. */
   heap: number;
+  /** Most heap the JVM may reserve, in MB (absent in older cores). */
+  maxHeap?: number;
   threads: number;
   messagesPerSecond: number;
   totalMessages: number;

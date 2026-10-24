@@ -124,8 +124,10 @@ Both side panels can be collapsed and resized by dragging their inner edge.
 
 ![Resource bar](docs-assets/user-guide/36-resource-bar.png)
 
-The **resource bar** shows **CPU** and **RAM** used by GenSynth, **NET↑** / **NET↓** (bytes per
-second sent and received), **MSG/S** (messages per second, with the total in brackets),
+The **resource bar** shows **CPU** and **RAM** used by GenSynth. The CPU bar is the share of the
+whole computer (all cores); the RAM bar is the memory in use out of the most GenSynth may use
+(by default a quarter of the computer's RAM, e.g. about 2 GB with 8 GB). It also shows **NET↑** /
+**NET↓** (bytes per second sent and received), **MSG/S** (messages per second, with the total in brackets),
 **TICK** (ticks per second, with the total number of ticks) and **UPTIME** of the current run.
 
 ---
