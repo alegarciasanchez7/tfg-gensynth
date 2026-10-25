@@ -26,6 +26,7 @@
   - the route editor uses the same scale on both axes; `Esc` closes the New Region and New Box Region confirmations; the Spatial Boundaries editor opens directly in fullscreen with a single button.
   - Markov lists start on the first item shown, rows keep adding up to 1 when items are added or deleted, and items without a row move evenly instead of getting stuck; a Markov list without a matrix no longer sends empty values; Inherit value from parent-scope List is disabled (with the reason) while there is no list to read from, and is no longer offered inside Dynamic Generator items, where it had no effect.
   - typing a variable on a new line in the middle of a template and picking it from the autocomplete no longer deletes the lines below; the DATA logs keep the line breaks of a message, and the Preview shows messages up to 2000 characters; the Preview keeps the last message after the simulation stops, and **Capture** freezes a message to read it while new ones arrive.
+  - DMS coordinates carry 60 seconds into the next minute (`10° 6' 0.00"`, not `10° 5' 60.00"`), in messages and on the map.
 - **Behaviour changes for existing projects:**
   - points and Fixed Subset lists follow the template format: on indented lines in a JSON template laid out on several lines, as child elements in XML, and in one quoted cell in CSV (before, always one-line JSON);
   - a List variable can no longer inherit items from another list: a list saved that way keeps only its own items (the other variable types still inherit from lists);

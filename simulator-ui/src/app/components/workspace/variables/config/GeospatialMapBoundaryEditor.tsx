@@ -14,20 +14,10 @@ import { Info, BoxSelect, AlertTriangle, WifiOff } from 'lucide-react';
 import { Tooltip, TooltipTrigger, TooltipContent } from '../../../ui/tooltip';
 import { useBoundaryModalContext } from './BoundaryExpandModal';
 import { centerOf, defaultBoundsFor } from '../../../../core/pointDefaults';
+import { formatDms } from '../../../../core/dms';
 import { OfflineGridOverlay } from './mapShared';
 import { useDialogEscape } from './useDialogEscape';
 import { useCanvasPalette } from './canvasPalette';
-
-// Helper to format DMS coordinates for map tooltips & cursor HUD
-const formatDmsHelper = (val: number, isLat: boolean) => {
-  const absVal = Math.abs(val);
-  const deg = Math.floor(absVal);
-  const minFull = (absVal - deg) * 60;
-  const min = Math.floor(minFull);
-  const sec = Math.round((minFull - min) * 60 * 100) / 100;
-  const dir = isLat ? (val >= 0 ? 'N' : 'S') : (val >= 0 ? 'E' : 'W');
-  return `${deg}° ${min}' ${sec.toFixed(2)}" ${dir}`;
-};
 
 /** Decimal "lat° N, lon° W" label (the hemisphere letter carries the sign). */
 const formatLatLon = (lat: number, lon: number) =>
@@ -306,7 +296,7 @@ function CoordinatesHud({ movingPoint }: { movingPoint: DragPreview | null }) {
             <span>{formatLatLon(cursorPos.lat, cursorPos.lon)}</span>
           </div>
           <div className="text-[9px] text-[var(--c-tx4)] border-l border-[var(--c-br1)] pl-2">
-            {formatDmsHelper(cursorPos.lat, true)}, {formatDmsHelper(cursorPos.lon, false)}
+            {formatDms(cursorPos.lat, true)}, {formatDms(cursorPos.lon, false)}
           </div>
         </>
       ) : (
@@ -361,7 +351,7 @@ const VertexMarker = React.memo(function VertexMarker({ index, lat, lon, onDragS
           <div className="font-semibold text-violet-400">Point #{index + 1}</div>
           <div>{formatLatLon(lat, lon)}</div>
           <div className="text-[9px] text-[var(--c-tx4)]">
-            {formatDmsHelper(lat, true)}, {formatDmsHelper(lon, false)}
+            {formatDms(lat, true)}, {formatDms(lon, false)}
           </div>
         </div>
       </LeafletTooltip>
