@@ -1495,7 +1495,14 @@ Clone the whole group to replicate a site with all its devices.
 ## Feedback
 
 The **Feedback** button in the top bar opens a short anonymous form, in Spanish, in your web
-browser. It only takes a couple of minutes, and your opinion helps to improve the tool.
+browser. Its first question asks what you want to do:
+
+- **Report a bug** right away: what happened and how to repeat it. To add a screenshot, upload it
+  to Google Drive or Imgur and paste the link (shared so that anyone with the link can see it);
+  the form asks for no account, so it stays anonymous.
+- **Give your opinion** of the tool after using it for a while.
+
+It only takes a couple of minutes, and it helps to improve the tool.
 
 ---
 

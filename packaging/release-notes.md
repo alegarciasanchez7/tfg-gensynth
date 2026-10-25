@@ -1,6 +1,6 @@
 ## What's new in 0.5.1
 
-- **Feedback button** in the top bar: opens a short anonymous form (in Spanish) in your browser.
+- **Feedback button** in the top bar: opens a short anonymous form (in Spanish) in your browser, to report a bug right away (with a link to a screenshot on Google Drive or Imgur) or to give your opinion after using the tool.
 - **`{{flow.name}}`** in message templates: each flow sends its own name, so cloned devices get their own ID.
 - **Clone naming offsets:** `H${index+1}` names the clones of *H1* as *H2*, *H3*…
 - **Conditional rules** can override a variable with a full generator (e.g. Random 40–120), not only with a fixed value.
