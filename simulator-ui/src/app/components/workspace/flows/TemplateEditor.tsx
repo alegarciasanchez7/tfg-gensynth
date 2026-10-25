@@ -385,9 +385,12 @@ export function TemplateEditor({
 
     if (lastOpen !== -1 && lastOpen >= textBefore.lastIndexOf('}}')) {
       finalStart = lastOpen;
-      const closingPos = currentVal.indexOf('}}', finalStart);
-      if (closingPos !== -1 && closingPos >= start - 2) {
-        finalEnd = closingPos + 2;
+      // Only the }} that closes this placeholder (the rest of its name, then }}). A placeholder
+      // still being typed has none: the next }} belongs to another placeholder further on, and
+      // replacing up to it would delete the text in between
+      const closing = /^[\w.]*\s*\}\}/.exec(currentVal.substring(end));
+      if (closing) {
+        finalEnd = end + closing[0].length;
       }
     }
     
