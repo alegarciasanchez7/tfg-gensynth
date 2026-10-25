@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
-import { Plus, ChevronDown, Binary, ListChecks, ALargeSmall, CalendarClock, MapPin, ToggleLeft, PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { Plus, ChevronDown, Binary, ListChecks, ALargeSmall, CalendarClock, MapPin, ToggleLeft, PanelRightClose, PanelRightOpen, type LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { useApp } from '../../../../context';
 import type { Variable, VariableScope, VariableType, Selection } from '../../../../types';
 import { CreateVariableDialog } from '../../../panels/CreateVariableDialog';
 import { DeleteVariableDialog } from '../../../panels/DeleteVariableDialog';
 import { VariableListItem } from '../../../panels/VariableListItem';
+import { defaultConfigTextForType } from '../../../workspace/variables/config/defaultConfigs';
 
 interface RightPanelProps {
   variables: Variable[];
@@ -36,7 +37,7 @@ const scopeTabColors: Record<VariableScope, string> = {
   global: 'text-amber-400 border-amber-400 bg-amber-500/10',
 };
 
-const typeInfo: Record<VariableType, { icon: any; color: string }> = {
+const typeInfo: Record<VariableType, { icon: LucideIcon; color: string }> = {
   numeric: { icon: Binary, color: 'text-cyan-500' },
   list: { icon: ListChecks, color: 'text-violet-500' },
   string: { icon: ALargeSmall, color: 'text-emerald-500' },
@@ -66,6 +67,15 @@ export function RightPanel({ variables, selection, onSelectVariable, onInsertVar
     setIsResizing(true);
   };
 
+  // Keyboard alternative to dragging the resizer.
+  const handleResizerKeyDown = (e: React.KeyboardEvent) => {
+    const steps: Record<string, number> = { ArrowLeft: 16, ArrowRight: -16 };
+    const step = steps[e.key];
+    if (!step) return;
+    e.preventDefault();
+    setWidth(w => Math.max(180, Math.min(500, w + step)));
+  };
+
   useEffect(() => {
     if (!isResizing) return;
 
@@ -92,7 +102,7 @@ export function RightPanel({ variables, selection, onSelectVariable, onInsertVar
     type: 'numeric',
     scope: activeScope,
     description: '',
-    configText: JSON.stringify({ min: 0, max: 100 }, null, 2),
+    configText: defaultConfigTextForType('numeric'),
     flowId: selection.flowId,
     groupId: selection.groupId,
   });
@@ -169,7 +179,7 @@ export function RightPanel({ variables, selection, onSelectVariable, onInsertVar
         type: createState.type,
         scope: activeScope,
         description: '',
-        configText: JSON.stringify({ min: 0, max: 100 }, null, 2),
+        configText: defaultConfigTextForType(createState.type),
         flowId: selection.flowId,
         groupId: selection.groupId,
       });
@@ -288,7 +298,8 @@ export function RightPanel({ variables, selection, onSelectVariable, onInsertVar
                     <button
                       key={type}
                       onClick={() => {
-                        setCreateState(prev => ({ ...prev, type }));
+                        // A new variable starts from its type's defaults (what its editor shows)
+                        setCreateState(prev => ({ ...prev, type, configText: defaultConfigTextForType(type) }));
                         setCreateDialogOpen(true);
                         setShowAdd(false);
                       }}
@@ -373,17 +384,20 @@ export function RightPanel({ variables, selection, onSelectVariable, onInsertVar
         onDelete={handleDeleteVariable}
       />
       {/* Ultrafine Resizer Handle on Left Edge */}
-      <div
+      <button
+        type="button"
         onMouseDown={handleMouseDownResizer}
+        onKeyDown={handleResizerKeyDown}
         className="absolute top-0 bottom-0 -left-1 w-2 cursor-col-resize z-40 group flex justify-center"
         title="Drag to resize width"
+        aria-label="Resize panel"
       >
-        <div
+        <span
           className={`w-[2px] h-full transition-colors ${
             isResizing ? 'bg-cyan-500' : 'bg-transparent group-hover:bg-cyan-500/60'
           }`}
         />
-      </div>
+      </button>
 
       {isResizing && (
         <div className="fixed inset-0 z-[9999] cursor-col-resize select-none" />

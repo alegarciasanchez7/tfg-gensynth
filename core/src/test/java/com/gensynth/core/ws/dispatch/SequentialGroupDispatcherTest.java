@@ -33,9 +33,9 @@ public class SequentialGroupDispatcherTest {
     public void publishesInGenerationOrderFromASingleThread() throws Exception {
         dispatcher = new SequentialGroupDispatcher(group, handler, 100);
 
-        assertTrue(dispatcher.dispatch(List.of(a, b, c)));
-        assertTrue(dispatcher.dispatch(List.of(a, b, c)));
-        assertTrue(dispatcher.dispatch(List.of(a, c)));
+        assertTrue(dispatcher.dispatch(List.of(a, b, c), 0L));
+        assertTrue(dispatcher.dispatch(List.of(a, b, c), 0L));
+        assertTrue(dispatcher.dispatch(List.of(a, c), 0L));
 
         await("all messages published", () -> handler.published.size() == 8);
         assertEquals(List.of("A1", "B1", "C1", "A2", "B2", "C2", "A3", "C3"), handler.published);
@@ -44,17 +44,28 @@ public class SequentialGroupDispatcherTest {
     }
 
     @Test
+    public void queuedMessagesKeepTheGroupTickThatGeneratedThem() throws Exception {
+        dispatcher = new SequentialGroupDispatcher(group, handler, 100);
+
+        assertTrue(dispatcher.dispatch(List.of(a, b), 3L));
+        assertTrue(dispatcher.dispatch(List.of(a), 4L));
+
+        await("all messages published", () -> handler.published.size() == 3);
+        assertEquals(List.of(3L, 3L, 4L), handler.publishedTicks);
+    }
+
+    @Test
     public void fullQueueSkipsTheWholeTick() throws Exception {
         CountDownLatch release = new CountDownLatch(1);
         handler.blockedFlows.put("A", release);
         dispatcher = new SequentialGroupDispatcher(group, handler, 2);
 
-        assertTrue(dispatcher.dispatch(List.of(a)));
+        assertTrue(dispatcher.dispatch(List.of(a), 0L));
         await("sender takes A1 and blocks on it", () -> dispatcher.pendingMessages() == 0);
-        assertTrue(dispatcher.dispatch(List.of(b, c)));
+        assertTrue(dispatcher.dispatch(List.of(b, c), 0L));
 
         // Queue (capacity 2) is full: the next tick is skipped for every due flow
-        assertFalse(dispatcher.dispatch(List.of(a, b)));
+        assertFalse(dispatcher.dispatch(List.of(a, b), 0L));
         assertEquals(1, handler.skipped("A"));
         assertEquals(1, handler.skipped("B"));
         assertEquals(1, handler.generated("A"));
@@ -70,7 +81,7 @@ public class SequentialGroupDispatcherTest {
         handler.blockedFlows.put("A", release);
         dispatcher = new SequentialGroupDispatcher(group, handler, 100);
 
-        dispatcher.dispatch(List.of(a, b, c));
+        dispatcher.dispatch(List.of(a, b, c), 0L);
         await("sender takes A1", () -> dispatcher.pendingMessages() == 2);
         dispatcher.shutdown();
         release.countDown();
@@ -78,7 +89,7 @@ public class SequentialGroupDispatcherTest {
 
         assertEquals("only the message in progress is sent", List.of("A1"), handler.published);
         assertEquals("dropped messages are generated but not sent", 1, b.generated.get() - b.sent.get());
-        assertFalse(dispatcher.dispatch(List.of(a)));
+        assertFalse(dispatcher.dispatch(List.of(a), 0L));
     }
 
     @Test
@@ -86,8 +97,8 @@ public class SequentialGroupDispatcherTest {
         handler.failingFlows.add("A");
         dispatcher = new SequentialGroupDispatcher(group, handler, 100);
 
-        assertFalse("nothing generated", dispatcher.dispatch(List.of(a)));
-        assertTrue(dispatcher.dispatch(List.of(a, b)));
+        assertFalse("nothing generated", dispatcher.dispatch(List.of(a), 0L));
+        assertTrue(dispatcher.dispatch(List.of(a, b), 0L));
 
         await("the other flow is still sent", () -> handler.published.size() == 1);
         assertEquals(List.of("B1"), handler.published);
@@ -99,7 +110,7 @@ public class SequentialGroupDispatcherTest {
         handler.failNextPublish = true;
         dispatcher = new SequentialGroupDispatcher(group, handler, 100);
 
-        dispatcher.dispatch(List.of(a, b));
+        dispatcher.dispatch(List.of(a, b), 0L);
 
         await("the next message is still sent", () -> handler.published.size() == 1);
         assertEquals(List.of("B1"), handler.published);

@@ -512,6 +512,38 @@ public class UiBridgeWebSocketServerTest {
     }
 
     @Test
+    public void eventLossIsCreatedExportedAndReportedInFlowsMetrics() throws Exception {
+        Path tempDir = Files.createTempDirectory("gensynth-ws-test-event-loss-");
+        StateRepository repository = new JsonStateRepositoryImpl(tempDir.toString());
+        repository.saveGroups(List.of(new com.gensynth.core.model.GroupDefinition("g-loss", "Loss", "", 1, "parallel")));
+        UiBridgeWebSocketServer server = newServer(tempDir, repository);
+        WebSocket mockConn = mock(WebSocket.class);
+        when(mockConn.isOpen()).thenReturn(true);
+        server.onMessage(null, "{\"type\":\"LOAD_STATE\",\"commandId\":\"c1\",\"protocolVersion\":\"1.0.0\",\"payload\":{}}");
+        server.onMessage(null, "{\"type\":\"CREATE_FLOW\",\"commandId\":\"c2\",\"protocolVersion\":\"1.0.0\",\"payload\":{"
+                + "\"groupId\":\"g-loss\",\"flowId\":\"f-loss\",\"name\":\"Loss\",\"technology\":\"file\","
+                + "\"lossPercent\":12.5,\"outageEveryTicks\":10,\"outageDurationTicks\":2}}");
+
+        server.onMessage(mockConn, "{\"type\":\"GET_INITIAL_STATE\",\"commandId\":\"c3\",\"protocolVersion\":\"1.0.0\"}");
+        JsonNode metrics = findMessage(sentMessages(mockConn), "FLOWS_METRICS", null);
+        assertNotNull(metrics);
+        JsonNode entry = metrics.path("payload").path("flows").get(0);
+        assertEquals("f-loss", entry.path("flowId").asText());
+        assertTrue("FLOWS_METRICS reports dropped", entry.has("dropped"));
+        assertEquals(0, entry.path("dropped").asLong());
+
+        Path exportPath = tempDir.resolve("event-loss.gsynth");
+        server.onMessage(mockConn, "{\"type\":\"EXPORT_STATE\",\"commandId\":\"c4\",\"protocolVersion\":\"1.0.0\","
+                + "\"payload\":{\"filePath\":\"" + exportPath.toString().replace("\\", "\\\\") + "\"}}");
+        JsonNode exportedFlow = com.gensynth.core.persistence.ProjectFileFormat.read(exportPath, new ObjectMapper())
+                .path("groups").get(0).path("flows").get(0);
+        assertEquals(12.5, exportedFlow.path("lossPercent").asDouble(), 0.0);
+        assertEquals(10, exportedFlow.path("outageEveryTicks").asInt());
+        assertEquals(2, exportedFlow.path("outageDurationTicks").asInt());
+        server.shutdown();
+    }
+
+    @Test
     public void groupConfigRejectsUnknownOutputMode() throws Exception {
         Path tempDir = Files.createTempDirectory("gensynth-ws-test-output-mode-");
         StateRepository repository = new JsonStateRepositoryImpl(tempDir.toString());
@@ -531,6 +563,22 @@ public class UiBridgeWebSocketServerTest {
         assertNotNull(error);
         assertEquals("INVALID_PAYLOAD", error.path("payload").path("code").asText());
         assertEquals("sequential", server.groupsById.get("g-mode").outputMode);
+        server.shutdown();
+    }
+
+    @Test
+    public void metricsReportTheHeapInUseReservedAndMaximum() throws Exception {
+        Path tempDir = Files.createTempDirectory("gensynth-ws-test-metrics-");
+        UiBridgeWebSocketServer server = newServer(tempDir, new JsonStateRepositoryImpl(tempDir.toString()));
+
+        Map<String, Object> payload = server.systemCommandHandler.buildMetricsPayload(null);
+
+        int memory = (Integer) payload.get("memory");
+        int heap = (Integer) payload.get("heap");
+        int maxHeap = (Integer) payload.get("maxHeap");
+        assertEquals(Runtime.getRuntime().maxMemory() / (1024 * 1024), maxHeap);
+        assertTrue("in use <= reserved", memory <= heap);
+        assertTrue("reserved <= maximum", heap <= maxHeap);
         server.shutdown();
     }
 }

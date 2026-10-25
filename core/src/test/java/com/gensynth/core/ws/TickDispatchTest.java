@@ -96,7 +96,7 @@ public class TickDispatchTest {
 
     @Test
     public void everyTicksSendsOnlyOnDueTicks() throws Exception {
-        flow.everyTicks = 3;
+        flow.everyTicks.set(3);
         for (long tick = 1; tick <= 7; tick++) {
             server.flowCommandHandler.onTick(tick);
             Thread.sleep(20); // let the worker finish so no tick is skipped as busy
@@ -107,7 +107,7 @@ public class TickDispatchTest {
 
     @Test
     public void groupStartedLateStillSendsOnItsFirstTick() throws Exception {
-        flow.everyTicks = 5;
+        flow.everyTicks.set(5);
         assertTrue(server.flowCommandHandler.onTick(42));
         awaitSent(flow, 1);
         assertEquals(42, group.startTick);
@@ -164,6 +164,18 @@ public class TickDispatchTest {
     }
 
     @Test
+    public void flowNameBuiltInSendsTheNameOfEachFlow() throws Exception {
+        flow.template = "{\"id\":\"{{flow.name}}\"}";
+
+        assertTrue(server.flowCommandHandler.onTick(1));
+        awaitSent(flow, 1);
+
+        ArgumentCaptor<byte[]> payload = ArgumentCaptor.forClass(byte[].class);
+        verify(connector).send(payload.capture(), anyMap());
+        assertEquals("{\"id\":\"Flow f1\"}", new String(payload.getValue(), StandardCharsets.UTF_8));
+    }
+
+    @Test
     public void publishErrorCountsAsFailed() throws Exception {
         doThrow(new IllegalStateException("broker down")).when(connector).send(any(byte[].class), anyMap());
 
@@ -208,12 +220,14 @@ public class TickDispatchTest {
     public void countersResetOnStartButNotOnResume() throws Exception {
         flow.sent.set(7);
         flow.generated.set(9);
+        flow.dropped.set(2);
 
         group.status = "paused";
         synchronized (server.stateLock) {
             server.flowCommandHandler.startGroupInternal(group);
         }
         assertEquals("resume keeps counters", 7, flow.sent.get());
+        assertEquals("resume keeps the dropped counter", 2, flow.dropped.get());
 
         synchronized (server.stateLock) {
             server.flowCommandHandler.stopGroupInternal(group);
@@ -221,6 +235,7 @@ public class TickDispatchTest {
         }
         assertEquals("start from stopped resets counters", 0, flow.sent.get());
         assertEquals(0, flow.generated.get());
+        assertEquals(0, flow.dropped.get());
     }
 
     @Test
@@ -231,6 +246,93 @@ public class TickDispatchTest {
         assertEquals("paused", group.status);
         assertNull(group.dispatcher);
         assertFalse(server.flowCommandHandler.onTick(1));
+    }
+
+    private void awaitDropped(FlowRuntime target, long expected) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + TIMEOUT_MS;
+        while (target.dropped.get() < expected && System.currentTimeMillis() < deadline) {
+            Thread.sleep(5);
+        }
+        assertEquals(expected, target.dropped.get());
+    }
+
+    @Test
+    public void fullLossGeneratesButNeverSends() throws Exception {
+        flow.lossPercent = 100;
+
+        assertTrue("a dropped message still counts as generated", server.flowCommandHandler.onTick(1));
+        awaitDropped(flow, 1);
+
+        assertEquals(1, flow.generated.get());
+        assertEquals(0, flow.sent.get());
+        assertEquals(0, flow.failed.get());
+        verify(connector, never()).send(any(byte[].class), anyMap());
+        assertEquals(1L, flowEntry(server.systemCommandHandler.buildFlowsMetricsPayload()).get("dropped"));
+    }
+
+    @Test
+    public void outageDropsTheLastTicksOfEveryPeriod() throws Exception {
+        flow.outageEveryTicks.set(4);
+        flow.outageDurationTicks.set(2);
+        for (long tick = 1; tick <= 8; tick++) {
+            server.flowCommandHandler.onTick(tick);
+            Thread.sleep(20); // let the worker finish so no tick is skipped as busy
+        }
+        // Group ticks 0-7: 2, 3, 6 and 7 are in the outage
+        awaitSent(flow, 4);
+        awaitDropped(flow, 4);
+        assertEquals(8, flow.generated.get());
+        verify(connector, times(4)).send(any(byte[].class), anyMap());
+    }
+
+    @Test
+    public void updateFlowConfigAppliesEventLossLive() throws Exception {
+        server.onMessage(null, "{\"type\":\"UPDATE_FLOW_CONFIG\",\"commandId\":\"u1\",\"protocolVersion\":\"1.0.0\","
+            + "\"payload\":{\"groupId\":\"g1\",\"flowId\":\"f1\",\"lossPercent\":100,"
+            + "\"outageEveryTicks\":6,\"outageDurationTicks\":2}}");
+
+        assertEquals(100.0, flow.lossPercent, 0.0);
+        assertEquals(6, flow.outageEveryTicks.get());
+        assertEquals(2, flow.outageDurationTicks.get());
+        assertNotNull("the group keeps running with its dispatcher", group.dispatcher);
+
+        server.flowCommandHandler.onTick(1);
+        awaitDropped(flow, 1);
+        verify(connector, never()).send(any(byte[].class), anyMap());
+
+        // Out-of-range values are clamped
+        server.onMessage(null, "{\"type\":\"UPDATE_FLOW_CONFIG\",\"commandId\":\"u2\",\"protocolVersion\":\"1.0.0\","
+            + "\"payload\":{\"groupId\":\"g1\",\"flowId\":\"f1\",\"lossPercent\":-5,\"outageEveryTicks\":-1}}");
+        assertEquals(0.0, flow.lossPercent, 0.0);
+        assertEquals(0, flow.outageEveryTicks.get());
+        assertEquals("missing fields are kept", 2, flow.outageDurationTicks.get());
+    }
+
+    @Test
+    public void clonesKeepTheEventLossSettings() throws Exception {
+        flow.everyTicks.set(2);
+        flow.lossPercent = 30;
+        flow.outageEveryTicks.set(10);
+        flow.outageDurationTicks.set(3);
+
+        server.onMessage(null, "{\"type\":\"CLONE_FLOW\",\"commandId\":\"c1\",\"protocolVersion\":\"1.0.0\","
+            + "\"payload\":{\"groupId\":\"g1\",\"flowId\":\"f1\",\"count\":1}}");
+        assertEquals(2, group.flows.size());
+        assertSameSendSettings(group.flows.get(1));
+
+        server.onMessage(null, "{\"type\":\"CLONE_GROUP\",\"commandId\":\"c2\",\"protocolVersion\":\"1.0.0\","
+            + "\"payload\":{\"groupId\":\"g1\",\"count\":1}}");
+        GroupRuntime groupClone = server.groupsById.values().stream()
+            .filter(candidate -> !candidate.id.equals("g1")).findFirst().orElseThrow();
+        assertEquals(2, groupClone.flows.size());
+        groupClone.flows.forEach(TickDispatchTest::assertSameSendSettings);
+    }
+
+    private static void assertSameSendSettings(FlowRuntime clone) {
+        assertEquals(2, clone.everyTicks.get());
+        assertEquals(30.0, clone.lossPercent, 0.0);
+        assertEquals(10, clone.outageEveryTicks.get());
+        assertEquals(3, clone.outageDurationTicks.get());
     }
 
     @SuppressWarnings("unchecked")

@@ -4,6 +4,7 @@ import com.gensynth.core.flow.serialization.EventSerializer;
 import com.gensynth.core.flow.serialization.JsonEventSerializer;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Production-grade Pipeline implementation using RingBuffer.
@@ -23,7 +24,7 @@ public class RingBufferPipeline implements IPipeline {
     private final double backpressureThreshold;  // Percentage (0-100)
     private final AtomicLong totalProcessed;
     private final AtomicLong lastFlushTime;
-    private volatile EventSerializer serializer;
+    private final AtomicReference<EventSerializer> serializer = new AtomicReference<>();
     
     /**
      * Create RingBufferPipeline with default settings.
@@ -67,7 +68,7 @@ public class RingBufferPipeline implements IPipeline {
         this.backpressureThreshold = backpressureThresholdPercent;
         this.totalProcessed = new AtomicLong(0);
         this.lastFlushTime = new AtomicLong(System.currentTimeMillis());
-        this.serializer = serializer;
+        this.serializer.set(serializer);
     }
 
     @Override
@@ -161,7 +162,7 @@ public class RingBufferPipeline implements IPipeline {
      */
     public byte[] flushSerialized(int maxBatchSize) {
         List<DataEvent> batch = flush(maxBatchSize);
-        return serializer.serializeBatch(batch);
+        return serializer.get().serializeBatch(batch);
     }
 
     /**
@@ -173,7 +174,7 @@ public class RingBufferPipeline implements IPipeline {
         if (serializer == null) {
             throw new IllegalArgumentException("serializer cannot be null");
         }
-        this.serializer = serializer;
+        this.serializer.set(serializer);
     }
 
     /**
@@ -182,7 +183,7 @@ public class RingBufferPipeline implements IPipeline {
      * @return Active serializer
      */
     public EventSerializer getSerializer() {
-        return serializer;
+        return serializer.get();
     }
 
     /**
@@ -191,7 +192,7 @@ public class RingBufferPipeline implements IPipeline {
      * @return MIME type
      */
     public String getSerializerContentType() {
-        return serializer.contentType();
+        return serializer.get().contentType();
     }
 
     /**

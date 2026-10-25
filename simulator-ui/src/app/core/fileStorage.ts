@@ -6,6 +6,8 @@
 import { Group, Variable, Flow, ProjectSettings } from '../types';
 import { normalizeProjectSettings } from './tickSettings';
 import { normalizeOutputMode } from './outputMode';
+import { randomUUID } from './randomId';
+import { normalizeConnectionStatus, normalizeGroupStatus } from './entityStatus';
 
 /** Extension of GenSynth project files. Must match ProjectFileFormat.EXTENSION in the Core. */
 export const PROJECT_FILE_EXTENSION = '.gsynth';
@@ -13,7 +15,8 @@ export const PROJECT_FILE_EXTENSION = '.gsynth';
 export const PROJECT_FORMAT_ID = 'gensynth-project';
 /**
  * Current project file format version. Must match ProjectFileFormat.VERSION in the Core.
- * The `settings` section and the flow field `everyTicks` are optional (defaults apply);
+ * The `settings` section and the flow fields `everyTicks`, `lossPercent`, `outageEveryTicks` and
+ * `outageDurationTicks` are optional (defaults apply: 1 and 0, i.e. no event loss);
  * `burst`, `interval` and `threads` are legacy.
  */
 export const PROJECT_FORMAT_VERSION = '1.0.0';
@@ -69,21 +72,34 @@ function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'AbortError';
 }
 
+/** Whether a value is a valid event loss percentage (finite, 0-100). */
+function isLossPercent(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100;
+}
+
+/** Whether a value is a valid event loss tick count (integer >= 0). */
+function isTickCount(value: unknown): value is number {
+  return Number.isInteger(value) && (value as number) >= 0;
+}
+
 /**
  * Normalize a Flow to ensure all required fields have valid values
  */
 export function normalizeFlowFromSnapshot(flow: Partial<Flow>): Flow {
   return {
-    id: flow.id ?? crypto.randomUUID(),
+    id: flow.id ?? randomUUID(),
     name: flow.name ?? 'Unnamed Flow',
     technology: flow.technology ?? 'unknown',
-    connectionStatus: flow.connectionStatus ?? 'disconnected',
+    connectionStatus: normalizeConnectionStatus(flow.connectionStatus),
     throughput: flow.throughput ?? '0 msg/s',
     hasError: flow.hasError ?? false,
     errorMessage: flow.errorMessage,
     interval: typeof flow.interval === 'number' ? flow.interval : 1000,
     burst: typeof flow.burst === 'number' ? flow.burst : 1,
     everyTicks: Number.isInteger(flow.everyTicks) && (flow.everyTicks as number) >= 1 ? (flow.everyTicks as number) : 1,
+    lossPercent: isLossPercent(flow.lossPercent) ? flow.lossPercent : 0,
+    outageEveryTicks: isTickCount(flow.outageEveryTicks) ? flow.outageEveryTicks : 0,
+    outageDurationTicks: isTickCount(flow.outageDurationTicks) ? flow.outageDurationTicks : 0,
     topic: flow.topic ?? '',
     host: flow.host ?? 'localhost',
     port: typeof flow.port === 'number' ? flow.port : 5672,
@@ -101,9 +117,9 @@ export function normalizeFlowFromSnapshot(flow: Partial<Flow>): Flow {
  */
 export function normalizeGroupFromSnapshot(group: Partial<Group>): Group {
   return {
-    id: group.id ?? crypto.randomUUID(),
+    id: group.id ?? randomUUID(),
     name: group.name ?? 'Unnamed Group',
-    status: group.status ?? 'stopped',
+    status: normalizeGroupStatus(group.status),
     throughput: group.throughput ?? '0 msg/s',
     description: group.description ?? '',
     threads: typeof group.threads === 'number' ? group.threads : 1,
@@ -120,7 +136,7 @@ export function normalizeGroupFromSnapshot(group: Partial<Group>): Group {
  */
 export function normalizeVariableFromSnapshot(variable: Partial<Variable>): Variable {
   return {
-    id: variable.id ?? crypto.randomUUID(),
+    id: variable.id ?? randomUUID(),
     name: variable.name ?? 'Unnamed Variable',
     type: variable.type ?? 'string',
     scope: variable.scope ?? 'local',

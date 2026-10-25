@@ -31,6 +31,17 @@ interface ConditionalRulesTabProps {
   groupId?: string;
 }
 
+/** Generator selected by default in each override editor (same defaults as the config panels). */
+const OVERRIDE_DEFAULT_GENERATOR: Record<Variable['type'], Record<string, string | boolean>> = {
+  numeric: { pattern: 'RANDOM' },
+  string: { pattern: 'RANDOM_STRING' },
+  // Explicit OFF: the editor shows OFF, the Core would start ON without the key
+  boolean: { pattern: 'CONSTANT_BOOLEAN', currentValue: false },
+  list: { selectionStrategy: 'WEIGHTED_RANDOM' },
+  temporal: { timeAdvanceMode: 'WALL_CLOCK' },
+  point: { pattern: 'RANDOM_POINT' },
+};
+
 export const ConditionalRulesTab: React.FC<ConditionalRulesTabProps> = ({ 
   rules, 
   onChange,
@@ -113,7 +124,9 @@ export const ConditionalRulesTab: React.FC<ConditionalRulesTabProps> = ({
       : {};
     newRules[index] = {
       ...newRules[index],
-      overrides: { ...currentOverrides, ...newOverrides }
+      // Store the pattern the editor shows by default, so the Core generates from this config
+      // instead of treating the override as a single fixed value
+      overrides: { ...OVERRIDE_DEFAULT_GENERATOR[variableType], ...currentOverrides, ...newOverrides }
     };
     onChange(newRules);
   };
@@ -228,16 +241,17 @@ export const ConditionalRulesTab: React.FC<ConditionalRulesTabProps> = ({
                       className="absolute z-50 mt-1 w-full max-h-32 overflow-y-auto bg-[var(--c-bg2)] border border-[var(--c-br1)] rounded shadow-lg"
                     >
                       {filteredVars.map(v => (
-                        <div
+                        <button
+                          type="button"
                           key={v}
-                          className="px-2 py-1.5 text-[10px] font-mono hover:bg-[var(--c-bg4)] cursor-pointer text-[var(--c-tx2)]"
+                          className="block w-full text-left px-2 py-1.5 text-[10px] font-mono hover:bg-[var(--c-bg4)] cursor-pointer text-[var(--c-tx2)]"
                           onClick={() => {
                             handleUpdateRule(idx, 'targetVariable', v);
                             setShowSuggestions(null);
                           }}
                         >
                           {v}
-                        </div>
+                        </button>
                       ))}
                     </div>
                   )}

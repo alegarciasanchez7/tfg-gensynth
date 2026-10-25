@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Group } from '../../../../types';
@@ -30,14 +30,18 @@ const group: Group = {
   enabled: true,
 };
 
-function renderItem(onUpdateGroupConfig: (groupId: string, config: unknown, name?: string) => Promise<void>) {
+function renderItem(
+  onUpdateGroupConfig: (groupId: string, config: unknown, name?: string) => Promise<void>,
+  onSelectGroup = vi.fn(),
+  item: Group = group,
+) {
   mockUseApp.mockReturnValue({ state: { flowMetrics: undefined, dirtyItems: undefined } });
   return render(
     <GroupItem
-      group={group}
+      group={item}
       selection={{ type: 'none' }}
       formatTemplate={{}}
-      onSelectGroup={vi.fn()}
+      onSelectGroup={onSelectGroup}
       onSelectFlow={vi.fn()}
       onToggleGroup={vi.fn()}
       onDeleteGroup={vi.fn(async () => undefined)}
@@ -90,5 +94,37 @@ describe('GroupItem', () => {
     } finally {
       nodeProcess.off('unhandledRejection', unhandled);
     }
+  });
+
+  it('selects the group from the keyboard, but not when the key comes from its menu button', () => {
+    const onSelectGroup = vi.fn();
+    renderItem(vi.fn(async () => undefined), onSelectGroup);
+    const menuButton = screen.getByRole('button', { name: 'Actions for group Orders' });
+    const row = menuButton.closest('[role="button"]') as HTMLElement;
+    expect(row).toHaveAttribute('tabindex', '0');
+
+    fireEvent.keyDown(row, { key: 'Enter' });
+    fireEvent.keyDown(row, { key: ' ' });
+    expect(onSelectGroup).toHaveBeenCalledTimes(2);
+    expect(onSelectGroup).toHaveBeenCalledWith('g1');
+
+    fireEvent.keyDown(menuButton, { key: 'Enter' });
+    expect(onSelectGroup).toHaveBeenCalledTimes(2);
+  });
+
+  it('renders a group with an unknown status instead of crashing', () => {
+    // The Core used to answer CREATE_GROUP with the command status "ok" as the group status
+    renderItem(vi.fn(async () => undefined), vi.fn(), { ...group, status: 'ok' as Group['status'] });
+
+    expect(screen.getByText('Orders')).toBeInTheDocument();
+  });
+
+  it('shows a lock indicator only on locked groups', () => {
+    const { unmount } = renderItem(vi.fn(async () => undefined));
+    expect(screen.queryByRole('img', { name: 'Locked group' })).not.toBeInTheDocument();
+    unmount();
+
+    renderItem(vi.fn(async () => undefined), vi.fn(), { ...group, enabled: false });
+    expect(screen.getByRole('img', { name: 'Locked group' })).toBeInTheDocument();
   });
 });

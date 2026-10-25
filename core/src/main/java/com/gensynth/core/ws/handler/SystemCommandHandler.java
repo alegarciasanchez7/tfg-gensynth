@@ -51,6 +51,19 @@ public class SystemCommandHandler implements CommandHandler {
     public void handleStartSystem(WebSocket conn, String commandId) {
         UiBridgeWebSocketServer server = ctx.getServer();
         synchronized (ctx.getStateLock()) {
+            // All or nothing: check every group before starting any, so a group that cannot
+            // start never leaves the ones before it running (and writing files)
+            try {
+                for (GroupRuntime group : ctx.getGroupsById().values()) {
+                    if (!"running".equals(group.status)) {
+                        server.flowCommandHandler.validateGroupForStart(group);
+                    }
+                }
+            } catch (IllegalStateException ex) {
+                FlowCommandHandler.sendStartError(server, conn, commandId, ex);
+                return;
+            }
+
             ctx.setSystemRunning(true);
             ctx.setSystemStartedAt(System.currentTimeMillis());
             ctx.setCurrentOutputDir(AppPaths.current().newSessionOutputDir());
@@ -207,8 +220,8 @@ public class SystemCommandHandler implements CommandHandler {
                     flow.meter.rotate();
                     flow.throughput = running
                         ? flow.meter.rate(
-                            ThroughputMeter.windowFor(tick, flow.everyTicks),
-                            ThroughputMeter.periodSeconds(tick, flow.everyTicks),
+                            ThroughputMeter.windowFor(tick, flow.everyTicks.get()),
+                            ThroughputMeter.periodSeconds(tick, flow.everyTicks.get()),
                             now)
                         : 0.0;
                 }
@@ -218,8 +231,10 @@ public class SystemCommandHandler implements CommandHandler {
 
     /**
      * Builds the FLOWS_METRICS payload: live counters and send rate of every flow.
+     * {@code dropped} counts the messages generated but discarded on purpose by the flow's
+     * event loss, so {@code generated - sent - failed - dropped} are still pending.
      *
-     * @return payload {@code { flows: [{ flowId, groupId, throughput, generated, sent, failed, latency, errorRate, connectionStatus, lastError? }] }}
+     * @return payload {@code { flows: [{ flowId, groupId, throughput, generated, sent, failed, dropped, latency, errorRate, connectionStatus, lastError? }] }}
      */
     public Map<String, Object> buildFlowsMetricsPayload() {
         List<Map<String, Object>> flows = new ArrayList<>();
@@ -233,6 +248,7 @@ public class SystemCommandHandler implements CommandHandler {
                     entry.put("generated", flow.generated.get());
                     entry.put("sent", flow.sent.get());
                     entry.put("failed", flow.failed.get());
+                    entry.put("dropped", flow.dropped.get());
                     entry.put("latency", flow.latency);
                     entry.put("errorRate", flow.hasError ? 1.0 : 0.0);
                     entry.put("connectionStatus", flow.connectionStatus);
@@ -345,6 +361,9 @@ public class SystemCommandHandler implements CommandHandler {
 
     /**
      * Builds a payload map representing the current system performance metrics.
+     * {@code memory} is the heap in use (MB), {@code heap} the heap the JVM has reserved now
+     * and {@code maxHeap} the most it may reserve (the JVM limit, by default a quarter of the
+     * computer's RAM).
      *
      * @param commandId the command identifier (can be null)
      * @return the metrics payload map
@@ -375,6 +394,7 @@ public class SystemCommandHandler implements CommandHandler {
         payload.put("cpu", cpuLoad * 100.0);
         payload.put("memory", bytesToMb(usedMemory));
         payload.put("heap", bytesToMb(runtime.totalMemory()));
+        payload.put("maxHeap", bytesToMb(runtime.maxMemory()));
         payload.put("threads", Thread.activeCount());
         payload.put("messagesPerSecond", ctx.getMessagesPerSecond());
         payload.put("totalMessages", ctx.getTotalMessages().get());

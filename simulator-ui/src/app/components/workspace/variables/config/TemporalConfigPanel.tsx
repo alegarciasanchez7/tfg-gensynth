@@ -7,6 +7,7 @@ import { Switch } from '../../../ui/switch';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../../ui/tooltip';
 import { Info } from 'lucide-react';
 
+import { DEFAULT_TEMPORAL_FORMAT } from './defaultConfigs';
 import { ListReferenceSelector } from './ListReferenceSelector';
 
 interface TemporalConfigPanelProps {
@@ -15,11 +16,13 @@ interface TemporalConfigPanelProps {
   flowId?: string;
   groupId?: string;
   variableScope?: VariableScope;
+  /** Set when the panel edits the generator of a list item, which cannot inherit from a list. */
+  inListItem?: boolean;
 }
 
 const PRESETS: Record<TemporalType, string[]> = {
   DATE: ['yyyy-MM-dd', 'dd/MM/yyyy', 'MM-dd-yyyy', 'yyyy.MM.dd'],
-  TIMESTAMP: ["yyyy-MM-dd'T'HH:mm:ss.SSSZ", 'ISO_INSTANT', 'UNIX_TIMESTAMP', 'yyyy-MM-dd HH:mm:ss'],
+  TIMESTAMP: [DEFAULT_TEMPORAL_FORMAT, 'ISO_INSTANT', 'UNIX_TIMESTAMP', 'yyyy-MM-dd HH:mm:ss'],
   TIME: ['HH:mm:ss', 'HH:mm', 'HH:mm:ss.SSS', 'hh:mm a']
 };
 
@@ -47,7 +50,7 @@ const BACKFILL_STRATEGY_DESCRIPTIONS: Record<BackfillStrategy, string> = {
   RANDOM_IN_RANGE: 'Picks uniform random timestamps anywhere within the historical start and end span.',
 };
 
-export const TemporalConfigPanel: React.FC<TemporalConfigPanelProps> = ({ config, onChange, flowId, groupId, variableScope }) => {
+export const TemporalConfigPanel: React.FC<TemporalConfigPanelProps> = ({ config, onChange, flowId, groupId, variableScope, inListItem = false }) => {
   const tType: TemporalType = config.temporalType ?? 'TIMESTAMP';
   const advanceMode: TimeAdvanceMode = config.timeAdvanceMode ?? 'WALL_CLOCK';
   const presets = PRESETS[tType] || PRESETS.TIMESTAMP;
@@ -69,14 +72,16 @@ export const TemporalConfigPanel: React.FC<TemporalConfigPanelProps> = ({ config
 
   return (
     <div className="space-y-6">
-      <ListReferenceSelector
-        config={config}
-        onChange={onChange}
-        variableScope={variableScope || 'local'}
-        variableType="temporal"
-        flowId={flowId}
-        groupId={groupId}
-      />
+      {!inListItem && (
+        <ListReferenceSelector
+          config={config}
+          onChange={onChange}
+          variableScope={variableScope || 'local'}
+          variableType="temporal"
+          flowId={flowId}
+          groupId={groupId}
+        />
+      )}
       {/* 1. Time Advance Mode Section */}
       <div className="p-3 bg-[var(--c-bg2)]/50 border border-[var(--c-br1)] rounded-md space-y-3">
         <div className="flex items-center justify-between border-b border-[var(--c-br1)] pb-1.5">
@@ -457,7 +462,7 @@ export const TemporalConfigPanel: React.FC<TemporalConfigPanelProps> = ({ config
           <Input
             id="date-timezone"
             type="text"
-            placeholder="e.g. UTC, Europe/Madrid, Offset-05:00"
+            placeholder="e.g. UTC, Europe/Madrid, -05:00"
             value={config.timeZone ?? ''}
             onChange={(e) => onChange({ timeZone: e.target.value })}
             className="bg-[var(--c-bg2)] border-[var(--c-br1)] h-8 text-[11px]"

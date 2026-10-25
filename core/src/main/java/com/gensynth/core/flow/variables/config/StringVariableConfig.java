@@ -1,5 +1,6 @@
 package com.gensynth.core.flow.variables.config;
 
+import com.gensynth.core.flow.TemplateEngine;
 import com.gensynth.core.flow.variables.*;
 import com.github.curiousoddman.rgxgen.RgxGen;
 import java.util.*;
@@ -32,7 +33,7 @@ public class StringVariableConfig extends VariableConfiguration {
 
     // Formatted Mask Mode
     private String formattedMaskType; // MAC_ADDRESS, IPV4, IPV6, UUID_V4, CUSTOM_MASK, ALPHANUMERIC
-    private String customMask;
+    private String customMask; // # digit, @ letter, $ hex digit, ? letter or digit; anything else is copied
     private String alphanumericCase; // UPPER, LOWER, MIXED
 
     // Data Corruption Simulation
@@ -51,6 +52,7 @@ public class StringVariableConfig extends VariableConfiguration {
     private static final String LOWERCASE_CHARS = "abcdefghijklmnopqrstuvwxyz";
     private static final String UPPERCASE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     private static final String NUMBER_CHARS = "0123456789";
+    private static final String HEX_CHARS = "0123456789ABCDEF";
     private static final String SYMBOL_CHARS = "!@#$%^&*()_+-=[]{}|;:,.<>?";
     
     // Performance optimization: pre-computed flat character pool
@@ -175,53 +177,67 @@ public class StringVariableConfig extends VariableConfiguration {
         while (matcher.find()) {
             String varName = matcher.group(1);
             Object value = currentContext.get(varName);
-            String replacement = value != null ? value.toString() : "";
+            // Same text as the flow template writes for this value (e.g. a Constant 42 is "42")
+            String replacement = value != null
+                ? TemplateEngine.formatValue(value, isConstantPattern(currentContext.get(varName + "_config")))
+                : "";
             matcher.appendReplacement(sb, Matcher.quoteReplacement(replacement));
         }
         matcher.appendTail(sb);
         return sb.toString();
     }
 
+    private static boolean isConstantPattern(Object generator) {
+        return generator instanceof ConfigurableVariable cv
+            && cv.getConfiguration() != null
+            && cv.getConfiguration().getPattern() == GenerationPattern.CONSTANT;
+    }
+
     private String generateFormattedMask() {
         ThreadLocalRandom random = ThreadLocalRandom.current();
         if ("MAC_ADDRESS".equals(formattedMaskType)) {
-            return String.format("%02X:%02X:%02X:%02X:%02X:%02X",
+            return String.format(Locale.ROOT, "%02X:%02X:%02X:%02X:%02X:%02X",
                 random.nextInt(256), random.nextInt(256), random.nextInt(256),
                 random.nextInt(256), random.nextInt(256), random.nextInt(256));
         } else if ("IPV4".equals(formattedMaskType)) {
             return random.nextInt(256) + "." + random.nextInt(256) + "." +
                    random.nextInt(256) + "." + random.nextInt(256);
         } else if ("IPV6".equals(formattedMaskType)) {
-            return String.format("%x:%x:%x:%x:%x:%x:%x:%x",
+            return String.format(Locale.ROOT, "%x:%x:%x:%x:%x:%x:%x:%x",
                 random.nextInt(65536), random.nextInt(65536), random.nextInt(65536), random.nextInt(65536),
                 random.nextInt(65536), random.nextInt(65536), random.nextInt(65536), random.nextInt(65536));
         } else if ("UUID_V4".equals(formattedMaskType)) {
             return java.util.UUID.randomUUID().toString();
         } else if ("CUSTOM_MASK".equals(formattedMaskType) || "ALPHANUMERIC".equals(formattedMaskType)) {
             if (customMask == null || customMask.isEmpty()) return "";
+            // The symbols are never letters or digits, so the text around them is copied as written
             StringBuilder sb = new StringBuilder(customMask.length());
             for (char c : customMask.toCharArray()) {
-                if (c == '#') {
-                    sb.append(NUMBER_CHARS.charAt(random.nextInt(NUMBER_CHARS.length())));
-                } else if (c == 'X' || c == 'x') {
-                    char hex = "0123456789ABCDEF".charAt(random.nextInt(16));
-                    sb.append(c == 'x' ? Character.toLowerCase(hex) : hex);
-                } else if (c == 'A' || c == 'a') {
-                    char letter = UPPERCASE_CHARS.charAt(random.nextInt(UPPERCASE_CHARS.length()));
-                    sb.append(c == 'a' ? Character.toLowerCase(letter) : letter);
-                } else if (c == '?') {
-                    String alpha = UPPERCASE_CHARS + NUMBER_CHARS;
-                    sb.append(alpha.charAt(random.nextInt(alpha.length())));
-                } else {
-                    sb.append(c);
+                switch (c) {
+                    case '#' -> sb.append(randomChar(NUMBER_CHARS, random));
+                    case '@' -> sb.append(applyCase(randomChar(UPPERCASE_CHARS, random), random));
+                    case '$' -> sb.append(applyCase(randomChar(HEX_CHARS, random), random));
+                    case '?' -> sb.append(applyCase(randomChar(UPPERCASE_CHARS + NUMBER_CHARS, random), random));
+                    default -> sb.append(c);
                 }
             }
-            String res = sb.toString();
-            if ("LOWER".equals(alphanumericCase)) return res.toLowerCase();
-            if ("UPPER".equals(alphanumericCase)) return res.toUpperCase();
-            return res;
+            return sb.toString();
         }
         return "";
+    }
+
+    private static char randomChar(String chars, ThreadLocalRandom random) {
+        return chars.charAt(random.nextInt(chars.length()));
+    }
+
+    /**
+     * Case Formatting of a generated mask letter: UPPER and LOWER force it, MIXED picks either
+     * case at random. Only generated characters are affected, never the literal text of the mask.
+     */
+    private char applyCase(char c, ThreadLocalRandom random) {
+        if ("LOWER".equals(alphanumericCase)) return Character.toLowerCase(c);
+        if ("UPPER".equals(alphanumericCase)) return c;
+        return random.nextBoolean() ? c : Character.toLowerCase(c);
     }
 
     private String applyDataCorruption(String input) {

@@ -1,6 +1,7 @@
 package com.gensynth.core.desktop.bridge;
 
 import com.gensynth.core.desktop.DesktopFileChooser;
+import com.gensynth.core.desktop.ExternalLinkOpener;
 import com.gensynth.core.persistence.ProjectFileFormat;
 import com.gensynth.core.ws.*;
 import org.java_websocket.WebSocket;
@@ -20,7 +21,11 @@ public class GensynthMessageRouter extends CefMessageRouterHandlerAdapter {
             new javax.swing.filechooser.FileNameExtensionFilter(
                     "GenSynth project (*" + ProjectFileFormat.EXTENSION + ")", ProjectFileFormat.EXTENSION.substring(1));
     private static final String DEFAULT_PROJECT_FILE_NAME = "gen-synth-project" + ProjectFileFormat.EXTENSION;
+    private static final String OPEN_EXTERNAL_URL = "OPEN_EXTERNAL_URL";
+    private static final com.fasterxml.jackson.databind.ObjectMapper JSON = new com.fasterxml.jackson.databind.ObjectMapper();
     private final javax.swing.JFrame parentFrame;
+    /** True while a save, load or folder dialog is open: only one may be open at a time. */
+    private final java.util.concurrent.atomic.AtomicBoolean fileDialogOpen = new java.util.concurrent.atomic.AtomicBoolean(false);
 
     public GensynthMessageRouter(javax.swing.JFrame parentFrame) {
         this.parentFrame = parentFrame;
@@ -32,6 +37,20 @@ public class GensynthMessageRouter extends CefMessageRouterHandlerAdapter {
         logger.info("[BRIDGE] Command received from UI: {}", request);
 
         try {
+            // Desktop-only request answered here; checked first because the routing below matches substrings
+            if (request.contains(OPEN_EXTERNAL_URL)) {
+                com.fasterxml.jackson.databind.JsonNode command = JSON.readTree(request);
+                if (OPEN_EXTERNAL_URL.equals(command.path("type").asText())) {
+                    String url = command.path("payload").path("url").asText(null);
+                    if (ExternalLinkOpener.open(url)) {
+                        callback.success("{\"status\":\"ok\"}");
+                    } else {
+                        callback.failure(403, "URL not allowed");
+                    }
+                    return true;
+                }
+            }
+
             UiBridgeWebSocketServer server = com.gensynth.core.App.getWsServer();
             if (server == null) {
                 callback.failure(500, "Gen-Synth Core is not fully initialized");
@@ -40,7 +59,7 @@ public class GensynthMessageRouter extends CefMessageRouterHandlerAdapter {
 
             // Intercept SAVE_STATE to show a file dialog in desktop mode
             if (request.contains("SAVE_STATE")) {
-                javax.swing.SwingUtilities.invokeLater(() -> {
+                return runFileDialog(request, callback, () -> {
                     java.util.Optional<java.io.File> selected = DesktopFileChooser.saveFile(parentFrame,
                             "Save Gen-Synth Configuration", PROJECT_FILE_FILTER, new java.io.File(DEFAULT_PROJECT_FILE_NAME));
 
@@ -72,13 +91,12 @@ public class GensynthMessageRouter extends CefMessageRouterHandlerAdapter {
                         callback.success(cancelResponse);
                     }
                 });
-                return true;
             }
 
             // Intercept PICK_DIRECTORY to show a folder picker
             if (request.contains("PICK_DIRECTORY")) {
                 String commandId = extractCommandId(request);
-                javax.swing.SwingUtilities.invokeLater(() -> {
+                return runFileDialog(request, callback, () -> {
                     java.util.Optional<java.io.File> selected =
                             DesktopFileChooser.chooseDirectory(parentFrame, "Select Output Directory");
 
@@ -106,12 +124,11 @@ public class GensynthMessageRouter extends CefMessageRouterHandlerAdapter {
                         callback.success(cancelResponse);
                     }
                 });
-                return true;
             }
 
             // Intercept LOAD_STATE to show a file dialog in desktop mode
             if (request.contains("LOAD_STATE")) {
-                javax.swing.SwingUtilities.invokeLater(() -> {
+                return runFileDialog(request, callback, () -> {
                     java.util.Optional<java.io.File> selected =
                             DesktopFileChooser.openFile(parentFrame, "Load Gen-Synth Project", PROJECT_FILE_FILTER);
                     String commandId = extractCommandId(request);
@@ -156,7 +173,6 @@ public class GensynthMessageRouter extends CefMessageRouterHandlerAdapter {
                         callback.success(cancelResponse);
                     }
                 });
-                return true;
             }
 
             // Route the command to the main server logic using the virtual socket
@@ -167,6 +183,32 @@ public class GensynthMessageRouter extends CefMessageRouterHandlerAdapter {
             callback.failure(500, e.getMessage());
             return true;
         }
+    }
+
+    /**
+     * Runs a file dialog request on the Swing thread, one at a time. A request that arrives while
+     * a dialog is open (for example the same command sent again) is rejected instead of opening a
+     * second dialog over the first one, which would save or load twice.
+     *
+     * @param request  the command received from the UI
+     * @param callback the query callback, failed with 409 when a dialog is already open
+     * @param dialog   shows the dialog and answers the UI
+     * @return always true: the query is handled here
+     */
+    boolean runFileDialog(String request, CefQueryCallback callback, Runnable dialog) {
+        if (!fileDialogOpen.compareAndSet(false, true)) {
+            logger.warn("[BRIDGE] Ignoring command {}: a file dialog is already open", extractCommandId(request));
+            callback.failure(409, "A file dialog is already open");
+            return true;
+        }
+        javax.swing.SwingUtilities.invokeLater(() -> {
+            try {
+                dialog.run();
+            } finally {
+                fileDialogOpen.set(false);
+            }
+        });
+        return true;
     }
 
     private String extractCommandId(String request) {

@@ -41,6 +41,27 @@ describe('NumericConfigPanel', () => {
     });
   });
 
+  it('keeps the initial value empty when the field is left blank', () => {
+    const onChange = vi.fn();
+    render(<NumericConfigPanel config={{ ...defaultConfig, pattern: 'RANDOM' }} onChange={onChange} />);
+
+    const initial = screen.getByTestId('numeric-initial-input');
+    fireEvent.focus(initial);
+    fireEvent.blur(initial, { target: { value: '' } });
+
+    expect(onChange).toHaveBeenCalledWith({ initialValue: undefined });
+    expect(initial).toHaveValue('');
+  });
+
+  it('clamps a typed initial value to the range', () => {
+    const onChange = vi.fn();
+    render(<NumericConfigPanel config={{ ...defaultConfig, pattern: 'RANDOM' }} onChange={onChange} />);
+
+    fireEvent.blur(screen.getByTestId('numeric-initial-input'), { target: { value: '99' } });
+
+    expect(onChange).toHaveBeenCalledWith({ initialValue: 50 });
+  });
+
   it('renders input fields with initial config values', () => {
     render(<NumericConfigPanel config={defaultConfig} onChange={vi.fn()} />);
 
@@ -121,6 +142,29 @@ describe('NumericConfigPanel', () => {
     
     // Should NOT show f2 local variable (otherLocal)
     expect(screen.queryByText('{{otherLocal}}')).not.toBeInTheDocument();
+  });
+
+  it('does not suggest the variable being edited in its own formula', async () => {
+    const TestWrapper = () => {
+      const [cfg, setCfg] = useState<NumericVariableConfig>(defaultConfig);
+      return (
+        <NumericConfigPanel
+          config={cfg}
+          onChange={(newCfg) => setCfg(prev => ({ ...prev, ...newCfg }))}
+          flowId="f1"
+          groupId="g1"
+          variableId="v_local"
+        />
+      );
+    };
+    render(<TestWrapper />);
+
+    const formulaInput = screen.getByTestId('numeric-formula-input');
+    fireEvent.change(formulaInput, { target: { value: '{{', selectionStart: 2 } });
+    fireEvent.keyDown(formulaInput, { key: '{' });
+
+    expect(await screen.findByText('{{globalVar}}')).toBeInTheDocument();
+    expect(screen.queryByText('{{localVar}}')).not.toBeInTheDocument();
   });
 
   it('selects and inserts a variable from the autocomplete list on click', async () => {

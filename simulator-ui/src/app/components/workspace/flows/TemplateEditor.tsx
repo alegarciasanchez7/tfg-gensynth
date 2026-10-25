@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useApp } from '../../../context';
 import type { Variable } from '../../../types';
+import { findTemplatePlaceholders, isSystemPlaceholder, SYSTEM_PLACEHOLDERS } from '../../../core/templatePlaceholders';
+import { findReachableVariable } from '../../../core/templateVariables';
+import { filterAutocompleteOptions, optionReference, type AutocompleteOption } from './templateAutocomplete';
 
 interface TemplateEditorProps {
   value: string;
@@ -11,9 +14,10 @@ interface TemplateEditorProps {
   className?: string;
 }
 
-function getEffectiveListItems(v: Variable, variables: Variable[]): Array<{ id: string; label: string }> {
+/** Items of a list in the order it generates them (a list only has its own items). */
+function getEffectiveListItems(v: Variable): Array<{ id: string; label: string }> {
   const config = v.config || {};
-  const localItems: any[] = (config.items || []).map((item: any, idx: number) => {
+  const combined: any[] = (config.items || []).map((item: any, idx: number) => {
     if (typeof item === 'object' && item !== null) {
       return {
         id: item.id || `item_${idx + 1}`,
@@ -22,43 +26,6 @@ function getEffectiveListItems(v: Variable, variables: Variable[]): Array<{ id: 
     }
     return { id: `item_${idx + 1}`, value: String(item) };
   });
-
-  let inheritedItems: any[] = [];
-  if (config.sourceListVariableId) {
-    const parentVar = variables.find(pv => pv.id === config.sourceListVariableId || pv.name === config.sourceListVariableId);
-    if (parentVar) {
-      const parentItems: any[] = (parentVar.config?.items || []).map((item: any, idx: number) => {
-        if (typeof item === 'object' && item !== null) {
-          return {
-            id: item.id || `item_${idx + 1}`,
-            value: item.value !== undefined && item.value !== '' ? String(item.value) : `Item ${idx + 1}`,
-          };
-        }
-        return { id: `item_${idx + 1}`, value: String(item) };
-      });
-
-      const selectionMode = config.sourceListSelectionMode || 'SUBSET_SPECIFIC';
-      if (selectionMode === 'SUBSET_SPECIFIC' && config.selectedListItemIds && config.selectedListItemIds.length > 0) {
-        inheritedItems = config.selectedListItemIds
-          .map((id: string) => parentItems.find((p: any) => p.id === id || String(p.value) === id))
-          .filter(Boolean);
-      } else if (selectionMode === 'SUBSET_RANDOM') {
-        const count = Math.min(Math.max(1, config.randomSubsetCount || 1), parentItems.length || 10);
-        const parentName = parentVar.name || 'Parent List';
-        inheritedItems = Array.from({ length: count }, (_, i) => ({
-          id: `random_item_${i + 1}`,
-          value: `Random Item ${i + 1} - ${parentName}`,
-        }));
-      } else if (selectionMode === 'FIXED_ITEM' && config.selectedListItemId) {
-        const match = parentItems.find((p: any) => p.id === config.selectedListItemId || String(p.value) === config.selectedListItemId);
-        inheritedItems = match ? [match] : [];
-      } else {
-        inheritedItems = parentItems;
-      }
-    }
-  }
-
-  const combined = [...inheritedItems, ...localItems];
 
   if (config.itemOrder && Array.isArray(config.itemOrder) && config.itemOrder.length > 0) {
     const orderMap = new Map(config.itemOrder.map((id: string, index: number) => [id, index]));
@@ -93,18 +60,16 @@ export function TemplateEditor({
   // Parse variables for highlighting and validation
   const tokens = useMemo(() => {
     const parts: Array<{ text: string; isValid?: boolean; isVariable?: boolean }> = [];
-    const regex = /\{\{([^}]+)\}\}/g;
     let lastIndex = 0;
-    let match;
 
-    while ((match = regex.exec(value)) !== null) {
+    for (const placeholder of findTemplatePlaceholders(value)) {
       // Add text before variable
-      if (match.index > lastIndex) {
-        parts.push({ text: value.substring(lastIndex, match.index) });
+      if (placeholder.start > lastIndex) {
+        parts.push({ text: value.substring(lastIndex, placeholder.start) });
       }
 
-      const fullSpec = match[1].trim();
-      const isSystem = ['uuid', 'ts', 'n'].includes(fullSpec);
+      const fullSpec = placeholder.spec.trim();
+      const isSystem = isSystemPlaceholder(fullSpec);
       
       let isValid = false;
       if (isSystem) {
@@ -139,25 +104,14 @@ export function TemplateEditor({
           }
         }
 
-        const variable = variables.find(v => {
-          if (v.name !== name) return false;
-          if (scope && v.scope !== scope) return false;
-          
-          if (v.scope === 'global') return true;
-          if (v.scope === 'group') return v.groupId === groupId;
-          if (v.scope === 'local') return v.flowId === flowId;
-          
-          return false;
-        });
+        // Same lookup as the Core: without a scope, the closest one wins (local, group, global)
+        const variable = findReachableVariable(variables, name, scope as Variable['scope'] | null, flowId, groupId);
         
         if (variable) {
           if (isItemAccess && variable.type === 'list') {
-            const strategy = variable.config?.selectionStrategy;
-            if (strategy && strategy !== 'FIXED_SUBSET') {
-              isValid = false;
-            } else {
-              isValid = true;
-            }
+            // Item access needs a whole list: only Fixed Subset yields one (the default is Weighted Random)
+            const strategy = variable.config?.selectionStrategy || 'WEIGHTED_RANDOM';
+            isValid = strategy === 'FIXED_SUBSET';
           } else if (subProperty) {
             const lowerProp = subProperty.toLowerCase();
             if (variable.type === 'point') {
@@ -166,32 +120,36 @@ export function TemplateEditor({
                 'latitudedecimal', 'longitudedecimal',
                 'altitudeunit', 'altitudereference',
                 'x', 'y', 'z',
-                'nodename', 'node_name', 'node', 'nodeid', 'node_id'
+                'nodename', 'node_name', 'node', 'nodeid', 'node_id',
+                'targetnode', 'targetnodename', 'target_node_name', 'targetnodeid', 'target_node_id',
+                'ispaused', 'stepinedge', 'totaledgesteps'
               ];
               isValid = validPointProps.includes(lowerProp);
             } else if (variable.type === 'temporal') {
               const validTemporalProps = [
                 'month', 'monthtext', 'month_text', 'monthname', 'month_name',
-                'monthshort', 'month_short', 'monthnumber', 'monthvalue', 'month_number',
-                'year', 'day', 'dayofmonth', 'day_of_month', 'dayofweek', 'day_of_week',
+                'monthshort', 'month_short', 'monthnumber', 'monthvalue', 'month_number', 'month_val',
+                'year', 'day', 'dayofmonth', 'day_of_month', 'dayofweek', 'day_of_week', 'dayofweekname',
+                'dayofweeknumber', 'dayofweekvalue',
                 'hour', 'hours', 'minute', 'minutes', 'second', 'seconds',
-                'millisecond', 'millis', 'timestamp', 'epochmilli', 'timezone', 'time_zone', 'tz'
+                'millisecond', 'millis', 'timestamp', 'epochmilli', 'epoch_milli', 'timezone', 'time_zone', 'tz'
               ];
               isValid = validTemporalProps.includes(lowerProp);
             } else if (variable.type === 'numeric') {
               const validNumericProps = [
-                'integerpart', 'int', 'integer', 'fractionalpart', 'decimalpart',
-                'fraction', 'decimal', 'abs', 'absolute', 'round', 'floor', 'ceil', 'ceiling', 'sign'
+                'integerpart', 'int', 'integer', 'integer_part', 'fractionalpart', 'fractional_part', 'decimalpart',
+                'fraction', 'decimal', 'abs', 'absolute', 'round', 'floor', 'ceil', 'ceiling', 'sign', 'signum'
               ];
               isValid = validNumericProps.includes(lowerProp);
             } else if (variable.type === 'string') {
               const validStringProps = [
-                'length', 'size', 'upper', 'uppercase', 'lower', 'lowercase', 'trim', 'firstchar', 'lastchar'
+                'length', 'size', 'upper', 'uppercase', 'lower', 'lowercase', 'trim',
+                'firstchar', 'first_char', 'lastchar', 'last_char'
               ];
               isValid = validStringProps.includes(lowerProp);
             } else if (variable.type === 'boolean') {
               const validBooleanProps = [
-                'inverse', 'negation', 'not', 'asnumber', 'binary', 'int', 'asstring', 'asupper', 'upper'
+                'inverse', 'negation', 'not', 'asnumber', 'binary', 'int', 'asstring', 'text', 'asupper', 'upper'
               ];
               isValid = validBooleanProps.includes(lowerProp);
             } else if (variable.type === 'list') {
@@ -207,11 +165,11 @@ export function TemplateEditor({
       }
 
       parts.push({ 
-        text: match[0], 
+        text: value.substring(placeholder.start, placeholder.end), 
         isValid, 
         isVariable: true 
       });
-      lastIndex = regex.lastIndex;
+      lastIndex = placeholder.end;
     }
 
     if (lastIndex < value.length) {
@@ -231,11 +189,11 @@ export function TemplateEditor({
 
     const query = textBeforeCursor.substring(lastBraces + 2).trim().toLowerCase();
     
-    const options: Array<{ name: string; scope: string; detail?: string }> = [
-      { name: 'uuid', scope: 'system' },
-      { name: 'ts', scope: 'system' },
-      { name: 'n', scope: 'system' },
-    ];
+    const options: AutocompleteOption[] = SYSTEM_PLACEHOLDERS.map(p => ({
+      name: p.name,
+      scope: 'system',
+      detail: p.detail,
+    }));
 
     const accessibleVars = variables.filter(v => {
       if (v.scope === 'global') return true;
@@ -246,7 +204,8 @@ export function TemplateEditor({
 
     accessibleVars.forEach(v => {
       if (v.type === 'list') {
-        const strategy = v.config?.selectionStrategy || 'FIXED_SUBSET';
+        // Same default as the Core and the list editor
+        const strategy = v.config?.selectionStrategy || 'WEIGHTED_RANDOM';
         const isFixedSubset = strategy === 'FIXED_SUBSET';
 
         options.push({ 
@@ -255,12 +214,15 @@ export function TemplateEditor({
           detail: isFixedSubset ? 'Fixed Subset / Entire List' : 'Single Item Selection' 
         });
 
-        options.push({ name: `${v.name}.size`, scope: v.scope, detail: 'List Item Count' });
-        options.push({ name: `${v.name}.first`, scope: v.scope, detail: 'First List Item' });
-        options.push({ name: `${v.name}.last`, scope: v.scope, detail: 'Last List Item' });
-
+        // Size/first/last and item access are offered for Fixed Subset only. Other strategies
+        // yield a single item each tick: the Core still resolves size/first/last (1 / the item)
+        // and the highlight accepts them, but suggesting them would be misleading
         if (isFixedSubset) {
-          const effectiveItems = getEffectiveListItems(v, variables);
+          options.push({ name: `${v.name}.size`, scope: v.scope, detail: 'List Item Count' });
+          options.push({ name: `${v.name}.first`, scope: v.scope, detail: 'First List Item' });
+          options.push({ name: `${v.name}.last`, scope: v.scope, detail: 'Last List Item' });
+
+          const effectiveItems = getEffectiveListItems(v);
           effectiveItems.forEach((item, index) => {
             options.push({
               name: `${v.name}.item${index}`,
@@ -272,11 +234,18 @@ export function TemplateEditor({
       } else if (v.type === 'point') {
         options.push({ name: v.name, scope: v.scope, detail: 'Full Point Object' });
 
-        const coordSys = v.config?.coordinateSystem || 'CARTESIAN_2D';
+        // Same default as the Core and the point editor
+        const coordSys = v.config?.coordinateSystem || 'CARTESIAN_3D';
         if (coordSys === 'GEOSPATIAL') {
           options.push({ name: `${v.name}.latitude`, scope: v.scope, detail: 'Latitude (Degrees / DMS)' });
           options.push({ name: `${v.name}.longitude`, scope: v.scope, detail: 'Longitude (Degrees / DMS)' });
           options.push({ name: `${v.name}.altitude`, scope: v.scope, detail: 'Altitude' });
+          options.push({ name: `${v.name}.altitudeUnit`, scope: v.scope, detail: 'Altitude Unit' });
+          options.push({ name: `${v.name}.altitudeReference`, scope: v.scope, detail: 'Altitude Reference' });
+          if (v.config?.geospatialFormat === 'DEGREES_MINUTES_SECONDS') {
+            options.push({ name: `${v.name}.latitudeDecimal`, scope: v.scope, detail: 'Latitude (Decimal Degrees)' });
+            options.push({ name: `${v.name}.longitudeDecimal`, scope: v.scope, detail: 'Longitude (Decimal Degrees)' });
+          }
         } else if (coordSys === 'CARTESIAN_3D') {
           options.push({ name: `${v.name}.x`, scope: v.scope, detail: 'X Coordinate' });
           options.push({ name: `${v.name}.y`, scope: v.scope, detail: 'Y Coordinate' });
@@ -289,41 +258,53 @@ export function TemplateEditor({
         if (v.config?.pattern === 'GRAPH_ROUTE' || (v.config?.graphNodes && v.config.graphNodes.length > 0)) {
           options.push({ name: `${v.name}.nodeName`, scope: v.scope, detail: 'Graph Node Display Name' });
           options.push({ name: `${v.name}.nodeId`, scope: v.scope, detail: 'Graph Node ID' });
+          options.push({ name: `${v.name}.targetNodeName`, scope: v.scope, detail: 'Target Node Display Name' });
+          options.push({ name: `${v.name}.targetNodeId`, scope: v.scope, detail: 'Target Node ID' });
+          options.push({ name: `${v.name}.isPaused`, scope: v.scope, detail: 'Stopped at a Node (true/false)' });
         }
       } else if (v.type === 'temporal') {
         options.push({ name: v.name, scope: v.scope, detail: 'Formatted Date/Time' });
         options.push({ name: `${v.name}.monthText`, scope: v.scope, detail: 'Month Name (August, January...)' });
+        options.push({ name: `${v.name}.monthShort`, scope: v.scope, detail: 'Short Month Name (Jan, Feb...)' });
         options.push({ name: `${v.name}.monthNumber`, scope: v.scope, detail: 'Month Number (1-12)' });
         options.push({ name: `${v.name}.year`, scope: v.scope, detail: 'Year (e.g. 2026)' });
         options.push({ name: `${v.name}.day`, scope: v.scope, detail: 'Day of Month (1-31)' });
         options.push({ name: `${v.name}.dayOfWeek`, scope: v.scope, detail: 'Day of Week (Monday...)' });
+        options.push({ name: `${v.name}.dayOfWeekNumber`, scope: v.scope, detail: 'Day of Week Number (1-7)' });
+        options.push({ name: `${v.name}.hour`, scope: v.scope, detail: 'Hour (0-23)' });
+        options.push({ name: `${v.name}.minute`, scope: v.scope, detail: 'Minute (0-59)' });
+        options.push({ name: `${v.name}.second`, scope: v.scope, detail: 'Second (0-59)' });
         options.push({ name: `${v.name}.timestamp`, scope: v.scope, detail: 'Epoch Milliseconds' });
+        options.push({ name: `${v.name}.timezone`, scope: v.scope, detail: 'Time Zone (e.g. UTC)' });
       } else if (v.type === 'numeric') {
         options.push({ name: v.name, scope: v.scope, detail: 'Numeric Value' });
         options.push({ name: `${v.name}.integerPart`, scope: v.scope, detail: 'Integer Part' });
         options.push({ name: `${v.name}.decimalPart`, scope: v.scope, detail: 'Fractional Decimal Part' });
         options.push({ name: `${v.name}.abs`, scope: v.scope, detail: 'Absolute Value' });
         options.push({ name: `${v.name}.round`, scope: v.scope, detail: 'Rounded Value' });
+        options.push({ name: `${v.name}.floor`, scope: v.scope, detail: 'Rounded Down' });
+        options.push({ name: `${v.name}.ceil`, scope: v.scope, detail: 'Rounded Up' });
+        options.push({ name: `${v.name}.sign`, scope: v.scope, detail: 'Sign (-1, 0 or 1)' });
       } else if (v.type === 'string') {
         options.push({ name: v.name, scope: v.scope, detail: 'String Value' });
         options.push({ name: `${v.name}.length`, scope: v.scope, detail: 'String Length' });
         options.push({ name: `${v.name}.upper`, scope: v.scope, detail: 'Uppercase String' });
         options.push({ name: `${v.name}.lower`, scope: v.scope, detail: 'Lowercase String' });
+        options.push({ name: `${v.name}.trim`, scope: v.scope, detail: 'Without Surrounding Spaces' });
+        options.push({ name: `${v.name}.firstChar`, scope: v.scope, detail: 'First Character' });
+        options.push({ name: `${v.name}.lastChar`, scope: v.scope, detail: 'Last Character' });
       } else if (v.type === 'boolean') {
         options.push({ name: v.name, scope: v.scope, detail: 'Boolean Value (true/false)' });
         options.push({ name: `${v.name}.inverse`, scope: v.scope, detail: 'Inverse Boolean (false/true)' });
         options.push({ name: `${v.name}.asNumber`, scope: v.scope, detail: 'Binary Number (1 or 0)' });
+        options.push({ name: `${v.name}.asString`, scope: v.scope, detail: 'Text ("true" / "false")' });
+        options.push({ name: `${v.name}.upper`, scope: v.scope, detail: 'Uppercase (TRUE / FALSE)' });
       } else {
         options.push({ name: v.name, scope: v.scope });
       }
     });
 
-    return options
-      .filter(o => {
-        const full = `${o.scope}.${o.name}`.toLowerCase();
-        const simpleName = o.name.toLowerCase();
-        return full.startsWith(query) || full.includes(query) || simpleName.startsWith(query) || simpleName.includes(query);
-      });
+    return filterAutocompleteOptions(options, query);
   }, [showAutocomplete, value, cursorPos, variables, flowId, groupId]);
 
   useEffect(() => {
@@ -383,9 +364,8 @@ export function TemplateEditor({
   const valueRef = useRef(value);
   valueRef.current = value;
 
-  const insertOption = (opt: { name: string; scope: string }) => {
-    const varRef = opt.scope === 'system' ? opt.name : `${opt.scope}.${opt.name}`;
-    insertAtCursor(varRef);
+  const insertOption = (opt: AutocompleteOption) => {
+    insertAtCursor(optionReference(opt));
     setShowAutocomplete(false);
   };
 
@@ -405,9 +385,12 @@ export function TemplateEditor({
 
     if (lastOpen !== -1 && lastOpen >= textBefore.lastIndexOf('}}')) {
       finalStart = lastOpen;
-      const closingPos = currentVal.indexOf('}}', finalStart);
-      if (closingPos !== -1 && closingPos >= start - 2) {
-        finalEnd = closingPos + 2;
+      // Only the }} that closes this placeholder (the rest of its name, then }}). A placeholder
+      // still being typed has none: the next }} belongs to another placeholder further on, and
+      // replacing up to it would delete the text in between
+      const closing = /^[\w.]*\s*\}\}/.exec(currentVal.substring(end));
+      if (closing) {
+        finalEnd = end + closing[0].length;
       }
     }
     
@@ -532,6 +515,8 @@ export function TemplateEditor({
       {showAutocomplete && autocompleteOptions.length > 0 && (
         <div 
           ref={autocompleteRef}
+          role="listbox"
+          aria-label="Template suggestions"
           className="absolute z-50 bg-[var(--c-bg2)] border border-[var(--c-br1)] rounded shadow-xl min-w-[220px] max-h-60 overflow-y-auto scrollbar-thin scrollbar-thumb-[var(--c-br3)]"
           style={{ 
             top: dropdownPosition.top, 
@@ -541,6 +526,9 @@ export function TemplateEditor({
           {autocompleteOptions.map((opt, i) => (
             <div
               key={i}
+              role="option"
+              aria-selected={i === selectedIndex}
+              tabIndex={-1}
               onMouseDown={(e) => {
                 e.preventDefault(); // Prevent blur
                 insertOption(opt);

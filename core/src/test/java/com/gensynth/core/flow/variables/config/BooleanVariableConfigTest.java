@@ -25,7 +25,7 @@ public class BooleanVariableConfigTest {
     public void testBooleanConfigCreation() {
         assertEquals("device_enabled", config.getIdentifier());
         assertEquals(VariableType.BOOLEAN, config.getType());
-        assertTrue(config.getCurrentValue());  // Default is TRUE
+        assertFalse(config.getCurrentValue());  // Default is OFF, as the UI shows it
     }
 
     @Test
@@ -150,7 +150,7 @@ public class BooleanVariableConfigTest {
         config.reset();
         assertEquals(0, config.getTickCounter());
         assertEquals(0, config.getTicksInCurrentState());
-        assertTrue(config.getCurrentValue());
+        assertFalse(config.getCurrentValue()); // Back to the default start state (OFF)
     }
 
     @Test

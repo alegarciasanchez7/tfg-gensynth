@@ -75,8 +75,9 @@ public abstract class VariableConfiguration {
     protected String sourceListVariableId;
     protected String sourceListSelectionMode = "RANDOM_ITEM";
     protected String selectedListItemId;
-    protected java.util.List<String> selectedListItemIds = new java.util.ArrayList<>();
-    protected int randomSubsetCount = 1;
+    /** Copy of the source list's generator for the INHERITED_GENERATION mode, and the list it copies. */
+    private com.gensynth.core.flow.variables.config.ListVariableConfig inheritedGenerator;
+    private com.gensynth.core.flow.variables.config.ListVariableConfig inheritedGeneratorSource;
 
     public String getSourceListVariableId() { return sourceListVariableId; }
     public void setSourceListVariableId(String sourceListVariableId) { this.sourceListVariableId = sourceListVariableId; }
@@ -90,15 +91,6 @@ public abstract class VariableConfiguration {
     public void setSelectedListItemId(String selectedListItemId) { this.selectedListItemId = selectedListItemId; }
     public VariableConfiguration selectedListItemId(String id) { this.selectedListItemId = id; return this; }
 
-    public java.util.List<String> getSelectedListItemIds() { return selectedListItemIds; }
-    public void setSelectedListItemIds(java.util.List<String> selectedListItemIds) { 
-        this.selectedListItemIds = selectedListItemIds != null ? new java.util.ArrayList<>(selectedListItemIds) : new java.util.ArrayList<>(); 
-    }
-    public VariableConfiguration selectedListItemIds(java.util.List<String> ids) { setSelectedListItemIds(ids); return this; }
-
-    public int getRandomSubsetCount() { return randomSubsetCount; }
-    public void setRandomSubsetCount(int randomSubsetCount) { this.randomSubsetCount = randomSubsetCount; }
-    public VariableConfiguration randomSubsetCount(int count) { this.randomSubsetCount = count; return this; }
 
     /**
      * Validates this configuration for logical consistency before simulation starts.
@@ -141,6 +133,11 @@ public abstract class VariableConfiguration {
         }
 
         if (sourceListConfig != null && !sourceListConfig.getEffectiveItems().isEmpty()) {
+            // A Fixed Subset list gives an array, not one item: that mode falls back to a random item
+            if ("INHERITED_GENERATION".equalsIgnoreCase(sourceListSelectionMode)
+                    && sourceListConfig.getSelectionStrategy() != com.gensynth.core.flow.variables.config.ListVariableConfig.SelectionStrategy.FIXED_SUBSET) {
+                return inheritedGeneratorOf(sourceListConfig).generateNextValue();
+            }
             java.util.List<com.gensynth.core.flow.variables.config.ListVariableConfig.ListItem> items = sourceListConfig.getEffectiveItems();
             if ("FIXED_ITEM".equalsIgnoreCase(sourceListSelectionMode) && selectedListItemId != null) {
                 for (com.gensynth.core.flow.variables.config.ListVariableConfig.ListItem item : items) {
@@ -156,8 +153,36 @@ public abstract class VariableConfiguration {
         return currentContext.get(refId);
     }
 
+    /**
+     * Generator that picks items as the source list does (same strategy, weights, order and matrix)
+     * but keeps its own position, so this variable does not move the list's sequence or chain.
+     * A list edited or restarted is a new object, and the copy is made again from it.
+     */
+    private com.gensynth.core.flow.variables.config.ListVariableConfig inheritedGeneratorOf(
+            com.gensynth.core.flow.variables.config.ListVariableConfig source) {
+        if (inheritedGenerator == null || inheritedGeneratorSource != source) {
+            inheritedGenerator = source.copyGenerator();
+            inheritedGeneratorSource = source;
+        }
+        inheritedGenerator.setContext(currentContext);
+        return inheritedGenerator;
+    }
+
     protected boolean hasActiveOverride = false;
     protected Object activeOverrideValue = null;
+    /** Generator config of the matching rule, when the rule overrides with a full config instead of one value. */
+    protected Map<String, Object> activeOverrideConfig = null;
+
+    /** Keys that only a full generator config has (written by the rule's visual editor). */
+    private static final java.util.Set<String> GENERATOR_KEYS = java.util.Set.of("pattern", "selectionStrategy", "timeAdvanceMode");
+
+    /**
+     * @return the generator config of the active rule, or {@code null} if no rule matches or the rule
+     *         overrides with a single value
+     */
+    public Map<String, Object> getActiveOverrideConfig() {
+        return activeOverrideConfig;
+    }
 
     public void setContext(Map<String, Object> context) {
         this.currentContext = context;
@@ -168,6 +193,7 @@ public abstract class VariableConfiguration {
         if (conditionalRules == null || conditionalRules.isEmpty()) {
             hasActiveOverride = false;
             activeOverrideValue = null;
+            activeOverrideConfig = null;
             return;
         }
 
@@ -190,8 +216,12 @@ public abstract class VariableConfiguration {
                 boolean match = evaluateCondition(contextVal, rule.condition, rule.value);
                 if (match) {
                     hasActiveOverride = true;
-                    // The overrides can contain a JSON payload or a mapping of properties.
-                    if (rule.overrides != null && !rule.overrides.isEmpty()) {
+                    activeOverrideConfig = null;
+                    // The overrides can contain a full generator config, a JSON payload or a mapping of properties.
+                    if (rule.overrides != null && rule.overrides.keySet().stream().anyMatch(GENERATOR_KEYS::contains)) {
+                        activeOverrideConfig = rule.overrides;
+                        activeOverrideValue = null;
+                    } else if (rule.overrides != null && !rule.overrides.isEmpty()) {
                         if (rule.overrides.containsKey(this.identifier)) {
                             activeOverrideValue = rule.overrides.get(this.identifier);
                         } else if (rule.overrides.containsKey("constantValue")) { // Extract fixed string mode property
@@ -220,6 +250,7 @@ public abstract class VariableConfiguration {
         // Reset if no rule matches
         hasActiveOverride = false;
         activeOverrideValue = null;
+        activeOverrideConfig = null;
     }
 
     private boolean evaluateCondition(Object contextVal, String operator, Object ruleVal) {

@@ -16,7 +16,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Built-in connector that writes the messages of a flow to a file
@@ -24,6 +27,10 @@ import java.util.Map;
  *
  * The file is written to {@code <outputDir>/<group>/<fileName>.<ext>}. By default the output
  * directory is the folder of the current simulation session and the file name is the flow name.
+ *
+ * A file can only be open in one session at a time: names that sanitize to the same file
+ * ("Sensor 1" and "Sensor_1"), two flows with the same File name or two groups mapped to the same
+ * folder would otherwise interleave their messages in one file, so the second flow fails to start.
  */
 public class FileConnectorPlugin implements ConnectorPlugin {
 
@@ -61,18 +68,52 @@ public class FileConnectorPlugin implements ConnectorPlugin {
         return FIELDS;
     }
 
+    /**
+     * Keys of the files open by a session (see {@link #fileKey(Path)}), shared by every instance
+     * so that no two flows write to the same file. A key is released when its session closes.
+     */
+    private static final Set<String> OPEN_FILES = ConcurrentHashMap.newKeySet();
+
     @Override
     public ConnectorSession connect(ConnectorConfig config, ConnectorContext context) throws IOException {
         String format = config.getString("format", "json");
         String baseDir = config.getString("outputDir",
             context.outputDirectory() == null || context.outputDirectory().isBlank() ? "OUTPUT_FILES" : context.outputDirectory());
         Path directory = Paths.get(baseDir).resolve(sanitize(context.groupName(), "group"));
-        Files.createDirectories(directory);
-
         String fileName = sanitize(config.getString("fileName", context.flowName()), "flow");
-        Path file = directory.resolve(fileName + extension(format));
-        LOGGER.info("File connector writing to {}", file.toAbsolutePath());
-        return new FileSession(new FileOutputStream(file.toFile(), true), format);
+        Path file = directory.resolve(fileName + extension(format)).toAbsolutePath().normalize();
+
+        String key = fileKey(file);
+        if (!OPEN_FILES.add(key)) {
+            throw new IOException(fileInUseMessage(file));
+        }
+        try {
+            Files.createDirectories(directory);
+            LOGGER.info("File connector writing to {}", file);
+            return new FileSession(new FileOutputStream(file.toFile(), true), format, key);
+        } catch (IOException | RuntimeException ex) {
+            // The file was never opened: free it for the next start
+            OPEN_FILES.remove(key);
+            throw ex;
+        }
+    }
+
+    /**
+     * Error raised when a flow targets a file that another running flow already writes.
+     *
+     * @param file the absolute path of the file
+     * @return the user-facing message
+     */
+    public static String fileInUseMessage(Path file) {
+        return "File \"" + file + "\" is already used by another flow; give this flow a different name or File name";
+    }
+
+    /**
+     * Registry key of a file: its absolute, normalized path, compared ignoring case because the
+     * default file systems of Windows and macOS do not tell "Sensor" and "sensor" apart.
+     */
+    private static String fileKey(Path file) {
+        return file.toString().toLowerCase(Locale.ROOT);
     }
 
     private static String extension(String format) {
@@ -97,12 +138,14 @@ public class FileConnectorPlugin implements ConnectorPlugin {
     static final class FileSession implements ConnectorSession {
         private final FileOutputStream stream;
         private final String format;
+        private final String fileKey;
         private boolean first = true;
         private boolean closed;
 
-        FileSession(FileOutputStream stream, String format) {
+        FileSession(FileOutputStream stream, String format, String fileKey) {
             this.stream = stream;
             this.format = format;
+            this.fileKey = fileKey;
         }
 
         @Override
@@ -142,7 +185,11 @@ public class FileConnectorPlugin implements ConnectorPlugin {
                     else write("\n");
                 }
             } finally {
-                stream.close();
+                try {
+                    stream.close();
+                } finally {
+                    OPEN_FILES.remove(fileKey);
+                }
             }
         }
 

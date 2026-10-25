@@ -35,6 +35,10 @@ export function getFlowComparable(flow: Flow) {
     interval: flow.interval,
     burst: flow.burst,
     everyTicks: flow.everyTicks,
+    // Missing event loss fields mean "off", same as 0
+    lossPercent: flow.lossPercent ?? 0,
+    outageEveryTicks: flow.outageEveryTicks ?? 0,
+    outageDurationTicks: flow.outageDurationTicks ?? 0,
     topic: flow.topic,
     host: flow.host,
     port: flow.port,

@@ -1,11 +1,13 @@
 import { useState } from 'react';
-import { Layers, ChevronRight, Cpu, AlertCircle, Trash2, RotateCcw } from 'lucide-react';
+import { Layers, ChevronRight, Cpu, AlertCircle, Trash2, RotateCcw, Lock } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Group, Flow, OutputMode } from '../../types';
 import { useApp } from '../../context';
 import { StatusDot } from '../common/StatusDot';
 import { OUTPUT_MODE_OPTIONS } from '../../core/outputMode';
 import { formatRate, groupRate } from '../../core/metricsFormat';
+import { commandErrorMessage } from '../../core/errorMessage';
+import { normalizeGroupStatus } from '../../core/entityStatus';
 
 function EditableField({
   label,
@@ -99,7 +101,7 @@ export function GroupWorkspace({ group }: GroupWorkspaceProps) {
     running: { color: 'text-emerald-500', bg: 'bg-emerald-500/10 border-emerald-500/40', label: 'RUNNING' },
     stopped: { color: 'text-slate-400',   bg: 'bg-slate-500/10 border-slate-400/30',    label: 'STOPPED' },
     paused:  { color: 'text-amber-500',   bg: 'bg-amber-500/10 border-amber-500/40',    label: 'PAUSED' },
-  }[group.status];
+  }[normalizeGroupStatus(group.status)];
 
   const handleUpdate = (updates: Partial<Omit<Group, 'id' | 'flows'>>) => {
     actions.updateGroupConfig(group.id, updates, group.name);
@@ -121,7 +123,7 @@ export function GroupWorkspace({ group }: GroupWorkspaceProps) {
       await actions.deleteGroup(group.id);
       toast.success(`Group "${group.name}" deleted`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to delete group';
+      const message = commandErrorMessage(error, 'Unable to delete group');
       toast.error(message);
       setIsDeleting(false);
     }
@@ -138,11 +140,28 @@ export function GroupWorkspace({ group }: GroupWorkspaceProps) {
               {group.name}
               {isDirty && <span className="text-amber-400 font-bold text-xs" title="Unsaved changes">*</span>}
             </h2>
-            <span className={`text-[10px] px-2 py-0.5 rounded border ${statusCfg.bg} ${statusCfg.color} tracking-widest`}
-              style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-              {statusCfg.label}
-            </span>
+            {/* A locked group generates nothing, so LOCKED replaces its run status */}
+            {group.enabled && (
+              <span className={`text-[10px] px-2 py-0.5 rounded border ${statusCfg.bg} ${statusCfg.color} tracking-widest`}
+                style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+                {statusCfg.label}
+              </span>
+            )}
+            {!group.enabled && (
+              <span
+                className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded border bg-amber-500/10 border-amber-500/40 text-amber-500 tracking-widest"
+                style={{ fontFamily: 'JetBrains Mono, monospace' }}
+                title="Locked: its flows do not generate messages. Unlock it from the group menu (⋮)."
+              >
+                <Lock size={9} /> LOCKED
+              </span>
+            )}
           </div>
+          {!group.enabled && (
+            <p className="text-[10px] text-amber-500" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+              Locked: its flows do not generate messages. Unlock it from the group menu (⋮).
+            </p>
+          )}
           <p className="text-xs text-[var(--c-tx4)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
             {group.description}
           </p>

@@ -197,6 +197,7 @@ export function useCrudActions({
     template?: string,
     connectorConfig?: Record<string, unknown>,
     everyTicks?: number,
+    autoRename?: boolean,
   ) => {
     const optimisticId = generateOptimisticId('flow');
     const optimisticFlow = createOptimisticFlow(
@@ -265,7 +266,8 @@ export function useCrudActions({
               template,
               connectorConfig,
               onResponse,
-              everyTicks
+              everyTicks,
+              autoRename
             ),
           reconcileId: (serverFlow) => {
             const mappedFlow = mapFlowFromCore(serverFlow as FlowState);
@@ -420,7 +422,7 @@ export function useCrudActions({
   const cloneGroup = useCallback(async (groupId: string, count: number, namingPattern?: string) => {
     try {
       await CoreCommands.cloneGroup(groupId, count, namingPattern);
-      toast.success(`Iniciando clonación de grupo (${count} copias)`);
+      toast.success(`Cloning group (${count} ${count === 1 ? 'copy' : 'copies'})`);
     } catch (error) {
       reportCommandError('GROUPS', `cloneGroup(${groupId})`, error);
     }
@@ -429,7 +431,7 @@ export function useCrudActions({
   const cloneFlow = useCallback(async (groupId: string, flowId: string, count: number, namingPattern?: string) => {
     try {
       await CoreCommands.cloneFlow(groupId, flowId, count, namingPattern);
-      toast.success(`Iniciando clonación de flow (${count} copias)`);
+      toast.success(`Cloning flow (${count} ${count === 1 ? 'copy' : 'copies'})`);
     } catch (error) {
       reportCommandError('FLOWS', `cloneFlow(${flowId})`, error);
     }

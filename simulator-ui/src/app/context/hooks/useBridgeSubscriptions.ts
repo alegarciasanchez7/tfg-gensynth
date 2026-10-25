@@ -153,7 +153,7 @@ export function useBridgeSubscriptions({
       bridge.on('log', (log: LogPayload) => {
         let formattedTime = log.timestamp;
         const date = new Date(log.timestamp);
-        if (!isNaN(date.getTime())) {
+        if (!Number.isNaN(date.getTime())) {
           formattedTime = date.toLocaleTimeString('en-GB', { hour12: false });
         }
         dispatch({ type: 'ADD_LOG', payload: { ...log, timestamp: formattedTime } });

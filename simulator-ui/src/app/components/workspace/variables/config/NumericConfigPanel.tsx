@@ -3,12 +3,15 @@ import { useApp } from '../../../../context';
 import { NumericVariableConfig, VariableScope } from '../../../../types';
 import { Input } from '../../../ui/input';
 import { Label } from '../../../ui/label';
+import { CustomDropdown } from '../../../ui/custom-dropdown';
 import { SequentialGraphEditor } from './SequentialGraphEditor';
 import { DistributionGraphEditor } from './DistributionGraphEditor';
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '../../../ui/tooltip';
 import { Info } from 'lucide-react';
 
 import { ListReferenceSelector } from './ListReferenceSelector';
+import { findTemplatePlaceholders } from '../../../../core/templatePlaceholders';
+import { findFormulaMatches } from './formulaTokens';
 
 interface NumericConfigPanelProps {
   config: NumericVariableConfig;
@@ -16,94 +19,11 @@ interface NumericConfigPanelProps {
   flowId?: string;
   groupId?: string;
   variableScope?: VariableScope;
+  /** Id of the variable being edited, left out of the formula suggestions (no self reference). */
+  variableId?: string;
+  /** Set when the panel edits the generator of a list item, which cannot inherit from a list. */
+  inListItem?: boolean;
 }
-
-interface CustomDropdownProps {
-  id?: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: Array<{ value: string; label: string }>;
-  label?: string;
-}
-
-const CustomDropdown: React.FC<CustomDropdownProps> = ({ value, onChange, options, id }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  // Close dropdown on click outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, []);
-
-  const selectedOption = options.find(opt => opt.value === value) || options[0];
-
-  return (
-    <div ref={containerRef} className="relative w-full">
-      <button
-        id={id}
-        type="button"
-        onClick={() => setIsOpen(!isOpen)}
-        className="flex h-8 w-full items-center justify-between rounded-md border border-input bg-input-background dark:bg-input/30 dark:hover:bg-input/50 px-3 py-1 text-xs text-[var(--c-tx2)] outline-none hover:bg-white/5 active:bg-white/10 transition-colors cursor-pointer"
-      >
-        <span>{selectedOption.label}</span>
-        <svg
-          className={`size-3.5 opacity-60 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
-          xmlns="http://www.w3.org/2000/svg"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          strokeWidth="2"
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-        </svg>
-      </button>
-
-      {isOpen && (
-        <div className="absolute left-0 right-0 mt-1 z-50 bg-[var(--c-bg2)] border border-[var(--c-br1)] rounded shadow-2xl max-h-[200px] overflow-y-auto scrollbar-thin scrollbar-thumb-[var(--c-br3)]">
-          <div className="p-1 space-y-0.5">
-            {options.map((opt) => (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => {
-                  onChange(opt.value);
-                  setIsOpen(false);
-                }}
-                className={`w-full text-left px-2.5 py-1.5 rounded text-xs transition-colors flex items-center justify-between cursor-pointer ${
-                  opt.value === value
-                    ? 'bg-violet-500/20 text-violet-400 font-semibold'
-                    : 'hover:bg-white/5 text-[var(--c-tx2)]'
-                }`}
-              >
-                <span>{opt.label}</span>
-                {opt.value === value && (
-                  <svg
-                    className="size-3.5 text-violet-400"
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth="2.5"
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                  </svg>
-                )}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
 
 export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({ 
   config, 
@@ -111,6 +31,8 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
   flowId,
   groupId,
   variableScope,
+  variableId,
+  inListItem = false,
 }) => {
   const min = config.min ?? 0;
   const max = config.max ?? 100;
@@ -130,7 +52,7 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
   const [integerFormatStr, setIntegerFormatStr] = useState(config.integerFormat ?? '');
 
   // New fields local string states
-  const [sineFreqStr, setSineFreqStr] = useState(String(config.sineFrequency ?? 1.0));
+  const [sineFreqStr, setSineFreqStr] = useState(String(config.sineFrequency ?? 0.05));
   const [sineAmpStr, setSineAmpStr] = useState(String(config.sineAmplitude ?? 10.0));
   const [sinePhaseStr, setSinePhaseStr] = useState(String(config.sinePhase ?? 0.0));
   const [sineOffsetStr, setSineOffsetStr] = useState(String(config.sineOffset ?? 0.0));
@@ -163,18 +85,16 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
   // Tokenize the formula for inline validation overlay
   const formulaTokens = useMemo(() => {
     const parts: Array<{ text: string; isValid?: boolean; isVariable?: boolean; isConstant?: boolean }> = [];
-    const regex = /(\{\{[^}]+\}\})|\b(pi|e)\b/gi;
     let lastIndex = 0;
-    let match;
  
-    while ((match = regex.exec(formulaValue)) !== null) {
-      if (match.index > lastIndex) {
-        parts.push({ text: formulaValue.substring(lastIndex, match.index) });
+    for (const match of findFormulaMatches(formulaValue)) {
+      if (match.start > lastIndex) {
+        parts.push({ text: formulaValue.substring(lastIndex, match.start) });
       }
  
-      if (match[1]) {
+      if (match.kind === 'reference') {
         // Wrapped in {{ }}
-        const rawToken = match[1];
+        const rawToken = match.text;
         const varName = rawToken.substring(2, rawToken.length - 2).trim();
         const lowerName = varName.toLowerCase();
         
@@ -200,14 +120,14 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
             isVariable: true
           });
         }
-      } else if (match[2]) {
+      } else {
         // Raw constant literal (e.g. pi or e)
         parts.push({
-          text: match[2],
+          text: match.text,
           isConstant: true
         });
       }
-      lastIndex = regex.lastIndex;
+      lastIndex = match.end;
     }
  
     if (lastIndex < formulaValue.length) {
@@ -220,12 +140,10 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
   // Extract seen variables to display feedback badges underneath
   const formulaVariables = useMemo(() => {
     const vars: Array<{ name: string; isValid: boolean; scope?: string }> = [];
-    const regex = /\{\{([^}]+)\}\}/g;
-    let match;
     const seen = new Set<string>();
  
-    while ((match = regex.exec(formulaValue)) !== null) {
-      const varName = match[1].trim();
+    for (const reference of findTemplatePlaceholders(formulaValue)) {
+      const varName = reference.spec.trim();
       const lowerName = varName.toLowerCase();
       if (lowerName === 'pi' || lowerName === 'e') continue;
       if (seen.has(varName)) continue;
@@ -262,6 +180,7 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
     // Filter variables that are at least potentially valid (current scope)
     const options = state.variables
       .filter(v => {
+        if (v.id === variableId) return false;
         if (v.scope === 'global') return true;
         if (v.scope === 'group') return v.groupId === groupId;
         if (v.scope === 'local') return v.flowId === flowId;
@@ -281,7 +200,7 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
       const full = `${o.scope}.${o.name}`.toLowerCase();
       return full.includes(query) || o.name.toLowerCase().includes(query);
     });
-  }, [showAutocomplete, config.formula, cursorPos, state.variables, flowId, groupId]);
+  }, [showAutocomplete, config.formula, cursorPos, state.variables, flowId, groupId, variableId]);
 
   useEffect(() => {
     setSelectedIndex(0);
@@ -364,27 +283,28 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
 
   // Sync state if props change externally
   useEffect(() => {
-    if (config.min !== undefined && parseFloat(minStr) !== config.min) setMinStr(String(config.min));
+    if (config.min !== undefined && Number.parseFloat(minStr) !== config.min) setMinStr(String(config.min));
   }, [config.min]);
 
   useEffect(() => {
-    if (config.max !== undefined && parseFloat(maxStr) !== config.max) setMaxStr(String(config.max));
+    if (config.max !== undefined && Number.parseFloat(maxStr) !== config.max) setMaxStr(String(config.max));
   }, [config.max]);
 
   useEffect(() => {
-    if (config.initialValue !== undefined && parseFloat(initialStr) !== config.initialValue) setInitialStr(String(config.initialValue));
+    if (config.initialValue === undefined || config.initialValue === null) setInitialStr('');
+    else if (Number.parseFloat(initialStr) !== config.initialValue) setInitialStr(String(config.initialValue));
   }, [config.initialValue]);
 
   useEffect(() => {
-    if (config.constantValue !== undefined && parseFloat(constValueStr) !== config.constantValue) setConstValueStr(String(config.constantValue));
+    if (config.constantValue !== undefined && Number.parseFloat(constValueStr) !== config.constantValue) setConstValueStr(String(config.constantValue));
   }, [config.constantValue]);
 
   useEffect(() => {
-    if (config.constantMargin !== undefined && parseFloat(constMarginStr) !== config.constantMargin) setConstMarginStr(String(config.constantMargin));
+    if (config.constantMargin !== undefined && Number.parseFloat(constMarginStr) !== config.constantMargin) setConstMarginStr(String(config.constantMargin));
   }, [config.constantMargin]);
 
   useEffect(() => {
-    if (config.step !== undefined && parseFloat(stepStr) !== config.step) setStepStr(String(config.step));
+    if (config.step !== undefined && Number.parseFloat(stepStr) !== config.step) setStepStr(String(config.step));
   }, [config.step]);
 
   useEffect(() => {
@@ -408,6 +328,10 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
     if (newPattern === 'DISTRIBUTION' && (!config.customDistributionGraph || config.customDistributionGraph.length === 0)) {
       updates.customDistributionGraph = [];
     }
+    if (newPattern === 'SINUSOIDAL' && config.sineFrequency === undefined) {
+      // 1 Hz sampled once per second is a flat line: start with a 20 s period
+      updates.sineFrequency = 0.05;
+    }
     onChange(updates);
   };
 
@@ -419,8 +343,8 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
   ) => {
     setter(value);
     if (value === '' || value === '-') return;
-    const parsed = parseFloat(value);
-    if (!isNaN(parsed)) {
+    const parsed = Number.parseFloat(value);
+    if (!Number.isNaN(parsed)) {
       onChange({ [field]: parsed });
     }
   };
@@ -431,8 +355,8 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
     field: keyof NumericVariableConfig,
     fallback: number
   ) => {
-    const parsed = parseFloat(value);
-    if (isNaN(parsed)) {
+    const parsed = Number.parseFloat(value);
+    if (Number.isNaN(parsed)) {
       setter(String(fallback));
       onChange({ [field]: fallback });
     } else {
@@ -444,14 +368,16 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
   return (
     <TooltipProvider delayDuration={200}>
       <div className="space-y-4">
-        <ListReferenceSelector
-          config={config}
-          onChange={onChange}
-          variableScope={variableScope || 'local'}
-          variableType="numeric"
-          flowId={flowId}
-          groupId={groupId}
-        />
+        {!inListItem && (
+          <ListReferenceSelector
+            config={config}
+            onChange={onChange}
+            variableScope={variableScope || 'local'}
+            variableType="numeric"
+            flowId={flowId}
+            groupId={groupId}
+          />
+        )}
 
         {pattern !== 'CONSTANT' && (
           <>
@@ -494,13 +420,20 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
                   value={initialStr}
                   onChange={(e) => handleNumericChange(e.target.value, setInitialStr, 'initialValue')}
                   onBlur={(e) => {
-                    const val = parseFloat(e.target.value);
-                    const clamped = isNaN(val) ? min : Math.max(min, Math.min(max, val));
+                    const val = Number.parseFloat(e.target.value);
+                    if (Number.isNaN(val)) {
+                      // Optional: an empty field means "no fixed first value"
+                      setInitialStr('');
+                      onChange({ initialValue: undefined });
+                      return;
+                    }
+                    const clamped = Math.max(min, Math.min(max, val));
                     setInitialStr(String(clamped));
                     onChange({ initialValue: clamped });
                   }}
                   className="h-8 text-xs font-mono"
-                  placeholder="e.g. 0"
+                  placeholder="Optional (first value)"
+                  title="Optional. First value emitted by the Random and Sequential patterns. Leave empty to start directly with the pattern."
                 />
               </div>
             </div>
@@ -529,7 +462,7 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
                     min={0}
                     max={10}
                     value={config.decimalPlaces ?? 2}
-                    onChange={(e) => onChange({ decimalPlaces: Math.max(0, Math.min(10, parseInt(e.target.value) || 0)) })}
+                    onChange={(e) => onChange({ decimalPlaces: Math.max(0, Math.min(10, Number.parseInt(e.target.value) || 0)) })}
                     className="h-8 text-xs font-mono"
                   />
                 </div>
@@ -694,7 +627,7 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
                   value={constMarginStr}
                   onChange={(e) => handleNumericChange(e.target.value, setConstMarginStr, 'constantMargin')}
                   onBlur={(e) => {
-                    const val = Math.abs(parseFloat(e.target.value) || 0);
+                    const val = Math.abs(Number.parseFloat(e.target.value) || 0);
                     setConstMarginStr(String(val));
                     onChange({ constantMargin: val });
                   }}
@@ -774,7 +707,8 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
                   </TooltipContent>
                 </Tooltip>
               </div>
-              <div className="relative">
+              {/* The background lives here: the input on top must stay transparent so the overlay shows */}
+              <div className="relative rounded-md bg-input-background dark:bg-input/30">
                 {/* Highlighting Overlay */}
                 <div 
                   ref={overlayRef}
@@ -837,20 +771,26 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
                       setShowAutocomplete(false);
                     }, 150);
                   }}
-                  className="file:text-foreground placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground dark:bg-input/30 border-input flex w-full min-w-0 rounded-md border px-3 py-1 bg-input-background transition-[color,box-shadow] outline-none disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] h-8 text-xs font-mono text-transparent caret-[var(--c-tx1)] relative z-10"
+                  className="file:text-foreground placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground border-input flex w-full min-w-0 rounded-md border px-3 py-1 bg-transparent transition-[color,box-shadow] outline-none disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] h-8 text-xs font-mono text-transparent caret-[var(--c-tx1)] relative z-10"
                   autoComplete="off"
                 />
 
                 {/* Autocomplete Dropdown */}
                 {showAutocomplete && autocompleteOptions.length > 0 && (
-                  <div 
+                  <div
                     ref={autocompleteRef}
+                    role="listbox"
+                    aria-label="Variable suggestions"
+                    tabIndex={-1}
                     onMouseDown={(e) => e.preventDefault()} // Prevent blur when clicking scrollbar or container area
                     className="absolute left-0 right-0 bottom-full mb-1 z-50 bg-[var(--c-bg2)] border border-[var(--c-br1)] rounded shadow-xl max-h-[140px] overflow-y-auto scrollbar-thin scrollbar-thumb-[var(--c-br3)]"
                   >
                     {autocompleteOptions.map((opt, i) => (
                       <div
                         key={i}
+                        role="option"
+                        aria-selected={i === selectedIndex}
+                        tabIndex={-1}
                         onMouseDown={(e) => {
                           e.preventDefault(); // Prevent blur
                           insertOption(opt);
@@ -909,7 +849,7 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
                     placeholder="e.g. 1.0"
                     value={sineFreqStr}
                     onChange={(e) => handleNumericChange(e.target.value, setSineFreqStr, 'sineFrequency')}
-                    onBlur={(e) => handleNumericBlur(e.target.value, setSineFreqStr, 'sineFrequency', 1.0)}
+                    onBlur={(e) => handleNumericBlur(e.target.value, setSineFreqStr, 'sineFrequency', 0.05)}
                     className="h-8 text-xs font-mono"
                   />
                 </div>
@@ -983,8 +923,8 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
                     onChange={(e) => {
                       setDriftInitialStr(e.target.value);
                       if (e.target.value === '' || e.target.value === '-') return;
-                      const parsed = parseFloat(e.target.value);
-                      if (!isNaN(parsed)) onChange({ driftInitialValue: parsed });
+                      const parsed = Number.parseFloat(e.target.value);
+                      if (!Number.isNaN(parsed)) onChange({ driftInitialValue: parsed });
                     }}
                     className="h-8 text-xs font-mono"
                   />
@@ -1133,14 +1073,14 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
                     onChange={(e) => {
                       setSpikeProbStr(e.target.value);
                       if (e.target.value === '' || e.target.value === '-') return;
-                      const parsed = parseFloat(e.target.value);
-                      if (!isNaN(parsed)) {
+                      const parsed = Number.parseFloat(e.target.value);
+                      if (!Number.isNaN(parsed)) {
                         onChange({ spikeProbability: parsed > 1 ? parsed / 100.0 : parsed });
                       }
                     }}
                     onBlur={(e) => {
-                      const parsed = parseFloat(e.target.value);
-                      const valid = isNaN(parsed) ? 5 : Math.max(0, Math.min(100, parsed));
+                      const parsed = Number.parseFloat(e.target.value);
+                      const valid = Number.isNaN(parsed) ? 5 : Math.max(0, Math.min(100, parsed));
                       setSpikeProbStr(String(valid));
                       onChange({ spikeProbability: valid / 100.0 });
                     }}

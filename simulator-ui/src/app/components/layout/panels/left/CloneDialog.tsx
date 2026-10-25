@@ -17,6 +17,12 @@ interface CloneDialogProps {
   onConfirm: (count: number, namingPattern: string) => void;
   title: string;
   itemName: string;
+  /**
+   * Names already used where the clones go (the flows of the group, or every group for a group
+   * clone): the preview shows the names that collide and the " (2)" suffix the Core adds to keep
+   * them unique.
+   */
+  existingNames?: readonly string[];
 }
 
 export function CloneDialog({
@@ -25,13 +31,14 @@ export function CloneDialog({
   onConfirm,
   title,
   itemName,
+  existingNames,
 }: CloneDialogProps) {
   const [count, setCount] = useState('1');
   const [namingPattern, setNamingPattern] = useState('${name} (Clone ${index})');
 
   const handleConfirm = () => {
-    const num = parseInt(count, 10);
-    if (!isNaN(num) && num > 0) {
+    const num = Number.parseInt(count, 10);
+    if (!Number.isNaN(num) && num > 0) {
       onConfirm(num, namingPattern);
       onOpenChange(false);
       setCount('1');
@@ -64,20 +71,22 @@ export function CloneDialog({
             itemName={itemName}
             countLabel="Number of clones"
             itemsNoun="copies"
+            existingNames={existingNames}
+            collisionMode="rename"
             onSubmit={handleConfirm}
           />
         </div>
 
         <DialogFooter className="gap-2 sm:gap-0">
-          <Button variant="ghost" onClick={() => onOpenChange(false)} className="text-[var(--c-tx3)] hover:text-[var(--c-tx1)]">
+          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} className="text-[var(--c-tx3)] hover:text-[var(--c-tx1)]">
             Cancel
           </Button>
           <Button 
             className="bg-violet-600 hover:bg-violet-700 text-white shadow-lg shadow-violet-500/20"
             onClick={handleConfirm}
-            disabled={!count || parseInt(count, 10) <= 0 || !namingPattern.trim()}
+            disabled={!count || Number.parseInt(count, 10) <= 0 || !namingPattern.trim()}
           >
-            Create {count} Clones
+            Create {count} {count === '1' ? 'Clone' : 'Clones'}
           </Button>
         </DialogFooter>
       </DialogContent>

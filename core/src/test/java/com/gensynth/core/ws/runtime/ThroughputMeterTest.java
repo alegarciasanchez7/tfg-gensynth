@@ -107,7 +107,7 @@ public class ThroughputMeterTest {
         assertTrue(flow.isDueOn(1, 1));
         assertTrue(flow.isDueOn(2, 1));
 
-        flow.everyTicks = 3;
+        flow.everyTicks.set(3);
         boolean[] expected = {true, false, false, true, false, false, true};
         for (int tick = 1; tick <= 7; tick++) {
             assertEquals("tick " + tick, expected[tick - 1], flow.isDueOn(tick, 1));

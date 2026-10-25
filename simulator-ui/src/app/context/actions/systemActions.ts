@@ -1,6 +1,9 @@
 import type React from 'react';
+import { toast } from 'sonner';
 import type { AppAction } from '../reducer';
 import { CoreCommands } from '../../core/bridge';
+import { commandErrorMessage } from '../../core/errorMessage';
+import { findTemplatePlaceholders, isSystemPlaceholder } from '../../core/templatePlaceholders';
 
 export const startSystem = (
   dispatch: React.Dispatch<AppAction>,
@@ -10,6 +13,12 @@ export const startSystem = (
   getGroupsList?: () => any[],
   getFormatTemplates?: () => Record<string, string>,
 ) => async () => {
+  // A rejected start leaves the system stopped, so say why where the user is looking
+  const failStart = (error: unknown) => {
+    reportCommandError('SYSTEM', 'startSystem', error);
+    toast.error(`Cannot start the simulation: ${commandErrorMessage(error, 'unknown error')}`);
+  };
+
   if (getVariablesList) {
     const variables = getVariablesList();
     // 1. Dependency validation checking
@@ -60,11 +69,9 @@ export const startSystem = (
           const template = formatTemplates[flow.id] ?? flow.template ?? '';
           if (!template) continue;
 
-          const regex = /\{\{([^}]+)\}\}/g;
-          let match;
-          while ((match = regex.exec(template)) !== null) {
-            const fullSpec = match[1].trim();
-            if (['uuid', 'ts', 'n'].includes(fullSpec)) continue;
+          for (const placeholder of findTemplatePlaceholders(template)) {
+            const fullSpec = placeholder.spec.trim();
+            if (isSystemPlaceholder(fullSpec)) continue;
 
             let scope: string | null = null;
             let name = fullSpec;
@@ -108,10 +115,8 @@ export const startSystem = (
     }
 
     if (errors.length > 0) {
-      const firstErr = errors[0];
-      const errorObj = new Error(firstErr);
-      reportCommandError('SYSTEM', 'startSystem', errorObj);
-      throw errorObj;
+      failStart(new Error(errors[0]));
+      return;
     }
   }
 
@@ -121,7 +126,7 @@ export const startSystem = (
     }
     dispatch({ type: 'SET_SYSTEM_STATUS', payload: 'running' });
   } catch (error) {
-    reportCommandError('SYSTEM', 'startSystem', error);
+    failStart(error);
   }
 };
 

@@ -1,5 +1,7 @@
 package com.gensynth.core.flow;
 
+import com.gensynth.core.flow.variables.VariableType;
+import com.gensynth.core.flow.variables.config.TemporalVariableConfig;
 import com.gensynth.core.model.Variable;
 
 import java.time.Instant;
@@ -14,6 +16,8 @@ public class TemplateEngine {
 
     private final DataGenerator dataGenerator;
     private static final Pattern VARIABLE_PATTERN = Pattern.compile("\\{\\{([^}]+)\\}\\}");
+    /** Built-in placeholder replaced by the name of the flow that renders the template. */
+    public static final String FLOW_NAME_PLACEHOLDER = "flow.name";
 
     public TemplateEngine() {
         this.dataGenerator = new DataGenerator();
@@ -24,6 +28,44 @@ public class TemplateEngine {
     }
 
     public String evaluate(String template, long sequenceNumber, Map<String, Variable> variables, String flowId, String groupId, Map<String, Object> context) {
+        return evaluate(template, sequenceNumber, variables, flowId, groupId, null, context);
+    }
+
+    /**
+     * Renders a flow template into one message.
+     *
+     * Each variable produces a single value per message: repeated references, sub-properties
+     * ({@code {{pos.x}}}, {@code {{pos.y}}}) and dependencies of formulas or conditional rules all
+     * share the value already stored in {@code context}.
+     *
+     * @param template       template with {@code {{...}}} placeholders
+     * @param sequenceNumber value of the {@code {{n}}} built-in
+     * @param variables      all variables, by id
+     * @param flowId         flow rendering the template (resolves LOCAL variables)
+     * @param groupId        group of that flow (resolves GROUP variables)
+     * @param flowName       value of the {@code {{flow.name}}} built-in; when {@code null} the placeholder is left as is
+     * @param context        values generated for this message, by variable id and name; may be {@code null}
+     * @return the rendered message, or an empty string for an empty template
+     */
+    public String evaluate(String template, long sequenceNumber, Map<String, Variable> variables, String flowId, String groupId, String flowName, Map<String, Object> context) {
+        return evaluate(template, sequenceNumber, variables, flowId, groupId, flowName, context, null);
+    }
+
+    /**
+     * Renders a flow template into one message, writing points and lists in the template's format
+     * (see {@link StructuredValueWriter}).
+     *
+     * @param template       template with {@code {{...}}} placeholders
+     * @param sequenceNumber value of the {@code {{n}}} built-in
+     * @param variables      all variables, by id
+     * @param flowId         flow rendering the template (resolves LOCAL variables)
+     * @param groupId        group of that flow (resolves GROUP variables)
+     * @param flowName       value of the {@code {{flow.name}}} built-in; when {@code null} the placeholder is left as is
+     * @param context        values generated for this message, by variable id and name; may be {@code null}
+     * @param format         the flow's format label ({@code json}, {@code xml}, {@code csv}, {@code plain}); may be {@code null}
+     * @return the rendered message, or an empty string for an empty template
+     */
+    public String evaluate(String template, long sequenceNumber, Map<String, Variable> variables, String flowId, String groupId, String flowName, Map<String, Object> context, String format) {
         if (template == null || template.isEmpty()) {
             return "";
         }
@@ -36,6 +78,8 @@ public class TemplateEngine {
         String currentTs = Instant.now().toString();
         String currentUuid = UUID.randomUUID().toString();
         String currentSeq = String.valueOf(sequenceNumber);
+
+        StructuredValueWriter structuredWriter = StructuredValueWriter.forTemplate(template, format);
 
         // We do a manual loop to handle user variables safely without breaking JSON syntax
         Matcher matcher = VARIABLE_PATTERN.matcher(template);
@@ -52,6 +96,8 @@ public class TemplateEngine {
                 replacement = currentTs;
             } else if (fullVarSpec.equals("n")) {
                 replacement = currentSeq;
+            } else if (fullVarSpec.equals(FLOW_NAME_PLACEHOLDER)) {
+                replacement = flowName != null ? flowName : matcher.group(0);
             } else {
                 // User variable resolution with scope enforcement
                 String scopePart = null;
@@ -101,20 +147,26 @@ public class TemplateEngine {
                 Variable variable = findAccessibleVariable(variables, namePart, scopePart, flowId, groupId);
 
                 if (variable != null) {
-                    ensureDependenciesAvailable(
-                        variable,
-                        variables,
-                        flowId,
-                        groupId,
-                        context,
-                        new HashSet<>()
-                    );
-                    Object generatedValue = dataGenerator.generateValue(variable, context);
-                    if (variable.getId() != null) {
-                        context.put(variable.getId(), generatedValue);
-                    }
-                    if (variable.getName() != null) {
-                        context.put(variable.getName(), generatedValue);
+                    Object generatedValue;
+                    if (variable.getId() != null && context.containsKey(variable.getId())) {
+                        // Already generated for this message (repeated reference or dependency)
+                        generatedValue = context.get(variable.getId());
+                    } else {
+                        ensureDependenciesAvailable(
+                            variable,
+                            variables,
+                            flowId,
+                            groupId,
+                            context,
+                            new HashSet<>()
+                        );
+                        generatedValue = dataGenerator.generateValue(variable, context);
+                        if (variable.getId() != null) {
+                            context.put(variable.getId(), generatedValue);
+                        }
+                        if (variable.getName() != null) {
+                            context.put(variable.getName(), generatedValue);
+                        }
                     }
                     // Convert value to string representation
                     boolean isConstantPattern = false;
@@ -126,7 +178,7 @@ public class TemplateEngine {
                         }
                     }
 
-                    if (itemIndex != null && "list".equalsIgnoreCase(variable.getType())) {
+                    if (itemIndex != null && VariableType.LIST.matches(variable.getType())) {
                         Object stratObj = varConfig != null ? varConfig.get("selectionStrategy") : null;
                         if (stratObj != null && !"FIXED_SUBSET".equalsIgnoreCase(stratObj.toString())) {
                             throw new IllegalStateException("Invalid item reference: Variable '" + variable.getName() + "' uses selection strategy '" + stratObj + "' (not 'FIXED_SUBSET') and cannot be referenced with sub-item index (.itemX).");
@@ -134,6 +186,13 @@ public class TemplateEngine {
                     }
 
                     Object targetObj = generatedValue;
+                    if (propertyPart != null && VariableType.TEMPORAL.matches(variable.getType())) {
+                        // Read date parts from the generated instant, not from the formatted text
+                        java.time.Instant instant = lastInstantOf(context.get(variable.getId() + "_config"));
+                        if (instant != null) {
+                            targetObj = instant;
+                        }
+                    }
                     if (itemIndex != null && targetObj instanceof java.util.List<?>) {
                         java.util.List<?> list = (java.util.List<?>) targetObj;
                         if (itemIndex >= 0 && itemIndex < list.size()) {
@@ -142,32 +201,22 @@ public class TemplateEngine {
                             targetObj = null;
                         }
                     }
+                    if (itemIndex == null && isListCollectionProperty(propertyPart)
+                            && VariableType.LIST.matches(variable.getType())
+                            && !(targetObj instanceof java.util.List<?>)) {
+                        // Single-item strategies yield one item, not a list: answer as a one-item list
+                        targetObj = targetObj != null ? java.util.List.of(targetObj) : java.util.List.of();
+                    }
 
                     if (propertyPart != null) {
                         String propResolved = resolveVariableProperty(targetObj, propertyPart, variable);
                         replacement = propResolved != null ? propResolved : "";
                     } else if (itemIndex != null && propertyPart == null) {
                         replacement = targetObj != null ? targetObj.toString() : "";
-                    } else if (generatedValue instanceof java.util.List<?>) {
-                        replacement = formatListToJson((java.util.List<?>) generatedValue);
-                    } else if (generatedValue instanceof Map<?, ?>) {
-                        replacement = formatMapToJson((Map<?, ?>) generatedValue);
-                    } else if (isConstantPattern && generatedValue instanceof Double) {
-                        double d = (Double) generatedValue;
-                        if (d % 1.0 == 0.0) {
-                            replacement = String.format(java.util.Locale.US, "%.0f", d);
-                        } else {
-                            replacement = String.valueOf(generatedValue);
-                        }
-                    } else if (isConstantPattern && generatedValue instanceof Float) {
-                        float f = (Float) generatedValue;
-                        if (f % 1.0f == 0.0f) {
-                            replacement = String.format(java.util.Locale.US, "%.0f", (double) f);
-                        } else {
-                            replacement = String.valueOf(generatedValue);
-                        }
+                    } else if (StructuredValueWriter.isStructured(generatedValue)) {
+                        replacement = structuredWriter.write(generatedValue, matcher.start());
                     } else {
-                        replacement = String.valueOf(generatedValue);
+                        replacement = formatValue(generatedValue, isConstantPattern);
                     }
                 } else {
                     // Unknown or inaccessible variable, leave it as is or replace with empty
@@ -183,10 +232,29 @@ public class TemplateEngine {
         return result.toString();
     }
 
+    /** Whether the property reads the list as a whole ({@code .size}, {@code .first}, {@code .last} and aliases). */
+    private static boolean isListCollectionProperty(String propertyPart) {
+        if (propertyPart == null) {
+            return false;
+        }
+        switch (propertyPart.toLowerCase(java.util.Locale.ROOT)) {
+            case "size":
+            case "length":
+            case "count":
+            case "first":
+            case "firstitem":
+            case "last":
+            case "lastitem":
+                return true;
+            default:
+                return false;
+        }
+    }
+
     private String resolveVariableProperty(Object targetObj, String propertyPart, Variable variable) {
         if (propertyPart == null) return null;
         String prop = propertyPart.toLowerCase(java.util.Locale.ROOT);
-        String varType = variable != null && variable.getType() != null ? variable.getType().toLowerCase(java.util.Locale.ROOT) : "";
+        VariableType varType = variable != null ? VariableType.fromName(variable.getType()) : null;
 
         // 1. Map target object (Point, Graph route node, custom map)
         if (targetObj instanceof Map<?, ?> map) {
@@ -224,7 +292,7 @@ public class TemplateEngine {
         }
 
         // 2. TEMPORAL Variable Attributes
-        if ("temporal".equals(varType) || targetObj instanceof java.time.Instant || targetObj instanceof java.util.Date) {
+        if (varType == VariableType.TEMPORAL || targetObj instanceof java.time.Instant || targetObj instanceof java.util.Date) {
             java.time.Instant instant = null;
             if (targetObj instanceof java.time.Instant ins) {
                 instant = ins;
@@ -244,12 +312,11 @@ public class TemplateEngine {
                 instant = java.time.Instant.now();
             }
 
-            java.time.ZoneId zone = java.time.ZoneId.of("UTC");
-            if (variable != null && variable.getConfig() != null && variable.getConfig().get("timeZone") != null) {
-                try {
-                    zone = java.time.ZoneId.of(variable.getConfig().get("timeZone").toString());
-                } catch (Exception ignored) {}
-            }
+            // Same zone as the formatted value: the variable's Time Zone, or the computer's zone
+            Object configuredZone = variable != null && variable.getConfig() != null
+                    ? variable.getConfig().get("timeZone") : null;
+            java.time.ZoneId zone = TemporalVariableConfig.resolveZone(
+                    configuredZone != null ? configuredZone.toString() : null);
 
             java.time.ZonedDateTime zdt = instant.atZone(zone);
 
@@ -306,7 +373,7 @@ public class TemplateEngine {
         }
 
         // 3. NUMERIC Variable Attributes
-        if ("numeric".equals(varType) || targetObj instanceof Number) {
+        if (varType == VariableType.NUMERIC || targetObj instanceof Number) {
             double val = 0.0;
             if (targetObj instanceof Number num) {
                 val = num.doubleValue();
@@ -330,7 +397,7 @@ public class TemplateEngine {
                     String s = String.format(java.util.Locale.US, "%f", val);
                     int idx = s.indexOf('.');
                     if (idx != -1) {
-                        String sub = s.substring(idx + 1).replaceAll("0+$", "");
+                        String sub = stripTrailingZeros(s.substring(idx + 1));
                         return sub.isEmpty() ? "0" : sub;
                     }
                     return "0";
@@ -353,7 +420,7 @@ public class TemplateEngine {
         }
 
         // 4. STRING Variable Attributes
-        if ("string".equals(varType) || targetObj instanceof String) {
+        if (varType == VariableType.STRING || targetObj instanceof String) {
             String str = targetObj != null ? targetObj.toString() : "";
             switch (prop) {
                 case "length":
@@ -379,7 +446,7 @@ public class TemplateEngine {
         }
 
         // 5. BOOLEAN Variable Attributes
-        if ("boolean".equals(varType) || targetObj instanceof Boolean) {
+        if (varType == VariableType.BOOLEAN || targetObj instanceof Boolean) {
             boolean bool = false;
             if (targetObj instanceof Boolean b) {
                 bool = b;
@@ -408,7 +475,7 @@ public class TemplateEngine {
         }
 
         // 6. LIST Variable Attributes
-        if ("list".equals(varType) || targetObj instanceof java.util.List<?>) {
+        if (varType == VariableType.LIST || targetObj instanceof java.util.List<?>) {
             if (targetObj instanceof java.util.List<?> list) {
                 switch (prop) {
                     case "size":
@@ -430,6 +497,18 @@ public class TemplateEngine {
         return targetObj != null ? targetObj.toString() : "";
     }
 
+    /**
+     * Finds the variable a flow can reach by name or id. When several reachable variables share a
+     * name, the closest scope wins (LOCAL, then GROUP, then GLOBAL), so the result never depends on
+     * map order.
+     *
+     * @param variables        all variables, by id
+     * @param variableNameOrId name or id to look for
+     * @param scopeFilter      "local", "group" or "global" to restrict the scope, or {@code null}
+     * @param flowId           flow that references the variable
+     * @param groupId          group of that flow
+     * @return the matching variable, or {@code null} if none is reachable
+     */
     public Variable findAccessibleVariable(
         Map<String, Variable> variables,
         String variableNameOrId,
@@ -437,6 +516,8 @@ public class TemplateEngine {
         String flowId,
         String groupId
     ) {
+        Variable best = null;
+        int bestRank = Integer.MAX_VALUE;
         for (Variable v : variables.values()) {
             boolean matchesName = v.getName() != null && v.getName().equals(variableNameOrId);
             boolean matchesId = v.getId() != null && v.getId().equals(variableNameOrId);
@@ -449,17 +530,25 @@ public class TemplateEngine {
             }
 
             String vScope = v.getScope().toUpperCase();
-            if ("GLOBAL".equals(vScope)) {
-                return v;
-            }
-            if ("GROUP".equals(vScope) && groupId != null && groupId.equals(v.getGroupId())) {
-                return v;
-            }
+            int rank;
             if ("LOCAL".equals(vScope) && flowId != null && flowId.equals(v.getFlowId())) {
-                return v;
+                rank = 0;
+            } else if ("GROUP".equals(vScope) && groupId != null && groupId.equals(v.getGroupId())) {
+                rank = 1;
+            } else if ("GLOBAL".equals(vScope)) {
+                rank = 2;
+            } else {
+                continue;
+            }
+            if (matchesId) {
+                return v; // an id is unique
+            }
+            if (rank < bestRank) {
+                best = v;
+                bestRank = rank;
             }
         }
-        return null;
+        return best;
     }
 
     private void ensureDependenciesAvailable(
@@ -551,6 +640,14 @@ public class TemplateEngine {
         }
     }
 
+    private static java.time.Instant lastInstantOf(Object generator) {
+        if (generator instanceof com.gensynth.core.flow.variables.ConfigurableVariable cv
+                && cv.getConfiguration() instanceof com.gensynth.core.flow.variables.config.TemporalVariableConfig temporal) {
+            return temporal.getLastInstant();
+        }
+        return null;
+    }
+
     public void clearVariableCache() {
         this.dataGenerator.clearCache();
     }
@@ -561,42 +658,38 @@ public class TemplateEngine {
         }
     }
 
-    private String formatListToJson(java.util.List<?> list) {
-        StringBuilder sb = new StringBuilder("[");
-        for (int i = 0; i < list.size(); i++) {
-            if (i > 0) sb.append(", ");
-            Object item = list.get(i);
-            if (item == null) {
-                sb.append("null");
-            } else if (item instanceof Number || item instanceof Boolean) {
-                sb.append(item.toString());
-            } else {
-                String str = item.toString().replace("\"", "\\\"");
-                sb.append("\"").append(str).append("\"");
-            }
+    /**
+     * Formats a generated value the way it is written into a message: lists and maps as JSON,
+     * whole numbers of a Constant numeric variable without decimals ({@code 42}, not {@code 42.0}),
+     * and anything else with {@link String#valueOf(Object)}. Shared by flow templates and the
+     * String variable's Template mode so both render a value identically.
+     *
+     * @param value           the generated value (may be {@code null})
+     * @param constantPattern whether the value comes from a numeric variable with the Constant pattern
+     * @return the text written for the value
+     */
+    public static String formatValue(Object value, boolean constantPattern) {
+        if (StructuredValueWriter.isStructured(value)) {
+            return StructuredValueWriter.compactJson(value);
         }
-        sb.append("]");
-        return sb.toString();
+        if (constantPattern && value instanceof Double d && d % 1.0 == 0.0) {
+            return String.format(java.util.Locale.ROOT, "%.0f", d);
+        }
+        if (constantPattern && value instanceof Float f && f % 1.0f == 0.0f) {
+            return String.format(java.util.Locale.ROOT, "%.0f", (double) f);
+        }
+        return String.valueOf(value);
     }
 
-    private String formatMapToJson(Map<?, ?> map) {
-        StringBuilder sb = new StringBuilder("{");
-        boolean first = true;
-        for (Map.Entry<?, ?> entry : map.entrySet()) {
-            if (!first) sb.append(", ");
-            first = false;
-            sb.append("\"").append(entry.getKey()).append("\": ");
-            Object val = entry.getValue();
-            if (val == null) {
-                sb.append("null");
-            } else if (val instanceof Number || val instanceof Boolean) {
-                sb.append(val.toString());
-            } else {
-                String str = val.toString().replace("\"", "\\\"");
-                sb.append("\"").append(str).append("\"");
-            }
+    /**
+     * Removes the trailing {@code '0'} characters of a digit string (same result as
+     * {@code replaceAll("0+$", "")}, but in linear time).
+     */
+    static String stripTrailingZeros(String digits) {
+        int end = digits.length();
+        while (end > 0 && digits.charAt(end - 1) == '0') {
+            end--;
         }
-        sb.append("}");
-        return sb.toString();
+        return digits.substring(0, end);
     }
 }

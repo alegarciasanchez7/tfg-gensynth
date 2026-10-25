@@ -168,6 +168,9 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         IPluginInstaller pluginInstaller
     ) {
         super(address);
+        // A restart (e.g. after installing a plugin) must be able to bind while old connections are
+        // in TIME_WAIT. Not on Windows, where SO_REUSEADDR would let two instances share the port.
+        setReuseAddr(!System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).startsWith("windows"));
         this.connectorCatalogService = connectorCatalogService;
         this.stateRepository = stateRepository;
         this.pluginInstaller = pluginInstaller;
@@ -431,7 +434,9 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
      */
     public void sendCreatedResponse(WebSocket conn, String commandId, String clientRequestId, Map<String, Object> payload, String resultType) {
         Map<String, Object> responsePayload = new LinkedHashMap<>(payload);
-        responsePayload.put("status", "ok");
+        // The UI maps this payload as the created entity: an entity status (a group's "stopped")
+        // must win over the generic "ok", which is only added when the entity has no status.
+        responsePayload.putIfAbsent("status", "ok");
         responsePayload.put("result", resultType);
         if (clientRequestId != null) {
             responsePayload.put("clientRequestId", clientRequestId);

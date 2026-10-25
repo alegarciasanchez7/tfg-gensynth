@@ -46,7 +46,7 @@ public class NumericVariableConfig extends VariableConfiguration {
     private List<Map<String, Object>> customDistributionGraph = new ArrayList<>();
 
     // Pattern: SINUSOIDAL
-    private double sineFrequency = 1.0;
+    private double sineFrequency = 0.05; // 20 s period: 1 Hz sampled every second would be flat
     private double sineAmplitude = 10.0;
     private double sinePhase = 0.0;
     private double sineOffset = 0.0;
@@ -55,7 +55,6 @@ public class NumericVariableConfig extends VariableConfiguration {
     private double driftRate = 0.5;
     private Double driftInitialValue = null;
     private String driftLimitMode = "CLAMP"; // "CLAMP", "WRAP", "RESET", "BOUNCE"
-    private boolean driftReverseDirection = false;
 
     // Virtual Simulation Clock
     private double simulationTimeStep = 1.0; // Seconds per tick
@@ -77,6 +76,8 @@ public class NumericVariableConfig extends VariableConfiguration {
 
     // Internal state
     private double currentValue;
+    /** Last emitted number, before prefix/suffix formatting; read by formulas of other variables. */
+    private Double lastNumericValue;
     private boolean isAnomalous;
     private long anomalyStartTick;
 
@@ -203,7 +204,7 @@ public class NumericVariableConfig extends VariableConfiguration {
                             baseValue = fromValue;
                         }
                     } else {
-                        baseValue = generateDistribution();
+                        baseValue = generateRandom();
                     }
                     break;
                 case CONSTANT:
@@ -265,21 +266,20 @@ public class NumericVariableConfig extends VariableConfiguration {
     private double generateDrift() {
         double startVal = driftInitialValue != null ? driftInitialValue : (initialValue != null ? initialValue : fromValue);
         double t = (tickCounter - 1) * simulationTimeStep;
-        double effectiveRate = driftReverseDirection ? -driftRate : driftRate;
-        double rawVal = startVal + effectiveRate * t;
+        double rawVal = startVal + driftRate * t;
 
         if (fromValue < toValue) {
             String mode = driftLimitMode != null ? driftLimitMode.toUpperCase() : "CLAMP";
             switch (mode) {
-                case "BOUNCE":
-                    if (rawVal > toValue) {
-                        driftReverseDirection = true;
-                        rawVal = toValue - (rawVal - toValue);
-                    } else if (rawVal < fromValue) {
-                        driftReverseDirection = false;
-                        rawVal = fromValue + (fromValue - rawVal);
+                case "BOUNCE": {
+                    // Triangle wave: the value goes back and forth between the limits like a reflection
+                    double range = toValue - fromValue;
+                    double offset = (rawVal - fromValue) % (2 * range);
+                    if (offset < 0) {
+                        offset += 2 * range;
                     }
-                    return Math.min(Math.max(rawVal, fromValue), toValue);
+                    return offset <= range ? fromValue + offset : toValue - (offset - range);
+                }
                 case "WRAP":
                 case "RESET":
                     if (rawVal > toValue) {
@@ -333,6 +333,25 @@ public class NumericVariableConfig extends VariableConfiguration {
     private double generateDistribution() {
         String dist = (distributionType != null && !distributionType.equalsIgnoreCase("UNIFORM")) ? distributionType
                 : distribution;
+        return sampleDistribution(dist);
+    }
+
+    /**
+     * Random pattern: uniform in [min, max] (both included for INTEGER precision). Only the legacy
+     * {@code distribution} key can change the shape; {@code distributionType} belongs to the
+     * Distribution pattern and may be a leftover from it.
+     */
+    private double generateRandom() {
+        if (distribution != null && !"UNIFORM".equalsIgnoreCase(distribution)) {
+            return sampleDistribution(distribution);
+        }
+        if ("INTEGER".equalsIgnoreCase(precision) && Math.ceil(fromValue) <= Math.floor(toValue)) {
+            return getRandomLongInRange((long) Math.ceil(fromValue), (long) Math.floor(toValue));
+        }
+        return fromValue + (toValue - fromValue) * ThreadLocalRandom.current().nextDouble();
+    }
+
+    private double sampleDistribution(String dist) {
         if ("NORMAL".equalsIgnoreCase(dist)) {
             double mean = (fromValue + toValue) / 2.0;
             double stdDev = (toValue - fromValue) / 6.0; // 99.7% of values within range
@@ -355,9 +374,10 @@ public class NumericVariableConfig extends VariableConfiguration {
 
             Map<String, Double> vars = new HashMap<>();
             for (Map.Entry<String, Object> entry : currentContext.entrySet()) {
-                if (entry.getValue() instanceof Number) {
+                Double numeric = toFormulaOperand(entry.getKey(), entry.getValue());
+                if (numeric != null) {
                     builder.variable(entry.getKey());
-                    vars.put(entry.getKey(), ((Number) entry.getValue()).doubleValue());
+                    vars.put(entry.getKey(), numeric);
                 }
             }
 
@@ -368,6 +388,35 @@ public class NumericVariableConfig extends VariableConfiguration {
             configLogger.warning("Error evaluating formula: " + formula + " -> " + e.getMessage());
             return 0.0;
         }
+    }
+
+    /**
+     * Numeric value of a context entry for a formula. A numeric variable with a prefix, suffix or
+     * integer format is emitted as text, so its last raw number is read from its generator instead.
+     */
+    private Double toFormulaOperand(String key, Object value) {
+        if (value instanceof Number number) {
+            return number.doubleValue();
+        }
+        if (value == null || key.endsWith("_config")) {
+            return null;
+        }
+        Object generator = currentContext.get(key + "_config");
+        if (generator instanceof com.gensynth.core.flow.variables.ConfigurableVariable cv
+                && cv.getConfiguration() instanceof NumericVariableConfig numeric) {
+            return numeric.getLastNumericValue();
+        }
+        return null;
+    }
+
+    /**
+     * Last number produced by this variable, after rounding and before any prefix, suffix or
+     * integer format turns it into text.
+     *
+     * @return the last emitted number, or {@code null} if no value has been generated yet
+     */
+    public Double getLastNumericValue() {
+        return lastNumericValue;
     }
 
     private void checkAnomalyCondition() {
@@ -467,8 +516,8 @@ public class NumericVariableConfig extends VariableConfiguration {
             return fromValue;
         }
 
-        // Current index in the loop
-        double index = (tickCounter - 1) % maxX; // tickCounter is already incremented in generateNextValue()
+        // Current index in the loop: every drawn point, from x=0 to x=maxX, is played once per cycle
+        double index = (tickCounter - 1) % (maxX + 1); // tickCounter is already incremented in generateNextValue()
 
         // Find the bracket points
         Map<String, Object> before = null;
@@ -610,11 +659,12 @@ public class NumericVariableConfig extends VariableConfiguration {
 
         if ("INTEGER".equalsIgnoreCase(precision)) {
             long intVal = (long) value;
+            lastNumericValue = (double) intVal;
             String formattedNum;
             if (hasFormatSpec && numberFormat.matches("0*1?")) {
                 int padLen = numberFormat.length();
                 if (padLen > 0) {
-                    formattedNum = String.format("%0" + padLen + "d", intVal);
+                    formattedNum = String.format(Locale.ROOT, "%0" + padLen + "d", intVal);
                 } else {
                     formattedNum = String.valueOf(intVal);
                 }
@@ -645,6 +695,7 @@ public class NumericVariableConfig extends VariableConfiguration {
                 double scale = Math.pow(10, activeDecimalPlaces);
                 roundedValue = Math.round(value * scale) / scale;
             }
+            lastNumericValue = roundedValue;
 
             if (hasFormatSpec || !activePrefix.isEmpty() || !activeSuffix.isEmpty()) {
                 String formattedNum;
@@ -664,7 +715,7 @@ public class NumericVariableConfig extends VariableConfiguration {
                     if (padLen > 0) {
                         try {
                             long intPartVal = Long.parseLong(intPartStr);
-                            intPartStr = String.format("%0" + padLen + "d", intPartVal);
+                            intPartStr = String.format(Locale.ROOT, "%0" + padLen + "d", intPartVal);
                         } catch (NumberFormatException e) {
                             // ignore, keep original
                         }
@@ -702,7 +753,7 @@ public class NumericVariableConfig extends VariableConfiguration {
         tickCounter = 0;
         isAnomalous = false;
         anomalyStartTick = 0;
-        driftReverseDirection = false;
+        lastNumericValue = null;
     }
 
     @Override
@@ -1099,7 +1150,8 @@ public class NumericVariableConfig extends VariableConfiguration {
     }
 
     /**
-     * Configuration for trend pattern
+     * Configuration for trend pattern. Only {@code intervalCount} and {@code intervalSize} are used
+     * by the generator; {@code mode} is not implemented yet and the UI does not offer the TREND pattern.
      */
     public static class TrendConfig {
         public enum TrendMode {

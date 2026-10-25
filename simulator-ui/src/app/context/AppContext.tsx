@@ -14,6 +14,7 @@ import React, {
   type ReactNode,
 } from 'react';
 import { CoreCommands } from '../core/bridge';
+import { findTemplatePlaceholders, isSystemPlaceholder } from '../core/templatePlaceholders';
 import type {
   Group,
   Flow,
@@ -96,6 +97,8 @@ interface AppContextValue {
       template?: string,
       connectorConfig?: Record<string, unknown>,
       everyTicks?: number,
+      /** Rename a name already used in the group instead of failing (Repeater). */
+      autoRename?: boolean,
     ) => Promise<Flow>;
     deleteFlow: (groupId: string, flowId: string) => Promise<void>;
     updateFlowConfig: (
@@ -251,11 +254,9 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
         const template = formatTemplates[flow.id] ?? flow.template ?? '';
         if (!template) continue;
 
-        const regex = /\{\{([^}]+)\}\}/g;
-        let match;
-        while ((match = regex.exec(template)) !== null) {
-          const fullSpec = match[1].trim();
-          if (['uuid', 'ts', 'n'].includes(fullSpec)) continue;
+        for (const placeholder of findTemplatePlaceholders(template)) {
+          const fullSpec = placeholder.spec.trim();
+          if (isSystemPlaceholder(fullSpec)) continue;
 
           let scope: string | null = null;
           let name = fullSpec;

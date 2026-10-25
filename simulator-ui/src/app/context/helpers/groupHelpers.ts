@@ -2,17 +2,19 @@ import type { GroupState, FlowState } from '../../core/types';
 import type { Group, Flow } from '../../types';
 import { formatRate } from '../../core/metricsFormat';
 import { normalizeOutputMode } from '../../core/outputMode';
+import { normalizeConnectionStatus, normalizeGroupStatus } from '../../core/entityStatus';
 
 /**
  * Maps a raw Flow object from the Java Core to a UI-compatible Flow object.
  * Handles formatting numerical metrics (throughput) into user-friendly strings.
+ * An unknown connection status keeps the previous one (or 'disconnected').
  */
-export function mapFlowFromCore(flow: FlowState): Flow {
+export function mapFlowFromCore(flow: FlowState, previousFlow?: Flow): Flow {
   return {
     id: flow.id || 'unknown',
     name: flow.name || 'Unnamed Flow',
     technology: flow.technology || 'Generic',
-    connectionStatus: flow.connectionStatus || 'disconnected',
+    connectionStatus: normalizeConnectionStatus(flow.connectionStatus, previousFlow?.connectionStatus),
     throughput: `${formatRate(flow.throughput || 0)} msg/s`,
     latency: flow.latency || 0,
     hasError: flow.hasError ?? false,
@@ -20,6 +22,9 @@ export function mapFlowFromCore(flow: FlowState): Flow {
     interval: flow.interval ?? 1000,
     burst: flow.burst ?? 1,
     everyTicks: flow.everyTicks ?? 1,
+    lossPercent: flow.lossPercent ?? 0,
+    outageEveryTicks: flow.outageEveryTicks ?? 0,
+    outageDurationTicks: flow.outageDurationTicks ?? 0,
     topic: flow.topic || '',
     host: flow.host || 'localhost',
     port: flow.port || 80,
@@ -33,19 +38,23 @@ export function mapFlowFromCore(flow: FlowState): Flow {
 /**
  * Maps a raw Group object from the Java Core to a UI-compatible Group object.
  * Preserves local UI state like 'expanded' if a previous version of the group exists.
+ * An unknown status (e.g. the command status "ok" of a response) keeps the previous one
+ * (or 'stopped'), so the components never index their status tables with an unknown key.
  */
 export function mapGroupFromCore(group: GroupState, previousGroup?: Group): Group {
   return {
     id: group.id || 'unknown',
     name: group.name || 'Unnamed Group',
-    status: group.status || 'stopped',
+    status: normalizeGroupStatus(group.status, previousGroup?.status),
     throughput: `${formatRate(group.throughput || 0)} msg/s`,
     description: group.description || '',
     threads: group.threads || 1,
     outputMode: normalizeOutputMode(group.outputMode),
     enabled: group.enabled ?? true,
     expanded: previousGroup?.expanded ?? true,
-    flows: (group.flows || []).map(mapFlowFromCore),
+    flows: (group.flows || []).map((flow) =>
+      mapFlowFromCore(flow, previousGroup?.flows.find((existing) => existing.id === flow.id)),
+    ),
   };
 }
 

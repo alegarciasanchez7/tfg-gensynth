@@ -101,7 +101,8 @@ public class VariableFactory {
             }
         }
         
-        if (finalConfig != null) {
+        // A list cannot inherit from another list: projects saved when it could keep only their own items
+        if (finalConfig != null && !(finalConfig instanceof ListVariableConfig)) {
             if (configMap.containsKey("sourceListVariableId") && configMap.get("sourceListVariableId") != null) {
                 finalConfig.setSourceListVariableId(String.valueOf(configMap.get("sourceListVariableId")));
             }
@@ -111,17 +112,8 @@ public class VariableFactory {
             if (configMap.containsKey("selectedListItemId") && configMap.get("selectedListItemId") != null) {
                 finalConfig.setSelectedListItemId(String.valueOf(configMap.get("selectedListItemId")));
             }
-            if (configMap.get("selectedListItemIds") instanceof List<?> list) {
-                List<String> strList = new ArrayList<>();
-                for (Object item : list) {
-                    if (item != null) strList.add(String.valueOf(item));
-                }
-                finalConfig.setSelectedListItemIds(strList);
-            }
-            if (configMap.containsKey("randomSubsetCount") && configMap.get("randomSubsetCount") instanceof Number) {
-                finalConfig.setRandomSubsetCount(((Number) configMap.get("randomSubsetCount")).intValue());
-            }
-
+        }
+        if (finalConfig != null) {
             List<String> errors = finalConfig.validate();
             if (!errors.isEmpty()) {
                 throw new InvalidVariableConfigException(id, type, errors);
@@ -130,13 +122,33 @@ public class VariableFactory {
         return finalConfig;
     }
 
+    /**
+     * Pattern chosen in the editor, if the config has a valid one. Configs keep the keys of
+     * patterns used before (e.g. constantValue), so they must not decide the pattern on their own.
+     */
+    private static GenerationPattern explicitPattern(Map<String, Object> configMap) {
+        Object raw = configMap.get("pattern");
+        if (raw == null) {
+            return null;
+        }
+        try {
+            return GenerationPattern.valueOf(raw.toString().toUpperCase());
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
     private static VariableConfiguration createFromMapInternal(String id, String type, Map<String, Object> configMap) {
         if (configMap == null) {
             configMap = Map.of();
         }
 
-        switch (type.toUpperCase()) {
-            case "NUMERIC":
+        VariableType variableType = VariableType.fromName(type);
+        if (variableType == null) {
+            throw new IllegalArgumentException("Unknown variable type: " + type);
+        }
+        switch (variableType) {
+            case NUMERIC:
                 NumericVariableConfig numConfig = createNumeric(id);
                 if (configMap.containsKey("min"))
                     numConfig.from(((Number) configMap.get("min")).doubleValue());
@@ -235,9 +247,14 @@ public class VariableFactory {
                 if (configMap.containsKey("spikeMultiplier") && configMap.get("spikeMultiplier") != null)
                     numConfig.spikeMultiplier(((Number) configMap.get("spikeMultiplier")).doubleValue());
 
+                // Some setters (constant) switch the pattern: the selected pattern wins over leftover keys
+                GenerationPattern numPattern = explicitPattern(configMap);
+                if (numPattern != null) {
+                    numConfig.pattern(numPattern);
+                }
                 return numConfig;
 
-            case "STRING":
+            case STRING:
                 StringVariableConfig strConfig = createString(id);
                 if (configMap.containsKey("fixedLength"))
                     strConfig.fixedSize(((Number) configMap.get("fixedLength")).intValue());
@@ -268,9 +285,14 @@ public class VariableFactory {
                     strConfig.corruptionMode((String) configMap.get("corruptionMode"));
                 if (configMap.containsKey("corruptionMagnitude") && configMap.get("corruptionMagnitude") != null)
                     strConfig.corruptionMagnitude(((Number) configMap.get("corruptionMagnitude")).intValue());
+                // constant/template/mask setters switch the pattern: the selected pattern wins over leftover keys
+                GenerationPattern strPattern = explicitPattern(configMap);
+                if (strPattern != null) {
+                    strConfig.pattern(strPattern);
+                }
                 return strConfig;
 
-            case "LIST":
+            case LIST:
                 ListVariableConfig listConfig = createList(id);
                 if (configMap.containsKey("items") && configMap.get("items") instanceof List) {
                     List<?> rawItems = (List<?>) configMap.get("items");
@@ -283,7 +305,9 @@ public class VariableFactory {
                             double weight = itemMap.containsKey("weight") ? ((Number) itemMap.get("weight")).doubleValue() : 1.0;
                             ListVariableConfig.ListItem item = new ListVariableConfig.ListItem(itemId, val, weight);
 
-                            if (itemMap.containsKey("embeddedConfig") && itemMap.get("embeddedConfig") instanceof Map) {
+                            // The UI keeps a default embeddedConfig on literal items: isEmbedded decides when present
+                            boolean literalItem = Boolean.FALSE.equals(itemMap.get("isEmbedded"));
+                            if (!literalItem && itemMap.containsKey("embeddedConfig") && itemMap.get("embeddedConfig") instanceof Map) {
                                 @SuppressWarnings("unchecked")
                                 Map<String, Object> subMap = (Map<String, Object>) itemMap.get("embeddedConfig");
                                 String subType = itemMap.containsKey("embeddedType") ? String.valueOf(itemMap.get("embeddedType")) : "NUMERIC";
@@ -337,7 +361,7 @@ public class VariableFactory {
                 }
                 return listConfig;
 
-            case "BOOLEAN":
+            case BOOLEAN:
                 BooleanVariableConfig boolConfig = createBoolean(id);
                 if (configMap.containsKey("pattern") && configMap.get("pattern") != null) {
                     try {
@@ -366,8 +390,7 @@ public class VariableFactory {
                     boolConfig.pFalseToTrue(((Number) configMap.get("pFalseToTrue")).doubleValue());
                 return boolConfig;
 
-            case "DATE":
-            case "TEMPORAL":
+            case TEMPORAL:
                 TemporalVariableConfig dateConfig = createTemporal(id);
                 if (configMap.containsKey("dateFormat"))
                     dateConfig.dateFormat((String) configMap.get("dateFormat"));
@@ -410,7 +433,7 @@ public class VariableFactory {
                 }
                 return dateConfig;
 
-            case "POINT":
+            case POINT:
                 PointVariableConfig pointConfig = createPoint(id);
                 if (configMap.containsKey("pattern")) {
                     try {
@@ -438,20 +461,29 @@ public class VariableFactory {
                     double fz = fpMap.containsKey("z") ? ((Number) fpMap.get("z")).doubleValue() : (fpMap.containsKey("alt") ? ((Number) fpMap.get("alt")).doubleValue() : 0.0);
                     pointConfig.fixedPoint(fx, fy, fz);
                 }
-                if (configMap.get("path") instanceof List<?> pathList) {
+                // The editor stores the route as "waypoints"; "path" is the legacy key
+                Object waypointsObj = configMap.containsKey("waypoints") ? configMap.get("waypoints") : configMap.get("path");
+                if (waypointsObj instanceof List<?> pathList) {
                     for (Object item : pathList) {
                         if (item instanceof Map<?, ?> ptMap) {
-                            double px = ptMap.containsKey("x") ? ((Number) ptMap.get("x")).doubleValue() : (ptMap.containsKey("lat") ? ((Number) ptMap.get("lat")).doubleValue() : 0.0);
-                            double py = ptMap.containsKey("y") ? ((Number) ptMap.get("y")).doubleValue() : (ptMap.containsKey("lon") ? ((Number) ptMap.get("lon")).doubleValue() : 0.0);
-                            double pz = ptMap.containsKey("z") ? ((Number) ptMap.get("z")).doubleValue() : (ptMap.containsKey("alt") ? ((Number) ptMap.get("alt")).doubleValue() : 0.0);
-                            pointConfig.addPathPoint(px, py, pz);
+                            double[] wp = parsePointCoords(ptMap);
+                            pointConfig.addPathPoint(wp[0], wp[1], wp[2]);
                         }
                     }
+                }
+                if (configMap.get("loopPath") != null) {
+                    pointConfig.loopPath(parseBooleanHelper(configMap.get("loopPath"), true));
                 }
                 if (configMap.containsKey("maxStepDistance"))
                     pointConfig.maxStepDistance(((Number) configMap.get("maxStepDistance")).doubleValue());
                 if (configMap.containsKey("inertia"))
                     pointConfig.inertia(((Number) configMap.get("inertia")).doubleValue());
+                // The orbit centre and radius may grow the bounding box to fit the orbit; range() below
+                // runs afterwards, so the region configured in the editor always wins
+                if (configMap.get("orbitCenter") instanceof Map<?, ?> ocMap) {
+                    double[] oc = parsePointCoords(ocMap);
+                    pointConfig.orbitCenter(oc[0], oc[1], oc[2]);
+                }
                 if (configMap.containsKey("orbitRadius"))
                     pointConfig.orbitRadius(((Number) configMap.get("orbitRadius")).doubleValue());
                 if (configMap.containsKey("angularSpeed"))
@@ -462,8 +494,24 @@ public class VariableFactory {
                     pointConfig.jitterRadius(((Number) configMap.get("jitterRadius")).doubleValue());
                 if (configMap.containsKey("gpsNoiseEnabled"))
                     pointConfig.gpsNoiseEnabled(Boolean.TRUE.equals(configMap.get("gpsNoiseEnabled")));
-                if (configMap.containsKey("interpolationSteps"))
-                    pointConfig.interpolationSteps(((Number) configMap.get("interpolationSteps")).intValue());
+                if (configMap.get("interpolationSteps") != null)
+                    pointConfig.interpolationSteps(Math.max(1, parseIntHelper(configMap.get("interpolationSteps"), 1)));
+
+                // 3D shape: the UI stores the type in lower case ("sphere"); unknown types ("custom") keep CUBE
+                if (configMap.get("shape3DType") != null) {
+                    try {
+                        pointConfig.shape3DType(PointVariableConfig.Shape3DType.valueOf(
+                                configMap.get("shape3DType").toString().trim().toUpperCase(java.util.Locale.ROOT)));
+                    } catch (IllegalArgumentException ignored) {}
+                }
+                if (configMap.get("shape3DWidth") != null)
+                    pointConfig.shape3DWidth(parseDoubleHelper(configMap.get("shape3DWidth"), 100.0));
+                if (configMap.get("shape3DLength") != null)
+                    pointConfig.shape3DLength(parseDoubleHelper(configMap.get("shape3DLength"), 100.0));
+                if (configMap.get("shape3DHeight") != null)
+                    pointConfig.shape3DHeight(parseDoubleHelper(configMap.get("shape3DHeight"), 100.0));
+                if (configMap.get("shape3DRadius") != null)
+                    pointConfig.shape3DRadius(parseDoubleHelper(configMap.get("shape3DRadius"), 50.0));
 
                 if (configMap.containsKey("altitudeUnit")) {
                     try {
@@ -490,35 +538,31 @@ public class VariableFactory {
                     pointConfig.altitudeOscillationSpeed(((Number) configMap.get("altitudeOscillationSpeed")).doubleValue());
                 }
 
-                // Deserialization of minPoint / maxPoint range bounds
-                double minX = 0.0, maxX = 1.0, minY = 0.0, maxY = 1.0, minZ = 0.0, maxZ = 100.0;
-                boolean rangeSet = false;
+                // Deserialization of minPoint / maxPoint range bounds (defaults match the UI: 0..100 on every axis)
+                double minX = 0.0, maxX = 100.0, minY = 0.0, maxY = 100.0, minZ = 0.0, maxZ = 100.0;
 
                 if (configMap.get("minPoint") instanceof Map<?, ?> minMap) {
                     minX = minMap.containsKey("x") ? ((Number) minMap.get("x")).doubleValue() : (minMap.containsKey("lat") ? ((Number) minMap.get("lat")).doubleValue() : 0.0);
                     minY = minMap.containsKey("y") ? ((Number) minMap.get("y")).doubleValue() : (minMap.containsKey("lon") ? ((Number) minMap.get("lon")).doubleValue() : 0.0);
                     minZ = minMap.containsKey("z") ? ((Number) minMap.get("z")).doubleValue() : (minMap.containsKey("alt") ? ((Number) minMap.get("alt")).doubleValue() : 0.0);
-                    rangeSet = true;
                 }
                 if (configMap.get("maxPoint") instanceof Map<?, ?> maxMap) {
-                    maxX = maxMap.containsKey("x") ? ((Number) maxMap.get("x")).doubleValue() : (maxMap.containsKey("lat") ? ((Number) maxMap.get("lat")).doubleValue() : 1.0);
-                    maxY = maxMap.containsKey("y") ? ((Number) maxMap.get("y")).doubleValue() : (maxMap.containsKey("lon") ? ((Number) maxMap.get("lon")).doubleValue() : 1.0);
+                    maxX = maxMap.containsKey("x") ? ((Number) maxMap.get("x")).doubleValue() : (maxMap.containsKey("lat") ? ((Number) maxMap.get("lat")).doubleValue() : 100.0);
+                    maxY = maxMap.containsKey("y") ? ((Number) maxMap.get("y")).doubleValue() : (maxMap.containsKey("lon") ? ((Number) maxMap.get("lon")).doubleValue() : 100.0);
                     maxZ = maxMap.containsKey("z") ? ((Number) maxMap.get("z")).doubleValue() : (maxMap.containsKey("alt") ? ((Number) maxMap.get("alt")).doubleValue() : 100.0);
-                    rangeSet = true;
                 }
 
-                if (configMap.containsKey("minLat")) { minX = ((Number) configMap.get("minLat")).doubleValue(); rangeSet = true; }
-                if (configMap.containsKey("maxLat")) { maxX = ((Number) configMap.get("maxLat")).doubleValue(); rangeSet = true; }
-                if (configMap.containsKey("minLon")) { minY = ((Number) configMap.get("minLon")).doubleValue(); rangeSet = true; }
-                if (configMap.containsKey("maxLon")) { maxY = ((Number) configMap.get("maxLon")).doubleValue(); rangeSet = true; }
-                if (configMap.containsKey("minAlt")) { minZ = ((Number) configMap.get("minAlt")).doubleValue(); rangeSet = true; }
-                if (configMap.containsKey("maxAlt")) { maxZ = ((Number) configMap.get("maxAlt")).doubleValue(); rangeSet = true; }
-                if (configMap.containsKey("minZ")) { minZ = ((Number) configMap.get("minZ")).doubleValue(); rangeSet = true; }
-                if (configMap.containsKey("maxZ")) { maxZ = ((Number) configMap.get("maxZ")).doubleValue(); rangeSet = true; }
+                if (configMap.containsKey("minLat")) { minX = ((Number) configMap.get("minLat")).doubleValue(); }
+                if (configMap.containsKey("maxLat")) { maxX = ((Number) configMap.get("maxLat")).doubleValue(); }
+                if (configMap.containsKey("minLon")) { minY = ((Number) configMap.get("minLon")).doubleValue(); }
+                if (configMap.containsKey("maxLon")) { maxY = ((Number) configMap.get("maxLon")).doubleValue(); }
+                if (configMap.containsKey("minAlt")) { minZ = ((Number) configMap.get("minAlt")).doubleValue(); }
+                if (configMap.containsKey("maxAlt")) { maxZ = ((Number) configMap.get("maxAlt")).doubleValue(); }
+                if (configMap.containsKey("minZ")) { minZ = ((Number) configMap.get("minZ")).doubleValue(); }
+                if (configMap.containsKey("maxZ")) { maxZ = ((Number) configMap.get("maxZ")).doubleValue(); }
 
-                if (rangeSet) {
-                    pointConfig.range(minX, maxX, minY, maxY, minZ, maxZ);
-                }
+                // Without range keys the UI shows 0..100 on every axis: generate in that same region
+                pointConfig.range(minX, maxX, minY, maxY, minZ, maxZ);
 
                 if (configMap.get("boundaryPolygon") instanceof List<?> polyList) {
                     for (Object item : polyList) {
@@ -529,7 +573,9 @@ public class VariableFactory {
                             pointConfig.addBoundaryPolygonPoint(px, py, pz);
                         }
                     }
-                    if (!pointConfig.getBoundaryPolygon().isEmpty()) {
+                    // In 3D the shape is the region: the polygon does not re-range the bounding box
+                    if (!pointConfig.getBoundaryPolygon().isEmpty()
+                            && pointConfig.getCoordinateSystem() != CoordinateSystem.CARTESIAN_3D) {
                         double pMinX = Double.MAX_VALUE, pMaxX = -Double.MAX_VALUE;
                         double pMinY = Double.MAX_VALUE, pMaxY = -Double.MAX_VALUE;
                         for (PointVariableConfig.Point3D pt : pointConfig.getBoundaryPolygon()) {
@@ -657,9 +703,11 @@ public class VariableFactory {
                 }
 
                 Object stepsObj = configMap.containsKey("graphInterpolationSteps") ? configMap.get("graphInterpolationSteps") : configMap.get("stepsPerEdge");
-                if (stepsObj == null) stepsObj = configMap.get("interpolationSteps");
                 if (stepsObj != null) {
                     pointConfig.graphInterpolationSteps(parseIntHelper(stepsObj, 1));
+                } else if (configMap.get("interpolationSteps") != null) {
+                    // Fallback to the waypoint steps, clamped like them
+                    pointConfig.graphInterpolationSteps(Math.max(1, parseIntHelper(configMap.get("interpolationSteps"), 1)));
                 }
 
                 return pointConfig;
@@ -667,6 +715,16 @@ public class VariableFactory {
             default:
                 throw new IllegalArgumentException("Unknown variable type: " + type);
         }
+    }
+
+    /**
+     * Reads x/y/z (or lat/lon/alt) from a point map; missing coordinates are 0.
+     */
+    private static double[] parsePointCoords(Map<?, ?> ptMap) {
+        Object x = ptMap.containsKey("x") ? ptMap.get("x") : ptMap.get("lat");
+        Object y = ptMap.containsKey("y") ? ptMap.get("y") : ptMap.get("lon");
+        Object z = ptMap.containsKey("z") ? ptMap.get("z") : ptMap.get("alt");
+        return new double[] { parseDoubleHelper(x, 0.0), parseDoubleHelper(y, 0.0), parseDoubleHelper(z, 0.0) };
     }
 
     private static double parseDoubleHelper(Object val, double defaultValue) {

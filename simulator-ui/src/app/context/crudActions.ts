@@ -18,6 +18,7 @@ import bridge from '../core/bridge';
 import type { Group, Flow, Variable } from '../types';
 import type { GroupState, FlowState, VariableState } from '../core/types';
 import type { OptimisticManager } from './optimisticManager';
+import { randomUUID } from '../core/randomId';
 
 // ─────────────────────────────────────────────────────────────
 // Helper Types
@@ -45,7 +46,7 @@ function throwValidationError(field: string, reason: string): never {
 }
 
 function generateId(): string {
-  return Math.random().toString(36).substring(2, 11);
+  return randomUUID().replace(/-/g, '').substring(0, 9);
 }
 
 function extractCommandError(error: unknown): CRUDError {
@@ -216,6 +217,7 @@ export async function createFlow(
   connectorConfig?: Record<string, unknown>,
   onResponse?: (data: FlowState) => void,
   everyTicks?: number,
+  autoRename?: boolean,
 ): Promise<FlowState> {
   // Validations
   if (!groupId?.trim()) throwValidationError('groupId', 'is required');
@@ -237,6 +239,7 @@ export async function createFlow(
         everyTicks: everyTicks ?? 1,
         template: template || '{}',
         ...(connectorConfig && { connectorConfig }),
+        ...(autoRename && { autoRename: true }),
       }, onResponse);
 
       if (response && typeof response === 'object' && 'id' in response) {
@@ -299,7 +302,8 @@ export async function updateFlowConfig(
       payload: {
         id: `flow_update_${Date.now()}`,
         timestamp: new Date().toLocaleTimeString('en-GB', { hour12: false }),
-        level: 'info',
+        // Sent on every keystroke of the flow editors: debug, so it does not flood the log
+        level: 'debug',
         source: 'FLOWS',
         message: `Flow '${flowName || flowId}' configuration updated`,
       },

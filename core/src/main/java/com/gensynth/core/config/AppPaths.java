@@ -3,6 +3,7 @@ package com.gensynth.core.config;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
 import java.util.Map;
@@ -193,7 +194,7 @@ public final class AppPaths {
      * @return absolute path of the session output folder (not created yet)
      */
     public String newSessionOutputDir() {
-        String timestamp = LocalDateTime.now().format(SESSION_TIMESTAMP);
+        String timestamp = LocalDateTime.now(ZoneId.systemDefault()).format(SESSION_TIMESTAMP);
         return outputsHome.resolve(OUTPUT_DIR_PREFIX + timestamp).toAbsolutePath().toString();
     }
 }

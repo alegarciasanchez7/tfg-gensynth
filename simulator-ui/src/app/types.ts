@@ -17,7 +17,8 @@ export interface ConditionalRule {
   overrides: Record<string, any>;
 }
 
-export type ListReferenceSelectionMode = 'RANDOM_ITEM' | 'FIXED_ITEM' | 'SUBSET_SPECIFIC' | 'SUBSET_RANDOM';
+/** How a variable that is not a List takes its value from a list (a List cannot inherit from another list). */
+export type ListReferenceSelectionMode = 'RANDOM_ITEM' | 'FIXED_ITEM' | 'INHERITED_GENERATION';
 
 export interface BaseVariableConfig {
   pattern?: string;
@@ -25,8 +26,6 @@ export interface BaseVariableConfig {
   sourceListVariableId?: string;
   sourceListSelectionMode?: ListReferenceSelectionMode;
   selectedListItemId?: string;
-  selectedListItemIds?: string[];
-  randomSubsetCount?: number;
   [key: string]: any;
 }
 
@@ -221,7 +220,6 @@ export interface PointVariableConfig extends BaseVariableConfig {
   inertia?: number;
   waypoints?: Point3DCoord[];
   interpolationSteps?: number;
-  navigationSpeed?: number;
   loopPath?: boolean;
   orbitCenter?: Point3DCoord;
   orbitRadius?: number;
@@ -275,6 +273,12 @@ export interface Flow {
   burst: number;
   /** Number of global ticks between two messages of this flow (integer >= 1). */
   everyTicks: number;
+  /** Event loss: percentage (0-100) of generated messages dropped at random. Missing = 0. */
+  lossPercent?: number;
+  /** Event loss: length in ticks of the outage cycle (integer >= 0, 0 = no outages). Missing = 0. */
+  outageEveryTicks?: number;
+  /** Event loss: ticks lost at the end of every outage cycle (integer >= 0, 0 = no outages). Missing = 0. */
+  outageDurationTicks?: number;
   topic: string;
   host: string;
   port: number;
