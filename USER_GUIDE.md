@@ -510,7 +510,10 @@ Good to know:
 
 ![Preview](docs-assets/user-guide/34-bottom-preview.png)
 
-- **Preview:** choose a **Flow** to see its **Template** next to the **Last Payload** it sent.
+- **Preview:** choose a **Flow** to see its **Template** next to the **Last Payload** it sent. The
+  last message stays visible after the simulation stops. **Capture** keeps the message on screen
+  (**Captured Payload**) to read it in detail while new ones arrive; **Live** goes back to the
+  last message. Each flow keeps its own capture.
 
 **Counters:** a message is **sent** when the connector confirms it (for RabbitMQ, when the broker
 acknowledges it); it is a **fail** when it cannot be generated (for example an invalid variable)
