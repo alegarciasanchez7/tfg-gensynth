@@ -971,7 +971,7 @@ detect (or ignore).
 
 #### String: modes
 
-Choose the **String Generation Mode** with the tabs:
+Choose the **String Generation Mode** with the tabs (hover over a tab for a short description):
 
 | Mode | Fields | What it produces |
 |---|---|---|
@@ -1328,8 +1328,9 @@ How editing works in every boundary and route editor:
   (a region keeps at least 3).
 - **New Box Region** asks for confirmation first (`Esc` closes it without changes; in the fullscreen
   editor, the first `Esc` closes the confirmation and the second the editor), and keeps the current
-  region until you finish drawing the new box (releasing the mouse outside the map also finishes
-  it). The presets and a new box zoom the map to the region.
+  region until you finish drawing the new box (the box can start inside the current region, and
+  releasing the mouse outside the map also finishes it). The presets and a new box zoom the map to
+  the region.
 - The marker icons work offline. The altitude fields are applied when you leave them or press
   `Enter`.
 
