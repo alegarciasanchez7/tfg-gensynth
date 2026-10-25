@@ -156,7 +156,7 @@ export function PreviewView({ running }: PreviewViewProps) {
               </pre>
             ) : running ? (
               <pre className="text-[11px] text-[var(--c-tx5)] leading-relaxed" style={MONO}>
-                // waiting for data...
+                {'// waiting for data...'}
               </pre>
             ) : (
               <div className="flex items-center justify-center h-full text-center text-[var(--c-tx5)] text-[11px]" style={MONO}>
