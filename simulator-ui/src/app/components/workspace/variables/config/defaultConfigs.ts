@@ -40,7 +40,7 @@ export function defaultConfigTextForType(type: VariableType): string {
 /** Mask written for the mask types that generate from a pattern: the Core returns "" for an empty one. */
 export const DEFAULT_STRING_MASKS: Partial<Record<StringFormattedMaskType, string>> = {
   ALPHANUMERIC: '????????',
-  CUSTOM_MASK: 'SENSOR-####-XXXX',
+  CUSTOM_MASK: 'SENSOR-####-$$$$',
 };
 
 /**

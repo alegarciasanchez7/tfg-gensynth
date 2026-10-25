@@ -1,5 +1,5 @@
 import type React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { WaypointCanvas2D } from './WaypointCanvas2D';
 import { WaypointEditor } from './WaypointEditor';
@@ -8,6 +8,7 @@ import { fitWorldWindow } from '../../../../core/worldWindow';
 import type { FullPoint } from '../../../../core/pointDefaults';
 import type { MoveCheck, PathIssues } from '../../../../core/waypointPath';
 import type { BoundaryObstacle, PointVariableConfig } from '../../../../types';
+import { DARK_CANVAS_PALETTE, LIGHT_CANVAS_PALETTE } from './canvasPalette';
 
 // In jsdom the drawing is 320 x 300 px with its origin at (0, 0)
 const W = 320;
@@ -243,5 +244,19 @@ describe('WaypointCanvas2D', () => {
     fireEvent.pointerUp(point, { pointerId: 2, ...outside });
     expect(onChange).toHaveBeenCalledTimes(1);
     expect(onChange).toHaveBeenCalledWith({ waypoints: [twoPoints[0], { x: 100, y: 60, z: 0 }] });
+  });
+
+  it('paints the plane for the light and the dark theme', async () => {
+    try {
+      renderCanvas(twoPoints);
+      expect(screen.getByTestId('waypoint-plane')).toHaveAttribute('fill', LIGHT_CANVAS_PALETTE.background);
+
+      await act(async () => {
+        document.documentElement.classList.add('dark');
+      });
+      expect(screen.getByTestId('waypoint-plane')).toHaveAttribute('fill', DARK_CANVAS_PALETTE.background);
+    } finally {
+      document.documentElement.classList.remove('dark');
+    }
   });
 });

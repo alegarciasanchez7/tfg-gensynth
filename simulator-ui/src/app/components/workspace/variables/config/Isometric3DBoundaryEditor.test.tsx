@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent } from '@testing-library/react';
 import { Isometric3DBoundaryEditor, type Isometric3DBoundaryEditorProps } from './Isometric3DBoundaryEditor';
+import { recordCanvasFills } from '../../../../../test/recordCanvasFills';
+import { DARK_CANVAS_PALETTE, LIGHT_CANVAS_PALETTE } from './canvasPalette';
 
 type EmittedBounds = Parameters<Isometric3DBoundaryEditorProps['onChange']>[0];
 
@@ -252,6 +254,23 @@ describe('Isometric3DBoundaryEditor', () => {
       expect(canvas()).toHaveAttribute('height', '600');
     } finally {
       rect.mockRestore();
+    }
+  });
+
+  it('paints the 3D view for the light and the dark theme', async () => {
+    const canvas = recordCanvasFills();
+    try {
+      render(<Isometric3DBoundaryEditor {...defaultProps} />);
+      expect(canvas.fills[0]).toBe(LIGHT_CANVAS_PALETTE.deepBackground);
+
+      canvas.fills.length = 0;
+      await act(async () => {
+        document.documentElement.classList.add('dark');
+      });
+      expect(canvas.fills[0]).toBe(DARK_CANVAS_PALETTE.deepBackground);
+    } finally {
+      document.documentElement.classList.remove('dark');
+      canvas.restore();
     }
   });
 });

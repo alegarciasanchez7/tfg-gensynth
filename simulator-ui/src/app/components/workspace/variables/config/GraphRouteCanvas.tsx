@@ -6,6 +6,7 @@ import { validateNodeAndEdge } from '../../../../core/routeGeometry';
 import { fitWorldWindow, niceStep } from '../../../../core/worldWindow';
 import { CommitInput } from '../../../common/CommitInput';
 import { OfflineGridOverlay, MapAutoFit } from './mapShared';
+import { useCanvasPalette } from './canvasPalette';
 import { Button } from '../../../ui/button';
 import { Label } from '../../../ui/label';
 import { Info, Plus, Link as LinkIcon, Trash2, RotateCcw, Move, MapPin, AlertTriangle, X, WifiOff, Maximize2, Minimize2, Eye, EyeOff } from 'lucide-react';
@@ -224,9 +225,6 @@ const REGION_STYLE: L.PathOptions = {
   weight: 2,
 };
 
-/** The min/max box drawn when there is no polygon: not interactive, so clicks always reach the map. */
-const REGION_BOX_STYLE: L.PathOptions = { ...REGION_STYLE, interactive: false };
-
 type GraphTool = 'ADD_EXTEND' | 'CONNECT' | 'SELECT' | 'DELETE';
 
 /** One-line hint shown for each tool. */
@@ -317,6 +315,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
 
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const palette = useCanvasPalette();
   const [canvasSize, setCanvasSize] = useState({ w: 700, h: 340 });
 
   // 2D node drag: the ref holds the live gesture, the state renders the moved node. The state
@@ -417,8 +416,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
 
     ctx.clearRect(0, 0, canvasW, canvasH);
 
-    // Dark grid background
-    ctx.fillStyle = '#0f172a';
+    ctx.fillStyle = palette.background;
     ctx.fillRect(0, 0, canvasW, canvasH);
 
     // Visible world extents: the grid covers the whole canvas, not only the region
@@ -428,7 +426,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
     const visTop = worldCy + canvasH / 2 / worldScale;
 
     // 1. Render Grid Lines (at least ~40 px apart)
-    ctx.strokeStyle = '#1e293b';
+    ctx.strokeStyle = palette.grid;
     ctx.lineWidth = 1;
     const gridStep = niceStep(40 / worldScale);
     const gridValues = (from: number, to: number, step: number): number[] => {
@@ -453,12 +451,12 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
       ctx.stroke();
     }
 
-    // 2. Labeled Origin Axes (X=0 Red, Y=0 Green)
+    // 2. Labeled Origin Axes (X=0, Y=0)
     const originX = toCanvasX(0);
     const originY = toCanvasY(0);
 
     if (visBottom <= 0 && visTop >= 0) {
-      ctx.strokeStyle = '#ef4444'; // Red X Axis
+      ctx.strokeStyle = palette.axisX;
       ctx.lineWidth = 1.5;
       ctx.beginPath();
       ctx.moveTo(0, originY);
@@ -467,7 +465,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
     }
 
     if (visLeft <= 0 && visRight >= 0) {
-      ctx.strokeStyle = '#22c55e'; // Green Y Axis
+      ctx.strokeStyle = palette.axisY;
       ctx.lineWidth = 1.5;
       ctx.beginPath();
       ctx.moveTo(originX, 0);
@@ -476,7 +474,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
     }
 
     // 3. Axis Ticks & Numerical Labels
-    ctx.fillStyle = '#94a3b8';
+    ctx.fillStyle = palette.gridLabel;
     ctx.font = '9px monospace';
     const labelStep = gridStep * 2;
 
@@ -496,7 +494,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
     const boxTop = toCanvasY(baseMaxY);
     const boxBottom = toCanvasY(baseMinY);
 
-    ctx.strokeStyle = 'rgba(148, 163, 184, 0.4)';
+    ctx.strokeStyle = palette.boundsBox;
     ctx.lineWidth = 1;
     ctx.setLineDash([4, 4]);
     ctx.strokeRect(boxLeft, boxTop, boxRight - boxLeft, boxBottom - boxTop);
@@ -560,7 +558,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
         ctx.stroke();
       }
     });
-  }, [isGeo, canvasW, canvasH, worldCx, worldCy, worldScale, minX, minY, baseMinX, baseMaxX, baseMinY, baseMaxY, polygon, obstacles]);
+  }, [isGeo, canvasW, canvasH, worldCx, worldCy, worldScale, minX, minY, baseMinX, baseMaxX, baseMinY, baseMaxY, polygon, obstacles, palette]);
 
   /** Converts a pointer position to canvas pixels, accounting for CSS scaling of the canvas. */
   const clientToCanvas = (clientX: number, clientY: number): { px: number; py: number } | null => {
@@ -1028,7 +1026,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
               worldCopyJump={false}
               scrollWheelZoom={true}
               doubleClickZoom={false}
-              style={{ height: '100%', width: '100%', minHeight: isFullScreen ? 'calc(100vh - 140px)' : '340px', background: '#090d16' }}
+              style={{ height: '100%', width: '100%', minHeight: isFullScreen ? 'calc(100vh - 140px)' : '340px', background: palette.deepBackground }}
             >
               <GraphMapEventsHandler
                 activeTool={activeTool}
@@ -1079,7 +1077,9 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
                     [minPoint.x ?? 0, minPoint.y ?? 0],
                     [maxPoint.x ?? 0, maxPoint.y ?? 0],
                   ]}
-                  pathOptions={REGION_BOX_STYLE}
+                  pathOptions={REGION_STYLE}
+                  // Not interactive, so clicks always reach the map (a prop: pathOptions is only a style)
+                  interactive={false}
                 />
               )}
 

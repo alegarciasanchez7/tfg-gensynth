@@ -264,7 +264,7 @@ export function VariableEditorConfigCard({ typeLabel, variableId, theme, draft, 
     switch (draft.type) {
       case 'numeric': return <NumericConfigPanel config={parsedConfig as NumericVariableConfig} onChange={handleConfigChange} flowId={draft.flowId} groupId={draft.groupId} variableScope={draft.scope} variableId={variableId} />;
       case 'string': return <StringConfigPanel config={parsedConfig as StringVariableConfig} onChange={handleConfigChange} flowId={draft.flowId} groupId={draft.groupId} variableScope={draft.scope} />;
-      case 'list': return <ListConfigPanel config={parsedConfig as ListVariableConfig} onChange={handleConfigChange} flowId={draft.flowId} groupId={draft.groupId} variableScope={draft.scope} />;
+      case 'list': return <ListConfigPanel config={parsedConfig as ListVariableConfig} onChange={handleConfigChange} flowId={draft.flowId} groupId={draft.groupId} />;
       case 'temporal': return <TemporalConfigPanel config={parsedConfig as TemporalVariableConfig} onChange={handleConfigChange} flowId={draft.flowId} groupId={draft.groupId} variableScope={draft.scope} />;
       case 'point': return <PointConfigPanel config={parsedConfig as PointVariableConfig} onChange={handleConfigChange} flowId={draft.flowId} groupId={draft.groupId} variableScope={draft.scope} />;
       case 'boolean': return <BooleanConfigPanel config={parsedConfig as BooleanVariableConfig} onChange={handleConfigChange} flowId={draft.flowId} groupId={draft.groupId} variableScope={draft.scope} />;

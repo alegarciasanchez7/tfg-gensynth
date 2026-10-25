@@ -7,6 +7,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '../../../ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../ui/select';
 import { Switch } from '../../../ui/switch';
 import { CustomDropdown } from '../../../ui/custom-dropdown';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../../../ui/tooltip';
 import { ShieldAlert, Sparkles, Braces, Code } from 'lucide-react';
 
 import { ListReferenceSelector } from './ListReferenceSelector';
@@ -19,6 +20,8 @@ interface StringConfigPanelProps {
   flowId?: string;
   groupId?: string;
   variableScope?: VariableScope;
+  /** Set when the panel edits the generator of a list item, which cannot inherit from a list. */
+  inListItem?: boolean;
 }
 
 const MASK_OPTIONS = [
@@ -38,12 +41,22 @@ const CORRUPTION_OPTIONS = [
   { value: 'MIXED', label: 'Mixed / Random corruption' },
 ];
 
+/** String generation modes, in tab order, with the description shown on hover. */
+const STRING_MODES: readonly { value: string; label: string; description: string }[] = [
+  { value: 'RANDOM_STRING', label: 'Random', description: 'Random letters and digits (A-Z, a-z, 0-9) of a fixed length.' },
+  { value: 'REGEX', label: 'Regex', description: 'A random text that matches a regular expression, e.g. [A-Z]{3}-[0-9]{4} gives QDF-0417.' },
+  { value: 'CONSTANT', label: 'Fixed', description: 'Always the same text.' },
+  { value: 'TEMPLATE', label: 'Template', description: 'Text built from other variables, e.g. DEV-{{sensor_id}} gives DEV-42.' },
+  { value: 'FORMATTED_MASK', label: 'Mask/IoT', description: 'Formatted identifiers: MAC, IPv4, IPv6, UUID, or your own pattern with # @ $ ?.' },
+];
+
 export const StringConfigPanel: React.FC<StringConfigPanelProps> = ({ 
   config, 
   onChange,
   flowId,
   groupId,
   variableScope,
+  inListItem = false,
 }) => {
   const currentPattern = config.pattern || 'RANDOM_STRING';
   // Effective mask type: the Core uses ALPHANUMERIC when none is set
@@ -233,14 +246,16 @@ export const StringConfigPanel: React.FC<StringConfigPanelProps> = ({
 
   return (
     <div className="space-y-4">
-      <ListReferenceSelector
-        config={config}
-        onChange={onChange}
-        variableScope={variableScope || 'local'}
-        variableType="string"
-        flowId={flowId}
-        groupId={groupId}
-      />
+      {!inListItem && (
+        <ListReferenceSelector
+          config={config}
+          onChange={onChange}
+          variableScope={variableScope || 'local'}
+          variableType="string"
+          flowId={flowId}
+          groupId={groupId}
+        />
+      )}
 
       <div className="space-y-2">
         <Label className="text-[10px] uppercase text-[var(--c-tx4)]">String Generation Mode</Label>
@@ -251,11 +266,16 @@ export const StringConfigPanel: React.FC<StringConfigPanelProps> = ({
           className="w-full"
         >
           <TabsList className="bg-[var(--c-bg4)] border-[var(--c-br1)] h-8 p-0.5 grid grid-cols-5">
-            <TabsTrigger value="RANDOM_STRING" className="text-[9px] py-1">Random</TabsTrigger>
-            <TabsTrigger value="REGEX" className="text-[9px] py-1">Regex</TabsTrigger>
-            <TabsTrigger value="CONSTANT" className="text-[9px] py-1">Fixed</TabsTrigger>
-            <TabsTrigger value="TEMPLATE" className="text-[9px] py-1">Template</TabsTrigger>
-            <TabsTrigger value="FORMATTED_MASK" className="text-[9px] py-1">Mask/IoT</TabsTrigger>
+            {STRING_MODES.map((mode) => (
+              <Tooltip key={mode.value}>
+                <TooltipTrigger asChild>
+                  <TabsTrigger value={mode.value} className="text-[9px] py-1">{mode.label}</TabsTrigger>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-[260px] text-[11px] leading-relaxed">
+                  {mode.description}
+                </TooltipContent>
+              </Tooltip>
+            ))}
           </TabsList>
 
           {/* 1. RANDOM_STRING */}
@@ -315,7 +335,8 @@ export const StringConfigPanel: React.FC<StringConfigPanelProps> = ({
             <div className="space-y-2 relative">
               <Label htmlFor="string-template">Dynamic Template String</Label>
               
-              <div className="relative flex items-center">
+              {/* The background lives here: the input on top must stay transparent so the overlay shows */}
+              <div className="relative flex items-center rounded-md bg-[var(--c-bg2)] dark:bg-input/30">
                 <Braces className="absolute left-2.5 z-20 h-4 w-4 text-[var(--c-tx4)]" />
                 
                 {/* Highlighting Overlay */}
@@ -326,7 +347,7 @@ export const StringConfigPanel: React.FC<StringConfigPanelProps> = ({
                   {templateTokens.map((t, i) => (
                     <span 
                       key={i} 
-                      className={t.isVariable ? (t.isValid ? 'bg-emerald-500/20 text-emerald-400 rounded ring-1 ring-inset ring-emerald-500/40 px-0.5 -mx-0.5' : 'bg-red-500/20 text-red-400 rounded ring-1 ring-inset ring-red-500/40 px-0.5 -mx-0.5') : 'text-[var(--c-tx2)]'}
+                      className={t.isVariable ? (t.isValid ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 rounded ring-1 ring-inset ring-emerald-500/40 px-0.5 -mx-0.5' : 'bg-red-500/20 text-red-600 dark:text-red-400 rounded ring-1 ring-inset ring-red-500/40 px-0.5 -mx-0.5') : 'text-[var(--c-tx2)]'}
                     >
                       {t.text}
                     </span>
@@ -367,7 +388,7 @@ export const StringConfigPanel: React.FC<StringConfigPanelProps> = ({
                       setShowAutocomplete(false);
                     }, 150);
                   }}
-                  className="file:text-foreground placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground dark:bg-input/30 border-input flex w-full min-w-0 rounded-md border pl-9 pr-3 py-1 bg-[var(--c-bg2)] border-[var(--c-br1)] transition-[color,box-shadow] outline-none disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] h-8 text-[11px] font-mono text-transparent caret-[var(--c-tx1)] relative z-10"
+                  className="file:text-foreground placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground border-input flex w-full min-w-0 rounded-md border pl-9 pr-3 py-1 bg-transparent border-[var(--c-br1)] transition-[color,box-shadow] outline-none disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] h-8 text-[11px] font-mono text-transparent caret-[var(--c-tx1)] relative z-10"
                   autoComplete="off"
                 />
 
@@ -391,7 +412,7 @@ export const StringConfigPanel: React.FC<StringConfigPanelProps> = ({
                           e.preventDefault();
                           insertOption(opt);
                         }}
-                        className={`px-3 py-1.5 cursor-pointer flex items-center justify-between gap-4 transition-colors ${i === selectedIndex ? 'bg-violet-500/20 text-violet-400 font-bold' : 'hover:bg-white/5 text-[var(--c-tx3)]'}`}
+                        className={`px-3 py-1.5 cursor-pointer flex items-center justify-between gap-4 transition-colors ${i === selectedIndex ? 'bg-violet-500/20 text-violet-700 dark:text-violet-400 font-bold' : 'hover:bg-black/5 dark:hover:bg-white/5 text-[var(--c-tx3)]'}`}
                       >
                         <div className="flex flex-col">
                           <span className="text-[11px] font-mono">{`{{${opt.name}}}`}</span>
@@ -460,10 +481,10 @@ export const StringConfigPanel: React.FC<StringConfigPanelProps> = ({
                 <Input
                   id="custom-mask"
                   type="text"
-                  placeholder="e.g. SENSOR-####-XXXX"
+                  placeholder="e.g. SENSOR-####-$$$$"
                   value={config.customMask ?? ''}
                   onChange={(e) => onChange({ customMask: e.target.value })}
-                  className="bg-[var(--c-bg2)] border-[var(--c-br1)] h-8 text-[11px] font-mono uppercase"
+                  className="bg-[var(--c-bg2)] border-[var(--c-br1)] h-8 text-[11px] font-mono"
                 />
                 {!config.customMask && (
                   <p role="alert" className="text-[9px] text-amber-500">
@@ -472,9 +493,10 @@ export const StringConfigPanel: React.FC<StringConfigPanelProps> = ({
                 )}
                 <p className="text-[9px] text-[var(--c-tx4)] leading-relaxed">
                   <span><strong className="text-[var(--c-tx2)]">#</strong> = Digit (0-9) &nbsp;&bull;&nbsp;</span>
-                  <span><strong className="text-[var(--c-tx2)]">X</strong> = Hex (0-F) &nbsp;&bull;&nbsp;</span>
-                  <span><strong className="text-[var(--c-tx2)]">A</strong> = Letter (A-Z) &nbsp;&bull;&nbsp;</span>
-                  <span><strong className="text-[var(--c-tx2)]">?</strong> = Alphanumeric</span>
+                  <span><strong className="text-[var(--c-tx2)]">@</strong> = Letter &nbsp;&bull;&nbsp;</span>
+                  <span><strong className="text-[var(--c-tx2)]">$</strong> = Hex (0-F) &nbsp;&bull;&nbsp;</span>
+                  <span><strong className="text-[var(--c-tx2)]">?</strong> = Letter or digit &nbsp;&bull;&nbsp;</span>
+                  <span>anything else is copied as written</span>
                 </p>
                 <div className="pt-2">
                    <Label htmlFor="alpha-case" className="mb-1 block text-[9px] uppercase text-[var(--c-tx4)]">Case Formatting</Label>
@@ -491,6 +513,7 @@ export const StringConfigPanel: React.FC<StringConfigPanelProps> = ({
                        <SelectItem value="LOWER" className="text-[10px]">lowercase</SelectItem>
                      </SelectContent>
                    </Select>
+                   <p className="mt-1 text-[9px] text-[var(--c-tx4)]">Applies only to the letters generated by @, $ and ?.</p>
                 </div>
               </div>
             )}

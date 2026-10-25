@@ -395,6 +395,19 @@ Rules worth remembering:
 | Temporal | The formatted date; with `UNIX_TIMESTAMP`, epoch milliseconds. |
 | Point | A JSON object such as `{"x": 12.5, "y": 40.1}` (use sub-properties to get single coordinates). |
 
+Points and **Fixed Subset** lists follow the format of the template:
+
+- **JSON laid out on several lines** (one field per line): the object or array is written on
+  several lines too, with the indentation of the template. A one-line template keeps it on one
+  line.
+- **XML**: as child elements, e.g. `<posicion>{{local.puntito}}</posicion>` gives
+  `<posicion><x>12.5</x><y>40.1</y></posicion>` (list items as `<item>` elements), on several
+  lines when the template is.
+- **CSV**: in one quoted cell (`"{""x"": 12.5, ""y"": 40.1}"`), so its commas do not split the
+  row. Use the sub-properties (`{{local.puntito.x}}`) for one column per coordinate.
+
+The DATA logs and the Preview show messages with their line breaks.
+
 **Sub-properties by type** (names are case-insensitive)
 
 | Type | Sub-properties |
@@ -497,7 +510,10 @@ Good to know:
 
 ![Preview](docs-assets/user-guide/34-bottom-preview.png)
 
-- **Preview:** choose a **Flow** to see its **Template** next to the **Last Payload** it sent.
+- **Preview:** choose a **Flow** to see its **Template** next to the **Last Payload** it sent. The
+  last message stays visible after the simulation stops. **Capture** keeps the message on screen
+  (**Captured Payload**) to read it in detail while new ones arrive; **Live** goes back to the
+  last message. Each flow keeps its own capture.
 
 **Counters:** a message is **sent** when the connector confirms it (for RabbitMQ, when the broker
 acknowledges it); it is a **fail** when it cannot be generated (for example an invalid variable)
@@ -723,17 +739,20 @@ its initial state (a sequence starts again, a drift goes back to its start value
 
 #### Inherit value from parent-scope List
 
-Numeric, String, Boolean, Temporal, Point and List variables start with the check box **Inherit
-value from parent-scope List**. When it is ticked, the variable takes its value from a GLOBAL or
-GROUP List variable instead of its own pattern:
+Numeric, String, Boolean, Temporal and Point variables start with the check box **Inherit value
+from parent-scope List**. When it is ticked, the variable takes its value from a GLOBAL or GROUP
+List variable instead of its own pattern. The check box is disabled while there is no list the
+variable can read from; hovering over it says which list to create first. List variables do not
+have it (a list only has its own items), and neither does the generator of a list's Dynamic
+Generator item.
 
 | Field | What it does |
 |---|---|
-| **Source List Variable** | The list to read from (GLOBAL lists, and GROUP lists of the same group). LOCAL lists cannot be shared. |
-| **Item Selection Mode** (non-list variables) | **Random Item:** a random item of the list on every value. **Specific Fixed:** always the item chosen in **Compatible Specific Item**. |
-| **Source List Subset** (List variables) | **Fixed Subset:** tick the items to include. **N Random:** a random selection of **Number of random items to select** items, drawn again for every value. |
+| **Source List Variable** | The list to read from. A GLOBAL variable reads only GLOBAL lists; a GROUP or LOCAL variable also reads the GROUP lists of its group. LOCAL lists cannot be shared. |
+| **Item Selection Mode** | **Random Item:** a random item of the list on every value. **Specific Fixed:** always the item chosen in **Compatible Specific Item**. **Inherited Generation:** items are picked as the list picks them (its strategy, weights, order and Markov matrix), but the variable keeps its own position, so it does not move the list's sequence. Not available for a **Fixed Subset** list, which returns all its items at once. |
 
-The item is chosen independently of the parent list's own strategy. Literal items are text (a
+With Random Item and Specific Fixed the item is chosen independently of the parent list's own
+strategy. Literal items are text (a
 Numeric variable converts them to a number, a Boolean reads `true`); dynamic items generate a new
 value each time. If the item cannot be converted, the variable falls back to its own pattern.
 
@@ -952,7 +971,7 @@ detect (or ignore).
 
 #### String: modes
 
-Choose the **String Generation Mode** with the tabs:
+Choose the **String Generation Mode** with the tabs (hover over a tab for a short description):
 
 | Mode | Fields | What it produces |
 |---|---|---|
@@ -970,19 +989,19 @@ When you switch to a mode whose field is empty, GenSynth fills in a working exam
 
 **Mask/IoT presets:** **MAC Address**, **IPv4 Address**, **IPv6 Address**, **UUID v4**,
 **Random Alphanumeric** and **Custom Format Mask**. The last two use the **Custom Format Pattern**
-(default `????????` and `SENSOR-####-XXXX`; an empty pattern generates empty strings):
+(default `????????` and `SENSOR-####-$$$$`; an empty pattern generates empty strings):
 
 | Symbol | Replaced by |
 |---|---|
 | `#` | A digit 0–9 |
-| `X` / `x` | A hexadecimal digit, upper / lower case |
-| `A` / `a` | A letter, upper / lower case |
-| `?` | A letter or a digit (upper-case letters only, unless Case Formatting is **Mixed Case**) |
-| Anything else | Copied as is |
+| `@` | A letter |
+| `$` | A hexadecimal digit 0–F |
+| `?` | A letter or a digit |
+| Anything else | Copied as written, letters and digits included |
 
-For example `SN-####-XXXX` → `SN-0417-9F3A`. **Case Formatting**: **UPPERCASE** and **lowercase**
-apply to the whole result; **Mixed Case** keeps the case of each symbol, so `?????` can give
-`aB3kZ`.
+For example `MSG-###-?` → `MSG-482-K` and `SN-@@-$$$$` → `SN-QD-9F3A`. **Case Formatting** applies
+only to the letters generated by `@`, `$` and `?`: **UPPERCASE**, **lowercase**, or **Mixed Case**
+(either case at random, e.g. `qD-9f`). The text you write around the symbols is never changed.
 
 #### String: data corruption
 
@@ -1024,9 +1043,8 @@ A list picks values from items that you define.
 | **Fixed Subset / Entire List (Returns array of items)** | Returns all the items at once, as a JSON array. Reach single items with `{{name.item0}}`, `{{name.item1}}`… | Sending a vector of readings, or several related values that change together. |
 
 Literal items are inserted as written: in JSON, quote text items (`"{{condition}}"`) and leave
-numeric items unquoted. Dynamic items generate a new value each time they are picked. A list can
-also inherit items from a GLOBAL or GROUP list ([see above](#inherit-value-from-parent-scope-list));
-inherited items appear first, marked *Inherited*.
+numeric items unquoted. Dynamic items generate a new value each time they are picked. A list only
+has its own items: it cannot inherit items from another list.
 
 #### List: Markov chain
 
@@ -1036,10 +1054,14 @@ The **Markov Transition Probability Matrix** has one row per current state (**Fr
 column per next state (**To**). Each cell is the probability of moving from the row state to the
 column state, as a fraction between 0 and 1 (the title says **(0–1 per row)**). Cells show up to
 three decimals, and an empty cell counts as 0. Rows are normalised, so they do not need to add up
-to exactly 1.
+to exactly 1. Adding or deleting an item rescales the other probabilities of each row so that it
+still adds up to 1.
 
-- The chain starts in the first item of the list, and the first value sent is that item.
+- The chain starts in the first item of the list as shown (after Move Up / Move Down), and the
+  first value sent is that item.
 - A row with all zeros is a dead end: the chain stays in that state forever.
+- An item without a row (for example in a project file edited by hand) shows an even row: it
+  moves to any item with the same probability until you edit it.
 - A high value on the diagonal makes states "sticky" (long runs of the same state).
 
 Example for a machine (rows = from, columns = to):
@@ -1306,8 +1328,9 @@ How editing works in every boundary and route editor:
   (a region keeps at least 3).
 - **New Box Region** asks for confirmation first (`Esc` closes it without changes; in the fullscreen
   editor, the first `Esc` closes the confirmation and the second the editor), and keeps the current
-  region until you finish drawing the new box (releasing the mouse outside the map also finishes
-  it). The presets and a new box zoom the map to the region.
+  region until you finish drawing the new box (the box can start inside the current region, and
+  releasing the mouse outside the map also finishes it). The presets and a new box zoom the map to
+  the region.
 - The marker icons work offline. The altitude fields are applied when you leave them or press
   `Enter`.
 
@@ -1473,7 +1496,14 @@ Clone the whole group to replicate a site with all its devices.
 ## Feedback
 
 The **Feedback** button in the top bar opens a short anonymous form, in Spanish, in your web
-browser. It only takes a couple of minutes, and your opinion helps to improve the tool.
+browser. Its first question asks what you want to do:
+
+- **Report a bug** right away: what happened and how to repeat it. To add a screenshot, upload it
+  to Google Drive or Imgur and paste the link (shared so that anyone with the link can see it);
+  the form asks for no account, so it stays anonymous.
+- **Give your opinion** of the tool after using it for a while.
+
+It only takes a couple of minutes, and it helps to improve the tool.
 
 ---
 

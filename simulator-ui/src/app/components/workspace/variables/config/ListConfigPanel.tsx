@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback } from 'react';
-import { ListVariableConfig, ListItemConfig, ListSelectionStrategy, VariableType, VariableScope } from '../../../../types';
+import { ListVariableConfig, ListItemConfig, ListSelectionStrategy, VariableType } from '../../../../types';
 import { Input } from '../../../ui/input';
 import { Label } from '../../../ui/label';
 import { Button } from '../../../ui/button';
@@ -11,16 +11,13 @@ import { NumericConfigPanel } from './NumericConfigPanel';
 import { StringConfigPanel } from './StringConfigPanel';
 import { BooleanConfigPanel } from './BooleanConfigPanel';
 import { TemporalConfigPanel } from './TemporalConfigPanel';
-import { ListReferenceSelector } from './ListReferenceSelector';
 import { defaultConfigForType } from './defaultConfigs';
-import { useApp } from '../../../../context';
 
 interface ListConfigPanelProps {
   config: ListVariableConfig;
   onChange: (newConfig: Partial<ListVariableConfig>) => void;
   flowId?: string;
   groupId?: string;
-  variableScope?: VariableScope;
   nestingLevel?: number;
 }
 
@@ -46,6 +43,22 @@ const EMBEDDED_TYPE_OPTIONS = [
   { value: 'boolean', label: 'Boolean' },
   { value: 'temporal', label: 'Temporal' },
 ];
+
+type TransitionMatrix = Record<string, Record<string, number>>;
+
+/** Key of an item in the Markov matrix. */
+const matrixKey = (item: { id?: string; value?: unknown }, index: number): string =>
+  item.id || String(item.value || `item_${index + 1}`);
+
+/** Row of a state with no row in the matrix: the Core moves from it to any item with the same probability. */
+const evenRow = (keys: string[]): Record<string, number> =>
+  Object.fromEntries(keys.map(key => [key, 1 / keys.length]));
+
+/** The row scaled to add up to `total`; a row of zeros (a dead end) stays as it is. */
+const scaledRow = (row: Record<string, number>, total: number): Record<string, number> => {
+  const sum = Object.values(row).reduce((acc, p) => acc + p, 0);
+  return sum > 0 ? Object.fromEntries(Object.entries(row).map(([key, p]) => [key, (p / sum) * total])) : { ...row };
+};
 
 /**
  * Probability cell of the Markov matrix. Keeps the typed text (e.g. "0.") while it is not a full
@@ -93,15 +106,15 @@ const EmbeddedSubGeneratorPanel = React.memo<{
 
   switch (subType) {
     case 'numeric':
-      return <NumericConfigPanel config={subConfig as any} onChange={handleSubConfigChange} flowId={flowId} groupId={groupId} />;
+      return <NumericConfigPanel config={subConfig as any} onChange={handleSubConfigChange} flowId={flowId} groupId={groupId} inListItem />;
     case 'string':
-      return <StringConfigPanel config={subConfig as any} onChange={handleSubConfigChange} />;
+      return <StringConfigPanel config={subConfig as any} onChange={handleSubConfigChange} inListItem />;
     case 'boolean':
-      return <BooleanConfigPanel config={subConfig as any} onChange={handleSubConfigChange} />;
+      return <BooleanConfigPanel config={subConfig as any} onChange={handleSubConfigChange} inListItem />;
     case 'temporal':
-      return <TemporalConfigPanel config={subConfig as any} onChange={handleSubConfigChange} />;
+      return <TemporalConfigPanel config={subConfig as any} onChange={handleSubConfigChange} inListItem />;
     default:
-      return <NumericConfigPanel config={subConfig as any} onChange={handleSubConfigChange} flowId={flowId} groupId={groupId} />;
+      return <NumericConfigPanel config={subConfig as any} onChange={handleSubConfigChange} flowId={flowId} groupId={groupId} inListItem />;
   }
 });
 EmbeddedSubGeneratorPanel.displayName = 'EmbeddedSubGeneratorPanel';
@@ -111,19 +124,8 @@ export const ListConfigPanel: React.FC<ListConfigPanelProps> = ({
   onChange,
   flowId,
   groupId,
-  variableScope,
   nestingLevel = 0,
 }) => {
-  let state: any = { variables: [] };
-  try {
-    const appCtx = useApp();
-    if (appCtx && appCtx.state) {
-      state = appCtx.state;
-    }
-  } catch {
-    // Graceful fallback when rendered outside the app context
-  }
-
   const [modalEmbeddedIndex, setModalEmbeddedIndex] = useState<number | null>(null);
 
   const selectionStrategy = config.selectionStrategy || 'WEIGHTED_RANDOM';
@@ -151,68 +153,26 @@ export const ListConfigPanel: React.FC<ListConfigPanelProps> = ({
     });
   }, [config.items]);
 
-  const parentList = useMemo(() => {
-    return (state.variables || []).find((v: any) => v.id === config.sourceListVariableId || v.name === config.sourceListVariableId);
-  }, [state.variables, config.sourceListVariableId]);
-
-  const parentItems: any[] = useMemo(() => parentList?.config?.items || [], [parentList]);
-
-  const inheritedItems: any[] = useMemo(() => {
-    if (!config.sourceListVariableId || parentItems.length === 0) return [];
-    const selectionMode = config.sourceListSelectionMode || 'SUBSET_SPECIFIC';
-    if (selectionMode === 'SUBSET_SPECIFIC' && config.selectedListItemIds && config.selectedListItemIds.length > 0) {
-      return config.selectedListItemIds
-        .map((id: string) => parentItems.find((p: any) => p.id === id || (p.value && String(p.value) === id)))
-        .filter(Boolean);
-    } else if (selectionMode === 'SUBSET_RANDOM') {
-      const count = Math.min(Math.max(1, config.randomSubsetCount || 1), parentItems.length || 100);
-      const parentName = parentList?.name || 'Parent List';
-      return Array.from({ length: count }, (_, i) => ({
-        id: `random_item_${i + 1}`,
-        value: `Random Item ${i + 1} - ${parentName}`,
-        weight: 1.0,
-      }));
-    } else if (selectionMode === 'FIXED_ITEM' && config.selectedListItemId) {
-      const match = parentItems.find((p: any) => p.id === config.selectedListItemId || (p.value && String(p.value) === config.selectedListItemId));
-      return match ? [match] : [];
-    } else {
-      return parentItems;
-    }
-  }, [config.sourceListVariableId, config.sourceListSelectionMode, config.selectedListItemIds, config.randomSubsetCount, config.selectedListItemId, parentItems, parentList?.name]);
-
-  const unifiedItems: any[] = useMemo(() => {
-    const list = [
-      ...inheritedItems.map((item: any) => ({ ...item, isInherited: true })),
-      ...items.map((item: ListItemConfig, localIdx: number) => ({ ...item, localIdx, isInherited: false })),
-    ];
-
+  // Items in the order shown and generated: Move Up / Move Down write the order in itemOrder
+  const orderedItems = useMemo(() => {
+    const list = items.map((item: ListItemConfig, localIdx: number) => ({ ...item, localIdx }));
     if (config.itemOrder && config.itemOrder.length > 0) {
       const orderMap = new Map(config.itemOrder.map((id: string, index: number) => [id, index]));
-      list.sort((a, b) => {
-        const idxA = orderMap.has(a.id) ? orderMap.get(a.id)! : (orderMap.has(String(a.value)) ? orderMap.get(String(a.value))! : 99999);
-        const idxB = orderMap.has(b.id) ? orderMap.get(b.id)! : (orderMap.has(String(b.value)) ? orderMap.get(String(b.value))! : 99999);
-        return idxA - idxB;
-      });
+      const position = (item: ListItemConfig) => orderMap.get(item.id) ?? orderMap.get(String(item.value)) ?? Number.MAX_SAFE_INTEGER;
+      list.sort((a, b) => position(a) - position(b));
     }
     return list;
-  }, [inheritedItems, items, config.itemOrder]);
+  }, [items, config.itemOrder]);
 
-  const transitionMatrix = config.transitionMatrix || {};
+  const transitionMatrix: TransitionMatrix = useMemo(() => config.transitionMatrix || {}, [config.transitionMatrix]);
+  const matrixKeys = useMemo(() => orderedItems.map(matrixKey), [orderedItems]);
 
   const handleStrategyChange = useCallback((newStrategy: ListSelectionStrategy) => {
     const updatedMatrix = { ...transitionMatrix };
-    if (newStrategy === 'MARKOV_CHAIN' && unifiedItems.length > 0) {
-      unifiedItems.forEach((fromItem: any) => {
-        const fromId = fromItem.id || String(fromItem.value);
-        if (!updatedMatrix[fromId]) {
-          updatedMatrix[fromId] = {};
-        }
-        unifiedItems.forEach((toItem: any) => {
-          const toId = toItem.id || String(toItem.value);
-          if (updatedMatrix[fromId][toId] === undefined) {
-            updatedMatrix[fromId][toId] = 1.0 / unifiedItems.length;
-          }
-        });
+    if (newStrategy === 'MARKOV_CHAIN') {
+      // Rows already edited are kept; the other states start even
+      matrixKeys.forEach((key) => {
+        if (!updatedMatrix[key]) updatedMatrix[key] = evenRow(matrixKeys);
       });
     }
 
@@ -220,58 +180,56 @@ export const ListConfigPanel: React.FC<ListConfigPanelProps> = ({
       selectionStrategy: newStrategy,
       transitionMatrix: updatedMatrix,
     });
-  }, [unifiedItems, transitionMatrix, onChange]);
+  }, [matrixKeys, transitionMatrix, onChange]);
 
   const handleAddItem = useCallback(() => {
     // Unique even after deletions (items.length + 1 could repeat an existing id)
-    const usedIds = new Set(unifiedItems.map((item: ListItemConfig) => item.id));
+    const usedIds = new Set(items.map(item => item.id));
     let nextNumber = items.length + 1;
     while (usedIds.has(`item_${nextNumber}`)) nextNumber++;
     const nextId = `item_${nextNumber}`;
     const newItem: ListItemConfig = {
       id: nextId,
-      value: `Item ${items.length + 1}`,
+      value: `Item ${nextNumber}`,
       weight: 1.0,
       isEmbedded: false,
       embeddedType: 'numeric',
       embeddedConfig: { min: 0, max: 100, precision: 'INTEGER' },
     };
     const newItems = [...items, newItem];
-    const newUnified = [...unifiedItems, { ...newItem, isInherited: false }];
 
-    const updatedMatrix = { ...transitionMatrix };
+    let updatedMatrix = transitionMatrix;
     if (selectionStrategy === 'MARKOV_CHAIN') {
-      updatedMatrix[nextId] = {};
-      newUnified.forEach((target: any) => {
-        const targetId = target.id || String(target.value);
-        updatedMatrix[nextId][targetId] = 1.0 / newUnified.length;
-      });
-      newUnified.forEach((source: any) => {
-        const sourceId = source.id || String(source.value);
-        if (!updatedMatrix[sourceId]) updatedMatrix[sourceId] = {};
-        updatedMatrix[sourceId][nextId] = 1.0 / newUnified.length;
-      });
+      // Every row keeps adding up to 1: its probabilities shrink to make room for the new item
+      const newKeys = [...matrixKeys, nextId];
+      const share = 1 / newKeys.length;
+      updatedMatrix = Object.fromEntries(Object.entries(transitionMatrix).map(([from, row]) => {
+        const deadEnd = Object.values(row).every(p => p <= 0);
+        return [from, deadEnd ? { ...row } : { ...scaledRow(row, 1 - share), [nextId]: share }];
+      }));
+      updatedMatrix[nextId] = evenRow(newKeys);
     }
 
     onChange({
       items: newItems,
       transitionMatrix: updatedMatrix,
     });
-  }, [items, unifiedItems, selectionStrategy, transitionMatrix, onChange]);
+  }, [items, matrixKeys, selectionStrategy, transitionMatrix, onChange]);
 
   const handleRemoveItem = useCallback((index: number) => {
     const removedItem = items[index];
     const newItems = items.filter((_, i) => i !== index);
 
-    const updatedMatrix = { ...transitionMatrix };
+    let updatedMatrix = transitionMatrix;
     if (removedItem && (removedItem.id || removedItem.value)) {
       const removedId = removedItem.id || String(removedItem.value);
-      delete updatedMatrix[removedId];
-      Object.keys(updatedMatrix).forEach((key) => {
-        if (updatedMatrix[key]) {
-          delete updatedMatrix[key][removedId];
-        }
-      });
+      // Drop its row and column; the rest of each row is scaled back up to 1
+      updatedMatrix = Object.fromEntries(Object.entries(transitionMatrix)
+        .filter(([from]) => from !== removedId)
+        .map(([from, row]) => {
+          const { [removedId]: _removed, ...rest } = row;
+          return [from, scaledRow(rest, 1)];
+        }));
     }
 
     onChange({
@@ -280,33 +238,18 @@ export const ListConfigPanel: React.FC<ListConfigPanelProps> = ({
     });
   }, [items, transitionMatrix, onChange]);
 
-  const handleMoveUnifiedItem = useCallback((index: number, direction: 'up' | 'down') => {
+  const handleMoveItem = useCallback((index: number, direction: 'up' | 'down') => {
     const targetIndex = direction === 'up' ? index - 1 : index + 1;
-    if (targetIndex < 0 || targetIndex >= unifiedItems.length) return;
+    if (targetIndex < 0 || targetIndex >= orderedItems.length) return;
 
-    const newUnified = [...unifiedItems];
-    const temp = newUnified[index];
-    newUnified[index] = newUnified[targetIndex];
-    newUnified[targetIndex] = temp;
-
-    const newItemOrder = newUnified.map((item: any) => item.id || String(item.value));
-
-    // Preserve local items array structure
-    const newLocalItemsOrder = newUnified.filter((item: any) => !item.isInherited);
-    const newItems = newLocalItemsOrder.map((item: any) => {
-      const { isInherited, localIdx, ...rest } = item;
-      return rest as ListItemConfig;
-    });
-
-    // Preserve selectedListItemIds array structure
-    const newSelectedListItemIds = newUnified.filter((item: any) => item.isInherited).map((item: any) => item.id || String(item.value));
+    const reordered = [...orderedItems];
+    [reordered[index], reordered[targetIndex]] = [reordered[targetIndex], reordered[index]];
 
     onChange({
-      itemOrder: newItemOrder,
-      selectedListItemIds: newSelectedListItemIds.length > 0 ? newSelectedListItemIds : config.selectedListItemIds,
-      items: newItems,
+      itemOrder: reordered.map(item => item.id || String(item.value)),
+      items: reordered.map(({ localIdx: _localIdx, ...item }) => item),
     });
-  }, [unifiedItems, config.selectedListItemIds, onChange]);
+  }, [orderedItems, onChange]);
 
   const handleItemChange = useCallback((index: number, patch: Partial<ListItemConfig>) => {
     const newItems = items.map((item, i) => (i === index ? { ...item, ...patch } : item));
@@ -315,27 +258,15 @@ export const ListConfigPanel: React.FC<ListConfigPanelProps> = ({
 
   const handleMatrixCellChange = useCallback((fromId: string, toId: string, valStr: string) => {
     const parsedVal = Number.parseFloat(valStr);
-    const updatedMatrix = { ...transitionMatrix };
-    if (!updatedMatrix[fromId]) {
-      updatedMatrix[fromId] = {};
-    }
-    updatedMatrix[fromId][toId] = Number.isNaN(parsedVal) ? 0 : parsedVal;
-    onChange({ transitionMatrix: updatedMatrix });
-  }, [transitionMatrix, onChange]);
+    // A state with no row yet is even: editing one cell keeps the others as shown
+    const row = transitionMatrix[fromId] ?? evenRow(matrixKeys);
+    onChange({
+      transitionMatrix: { ...transitionMatrix, [fromId]: { ...row, [toId]: Number.isNaN(parsedVal) ? 0 : parsedVal } },
+    });
+  }, [transitionMatrix, matrixKeys, onChange]);
 
   return (
     <div className="space-y-4">
-      {nestingLevel === 0 && (
-        <ListReferenceSelector
-          config={config}
-          onChange={onChange}
-          variableScope={variableScope || 'local'}
-          variableType="list"
-          flowId={flowId}
-          groupId={groupId}
-        />
-      )}
-
       <div className="space-y-1.5">
         <div className="flex items-center gap-1.5">
           <Label htmlFor="selection-strategy-select" className="text-[10px] uppercase text-[var(--c-tx4)]">
@@ -379,71 +310,11 @@ export const ListConfigPanel: React.FC<ListConfigPanelProps> = ({
           </Button>
         </div>
 
-        {items.length === 0 && inheritedItems.length === 0 ? (
-          <p className="text-xs text-slate-500 italic">No items added yet. Select items to inherit above or click 'Add Item' to start.</p>
+        {items.length === 0 ? (
+          <p className="text-xs text-slate-500 italic">No items added yet. Click 'Add Item' to start.</p>
         ) : (
           <div className="space-y-2 max-h-80 overflow-y-auto p-1 scrollbar-thin">
-            {unifiedItems.map((item: any, unifiedIdx: number) => {
-              if (item.isInherited) {
-                return (
-                  <div key={item.id || `inh_${unifiedIdx}`} className="rounded border border-violet-500/30 bg-violet-100 dark:bg-violet-950/20 p-2 space-y-2">
-                    <div className="flex gap-2 items-center">
-                      <div className="w-36 flex items-center justify-between gap-1 px-2.5 h-8 rounded border border-violet-500/30 bg-violet-500/10 text-[11px] font-mono text-violet-600 dark:text-violet-300 shrink-0">
-                        <span className="font-semibold text-violet-600 dark:text-violet-300">Inherited</span>
-                        <span className="text-[9px] text-violet-400/80 truncate">({parentList?.name || 'Parent'})</span>
-                      </div>
-
-                      <Input
-                        className="flex-1 h-8 text-xs font-mono border-violet-500/30 bg-[var(--c-bg1)] text-violet-700 dark:text-violet-200 cursor-not-allowed opacity-90"
-                        value={item.value ?? item.id ?? ''}
-                        readOnly
-                        disabled
-                        title="Value inherited from parent list"
-                      />
-
-                      {selectionStrategy === 'WEIGHTED_RANDOM' && (
-                        <div className="w-20">
-                          <Input
-                            type="number"
-                            step="0.1"
-                            placeholder="Weight"
-                            value={item.weight ?? 1.0}
-                            readOnly
-                            disabled
-                            className="h-8 text-xs font-mono border-violet-500/30 bg-[var(--c-bg1)] text-violet-700 dark:text-violet-200 cursor-not-allowed opacity-90"
-                          />
-                        </div>
-                      )}
-
-                      <div className="flex items-center gap-0.5 shrink-0">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-violet-600 dark:text-violet-300 hover:text-[var(--c-tx1)] disabled:opacity-30 p-0"
-                          disabled={unifiedIdx === 0}
-                          onClick={() => handleMoveUnifiedItem(unifiedIdx, 'up')}
-                          title="Move Up"
-                        >
-                          <ChevronUp className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-violet-600 dark:text-violet-300 hover:text-[var(--c-tx1)] disabled:opacity-30 p-0"
-                          disabled={unifiedIdx === unifiedItems.length - 1}
-                          onClick={() => handleMoveUnifiedItem(unifiedIdx, 'down')}
-                          title="Move Down"
-                        >
-                          <ChevronDown className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              }
-
+            {orderedItems.map((item, shownIdx: number) => {
               const localIdx = item.localIdx;
               const val = item.value ?? '';
               const weight = item.weight ?? 1.0;
@@ -513,6 +384,7 @@ export const ListConfigPanel: React.FC<ListConfigPanelProps> = ({
                         <Input
                           type="number"
                           step="0.1"
+                          min={0}
                           placeholder="Weight"
                           value={weight}
                           onChange={(e) => handleItemChange(localIdx, { weight: Number.parseFloat(e.target.value) || 0 })}
@@ -527,8 +399,8 @@ export const ListConfigPanel: React.FC<ListConfigPanelProps> = ({
                         variant="ghost"
                         size="icon"
                         className="h-8 w-8 text-[var(--c-tx3)] hover:text-[var(--c-tx1)] disabled:opacity-30 p-0"
-                        disabled={unifiedIdx === 0}
-                        onClick={() => handleMoveUnifiedItem(unifiedIdx, 'up')}
+                        disabled={shownIdx === 0}
+                        onClick={() => handleMoveItem(shownIdx, 'up')}
                         title="Move Up"
                       >
                         <ChevronUp className="w-4 h-4" />
@@ -538,8 +410,8 @@ export const ListConfigPanel: React.FC<ListConfigPanelProps> = ({
                         variant="ghost"
                         size="icon"
                         className="h-8 w-8 text-[var(--c-tx3)] hover:text-[var(--c-tx1)] disabled:opacity-30 p-0"
-                        disabled={unifiedIdx === unifiedItems.length - 1}
-                        onClick={() => handleMoveUnifiedItem(unifiedIdx, 'down')}
+                        disabled={shownIdx === orderedItems.length - 1}
+                        onClick={() => handleMoveItem(shownIdx, 'down')}
                         title="Move Down"
                       >
                         <ChevronDown className="w-4 h-4" />
@@ -564,7 +436,7 @@ export const ListConfigPanel: React.FC<ListConfigPanelProps> = ({
       </div>
 
       {/* 3. Markov Chain Transition Matrix */}
-      {selectionStrategy === 'MARKOV_CHAIN' && unifiedItems.length > 0 && (
+      {selectionStrategy === 'MARKOV_CHAIN' && orderedItems.length > 0 && (
         <div className="space-y-2 mt-4 pt-4 border-t border-[var(--c-br1)]">
           <div className="flex items-center gap-2">
             <Label className="text-[10px] uppercase text-[var(--c-tx4)]">Markov Transition Probability Matrix (0–1 per row)</Label>
@@ -574,12 +446,10 @@ export const ListConfigPanel: React.FC<ListConfigPanelProps> = ({
               <thead>
                 <tr>
                   <th className="p-1 text-left text-[10px] text-[var(--c-tx4)]">From \ To</th>
-                  {unifiedItems.map((target: any, targetIdx: number) => {
-                    const label = target.isInherited
-                      ? (target.value !== undefined && target.value !== '' ? String(target.value) : `Item ${targetIdx + 1}`)
-                      : (target.isEmbedded
-                          ? `Gen #${targetIdx + 1}`
-                          : (target.value !== undefined && target.value !== '' ? String(target.value) : `Item ${targetIdx + 1}`));
+                  {orderedItems.map((target, targetIdx: number) => {
+                    const label = target.isEmbedded
+                      ? `Gen #${targetIdx + 1}`
+                      : (target.value !== undefined && target.value !== '' ? String(target.value) : `Item ${targetIdx + 1}`);
                     return (
                       <th key={target.id || `target_${targetIdx}`} className="p-1 text-center text-[10px] text-[var(--c-tx2)]" title={String(label)}>
                         {String(label).length > 10 ? String(label).substring(0, 10) + '…' : String(label)}
@@ -589,24 +459,22 @@ export const ListConfigPanel: React.FC<ListConfigPanelProps> = ({
                 </tr>
               </thead>
               <tbody>
-                {unifiedItems.map((source: any, sourceIdx: number) => {
-                  const sourceId = source.id || String(source.value || `item_${sourceIdx + 1}`);
-                  const sourceLabel = source.isInherited
-                    ? (source.value !== undefined && source.value !== '' ? String(source.value) : `Item ${sourceIdx + 1}`)
-                    : (source.isEmbedded
-                        ? `Gen #${sourceIdx + 1}`
-                        : (source.value !== undefined && source.value !== '' ? String(source.value) : `Item ${sourceIdx + 1}`));
+                {orderedItems.map((source, sourceIdx: number) => {
+                  const sourceId = matrixKey(source, sourceIdx);
+                  const row = transitionMatrix[sourceId];
+                  const sourceLabel = source.isEmbedded
+                    ? `Gen #${sourceIdx + 1}`
+                    : (source.value !== undefined && source.value !== '' ? String(source.value) : `Item ${sourceIdx + 1}`);
 
                   return (
                     <tr key={sourceId || sourceIdx} className="border-t border-white/5">
                       <td className="p-1 font-semibold text-[var(--c-tx2)]" title={String(sourceLabel)}>
                         {String(sourceLabel).length > 10 ? String(sourceLabel).substring(0, 10) + '…' : String(sourceLabel)}
                       </td>
-                      {unifiedItems.map((target: any, targetIdx: number) => {
-                        const targetId = target.id || String(target.value || `item_${targetIdx + 1}`);
-                        const rawProb = transitionMatrix[sourceId] && transitionMatrix[sourceId][targetId];
-                        // A missing cell is a 0 probability for the Core
-                        const prob = rawProb !== undefined ? rawProb : 0;
+                      {orderedItems.map((target, targetIdx: number) => {
+                        const targetId = matrixKey(target, targetIdx);
+                        // As the Core reads it: a state with no row is even, a missing cell in a row is 0
+                        const prob = row ? (row[targetId] ?? 0) : 1 / orderedItems.length;
 
                         return (
                           <td key={`${sourceId}_${targetId}`} className="p-1 text-center">

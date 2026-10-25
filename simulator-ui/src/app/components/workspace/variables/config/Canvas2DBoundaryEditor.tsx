@@ -4,6 +4,7 @@ import { Button } from '../../../ui/button';
 import { AlertTriangle, Move, ShieldAlert, Square, Triangle, Circle, RefreshCw } from 'lucide-react';
 import { fitWorldWindow, niceStep, type WorldWindow } from '../../../../core/worldWindow';
 import { useDialogEscape } from './useDialogEscape';
+import { useCanvasPalette } from './canvasPalette';
 
 interface Canvas2DBoundaryEditorProps {
   minX: number;
@@ -102,6 +103,7 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const palette = useCanvasPalette();
   const [canvasSize, setCanvasSize] = useState<{ w: number; h: number }>({ w: width, h: height });
 
   // Selection mode: MOVE BOUNDARIES vs MOVE OBSTACLES
@@ -247,8 +249,7 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
 
     ctx.clearRect(0, 0, currentW, currentH);
 
-    // Dark grid background
-    ctx.fillStyle = '#0f172a';
+    ctx.fillStyle = palette.background;
     ctx.fillRect(0, 0, currentW, currentH);
 
     // Grid lines with a "nice" step for the visible world area
@@ -260,9 +261,9 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
     const stepDecimals = decimalsFor(step);
     const labelEvery = step * pxPerUnit < 40 ? 2 : 1;
 
-    ctx.strokeStyle = '#1e293b';
+    ctx.strokeStyle = palette.grid;
     ctx.lineWidth = 1;
-    ctx.fillStyle = '#94a3b8';
+    ctx.fillStyle = palette.gridLabel;
     ctx.font = '9px monospace';
     for (let i = Math.ceil(visLeft / step); i * step <= visRight; i++) {
       const x = toCanvasX(i * step);
@@ -285,14 +286,14 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
     const originX = toCanvasX(0);
     const originY = toCanvasY(0);
 
-    ctx.strokeStyle = '#ef4444'; // Red X Axis
+    ctx.strokeStyle = palette.axisX;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.moveTo(0, originY);
     ctx.lineTo(currentW, originY);
     ctx.stroke();
 
-    ctx.strokeStyle = '#22c55e'; // Green Y Axis
+    ctx.strokeStyle = palette.axisY;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.moveTo(originX, 0);
@@ -301,9 +302,9 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
 
     // Axis names stay inside the canvas even when the origin is off-screen
     ctx.font = '9px monospace';
-    ctx.fillStyle = '#ef4444';
+    ctx.fillStyle = palette.axisX;
     ctx.fillText('X →', currentW - 20, Math.min(Math.max(originY - 4, 22), currentH - 16));
-    ctx.fillStyle = '#22c55e';
+    ctx.fillStyle = palette.axisY;
     ctx.fillText('Y ↑', Math.min(Math.max(originX + 4, 30), currentW - 24), 24);
 
     // 1. Render multi-vertex boundary polygon
@@ -344,14 +345,14 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
         ctx.stroke();
 
         if (isDragging || isHovered) {
-          ctx.fillStyle = '#0f172a';
+          ctx.fillStyle = palette.tooltipBackground;
           ctx.beginPath();
           ctx.roundRect(cx - 32, cy - 24, 64, 15, 3);
           ctx.fill();
           ctx.strokeStyle = '#c084fc';
           ctx.lineWidth = 1;
           ctx.stroke();
-          ctx.fillStyle = '#ffffff';
+          ctx.fillStyle = palette.tooltipText;
           ctx.font = 'bold 9px sans-serif';
           ctx.textAlign = 'center';
           ctx.fillText(`(${pt.x}, ${pt.y})`, cx, cy - 13);
@@ -379,8 +380,8 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
           });
           ctx.stroke();
 
-          // Main line stroke: Vibrant Amber
-          ctx.strokeStyle = '#fbbf24';
+          // Main line stroke: amber
+          ctx.strokeStyle = palette.selection;
           ctx.lineWidth = 4;
           ctx.beginPath();
           obs.points.forEach((pt, idx) => {
@@ -392,7 +393,7 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
           ctx.stroke();
 
           // Dashed selection outline
-          ctx.strokeStyle = '#ffffff';
+          ctx.strokeStyle = palette.ink;
           ctx.lineWidth = 1.5;
           ctx.setLineDash([4, 4]);
           ctx.beginPath();
@@ -425,7 +426,7 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
           const isDragging = draggingObstacleTarget?.obsIndex === obsIdx && draggingObstacleTarget?.pointIndex === ptIdx;
           const isHovered = hoveredObstacleTarget?.obsIndex === obsIdx && hoveredObstacleTarget?.pointIndex === ptIdx;
 
-          ctx.fillStyle = isDragging ? '#fef08a' : (isHovered ? '#ffffff' : (isSelected ? '#fbbf24' : '#f87171'));
+          ctx.fillStyle = isDragging ? '#fef08a' : (isHovered ? '#ffffff' : (isSelected ? palette.selection : '#f87171'));
           ctx.beginPath();
           ctx.arc(cx, cy, isDragging || isHovered ? 9 : (isSelected ? 7 : 5), 0, Math.PI * 2);
           ctx.fill();
@@ -442,14 +443,14 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
           }
 
           if (isDragging || isHovered) {
-            ctx.fillStyle = '#0f172a';
+            ctx.fillStyle = palette.tooltipBackground;
             ctx.beginPath();
             ctx.roundRect(cx - 35, cy - 24, 70, 15, 3);
             ctx.fill();
             ctx.strokeStyle = '#fbbf24';
             ctx.lineWidth = 1;
             ctx.stroke();
-            ctx.fillStyle = '#ffffff';
+            ctx.fillStyle = palette.tooltipText;
             ctx.font = 'bold 9px sans-serif';
             ctx.textAlign = 'center';
             ctx.fillText(`(${pt.x}, ${pt.y})`, cx, cy - 13);
@@ -468,7 +469,7 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
           ctx.strokeStyle = '#fef3c7';
           ctx.lineWidth = 1;
           ctx.stroke();
-          ctx.fillStyle = '#ffffff';
+          ctx.fillStyle = palette.tooltipText;
           ctx.font = 'bold 9px sans-serif';
           ctx.textAlign = 'center';
           ctx.fillText(`${obs.name || 'Wall'}`, midX, midY - 9);
@@ -488,10 +489,10 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
         if (isSelected || isShapeDragging) {
           ctx.fillStyle = 'rgba(251, 191, 36, 0.35)';
           ctx.fill();
-          ctx.strokeStyle = '#fbbf24';
+          ctx.strokeStyle = palette.selection;
           ctx.lineWidth = 2.5;
           ctx.stroke();
-          ctx.strokeStyle = '#ffffff';
+          ctx.strokeStyle = palette.ink;
           ctx.lineWidth = 1;
           ctx.setLineDash([4, 4]);
           ctx.stroke();
@@ -513,7 +514,7 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
           const isDragging = draggingObstacleTarget?.obsIndex === obsIdx && draggingObstacleTarget?.pointIndex === ptIdx;
           const isHovered = hoveredObstacleTarget?.obsIndex === obsIdx && hoveredObstacleTarget?.pointIndex === ptIdx;
 
-          ctx.fillStyle = isDragging ? '#fef08a' : (isHovered ? '#ffffff' : (isSelected ? '#fbbf24' : '#f87171'));
+          ctx.fillStyle = isDragging ? '#fef08a' : (isHovered ? '#ffffff' : (isSelected ? palette.selection : '#f87171'));
           ctx.beginPath();
           ctx.arc(cx, cy, isDragging || isHovered ? 9 : (isSelected ? 7 : 5), 0, Math.PI * 2);
           ctx.fill();
@@ -530,14 +531,14 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
           }
 
           if (isDragging || isHovered) {
-            ctx.fillStyle = '#0f172a';
+            ctx.fillStyle = palette.tooltipBackground;
             ctx.beginPath();
             ctx.roundRect(cx - 35, cy - 24, 70, 15, 3);
             ctx.fill();
             ctx.strokeStyle = '#fbbf24';
             ctx.lineWidth = 1;
             ctx.stroke();
-            ctx.fillStyle = '#ffffff';
+            ctx.fillStyle = palette.tooltipText;
             ctx.font = 'bold 9px sans-serif';
             ctx.textAlign = 'center';
             ctx.fillText(`(${pt.x}, ${pt.y})`, cx, cy - 13);
@@ -556,7 +557,7 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
           ctx.strokeStyle = '#fef3c7';
           ctx.lineWidth = 1;
           ctx.stroke();
-          ctx.fillStyle = '#ffffff';
+          ctx.fillStyle = palette.tooltipText;
           ctx.font = 'bold 9px sans-serif';
           ctx.textAlign = 'center';
           ctx.fillText(`${obs.name || 'Zone'}`, cxAvg, cyAvg + 3);
@@ -564,7 +565,7 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
         }
       }
     });
-  }, [activePolygon, displayObstacles, editMode, activeSelectedObsId, hovered, drag, zoom, panOffset, currentW, currentH, world.cx, world.cy, world.scale]);
+  }, [activePolygon, displayObstacles, editMode, activeSelectedObsId, hovered, drag, zoom, panOffset, currentW, currentH, world.cx, world.cy, world.scale, palette]);
 
   const showTempFeedback = (msg: string) => {
     setFeedbackMsg(msg);
@@ -1193,7 +1194,7 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
             clear of the Y scale labels on the left (drawn on the canvas it covered them) */}
         <div
           data-testid="canvas2d-status"
-          className="pointer-events-none absolute bottom-4 right-7 z-10 max-w-[calc(100%-4rem)] truncate rounded bg-[#0f172a]/70 px-1 font-mono text-[9px] leading-tight text-slate-500"
+          className="pointer-events-none absolute bottom-4 right-7 z-10 max-w-[calc(100%-4rem)] truncate rounded bg-[var(--c-bg1)]/80 px-1 font-mono text-[9px] leading-tight text-[var(--c-tx3)]"
         >
           {`[${editMode === 'BOUNDARIES' ? 'MOVE BOUNDARIES' : 'MOVE OBSTACLES'}] Zoom: ${zoom.toFixed(1)}x | Verts: ${activePolygon.length} | Obstacles: ${obstacles.length}`}
         </div>

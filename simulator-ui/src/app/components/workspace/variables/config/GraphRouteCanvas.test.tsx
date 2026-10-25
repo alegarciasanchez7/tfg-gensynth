@@ -1,7 +1,9 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { GraphRouteCanvas } from './GraphRouteCanvas';
 import { PointVariableConfig } from '../../../../types';
+import { recordCanvasFills } from '../../../../../test/recordCanvasFills';
+import { DARK_CANVAS_PALETTE, LIGHT_CANVAS_PALETTE } from './canvasPalette';
 
 describe('GraphRouteCanvas', () => {
   const defaultConfig: PointVariableConfig = {
@@ -273,6 +275,21 @@ describe('GraphRouteCanvas', () => {
     const moved = onChange.mock.calls[0][0].graphNodes.find((n: { id: string }) => n.id === 'node-1');
     expect(moved.x).toBe(60);
   });
+
+  it('paints the route plane for the light and the dark theme', async () => {
+    const canvas = recordCanvasFills();
+    try {
+      render(<GraphRouteCanvas config={defaultConfig} onChange={vi.fn()} />);
+      expect(canvas.fills[0]).toBe(LIGHT_CANVAS_PALETTE.background);
+
+      canvas.fills.length = 0;
+      await act(async () => {
+        document.documentElement.classList.add('dark');
+      });
+      expect(canvas.fills[0]).toBe(DARK_CANVAS_PALETTE.background);
+    } finally {
+      document.documentElement.classList.remove('dark');
+      canvas.restore();
+    }
+  });
 });
-
-

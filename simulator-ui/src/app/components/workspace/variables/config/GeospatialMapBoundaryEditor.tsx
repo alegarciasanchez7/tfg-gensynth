@@ -14,19 +14,10 @@ import { Info, BoxSelect, AlertTriangle, WifiOff } from 'lucide-react';
 import { Tooltip, TooltipTrigger, TooltipContent } from '../../../ui/tooltip';
 import { useBoundaryModalContext } from './BoundaryExpandModal';
 import { centerOf, defaultBoundsFor } from '../../../../core/pointDefaults';
+import { formatDms } from '../../../../core/dms';
 import { OfflineGridOverlay } from './mapShared';
 import { useDialogEscape } from './useDialogEscape';
-
-// Helper to format DMS coordinates for map tooltips & cursor HUD
-const formatDmsHelper = (val: number, isLat: boolean) => {
-  const absVal = Math.abs(val);
-  const deg = Math.floor(absVal);
-  const minFull = (absVal - deg) * 60;
-  const min = Math.floor(minFull);
-  const sec = Math.round((minFull - min) * 60 * 100) / 100;
-  const dir = isLat ? (val >= 0 ? 'N' : 'S') : (val >= 0 ? 'E' : 'W');
-  return `${deg}° ${min}' ${sec.toFixed(2)}" ${dir}`;
-};
+import { useCanvasPalette } from './canvasPalette';
 
 /** Decimal "lat° N, lon° W" label (the hemisphere letter carries the sign). */
 const formatLatLon = (lat: number, lon: number) =>
@@ -72,7 +63,6 @@ const POLYGON_STYLE: L.PathOptions = {
   fillColor: '#8b5cf6',
   fillOpacity: 0.2,
   weight: 2,
-  interactive: false,
 };
 
 const SELECTION_STYLE: L.PathOptions = {
@@ -235,6 +225,7 @@ function MapEventsHelper({
         [selection.current.lat, selection.current.lng],
       ]}
       pathOptions={SELECTION_STYLE}
+      interactive={false}
     />
   ) : null;
 }
@@ -305,7 +296,7 @@ function CoordinatesHud({ movingPoint }: { movingPoint: DragPreview | null }) {
             <span>{formatLatLon(cursorPos.lat, cursorPos.lon)}</span>
           </div>
           <div className="text-[9px] text-[var(--c-tx4)] border-l border-[var(--c-br1)] pl-2">
-            {formatDmsHelper(cursorPos.lat, true)}, {formatDmsHelper(cursorPos.lon, false)}
+            {formatDms(cursorPos.lat, true)}, {formatDms(cursorPos.lon, false)}
           </div>
         </>
       ) : (
@@ -360,7 +351,7 @@ const VertexMarker = React.memo(function VertexMarker({ index, lat, lon, onDragS
           <div className="font-semibold text-violet-400">Point #{index + 1}</div>
           <div>{formatLatLon(lat, lon)}</div>
           <div className="text-[9px] text-[var(--c-tx4)]">
-            {formatDmsHelper(lat, true)}, {formatDmsHelper(lon, false)}
+            {formatDms(lat, true)}, {formatDms(lon, false)}
           </div>
         </div>
       </LeafletTooltip>
@@ -397,7 +388,9 @@ function GeofenceLayers({
 
   return (
     <>
-      {positions.length >= 3 && <Polygon positions={positions} pathOptions={POLYGON_STYLE} />}
+      {/* Not interactive, so a new box can also start inside the current region. The option is a prop:
+          react-leaflet only applies pathOptions as a style, after the layer is created */}
+      {positions.length >= 3 && <Polygon positions={positions} pathOptions={POLYGON_STYLE} interactive={false} />}
       {points.map((pt, i) => (
         // Index keys stay stable while dragging; inserts/deletes only move the following markers
         <VertexMarker
@@ -525,6 +518,7 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
   const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
   const feedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isOffline, setIsOffline] = useState(() => typeof navigator !== 'undefined' && navigator.onLine === false);
+  const palette = useCanvasPalette();
   const tileErrorCountRef = useRef(0);
   const [fitToken, setFitToken] = useState(0);
 
@@ -834,7 +828,7 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
           maxBoundsViscosity={1.0}
           worldCopyJump={false}
           scrollWheelZoom={true}
-          style={{ height: '100%', width: '100%', background: '#0f172a' }}
+          style={{ height: '100%', width: '100%', background: palette.background }}
         >
           {!isOffline && (
             <TileLayer

@@ -1200,7 +1200,8 @@ public class PointVariableConfig extends VariableConfiguration {
     }
 
     private Map<String, Object> formatPointOutput(Point3D p) {
-        Map<String, Object> map = new HashMap<>(6);
+        // Insertion order is the order written in messages: x, y, z / latitude, longitude, altitude
+        Map<String, Object> map = new java.util.LinkedHashMap<>(12);
         switch (coordinateSystem) {
             case CARTESIAN_2D:
                 map.put("x", p.x);
@@ -1266,11 +1267,12 @@ public class PointVariableConfig extends VariableConfiguration {
             direction = val >= 0 ? 'E' : 'W';
         }
 
-        double absVal = Math.abs(val);
-        int degrees = (int) absVal;
-        double minutesRemainder = (absVal - degrees) * 60.0;
-        int minutes = (int) minutesRemainder;
-        double seconds = (minutesRemainder - minutes) * 60.0;
+        // Rounded to the hundredth of a second shown before splitting, so 59.999" carries into the
+        // next minute instead of being written as 60.00" (also for 10.1, whose * 60 is not exact)
+        long hundredths = Math.round(Math.abs(val) * 360_000.0);
+        long degrees = hundredths / 360_000;
+        long minutes = (hundredths % 360_000) / 6_000;
+        double seconds = (hundredths % 6_000) / 100.0;
 
         // Locale.ROOT: generated data must not depend on the computer's language (no "5,10")
         return String.format(java.util.Locale.ROOT, "%d° %d' %.2f\" %c", degrees, minutes, seconds, direction);

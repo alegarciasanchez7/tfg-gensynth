@@ -75,8 +75,9 @@ public abstract class VariableConfiguration {
     protected String sourceListVariableId;
     protected String sourceListSelectionMode = "RANDOM_ITEM";
     protected String selectedListItemId;
-    protected java.util.List<String> selectedListItemIds = new java.util.ArrayList<>();
-    protected int randomSubsetCount = 1;
+    /** Copy of the source list's generator for the INHERITED_GENERATION mode, and the list it copies. */
+    private com.gensynth.core.flow.variables.config.ListVariableConfig inheritedGenerator;
+    private com.gensynth.core.flow.variables.config.ListVariableConfig inheritedGeneratorSource;
 
     public String getSourceListVariableId() { return sourceListVariableId; }
     public void setSourceListVariableId(String sourceListVariableId) { this.sourceListVariableId = sourceListVariableId; }
@@ -90,15 +91,6 @@ public abstract class VariableConfiguration {
     public void setSelectedListItemId(String selectedListItemId) { this.selectedListItemId = selectedListItemId; }
     public VariableConfiguration selectedListItemId(String id) { this.selectedListItemId = id; return this; }
 
-    public java.util.List<String> getSelectedListItemIds() { return selectedListItemIds; }
-    public void setSelectedListItemIds(java.util.List<String> selectedListItemIds) { 
-        this.selectedListItemIds = selectedListItemIds != null ? new java.util.ArrayList<>(selectedListItemIds) : new java.util.ArrayList<>(); 
-    }
-    public VariableConfiguration selectedListItemIds(java.util.List<String> ids) { setSelectedListItemIds(ids); return this; }
-
-    public int getRandomSubsetCount() { return randomSubsetCount; }
-    public void setRandomSubsetCount(int randomSubsetCount) { this.randomSubsetCount = randomSubsetCount; }
-    public VariableConfiguration randomSubsetCount(int count) { this.randomSubsetCount = count; return this; }
 
     /**
      * Validates this configuration for logical consistency before simulation starts.
@@ -141,6 +133,11 @@ public abstract class VariableConfiguration {
         }
 
         if (sourceListConfig != null && !sourceListConfig.getEffectiveItems().isEmpty()) {
+            // A Fixed Subset list gives an array, not one item: that mode falls back to a random item
+            if ("INHERITED_GENERATION".equalsIgnoreCase(sourceListSelectionMode)
+                    && sourceListConfig.getSelectionStrategy() != com.gensynth.core.flow.variables.config.ListVariableConfig.SelectionStrategy.FIXED_SUBSET) {
+                return inheritedGeneratorOf(sourceListConfig).generateNextValue();
+            }
             java.util.List<com.gensynth.core.flow.variables.config.ListVariableConfig.ListItem> items = sourceListConfig.getEffectiveItems();
             if ("FIXED_ITEM".equalsIgnoreCase(sourceListSelectionMode) && selectedListItemId != null) {
                 for (com.gensynth.core.flow.variables.config.ListVariableConfig.ListItem item : items) {
@@ -154,6 +151,21 @@ public abstract class VariableConfiguration {
         }
 
         return currentContext.get(refId);
+    }
+
+    /**
+     * Generator that picks items as the source list does (same strategy, weights, order and matrix)
+     * but keeps its own position, so this variable does not move the list's sequence or chain.
+     * A list edited or restarted is a new object, and the copy is made again from it.
+     */
+    private com.gensynth.core.flow.variables.config.ListVariableConfig inheritedGeneratorOf(
+            com.gensynth.core.flow.variables.config.ListVariableConfig source) {
+        if (inheritedGenerator == null || inheritedGeneratorSource != source) {
+            inheritedGenerator = source.copyGenerator();
+            inheritedGeneratorSource = source;
+        }
+        inheritedGenerator.setContext(currentContext);
+        return inheritedGenerator;
     }
 
     protected boolean hasActiveOverride = false;

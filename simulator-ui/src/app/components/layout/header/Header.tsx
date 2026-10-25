@@ -347,7 +347,7 @@ export function Header({
               toast.error(`Could not open the feedback form: ${error instanceof Error ? error.message : String(error)}`);
             });
           }}
-          title="Send feedback: anonymous form, opens in your browser"
+          title="Report a bug or send feedback: anonymous form, opens in your browser"
           className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border text-xs transition-all shrink-0 border-[var(--c-br1)] text-[var(--c-tx3)] hover:text-[var(--c-tx1)] hover:border-[var(--c-br3)] hover:bg-[var(--c-bg5)]"
           style={{ fontFamily: 'JetBrains Mono, monospace' }}
         >

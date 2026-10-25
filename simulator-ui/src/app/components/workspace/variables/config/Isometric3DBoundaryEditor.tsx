@@ -4,6 +4,7 @@ import { Box, Circle, Triangle, Disc, Rotate3d, ZoomIn, ZoomOut, RefreshCw, Slid
 import { Label } from '../../../ui/label';
 import { Input } from '../../../ui/input';
 import { Button } from '../../../ui/button';
+import { useCanvasPalette } from './canvasPalette';
 
 export interface Isometric3DBoundaryEditorProps {
   minX: number;
@@ -82,6 +83,7 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
   fillContainer = false,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const palette = useCanvasPalette();
   const canvasBoxRef = useRef<HTMLDivElement>(null);
 
   // Filling the container: the canvas is drawn at the measured size of its column, so it is never stretched
@@ -284,14 +286,14 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
     ctx.clearRect(0, 0, width, height);
 
     // Background
-    ctx.fillStyle = '#090d16';
+    ctx.fillStyle = palette.deepBackground;
     ctx.fillRect(0, 0, width, height);
 
     // 1. Grid Mesh on Ground Plane
     const gridExtent = Math.max(200, Math.ceil(300 / Math.max(0.4, zoom)));
     const step = 50;
 
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.07)';
+    ctx.strokeStyle = palette.grid3D;
     ctx.lineWidth = 1;
 
     for (let gx = -gridExtent; gx <= gridExtent; gx += step) {
@@ -304,7 +306,7 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
 
       if (gx >= -150 && gx <= 150) {
         ctx.font = '8px monospace';
-        ctx.fillStyle = '#475569';
+        ctx.fillStyle = palette.gridLabel3D;
         ctx.fillText(`${gx}`, p1.x + 2, p1.y + 8);
       }
     }
@@ -324,24 +326,22 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
     const yAxis = project(0, 100, baseElevation);
     const zAxis = project(0, 0, baseElevation + 100);
 
-    // X axis Red
-    ctx.strokeStyle = '#ef4444';
+    ctx.strokeStyle = palette.axisX;
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(origin.x, origin.y);
     ctx.lineTo(xAxis.x, xAxis.y);
     ctx.stroke();
 
-    // Y axis Green
-    ctx.strokeStyle = '#22c55e';
+    ctx.strokeStyle = palette.axisY;
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(origin.x, origin.y);
     ctx.lineTo(yAxis.x, yAxis.y);
     ctx.stroke();
 
-    // Z axis Cyan (+Z upwards)
-    ctx.strokeStyle = '#06b6d4';
+    // Z axis (+Z upwards)
+    ctx.strokeStyle = palette.axisZ;
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(origin.x, origin.y);
@@ -349,11 +349,11 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
     ctx.stroke();
 
     ctx.font = '9px monospace';
-    ctx.fillStyle = '#ef4444';
+    ctx.fillStyle = palette.axisX;
     ctx.fillText('X', xAxis.x + 4, xAxis.y);
-    ctx.fillStyle = '#22c55e';
+    ctx.fillStyle = palette.axisY;
     ctx.fillText('Y', yAxis.x + 4, yAxis.y);
-    ctx.fillStyle = '#06b6d4';
+    ctx.fillStyle = palette.axisZ;
     ctx.fillText('+Z', zAxis.x + 4, zAxis.y);
 
     // 3. Render 3D Shape Geometry
@@ -530,7 +530,7 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
 
       if (isHovered || isDragging) {
         ctx.font = '10px sans-serif';
-        ctx.fillStyle = '#fef08a';
+        ctx.fillStyle = palette.cornerLabel;
         ctx.fillText(`Base: ${width3D.toFixed(0)} × ${length3D.toFixed(0)}`, p.x + 10, p.y - 4);
       }
     }
@@ -551,7 +551,7 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
 
       if (isHovered || isDragging) {
         ctx.font = '10px sans-serif';
-        ctx.fillStyle = '#bae6fd';
+        ctx.fillStyle = palette.radiusLabel;
         ctx.fillText(`Radius: ${radius3D.toFixed(0)}`, p.x + 10, p.y - 4);
       }
     }
@@ -584,14 +584,14 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
 
       if (isHovered || isDragging) {
         ctx.font = '10px sans-serif';
-        ctx.fillStyle = '#f5d0fe';
+        ctx.fillStyle = palette.heightLabel;
         ctx.fillText(`Height: ${height3D.toFixed(0)}`, p.x + 10, p.y - 4);
       }
     }
 
     // 5. Canvas Info Overlay
     ctx.font = '10px sans-serif';
-    ctx.fillStyle = orbitView ? '#38bdf8' : '#94a3b8';
+    ctx.fillStyle = orbitView ? palette.orbitStatusText : palette.statusText;
     ctx.fillText(
       orbitView ? 'Orbit View Active: Drag canvas to rotate camera' : 'Handle Edit Mode: Drag corner/top handle',
       10,
@@ -614,6 +614,7 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
     draggingHandle,
     width,
     height,
+    palette,
   ]);
 
   // Pointer Interaction Handlers: handle drags stay local and are committed once, on release
@@ -866,9 +867,10 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
         {/* Canvas Column */}
         <div
           ref={canvasBoxRef}
-          className={`md:col-span-2 relative rounded border border-[var(--c-br1)] bg-black overflow-hidden flex items-center justify-center ${
+          className={`md:col-span-2 relative rounded border border-[var(--c-br1)] overflow-hidden flex items-center justify-center ${
             fillContainer ? 'min-h-[300px]' : ''
           }`}
+          style={{ background: palette.deepBackground }}
         >
           <canvas
             ref={canvasRef}

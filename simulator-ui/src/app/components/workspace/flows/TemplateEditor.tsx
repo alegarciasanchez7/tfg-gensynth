@@ -14,9 +14,10 @@ interface TemplateEditorProps {
   className?: string;
 }
 
-function getEffectiveListItems(v: Variable, variables: Variable[]): Array<{ id: string; label: string }> {
+/** Items of a list in the order it generates them (a list only has its own items). */
+function getEffectiveListItems(v: Variable): Array<{ id: string; label: string }> {
   const config = v.config || {};
-  const localItems: any[] = (config.items || []).map((item: any, idx: number) => {
+  const combined: any[] = (config.items || []).map((item: any, idx: number) => {
     if (typeof item === 'object' && item !== null) {
       return {
         id: item.id || `item_${idx + 1}`,
@@ -25,43 +26,6 @@ function getEffectiveListItems(v: Variable, variables: Variable[]): Array<{ id: 
     }
     return { id: `item_${idx + 1}`, value: String(item) };
   });
-
-  let inheritedItems: any[] = [];
-  if (config.sourceListVariableId) {
-    const parentVar = variables.find(pv => pv.id === config.sourceListVariableId || pv.name === config.sourceListVariableId);
-    if (parentVar) {
-      const parentItems: any[] = (parentVar.config?.items || []).map((item: any, idx: number) => {
-        if (typeof item === 'object' && item !== null) {
-          return {
-            id: item.id || `item_${idx + 1}`,
-            value: item.value !== undefined && item.value !== '' ? String(item.value) : `Item ${idx + 1}`,
-          };
-        }
-        return { id: `item_${idx + 1}`, value: String(item) };
-      });
-
-      const selectionMode = config.sourceListSelectionMode || 'SUBSET_SPECIFIC';
-      if (selectionMode === 'SUBSET_SPECIFIC' && config.selectedListItemIds && config.selectedListItemIds.length > 0) {
-        inheritedItems = config.selectedListItemIds
-          .map((id: string) => parentItems.find((p: any) => p.id === id || String(p.value) === id))
-          .filter(Boolean);
-      } else if (selectionMode === 'SUBSET_RANDOM') {
-        const count = Math.min(Math.max(1, config.randomSubsetCount || 1), parentItems.length || 10);
-        const parentName = parentVar.name || 'Parent List';
-        inheritedItems = Array.from({ length: count }, (_, i) => ({
-          id: `random_item_${i + 1}`,
-          value: `Random Item ${i + 1} - ${parentName}`,
-        }));
-      } else if (selectionMode === 'FIXED_ITEM' && config.selectedListItemId) {
-        const match = parentItems.find((p: any) => p.id === config.selectedListItemId || String(p.value) === config.selectedListItemId);
-        inheritedItems = match ? [match] : [];
-      } else {
-        inheritedItems = parentItems;
-      }
-    }
-  }
-
-  const combined = [...inheritedItems, ...localItems];
 
   if (config.itemOrder && Array.isArray(config.itemOrder) && config.itemOrder.length > 0) {
     const orderMap = new Map(config.itemOrder.map((id: string, index: number) => [id, index]));
@@ -258,7 +222,7 @@ export function TemplateEditor({
           options.push({ name: `${v.name}.first`, scope: v.scope, detail: 'First List Item' });
           options.push({ name: `${v.name}.last`, scope: v.scope, detail: 'Last List Item' });
 
-          const effectiveItems = getEffectiveListItems(v, variables);
+          const effectiveItems = getEffectiveListItems(v);
           effectiveItems.forEach((item, index) => {
             options.push({
               name: `${v.name}.item${index}`,
@@ -421,9 +385,12 @@ export function TemplateEditor({
 
     if (lastOpen !== -1 && lastOpen >= textBefore.lastIndexOf('}}')) {
       finalStart = lastOpen;
-      const closingPos = currentVal.indexOf('}}', finalStart);
-      if (closingPos !== -1 && closingPos >= start - 2) {
-        finalEnd = closingPos + 2;
+      // Only the }} that closes this placeholder (the rest of its name, then }}). A placeholder
+      // still being typed has none: the next }} belongs to another placeholder further on, and
+      // replacing up to it would delete the text in between
+      const closing = /^[\w.]*\s*\}\}/.exec(currentVal.substring(end));
+      if (closing) {
+        finalEnd = end + closing[0].length;
       }
     }
     

@@ -4,6 +4,7 @@ import type { FullPoint } from '../../../../core/pointDefaults';
 import { clampToRegion, isInsideRegion, roundIntoRegion } from '../../../../core/routeGeometry';
 import type { MoveCheck, PathIssues } from '../../../../core/waypointPath';
 import { fitWorldWindow, niceStep } from '../../../../core/worldWindow';
+import { useCanvasPalette } from './canvasPalette';
 
 interface WaypointCanvas2DProps {
   waypoints: FullPoint[];
@@ -33,7 +34,6 @@ const DRAG_THRESHOLD_PX = 4;
 /** A click outside the region this close (px) to its border lands on the border. */
 const SNAP_PX = 6;
 
-const PATH_COLOR = '#22d3ee';
 /** Stored waypoints and segments that break the rules. */
 const INVALID_COLOR = '#fb7185';
 /** The dragged waypoint and segments while the drop would be rejected. */
@@ -93,6 +93,7 @@ export const WaypointCanvas2D: React.FC<WaypointCanvas2DProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
+  const palette = useCanvasPalette();
   const [width, setWidth] = useState(520);
   const [measuredHeight, setMeasuredHeight] = useState(MIN_FILL_HEIGHT);
   const height = fill ? measuredHeight : DEFAULT_HEIGHT;
@@ -296,7 +297,7 @@ export const WaypointCanvas2D: React.FC<WaypointCanvas2DProps> = ({
           y={0}
           width={width}
           height={height}
-          fill="#0f172a"
+          fill={palette.background}
           className="cursor-crosshair"
           onClick={handlePlaneClick}
         />
@@ -304,22 +305,22 @@ export const WaypointCanvas2D: React.FC<WaypointCanvas2DProps> = ({
         {/* Grid, origin axes and labels */}
         <g pointerEvents="none">
           {gridValues(visLeft, visRight, gridStep).map((v) => (
-            <line key={`gx${v}`} x1={toX(v)} y1={0} x2={toX(v)} y2={height} stroke="#1e293b" strokeWidth={1} />
+            <line key={`gx${v}`} x1={toX(v)} y1={0} x2={toX(v)} y2={height} stroke={palette.grid} strokeWidth={1} />
           ))}
           {gridValues(visBottom, visTop, gridStep).map((v) => (
-            <line key={`gy${v}`} x1={0} y1={toY(v)} x2={width} y2={toY(v)} stroke="#1e293b" strokeWidth={1} />
+            <line key={`gy${v}`} x1={0} y1={toY(v)} x2={width} y2={toY(v)} stroke={palette.grid} strokeWidth={1} />
           ))}
           {visBottom <= 0 && visTop >= 0 && (
-            <line x1={0} y1={toY(0)} x2={width} y2={toY(0)} stroke="#ef4444" strokeWidth={1.5} />
+            <line x1={0} y1={toY(0)} x2={width} y2={toY(0)} stroke={palette.axisX} strokeWidth={1.5} />
           )}
           {visLeft <= 0 && visRight >= 0 && (
-            <line x1={toX(0)} y1={0} x2={toX(0)} y2={height} stroke="#22c55e" strokeWidth={1.5} />
+            <line x1={toX(0)} y1={0} x2={toX(0)} y2={height} stroke={palette.axisY} strokeWidth={1.5} />
           )}
           {gridValues(visLeft, visRight, labelStep).map((v) => (
-            <text key={`lx${v}`} x={toX(v) - 8} y={height - 6} fill="#94a3b8" fontSize={9} fontFamily="monospace">{v}</text>
+            <text key={`lx${v}`} x={toX(v) - 8} y={height - 6} fill={palette.gridLabel} fontSize={9} fontFamily="monospace">{v}</text>
           ))}
           {gridValues(visBottom, visTop, labelStep).map((v) => (
-            <text key={`ly${v}`} x={4} y={toY(v) + 3} fill="#94a3b8" fontSize={9} fontFamily="monospace">{v}</text>
+            <text key={`ly${v}`} x={4} y={toY(v) + 3} fill={palette.gridLabel} fontSize={9} fontFamily="monospace">{v}</text>
           ))}
         </g>
 
@@ -331,7 +332,7 @@ export const WaypointCanvas2D: React.FC<WaypointCanvas2DProps> = ({
             width={Math.max(0, toX(regionMax.x) - toX(regionMin.x))}
             height={Math.max(0, toY(regionMin.y) - toY(regionMax.y))}
             fill={hasPolygon ? 'none' : 'rgba(6, 182, 212, 0.08)'}
-            stroke="rgba(148, 163, 184, 0.5)"
+            stroke={palette.boundsBox}
             strokeDasharray="4 4"
           />
           {hasPolygon && (
@@ -364,7 +365,7 @@ export const WaypointCanvas2D: React.FC<WaypointCanvas2DProps> = ({
         {/* Path: segments in order, and the dashed closing segment when the path loops */}
         <g pointerEvents="none">
           {n >= 2 && (
-            <polyline points={toPathPoints(displayWaypoints, project)} fill="none" stroke={PATH_COLOR} strokeWidth={2.5} />
+            <polyline points={toPathPoints(displayWaypoints, project)} fill="none" stroke={palette.path} strokeWidth={2.5} />
           )}
           {loopPath && n >= 3 && (
             <line
@@ -373,7 +374,7 @@ export const WaypointCanvas2D: React.FC<WaypointCanvas2DProps> = ({
               y1={toY(displayWaypoints[n - 1].y)}
               x2={toX(displayWaypoints[0].x)}
               y2={toY(displayWaypoints[0].y)}
-              stroke={PATH_COLOR}
+              stroke={palette.path}
               strokeWidth={1.5}
               strokeDasharray="6 4"
               opacity={0.7}
@@ -404,7 +405,7 @@ export const WaypointCanvas2D: React.FC<WaypointCanvas2DProps> = ({
         {displayWaypoints.map((wp, i) => {
           const isSelected = selectedIndex === i;
           const state = pointState(i);
-          const accent = state === 'rejected' ? REJECTED_COLOR : state === 'invalid' ? INVALID_COLOR : PATH_COLOR;
+          const accent = state === 'rejected' ? REJECTED_COLOR : state === 'invalid' ? INVALID_COLOR : palette.path;
           return (
             <g
               key={i}
@@ -430,8 +431,8 @@ export const WaypointCanvas2D: React.FC<WaypointCanvas2DProps> = ({
               {state && <title>{state === 'rejected' ? liveCheck?.error : issues.points[i]}</title>}
               <circle
                 r={isSelected ? 8 : 7}
-                fill={isSelected || state === 'rejected' ? accent : '#0f172a'}
-                stroke={isSelected ? '#ffffff' : accent}
+                fill={isSelected || state === 'rejected' ? accent : palette.waypointDot}
+                stroke={isSelected ? palette.ink : accent}
                 strokeWidth={state ? 2 : 1.5}
               />
               <text
@@ -440,7 +441,7 @@ export const WaypointCanvas2D: React.FC<WaypointCanvas2DProps> = ({
                 fontSize={8}
                 fontWeight={700}
                 fontFamily="monospace"
-                fill={isSelected ? '#0f172a' : state === 'rejected' ? '#ffffff' : state ? '#fecdd3' : '#a5f3fc'}
+                fill={isSelected ? palette.waypointDot : state === 'rejected' ? '#ffffff' : state ? palette.invalidWaypointNumber : palette.waypointNumber}
                 pointerEvents="none"
               >
                 {i + 1}

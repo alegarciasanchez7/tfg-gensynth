@@ -88,6 +88,17 @@ public class PointVariableExhaustiveGenerationTest {
     }
 
     @Test
+    public void dmsSecondsCarryIntoTheNextMinuteAndDegree() {
+        // 10.1 * 60 is not exact: the seconds used to come out as 60.00
+        assertEquals("10° 6' 0.00\" N", PointVariableConfig.convertToDMS(10.1, true));
+        assertEquals("46° 0' 0.00\" E", PointVariableConfig.convertToDMS(45.999999999, false));
+        assertEquals("36° 59' 59.96\" N", PointVariableConfig.convertToDMS(36.99999, true));
+        assertEquals("36° 32' 15.97\" N", PointVariableConfig.convertToDMS(36.53777, true));
+        assertEquals("6° 12' 5.83\" W", PointVariableConfig.convertToDMS(-6.20162, false));
+        assertEquals("0° 30' 0.00\" S", PointVariableConfig.convertToDMS(-0.5, true));
+    }
+
+    @Test
     public void testMovementPatternRandomWalkWithInertia() {
         config.pattern(GenerationPattern.RANDOM_WALK)
               .coordinateSystem(CoordinateSystem.CARTESIAN_3D)

@@ -21,6 +21,8 @@ interface NumericConfigPanelProps {
   variableScope?: VariableScope;
   /** Id of the variable being edited, left out of the formula suggestions (no self reference). */
   variableId?: string;
+  /** Set when the panel edits the generator of a list item, which cannot inherit from a list. */
+  inListItem?: boolean;
 }
 
 export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({ 
@@ -30,6 +32,7 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
   groupId,
   variableScope,
   variableId,
+  inListItem = false,
 }) => {
   const min = config.min ?? 0;
   const max = config.max ?? 100;
@@ -365,14 +368,16 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
   return (
     <TooltipProvider delayDuration={200}>
       <div className="space-y-4">
-        <ListReferenceSelector
-          config={config}
-          onChange={onChange}
-          variableScope={variableScope || 'local'}
-          variableType="numeric"
-          flowId={flowId}
-          groupId={groupId}
-        />
+        {!inListItem && (
+          <ListReferenceSelector
+            config={config}
+            onChange={onChange}
+            variableScope={variableScope || 'local'}
+            variableType="numeric"
+            flowId={flowId}
+            groupId={groupId}
+          />
+        )}
 
         {pattern !== 'CONSTANT' && (
           <>

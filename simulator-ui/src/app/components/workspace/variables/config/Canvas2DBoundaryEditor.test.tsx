@@ -1,7 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent } from '@testing-library/react';
 import { Canvas2DBoundaryEditor } from './Canvas2DBoundaryEditor';
 import { BoundaryObstacle } from '../../../../types';
+import { recordCanvasFills } from '../../../../../test/recordCanvasFills';
+import { DARK_CANVAS_PALETTE, LIGHT_CANVAS_PALETTE } from './canvasPalette';
 
 describe('Canvas2DBoundaryEditor', () => {
   const sampleObstacles: BoundaryObstacle[] = [
@@ -243,5 +245,22 @@ describe('Canvas2DBoundaryEditor', () => {
       fireEvent.click(document.body);
       expect(screen.queryByText('+ Insert Vertex Here on Boundary Edge')).not.toBeInTheDocument();
     });
+  });
+
+  it('paints the 2D plane for the light and the dark theme', async () => {
+    const canvas = recordCanvasFills();
+    try {
+      render(<Canvas2DBoundaryEditor minX={0} maxX={100} minY={0} maxY={100} obstacles={sampleObstacles} onChange={vi.fn()} />);
+      expect(canvas.fills[0]).toBe(LIGHT_CANVAS_PALETTE.background);
+
+      canvas.fills.length = 0;
+      await act(async () => {
+        document.documentElement.classList.add('dark');
+      });
+      expect(canvas.fills[0]).toBe(DARK_CANVAS_PALETTE.background);
+    } finally {
+      document.documentElement.classList.remove('dark');
+      canvas.restore();
+    }
   });
 });

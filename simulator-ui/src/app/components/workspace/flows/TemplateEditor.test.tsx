@@ -259,4 +259,37 @@ describe('TemplateEditor', () => {
     expect(container.querySelector('.bg-red-500\\/20')).toBeNull();
     expect(container.querySelectorAll('.bg-emerald-500\\/20')).toHaveLength(2);
   });
+
+  it('inserts a variable typed on a new line in the middle without deleting the lines below', () => {
+    const onChange = vi.fn();
+    const variables: Variable[] = [
+      { id: 'p1', name: 'puntito', scope: 'local', type: 'point', flowId: 'f1', groupId: 'g1', config: {} },
+      { id: 't1', name: 'time', scope: 'global', type: 'temporal', config: {} },
+    ];
+    const before = '{\n  "num": {{local.num}},\n  "posicion": {{pun';
+    const after = '\n  "time": {{global.time}}\n}';
+    render(<TemplateEditor value={before + after} onChange={onChange} variables={variables} flowId="f1" groupId="g1" />);
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+    textarea.setSelectionRange(before.length, before.length);
+    fireEvent.keyUp(textarea);
+
+    fireEvent.keyDown(textarea, { key: 'Enter' });
+
+    expect(onChange).toHaveBeenCalledWith('{\n  "num": {{local.num}},\n  "posicion": {{local.puntito}}' + after);
+  });
+
+  it('completes a placeholder whose closing braces are already typed', () => {
+    const onChange = vi.fn();
+    const variables: Variable[] = [
+      { id: 't1', name: 'temperature', scope: 'local', type: 'numeric', flowId: 'f1', groupId: 'g1', config: {} },
+    ];
+    render(<TemplateEditor value={'{"x": {{te}}, "y": {{uuid}}}'} onChange={onChange} variables={variables} flowId="f1" groupId="g1" />);
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+    textarea.setSelectionRange(10, 10);
+    fireEvent.keyUp(textarea);
+
+    fireEvent.keyDown(textarea, { key: 'Enter' });
+
+    expect(onChange).toHaveBeenCalledWith('{"x": {{local.temperature}}, "y": {{uuid}}}');
+  });
 });
