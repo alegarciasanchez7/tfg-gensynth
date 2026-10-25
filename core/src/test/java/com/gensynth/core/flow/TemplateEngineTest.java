@@ -659,4 +659,25 @@ public class TemplateEngineTest {
 
         assertEquals("ABA", sent.toString());
     }
+
+    @Test
+    public void multiLineJsonTemplateWritesPointsAndListsOnIndentedLines() {
+        Map<String, Object> pointConfig = new HashMap<>();
+        pointConfig.put("pattern", "FIXED_POINT");
+        pointConfig.put("coordinateSystem", "CARTESIAN_2D");
+        pointConfig.put("fixedPoint", Map.of("x", 1.5, "y", 2.0, "z", 0.0));
+        pointConfig.put("minPoint", Map.of("x", 0.0, "y", 0.0, "z", 0.0));
+        pointConfig.put("maxPoint", Map.of("x", 10.0, "y", 10.0, "z", 0.0));
+        variables.put("p1", new Variable("p1", "puntito", "LOCAL", "point", "", pointConfig, "f1", "g1"));
+        Map<String, Object> listConfig = new HashMap<>();
+        listConfig.put("selectionStrategy", "FIXED_SUBSET");
+        listConfig.put("items", List.of(Map.of("id", "a", "value", "A"), Map.of("id", "b", "value", "B")));
+        variables.put("l1", new Variable("l1", "lista", "GROUP", "list", "", listConfig, null, "g1"));
+
+        String template = "{\n  \"list\": {{group.lista}},\n  \"posicion\": {{local.puntito}},\n  \"n\": {{n}}\n}";
+        String message = engine.evaluate(template, 7, variables, "f1", "g1", "flow", null, "json");
+
+        assertEquals("{\n  \"list\": [\n    \"A\",\n    \"B\"\n  ],\n"
+            + "  \"posicion\": {\n    \"x\": 1.5,\n    \"y\": 2.0\n  },\n  \"n\": 7\n}", message);
+    }
 }

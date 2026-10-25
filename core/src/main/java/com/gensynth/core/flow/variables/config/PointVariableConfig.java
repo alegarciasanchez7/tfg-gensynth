@@ -1200,7 +1200,8 @@ public class PointVariableConfig extends VariableConfiguration {
     }
 
     private Map<String, Object> formatPointOutput(Point3D p) {
-        Map<String, Object> map = new HashMap<>(6);
+        // Insertion order is the order written in messages: x, y, z / latitude, longitude, altitude
+        Map<String, Object> map = new java.util.LinkedHashMap<>(12);
         switch (coordinateSystem) {
             case CARTESIAN_2D:
                 map.put("x", p.x);

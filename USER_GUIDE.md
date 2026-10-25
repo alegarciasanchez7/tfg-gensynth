@@ -395,6 +395,19 @@ Rules worth remembering:
 | Temporal | The formatted date; with `UNIX_TIMESTAMP`, epoch milliseconds. |
 | Point | A JSON object such as `{"x": 12.5, "y": 40.1}` (use sub-properties to get single coordinates). |
 
+Points and **Fixed Subset** lists follow the format of the template:
+
+- **JSON laid out on several lines** (one field per line): the object or array is written on
+  several lines too, with the indentation of the template. A one-line template keeps it on one
+  line.
+- **XML**: as child elements, e.g. `<posicion>{{local.puntito}}</posicion>` gives
+  `<posicion><x>12.5</x><y>40.1</y></posicion>` (list items as `<item>` elements), on several
+  lines when the template is.
+- **CSV**: in one quoted cell (`"{""x"": 12.5, ""y"": 40.1}"`), so its commas do not split the
+  row. Use the sub-properties (`{{local.puntito.x}}`) for one column per coordinate.
+
+The DATA logs and the Preview show messages with their line breaks.
+
 **Sub-properties by type** (names are case-insensitive)
 
 | Type | Sub-properties |

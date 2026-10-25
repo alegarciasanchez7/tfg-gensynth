@@ -226,7 +226,8 @@ export function LogsView({ entries, connectorHealthSummary, groups, onClear }: L
                   <span className="text-[10px] text-[var(--c-tx4)] shrink-0 pt-px" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
                     [{sourceDisplay}]
                   </span>
-                  <span className="text-[11px] text-[var(--c-tx3)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+                  {/* Keeps the line breaks of a message laid out on several lines */}
+                  <span className="text-[11px] text-[var(--c-tx3)] whitespace-pre-wrap break-words min-w-0" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
                     {entry.message}
                   </span>
                 </div>

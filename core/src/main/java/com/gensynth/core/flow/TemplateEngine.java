@@ -48,6 +48,24 @@ public class TemplateEngine {
      * @return the rendered message, or an empty string for an empty template
      */
     public String evaluate(String template, long sequenceNumber, Map<String, Variable> variables, String flowId, String groupId, String flowName, Map<String, Object> context) {
+        return evaluate(template, sequenceNumber, variables, flowId, groupId, flowName, context, null);
+    }
+
+    /**
+     * Renders a flow template into one message, writing points and lists in the template's format
+     * (see {@link StructuredValueWriter}).
+     *
+     * @param template       template with {@code {{...}}} placeholders
+     * @param sequenceNumber value of the {@code {{n}}} built-in
+     * @param variables      all variables, by id
+     * @param flowId         flow rendering the template (resolves LOCAL variables)
+     * @param groupId        group of that flow (resolves GROUP variables)
+     * @param flowName       value of the {@code {{flow.name}}} built-in; when {@code null} the placeholder is left as is
+     * @param context        values generated for this message, by variable id and name; may be {@code null}
+     * @param format         the flow's format label ({@code json}, {@code xml}, {@code csv}, {@code plain}); may be {@code null}
+     * @return the rendered message, or an empty string for an empty template
+     */
+    public String evaluate(String template, long sequenceNumber, Map<String, Variable> variables, String flowId, String groupId, String flowName, Map<String, Object> context, String format) {
         if (template == null || template.isEmpty()) {
             return "";
         }
@@ -60,6 +78,8 @@ public class TemplateEngine {
         String currentTs = Instant.now().toString();
         String currentUuid = UUID.randomUUID().toString();
         String currentSeq = String.valueOf(sequenceNumber);
+
+        StructuredValueWriter structuredWriter = StructuredValueWriter.forTemplate(template, format);
 
         // We do a manual loop to handle user variables safely without breaking JSON syntax
         Matcher matcher = VARIABLE_PATTERN.matcher(template);
@@ -193,6 +213,8 @@ public class TemplateEngine {
                         replacement = propResolved != null ? propResolved : "";
                     } else if (itemIndex != null && propertyPart == null) {
                         replacement = targetObj != null ? targetObj.toString() : "";
+                    } else if (StructuredValueWriter.isStructured(generatedValue)) {
+                        replacement = structuredWriter.write(generatedValue, matcher.start());
                     } else {
                         replacement = formatValue(generatedValue, isConstantPattern);
                     }
@@ -647,11 +669,8 @@ public class TemplateEngine {
      * @return the text written for the value
      */
     public static String formatValue(Object value, boolean constantPattern) {
-        if (value instanceof java.util.List<?> list) {
-            return formatListToJson(list);
-        }
-        if (value instanceof Map<?, ?> map) {
-            return formatMapToJson(map);
+        if (StructuredValueWriter.isStructured(value)) {
+            return StructuredValueWriter.compactJson(value);
         }
         if (constantPattern && value instanceof Double d && d % 1.0 == 0.0) {
             return String.format(java.util.Locale.ROOT, "%.0f", d);
@@ -660,45 +679,6 @@ public class TemplateEngine {
             return String.format(java.util.Locale.ROOT, "%.0f", (double) f);
         }
         return String.valueOf(value);
-    }
-
-    private static String formatListToJson(java.util.List<?> list) {
-        StringBuilder sb = new StringBuilder("[");
-        for (int i = 0; i < list.size(); i++) {
-            if (i > 0) sb.append(", ");
-            Object item = list.get(i);
-            if (item == null) {
-                sb.append("null");
-            } else if (item instanceof Number || item instanceof Boolean) {
-                sb.append(item.toString());
-            } else {
-                String str = item.toString().replace("\"", "\\\"");
-                sb.append("\"").append(str).append("\"");
-            }
-        }
-        sb.append("]");
-        return sb.toString();
-    }
-
-    private static String formatMapToJson(Map<?, ?> map) {
-        StringBuilder sb = new StringBuilder("{");
-        boolean first = true;
-        for (Map.Entry<?, ?> entry : map.entrySet()) {
-            if (!first) sb.append(", ");
-            first = false;
-            sb.append("\"").append(entry.getKey()).append("\": ");
-            Object val = entry.getValue();
-            if (val == null) {
-                sb.append("null");
-            } else if (val instanceof Number || val instanceof Boolean) {
-                sb.append(val.toString());
-            } else {
-                String str = val.toString().replace("\"", "\\\"");
-                sb.append("\"").append(str).append("\"");
-            }
-        }
-        sb.append("}");
-        return sb.toString();
     }
 
     /**

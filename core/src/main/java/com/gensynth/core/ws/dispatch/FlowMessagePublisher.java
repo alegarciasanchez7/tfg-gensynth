@@ -30,6 +30,8 @@ public class FlowMessagePublisher implements IFlowMessageHandler {
 
     /** Minimum time between two "data" preview log entries of the same flow. */
     private static final long PREVIEW_LOG_THROTTLE_MS = 250;
+    /** Longest message shown whole in the Preview and the DATA logs (a message on several lines is long). */
+    private static final int PREVIEW_MAX_CHARS = 2000;
     /** Minimum time between two error log entries of the same flow. */
     private static final long ERROR_LOG_THROTTLE_MS = 1_000;
     /** Minimum time between two "skipped tick" warnings of the same flow. */
@@ -56,7 +58,7 @@ public class FlowMessagePublisher implements IFlowMessageHandler {
             // Global sequence: {{n}} is unique even across flows running in parallel
             long sequence = ctx.getMessageSequence().incrementAndGet();
             String payload = ctx.getTemplateEngine().evaluate(
-                flow.template, sequence, ctx.getVariablesById(), flow.id, group.id, flow.name, null);
+                flow.template, sequence, ctx.getVariablesById(), flow.id, group.id, flow.name, null, flow.format);
             flow.generated.incrementAndGet();
             return payload;
         } catch (Exception ex) {
@@ -110,7 +112,7 @@ public class FlowMessagePublisher implements IFlowMessageHandler {
         ctx.getBytesSentLastWindow().addAndGet(bytes.length);
 
         if (shouldLog(lastPreviewLogByFlowId, flow.id, PREVIEW_LOG_THROTTLE_MS)) {
-            String preview = payload.length() > 250 ? payload.substring(0, 250) + "..." : payload;
+            String preview = payload.length() > PREVIEW_MAX_CHARS ? payload.substring(0, PREVIEW_MAX_CHARS) + "..." : payload;
             ctx.getServer().sendLogToAll("data", flow.id, "[" + group.name + " - " + flow.name + "] ==> " + preview);
         }
     }
