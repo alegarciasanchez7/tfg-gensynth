@@ -27,6 +27,7 @@ import type {
 import { toast } from 'sonner';
 import { OptimisticManager } from './optimisticManager';
 import type { PickedProjectFile } from '../core/fileStorage';
+import type { UpdateCheckPayload } from '../core/types';
 
 // Slices and actions
 import { rootReducer, initialState, type AppState, type AppAction } from './reducer';
@@ -36,6 +37,7 @@ import * as projectActions from './actions/projectActions';
 import * as templateActions from './actions/templateActions';
 import * as discardActions from './actions/discardActions';
 import * as settingsActions from './actions/settingsActions';
+import * as updateActions from './actions/updateActions';
 
 // Hooks
 import { useCrudActions } from './hooks/useCrudActions';
@@ -67,6 +69,18 @@ interface AppContextValue {
     updateTickSettings: (tick: TickSettings) => Promise<void>;
     /** Changes the folder of the generated files on this computer (null = default one). */
     setOutputFolder: (path: string | null) => Promise<void>;
+
+    // Updates: nothing is downloaded or installed unless the user asks for it
+    checkForUpdates: (options: { silent: boolean }) => Promise<UpdateCheckPayload | null>;
+    /** Asks for confirmation, then downloads and installs the version; false if the user cancelled. */
+    installUpdate: (version: string) => Promise<boolean>;
+    cancelUpdate: () => Promise<void>;
+    /** Shows or hides the "update available" dialog ("Not now" hides it). */
+    setUpdateDialogOpen: (open: boolean) => void;
+    /** Never offers this version again at startup. */
+    skipUpdateVersion: (version: string) => void;
+    setCheckUpdatesAtStartup: (enabled: boolean) => void;
+    clearUpdateStatus: () => void;
     
     // Selection
     selectGroup: (groupId: string) => void;
@@ -451,6 +465,43 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
     [reportCommandError]
   );
 
+  const updateContext = useCallback((): updateActions.UpdateActionContext => ({
+    dispatch,
+    getConnectionMode: () => stateRef.current.connectionMode,
+    getSkippedVersion: () => stateRef.current.skippedUpdateVersion,
+    getUnsavedWork: () => ({
+      isDirty: stateRef.current.isDirty,
+      isRunning: stateRef.current.systemStatus === 'running',
+    }),
+    reportCommandError,
+  }), [reportCommandError]);
+
+  const checkForUpdates = useCallback(
+    (options: { silent: boolean }) => updateActions.checkForUpdates(updateContext())(options),
+    [updateContext]
+  );
+  const installUpdate = useCallback(
+    (version: string) => updateActions.installUpdate(updateContext())(version),
+    [updateContext]
+  );
+  const cancelUpdate = useCallback(() => updateActions.cancelUpdate(updateContext())(), [updateContext]);
+
+  const setUpdateDialogOpen = useCallback((open: boolean) => {
+    dispatch({ type: 'SET_UPDATE_DIALOG_OPEN', payload: open });
+  }, []);
+
+  const skipUpdateVersion = useCallback((version: string) => {
+    dispatch({ type: 'SKIP_UPDATE_VERSION', payload: version });
+  }, []);
+
+  const setCheckUpdatesAtStartup = useCallback((enabled: boolean) => {
+    dispatch({ type: 'SET_CHECK_UPDATES_AT_STARTUP', payload: enabled });
+  }, []);
+
+  const clearUpdateStatus = useCallback(() => {
+    dispatch({ type: 'SET_UPDATE_STATUS', payload: null });
+  }, []);
+
   const setOutputFolder = useCallback(
     (path: string | null) =>
       settingsActions.setOutputFolder({
@@ -502,6 +553,13 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
     setAutoSaveInterval,
     updateTickSettings,
     setOutputFolder,
+    checkForUpdates,
+    installUpdate,
+    cancelUpdate,
+    setUpdateDialogOpen,
+    skipUpdateVersion,
+    setCheckUpdatesAtStartup,
+    clearUpdateStatus,
     selectGroup,
     selectFlow,
     selectVariable,

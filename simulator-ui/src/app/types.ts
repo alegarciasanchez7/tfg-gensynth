@@ -320,6 +320,16 @@ export interface OutputFolderInfo {
   custom: boolean;
 }
 
+/** A newer release the user may install. Mirrors UpdateCheck in the Core. */
+export interface UpdateInfo {
+  currentVersion: string;
+  latestVersion: string;
+  /** Release page, to read the notes. */
+  releaseUrl: string;
+  /** Size of the installer, in bytes. */
+  assetSize: number;
+}
+
 /** How the flows of a group send: one FIFO queue + one sender, or one thread per flow. Mirrors OutputMode in the Core. */
 export type OutputMode = 'parallel' | 'sequential';
 

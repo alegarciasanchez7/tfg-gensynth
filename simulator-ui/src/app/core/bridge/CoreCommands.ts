@@ -63,6 +63,11 @@ export const CoreCommands = {
   updateOutputFolder: (path: string | null) =>
     bridge.send<'UPDATE_OUTPUT_FOLDER', OutputFolderResponsePayload>('UPDATE_OUTPUT_FOLDER', { path }),
 
+  // Updates: the Core builds every URL; the UI only names the version the user accepted
+  checkForUpdates: () => bridge.send<'CHECK_FOR_UPDATES', UpdateCheckPayload>('CHECK_FOR_UPDATES'),
+  installUpdate: (version: string) => bridge.send('INSTALL_UPDATE', { version }),
+  cancelUpdate: () => bridge.send('CANCEL_UPDATE'),
+
   // Desktop specific
   pickDirectory: () => bridge.send('PICK_DIRECTORY'),
 

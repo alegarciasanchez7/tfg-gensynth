@@ -9,6 +9,7 @@ import type {
   FlowMetricsPayload,
   InitialStatePayload,
   TracePayload,
+  UpdateStatusPayload,
 } from '../../core/types';
 import type { Variable, ProjectSettings } from '../../types';
 import { normalizeProjectSettings } from '../../core/tickSettings';
@@ -214,6 +215,10 @@ export function useBridgeSubscriptions({
       
       bridge.on('settings-update', (settings: ProjectSettings) => {
         dispatch({ type: 'SET_SETTINGS', payload: normalizeProjectSettings(settings) });
+      }),
+
+      bridge.on('update-status', (status: UpdateStatusPayload) => {
+        dispatch({ type: 'SET_UPDATE_STATUS', payload: status });
       }),
 
       bridge.on('flows-metrics', (flowsMetrics: FlowMetricsPayload[]) => {

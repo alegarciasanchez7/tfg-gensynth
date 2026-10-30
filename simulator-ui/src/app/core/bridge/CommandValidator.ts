@@ -158,6 +158,11 @@ export function validateCommand<T extends UICommandType>(
         ? null
         : new Error('El comando UPDATE_OUTPUT_FOLDER requiere path (texto o null)');
     }
+    case 'CHECK_FOR_UPDATES':
+    case 'CANCEL_UPDATE':
+      return null;
+    case 'INSTALL_UPDATE':
+      return requireStringField('version', 'El comando INSTALL_UPDATE requiere version');
     case 'PICK_DIRECTORY':
     case 'EXPORT_STATE':
       return null;

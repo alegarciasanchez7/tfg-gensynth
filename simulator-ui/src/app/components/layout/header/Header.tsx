@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Power, Square, FolderOpen, Save, Settings, Package, Plus, FilePlus, MessageSquare } from 'lucide-react';
+import { Power, Square, FolderOpen, Save, Settings, Package, Plus, FilePlus, MessageSquare, Download } from 'lucide-react';
 import type { SystemStatus, ConnectorHealthSummary, Variable } from '../../../types';
 import type { ConnectorPluginDescriptor } from '../../../core/types';
 import { PluginImportPanel } from './PluginImportPanel';
@@ -23,6 +23,10 @@ interface HeaderProps {
   latestConnectors: ConnectorPluginDescriptor[];
   connectorHealthSummary: ConnectorHealthSummary[];
   variables: Variable[];
+  /** Newer version the user has not skipped, shown as a small button next to the version. */
+  availableUpdateVersion?: string | null;
+  /** Opens the "update available" dialog again. */
+  onShowUpdate?: () => void;
 }
 
 const systemStatusCfg: Record<SystemStatus, { color: string; dot: string; label: string; pulse: boolean }> = {
@@ -62,6 +66,8 @@ export function Header({
   latestConnectors,
   connectorHealthSummary,
   variables = [],
+  availableUpdateVersion = null,
+  onShowUpdate,
 }: HeaderProps) {
   const [showSettings, setShowSettings] = useState(false);
   const [showCatalog, setShowCatalog] = useState(false);
@@ -338,6 +344,18 @@ export function Header({
       <div className="text-[10px] text-[var(--c-tx5)] tracking-wider shrink-0 mr-1" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
         GenSynth {APP_VERSION}
       </div>
+
+      {/* A newer version the user has not skipped: never installs by itself, only opens the dialog */}
+      {availableUpdateVersion && onShowUpdate && (
+        <button
+          onClick={onShowUpdate}
+          title={`GenSynth ${availableUpdateVersion} is available`}
+          className="flex items-center gap-1.5 px-2 py-1 rounded border text-[10px] transition-all shrink-0 mr-1 border-cyan-500/40 text-cyan-500 hover:bg-cyan-500/10"
+          style={{ fontFamily: 'JetBrains Mono, monospace' }}
+        >
+          <Download size={11} /> Update available
+        </button>
+      )}
 
       {/* Feedback (temporary, for the student demo) */}
       {isFeedbackAvailable() && (

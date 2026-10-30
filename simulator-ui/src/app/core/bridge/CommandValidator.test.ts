@@ -51,3 +51,28 @@ describe('validateCommand UPDATE_OUTPUT_FOLDER', () => {
       .toMatch(/UPDATE_OUTPUT_FOLDER/);
   });
 });
+
+describe('validateCommand group order fields', () => {
+  it('accepts a known sequential order and a list of flow ids', () => {
+    expect(validateCommand('UPDATE_GROUP_CONFIG', { groupId: 'g1', sequentialOrder: 'generated', flowIds: ['f2', 'f1'] })).toBeNull();
+    expect(validateCommand('CREATE_GROUP', { name: 'G', sequentialOrder: 'random' })).toBeNull();
+  });
+
+  it('rejects an unknown sequential order or flow ids that are not a list of texts', () => {
+    expect(validateCommand('UPDATE_GROUP_CONFIG', { groupId: 'g1', sequentialOrder: 'fifo' })?.message).toMatch(/sequentialOrder/);
+    expect(validateCommand('CREATE_GROUP', { name: 'G', sequentialOrder: 'fifo' })?.message).toMatch(/sequentialOrder/);
+    expect(validateCommand('UPDATE_GROUP_CONFIG', { groupId: 'g1', flowIds: 'f1,f2' } as unknown as { groupId: string })?.message)
+      .toMatch(/flowIds/);
+    expect(validateCommand('UPDATE_GROUP_CONFIG', { groupId: 'g1', flowIds: [1, 2] } as unknown as { groupId: string })?.message)
+      .toMatch(/flowIds/);
+  });
+});
+
+describe('validateCommand update commands', () => {
+  it('needs the version the user accepted to install an update', () => {
+    expect(validateCommand('CHECK_FOR_UPDATES', undefined)).toBeNull();
+    expect(validateCommand('CANCEL_UPDATE', undefined)).toBeNull();
+    expect(validateCommand('INSTALL_UPDATE', { version: '0.5.3' })).toBeNull();
+    expect(validateCommand('INSTALL_UPDATE', { version: '' })?.message).toMatch(/version/);
+  });
+});
