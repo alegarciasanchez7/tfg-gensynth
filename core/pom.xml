@@ -87,12 +87,19 @@
             <scope>provided</scope>
         </dependency>
 
-        <!-- RabbitMQ -->
+        <!-- RabbitMQ: the connector is included in the application, like File Output, so it and
+             its client library are on the classpath (external plugins see them too) -->
         <dependency>
             <groupId>com.rabbitmq</groupId>
             <artifactId>amqp-client</artifactId>
             <version>5.18.0</version>
-            <scope>provided</scope>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.gensynth.plugins</groupId>
+            <artifactId>rabbitmq-connector</artifactId>
+            <version>1.0.0</version>
+            <scope>runtime</scope>
         </dependency>
 
         <!-- ActiveMQ -->
@@ -285,9 +292,10 @@
                         <configuration>
                             <outputDirectory>${project.basedir}/lib/shared</outputDirectory>
                             <includeScope>provided</includeScope>
-                            <!-- Only copy the libraries we want to share with plugins -->
+                            <!-- Only copy the libraries we want to share with plugins (amqp-client is already on
+                                 the application classpath, which external plugins also see) -->
                             <includeArtifactIds>
-                                kafka-clients,amqp-client,org.eclipse.paho.client.mqttv3,activemq-client,pulsar-client,jnats,jedis
+                                kafka-clients,org.eclipse.paho.client.mqttv3,activemq-client,pulsar-client,jnats,jedis
                             </includeArtifactIds>
                             <overWriteReleases>false</overWriteReleases>
                             <overWriteSnapshots>false</overWriteSnapshots>

@@ -68,7 +68,7 @@ public class PluginInstallerImpl implements IPluginInstaller {
     public PluginValidationResult validate(byte[] jarBytes, String pluginName, String pluginVersion) {
         try {
             Set<String> existingKeys = collectExistingPluginKeys();
-            PluginSandboxValidator validator = new PluginSandboxValidator(existingKeys, sharedLibsDir);
+            PluginSandboxValidator validator = new PluginSandboxValidator(existingKeys, builtInPluginKeys(), sharedLibsDir);
             return validator.validate(jarBytes, pluginName, pluginVersion);
         } catch (Exception e) {
             logger.error("Unexpected error during plugin validation", e);
@@ -265,18 +265,24 @@ public class PluginInstallerImpl implements IPluginInstaller {
      * and the plugins directory for duplicate detection.
      */
     private Set<String> collectExistingPluginKeys() {
-        Set<String> keys = new HashSet<>();
-
-        // Classpath plugins (bundled connectors)
-        for (ConnectorPlugin plugin : ServiceLoader.load(ConnectorPlugin.class)) {
-            keys.add(plugin.info().id() + "@" + plugin.info().version());
-        }
+        Set<String> keys = new HashSet<>(builtInPluginKeys());
 
         // External plugins
         for (InstalledPluginInfo info : listInstalledPlugins()) {
             keys.add(info.getPluginId() + "@" + info.getPluginVersion());
         }
 
+        return keys;
+    }
+
+    /**
+     * Collects the keys (pluginId@version) of the connectors included in GenSynth (classpath).
+     */
+    private static Set<String> builtInPluginKeys() {
+        Set<String> keys = new HashSet<>();
+        for (ConnectorPlugin plugin : ServiceLoader.load(ConnectorPlugin.class)) {
+            keys.add(plugin.info().id() + "@" + plugin.info().version());
+        }
         return keys;
     }
 

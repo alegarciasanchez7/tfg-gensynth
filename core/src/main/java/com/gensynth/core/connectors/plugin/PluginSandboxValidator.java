@@ -1,5 +1,6 @@
 package com.gensynth.core.connectors.plugin;
 
+import com.gensynth.core.connectors.runtime.PluginClassLoader;
 import com.gensynth.plugin.api.ConnectorField;
 import com.gensynth.plugin.api.ConnectorInfo;
 import com.gensynth.plugin.api.ConnectorPlugin;
@@ -97,6 +98,9 @@ public class PluginSandboxValidator {
     /** Set of existing plugin keys (pluginId@version) for duplicate detection. */
     private final Set<String> existingPluginKeys;
 
+    /** Keys (pluginId@version) of the connectors included in GenSynth, which cannot be imported again. */
+    private final Set<String> builtInPluginKeys;
+
     /**
      * Constructs the validator with knowledge of currently installed plugins.
      *
@@ -104,7 +108,19 @@ public class PluginSandboxValidator {
      * @param sharedLibDir       path to the directory containing shared libraries
      */
     public PluginSandboxValidator(Set<String> existingPluginKeys, Path sharedLibDir) {
+        this(existingPluginKeys, Set.of(), sharedLibDir);
+    }
+
+    /**
+     * Constructs the validator with knowledge of the installed and the built-in connectors.
+     *
+     * @param existingPluginKeys set of "pluginId@version" strings already loaded
+     * @param builtInPluginKeys  set of "pluginId@version" strings of the connectors included in GenSynth
+     * @param sharedLibDir       path to the directory containing shared libraries
+     */
+    public PluginSandboxValidator(Set<String> existingPluginKeys, Set<String> builtInPluginKeys, Path sharedLibDir) {
         this.existingPluginKeys = existingPluginKeys != null ? existingPluginKeys : Set.of();
+        this.builtInPluginKeys = builtInPluginKeys != null ? builtInPluginKeys : Set.of();
         this.sharedLibDir = sharedLibDir;
     }
 
@@ -153,7 +169,11 @@ public class PluginSandboxValidator {
 
         // 5. Check for duplicates
         String key = info.id() + "@" + info.version();
-        if (existingPluginKeys.contains(key)) {
+        if (builtInPluginKeys.contains(key)) {
+            // The included copy always wins, so an imported one would never be used
+            builder.log(PluginValidationResult.ValidationLevel.ERROR,
+                info.displayName() + " " + info.version() + " is already included in GenSynth: there is no need to import it.", key);
+        } else if (existingPluginKeys.contains(key)) {
             builder.log(PluginValidationResult.ValidationLevel.WARN, 
                 "A plugin with the same ID and version already exists. Installation will overwrite it.", key);
         } else {
@@ -310,7 +330,9 @@ public class PluginSandboxValidator {
                 }
             }
 
-            URLClassLoader sandboxLoader = new URLClassLoader(
+            // Same parent-last loader as at runtime, so a plugin whose classes are also on the
+            // application classpath (a built-in connector) is inspected from its own JAR
+            URLClassLoader sandboxLoader = new PluginClassLoader(
                     urls.toArray(new URL[0]),
                     ConnectorPlugin.class.getClassLoader()
             );
