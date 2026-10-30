@@ -1,5 +1,5 @@
 /**
- * Temporary feedback form shown during the student demo (anonymous Google Form, in Spanish).
+ * Temporary feedback form shown during the student demo (Google Form in Spanish).
  * To remove the feature, set SHOW_FEEDBACK to false (or delete this module and the Header button).
  */
 export const SHOW_FEEDBACK = true;
