@@ -11,7 +11,7 @@ a **connector**: GenSynth writes to files out of the box, and connector plugins 
 technologies. Use it whenever you need realistic, repeatable data to develop, test or demonstrate a
 system that consumes events.
 
-This guide covers GenSynth **0.5.1**. For a quick overview, see the [README](README.md).
+This guide covers GenSynth **0.5.2**. For a quick overview, see the [README](README.md).
 
 ## Contents
 
@@ -82,9 +82,10 @@ To update, install the new version over the old one: your plugins and settings a
 | What | Installed application | Built from source |
 |---|---|---|
 | Plugins, autosave and embedded browser | Windows: `%LOCALAPPDATA%\GenSynth`<br>Linux: `~/.local/share/gensynth`<br>macOS: `~/Library/Application Support/GenSynth` | `core/` |
-| Generated files (`OUTPUT_FILES_<date>`) | `~/GenSynth` (your user folder) | `core/` |
+| Generated files (`OUTPUT_FILES_<date>`) | `~/GenSynth` in your user folder (on Windows, `C:\Users\<you>\GenSynth`) | `core/` |
 
-Uninstalling GenSynth does not delete these folders.
+You can choose another folder for the generated files in **Settings → Save & Storage → Output
+folder** (see [Settings](#settings)). Uninstalling GenSynth does not delete these folders.
 
 ### Optional: the RabbitMQ connector
 
@@ -152,7 +153,8 @@ It takes about five minutes.
 
 3. **Create the variables of the station.** In the right panel, select the **LOCAL** tab, click
    **+ ADD**, choose the type and fill in the dialog. Set **Target Flow Assignment** to
-   *Station 1*. Create:
+   *Station 1* and click **Create Variable**: the editor of the new variable opens in the centre,
+   ready to configure (to come back to it later, click the variable in the right panel). Create:
 
    | Name | Type | Configuration (Visual Editor) |
    |---|---|---|
@@ -161,18 +163,26 @@ It takes about five minutes.
    | `condition` | List | Strategy **Weighted Random**, literal items `Sunny` (weight 5), `Cloudy` (3), `Rain` (1) |
    | `readingTime` | Temporal | **Advance Mode** = **Simulated Step**, **Start Date (ISO)** `2026-01-01T00:00:00Z`, **Step Duration (ms)** `60000`, **Format Preset** `UNIX_TIMESTAMP` |
 
-4. **Write the message format.** Select the flow and type this in **Message Format** (type `{{`
-   to get suggestions):
+4. **Write the message format.** Select *Station 1* in the left panel and write this in
+   **Message Format** (you can also paste it as is):
 
    ```json
    {
      "station": "{{flow.name}}",
-     "time": {{readingTime}},
-     "temperature": {{temperature}},
-     "humidity": {{humidity}},
-     "condition": "{{condition}}"
+     "time": {{local.readingTime}},
+     "temperature": {{local.temperature}},
+     "humidity": {{local.humidity}},
+     "condition": "{{local.condition}}"
    }
    ```
+
+   To insert a variable without typing its name, type `{{`: a list of your variables opens under
+   the cursor. Keep typing to filter it (`temp`), move with the arrow keys and press `Enter` (or
+   `Tab`, or click). GenSynth writes the whole placeholder, closing braces included, with the
+   scope in front (`local.`): `{{local.temperature}}` and `{{temperature}}` give the same value
+   here (see [Scopes](#scopes)). Pick the entry without a dot: `readingTime.hour` and the like are
+   [sub-properties](#writing-the-template). The ↗ button of a variable in the right panel inserts
+   it at the cursor too.
 
    `{{flow.name}}` is replaced by the name of the flow, so every station sends its own ID.
    Text values go between quotes; numbers and booleans do not.
@@ -192,9 +202,15 @@ It takes about five minutes.
    message of a flow, or **Logs** to see every flow (filter with **only data**).
 
 8. **Stop and find the files.** Click **STOP**. The messages are in
-   `~/GenSynth/OUTPUT_FILES_<date>/Weather_network/Station_1.txt` (one file per station).
+   `~/GenSynth/OUTPUT_FILES_<date>/Weather_network/Station_1.txt` (one file per station); on
+   Windows, `~` is your user folder, `C:\Users\<you>`. The **Logs** show the exact folder when you
+   click START (*Output folder of this session: …*). To write the files somewhere else, change
+   **Settings → Save & Storage → Output folder**.
 
-9. **Save the project.** Click **Save as** and choose a name such as `weather.gsynth`.
+9. **Save the project.** Click **Save as** and choose a name such as `weather.gsynth`, in a folder
+   of yours such as *Documents*. Not in the folder where GenSynth is installed
+   (`C:\Program Files\GenSynth` on Windows): it is read-only, and GenSynth asks for another
+   folder.
 
 ### Sending to RabbitMQ
 
@@ -207,8 +223,9 @@ It takes about five minutes.
 2. **Install the plugin.** Click **+** (Import Plugin) in the top bar, drop
    `rabbitmq-connector-1.0.0.jar`, wait for the validation and click **Import Validated Plugin →
    INSTALL & RESTART**. GenSynth restarts (see [Importing a plugin](#importing-a-plugin)).
-3. **Point the flows to RabbitMQ.** In each flow, change **Connector** to **RabbitMQ** and fill in
-   the fields. For a local broker only three fields need a value:
+3. **Point the flows to RabbitMQ.** Select *Station 1* in the left panel. In the flow settings, in
+   the centre of the window (above **Message Format**), change **Connector** to **RabbitMQ** and
+   fill in the fields. For a local broker only three fields need a value:
 
    | Field | Value |
    |---|---|
@@ -540,7 +557,7 @@ GenSynth includes one connector, always available, that writes the messages of e
 | Field | What it does | Default |
 |---|---|---|
 | **File format** | *JSON array*, *Text* (one message per line), *XML dataset* or *CSV* (one message per line). | JSON array |
-| **Output directory** | Optional. When empty, files go to the folder of the current session, `OUTPUT_FILES_<date>/` (see [Where GenSynth keeps its files](#where-gensynth-keeps-its-files)). A sub-folder with the group name is always added. | Session folder |
+| **Output directory** | Optional. When empty, files go to the folder of the current session, `OUTPUT_FILES_<date>/`, inside the **Output folder** of [Settings](#settings) (see [Where GenSynth keeps its files](#where-gensynth-keeps-its-files)). A sub-folder with the group name is always added. | Session folder |
 | **File name** | Optional. When empty, the flow name is used. The extension is added automatically. | Flow name |
 
 For example, with the Text format a flow *Sensor 1* in group *Plant A* writes to
@@ -658,6 +675,7 @@ this device* or *Saved with the project*.
 | **Appearance** (device) | **Dark mode** | Light or dark theme. | Light |
 | **Save & Storage** (device) | **Auto-save** | Saves the open project file automatically while there are changes. It starts working once the project has been saved to a file. | Off |
 | | **Interval (seconds)** | Time between automatic saves. | 30 (5–3600) |
+| | **Output folder** | Where every **START** creates its `OUTPUT_FILES_<date>` folder. Type a full path or click **Browse**; **Default** goes back to the default folder. It must be a folder you can write in; the change applies from the next START. The **Output directory** of a File Output flow overrides it. | `~/GenSynth` |
 | **Simulation** (project) | **Tick mode** | **Fixed period** or **As Fast As You Can**. | Fixed period |
 | | Period value and unit | Length of a tick. | 1 Seconds |
 
@@ -691,7 +709,8 @@ Variables generate the values of your messages. GenSynth has six types:
 
 ### Creating a variable
 
-In the right panel, choose the scope tab, click **+ ADD** and pick the type.
+In the right panel, choose the scope tab, click **+ ADD** and pick the type. After **Create
+Variable**, the editor of the new variable opens in the centre of the window.
 
 ![Create variable dialog](docs-assets/user-guide/13-create-variable-dialog.png)
 
@@ -1495,15 +1514,15 @@ Clone the whole group to replicate a site with all its devices.
 
 ## Feedback
 
-The **Feedback** button in the top bar opens a short anonymous form, in Spanish, in your web
+The **Feedback** button in the top bar opens a short form, in Spanish, in your web
 browser. Its first question asks what you want to do:
 
-- **Report a bug** right away: what happened and how to repeat it. To add a screenshot, upload it
-  to Google Drive or Imgur and paste the link (shared so that anyone with the link can see it);
-  the form asks for no account, so it stays anonymous.
+- **Report a bug** right away: what happened and how to repeat it. You can attach up to 5
+  screenshots.
 - **Give your opinion** of the tool after using it for a while.
 
-It only takes a couple of minutes, and it helps to improve the tool.
+The form collects your email address, used only to contact you if a bug you reported needs
+more detail. It only takes a couple of minutes, and it helps to improve the tool.
 
 ---
 
@@ -1553,5 +1572,7 @@ It only takes a couple of minutes, and it helps to improve the tool.
 | Values look wrong (all devices share a sequence, values jump, a placeholder stays as `{{…}}`) | Check the **scope** of the variable (per-device values must be LOCAL), the name in the template (a typo leaves the placeholder unchanged) and the Preview of the flow. |
 | A variable sends a value that does not match its pattern | Check its **Rules** tab: while a rule matches, the override configuration is used instead. |
 | The JSON received is invalid | Text values need quotes (`"{{name}}"`); numbers with prefix, suffix or padding are text too. |
+| Saving says *You do not have permission to write in …* | The folder is read-only for your user, like the installation folder (`C:\Program Files\GenSynth`). Save the project in a folder of yours, such as *Documents*. Spaces in the path are not a problem. |
+| I cannot find the generated files | The **Logs** show the folder of each session when you click START. By default it is `GenSynth` in your user folder; change it in **Settings → Save & Storage → Output folder**. |
 
 Problems when building from source are covered in [CONTRIBUTING.md](CONTRIBUTING.md#troubleshooting).
