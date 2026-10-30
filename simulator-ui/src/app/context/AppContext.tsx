@@ -84,6 +84,8 @@ interface AppContextValue {
     createGroup: (name: string, description?: string) => Promise<Group>;
     deleteGroup: (groupId: string) => Promise<void>;
     updateGroupConfig: (groupId: string, config: Partial<Omit<Group, 'id' | 'flows'>>, name?: string) => Promise<void>;
+    /** Changes the order of a group's flows (the order of the messages of a sequential group). */
+    reorderGroupFlows: (groupId: string, flowIds: string[]) => Promise<void>;
     cloneGroup: (groupId: string, count: number, namingPattern?: string) => void;
     
     // Flows: CRUD

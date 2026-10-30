@@ -16,6 +16,7 @@ describe('WorkspaceBreadcrumb', () => {
       description: '',
       threads: 1,
       outputMode: 'parallel',
+      sequentialOrder: 'flow' as const,
       enabled: true,
       expanded: true,
       flows: [

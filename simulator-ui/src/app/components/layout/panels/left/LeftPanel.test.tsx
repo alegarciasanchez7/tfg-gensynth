@@ -39,6 +39,7 @@ describe('LeftPanel', () => {
     description: 'Order stream',
     threads: 2,
     outputMode: 'parallel',
+    sequentialOrder: 'flow' as const,
     expanded: true,
     enabled: true,
     flows: [],

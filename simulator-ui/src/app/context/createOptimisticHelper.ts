@@ -152,6 +152,7 @@ export function createOptimisticGroup(
     throughput: '0 msg/s',
     threads: 1,
     outputMode: 'parallel',
+    sequentialOrder: 'flow',
     expanded: true,
     enabled: true,
     flows: [],

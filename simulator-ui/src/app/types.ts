@@ -323,6 +323,12 @@ export interface OutputFolderInfo {
 /** How the flows of a group send: one FIFO queue + one sender, or one thread per flow. Mirrors OutputMode in the Core. */
 export type OutputMode = 'parallel' | 'sequential';
 
+/**
+ * Order of the messages due on the same tick in a sequential group: the flow list order, a
+ * random order every tick, or the order in which generation ends. Mirrors SequentialOrder in the Core.
+ */
+export type SequentialOrder = 'flow' | 'random' | 'generated';
+
 export interface Group {
   id: string;
   name: string;
@@ -333,6 +339,8 @@ export interface Group {
   /** @deprecated Legacy; ignored by the engine. */
   threads: number;
   outputMode: OutputMode;
+  /** Used by sequential groups only; kept when the group is parallel. */
+  sequentialOrder: SequentialOrder;
   flows: Flow[];
   expanded: boolean;
   enabled: boolean;

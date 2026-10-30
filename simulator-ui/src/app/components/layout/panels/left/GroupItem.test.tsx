@@ -25,6 +25,7 @@ const group: Group = {
   description: '',
   threads: 1,
   outputMode: 'parallel',
+  sequentialOrder: 'flow' as const,
   flows: [],
   expanded: false,
   enabled: true,

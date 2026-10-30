@@ -1,5 +1,5 @@
 import { bridge } from '../bridge';
-import type { OutputFolderResponsePayload, PluginValidationResultPayload, PluginInstallResultPayload, StateFileResponsePayload } from '../types';
+import type { OutputFolderResponsePayload, PluginValidationResultPayload, PluginInstallResultPayload, StateFileResponsePayload, UpdateCheckPayload } from '../types';
 import type { ProjectSettings } from '../../types';
 
 export const CoreCommands = {
@@ -14,10 +14,10 @@ export const CoreCommands = {
   startGroup: (groupId: string) => bridge.send('START_GROUP', { groupId }),
   stopGroup: (groupId: string) => bridge.send('STOP_GROUP', { groupId }),
   pauseGroup: (groupId: string) => bridge.send('PAUSE_GROUP', { groupId }),
-  createGroup: (config: { name: string; threads?: number; outputMode?: string }) =>
+  createGroup: (config: { name: string; threads?: number; outputMode?: string; sequentialOrder?: string }) =>
     bridge.send('CREATE_GROUP', config),
   deleteGroup: (groupId: string) => bridge.send('DELETE_GROUP', { groupId }),
-  updateGroup: (config: { groupId: string; name?: string; threads?: number; outputMode?: string }) =>
+  updateGroup: (config: { groupId: string; name?: string; threads?: number; outputMode?: string; sequentialOrder?: string; flowIds?: string[] }) =>
     bridge.send('UPDATE_GROUP_CONFIG', config),
 
   // Flows
