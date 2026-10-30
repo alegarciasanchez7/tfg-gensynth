@@ -1,6 +1,7 @@
 package com.gensynth.core.persistence;
 
 import com.gensynth.core.config.AppPaths;
+import com.gensynth.core.config.FolderAccess;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.gensynth.core.model.GroupDefinition;
@@ -11,6 +12,8 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.OutputStream;
+import java.nio.file.AccessDeniedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -236,10 +239,31 @@ public class JsonStateRepositoryImpl implements StateRepository {
             exportData.put("variables", variablesData);
             exportData.put("settings", (settings != null ? settings : ProjectSettings.defaults()).toPayload());
 
-            objectMapper.writeValue(targetFile.toFile(), exportData);
+            // NIO streams report a missing permission as AccessDeniedException (java.io only gives
+            // a generic FileNotFoundException), so the message can explain the cause
+            try (OutputStream out = Files.newOutputStream(targetFile)) {
+                objectMapper.writeValue(out, exportData);
+            }
         } catch (IOException e) {
-            throw new StateRepositoryException("Failed to export state to " + targetFile.toAbsolutePath(), e);
+            throw new StateRepositoryException(exportFailureMessage(targetFile, e), e);
         }
+    }
+
+    /**
+     * Builds the message of a failed export, naming the cause so the user knows what to change.
+     *
+     * @param targetFile the file that could not be written
+     * @param error      the error raised while writing it
+     * @return the message for the user
+     */
+    static String exportFailureMessage(Path targetFile, IOException error) {
+        Path absolute = targetFile.toAbsolutePath();
+        if (error instanceof AccessDeniedException) {
+            Path folder = absolute.getParent() != null ? absolute.getParent() : absolute;
+            return FolderAccess.noPermissionMessage(folder);
+        }
+        String cause = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
+        return "Could not write " + absolute + ": " + cause;
     }
 
     @Override

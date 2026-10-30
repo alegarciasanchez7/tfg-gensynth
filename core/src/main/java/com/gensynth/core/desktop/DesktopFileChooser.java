@@ -1,5 +1,6 @@
 package com.gensynth.core.desktop;
 
+import com.gensynth.core.config.FolderAccess;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -154,6 +155,13 @@ public final class DesktopFileChooser {
                 if (getDialogType() == SAVE_DIALOG && getSelectedFile() != null) {
                     File target = withExtension(getSelectedFile(), filter);
                     setSelectedFile(target);
+                    // Keep the dialog open on a read-only folder (e.g. Program Files) instead of failing after it closes
+                    File folder = target.getAbsoluteFile().getParentFile();
+                    if (folder != null && folder.isDirectory() && !FolderAccess.canWriteIn(folder.toPath())) {
+                        JOptionPane.showMessageDialog(this, FolderAccess.noPermissionMessage(folder.toPath()),
+                                "Cannot save here", JOptionPane.WARNING_MESSAGE);
+                        return;
+                    }
                     if (target.exists() && !confirmOverwrite(this, target)) {
                         return;
                     }
