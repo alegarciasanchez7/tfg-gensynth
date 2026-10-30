@@ -38,3 +38,16 @@ describe('validateCommand event loss fields', () => {
     expect(validateCommand('CREATE_FLOW', create({ outageEveryTicks: 2.5 }))?.message).toMatch(/outageEveryTicks/);
   });
 });
+
+describe('validateCommand UPDATE_OUTPUT_FOLDER', () => {
+  it('accepts a path or null (back to the default folder)', () => {
+    expect(validateCommand('UPDATE_OUTPUT_FOLDER', { path: '/home/ana/results' })).toBeNull();
+    expect(validateCommand('UPDATE_OUTPUT_FOLDER', { path: null })).toBeNull();
+  });
+
+  it('rejects a missing payload or a path that is not text', () => {
+    expect(validateCommand('UPDATE_OUTPUT_FOLDER', undefined)?.message).toMatch(/UPDATE_OUTPUT_FOLDER/);
+    expect(validateCommand('UPDATE_OUTPUT_FOLDER', { path: 42 } as unknown as { path: string })?.message)
+      .toMatch(/UPDATE_OUTPUT_FOLDER/);
+  });
+});

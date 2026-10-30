@@ -1,6 +1,7 @@
 package com.gensynth.core.ws;
 
 import com.gensynth.core.config.AppPaths;
+import com.gensynth.core.config.DevicePreferences;
 import com.fasterxml.jackson.core.StreamReadConstraints;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -77,7 +78,8 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         "PAUSE_GROUP",
         "UI_LOG",
         "CONVERT_MESSAGE_FORMAT",
-        "UPDATE_SETTINGS"
+        "UPDATE_SETTINGS",
+        "UPDATE_OUTPUT_FOLDER"
     );
 
     private final ObjectMapper objectMapper = createConfiguredMapper();
@@ -99,6 +101,8 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
     final ConnectorCatalogService connectorCatalogService;
     final StateRepository stateRepository;
     final IPluginInstaller pluginInstaller;
+    /** Preferences of this computer, stored next to the autosaved state. */
+    final DevicePreferences devicePreferences;
 
     final Map<String, GroupRuntime> groupsById = new LinkedHashMap<>();
     final Map<String, Variable> variablesById = new ConcurrentHashMap<>();
@@ -174,6 +178,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         this.connectorCatalogService = connectorCatalogService;
         this.stateRepository = stateRepository;
         this.pluginInstaller = pluginInstaller;
+        this.devicePreferences = DevicePreferences.inFolder(stateRepository.getStateDirectory());
         if (this.pluginInstaller instanceof PluginInstallerImpl) {
             ((PluginInstallerImpl) this.pluginInstaller).setPluginManager(this.connectorCatalogService.getPluginManager());
         }
@@ -333,6 +338,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                 case "IMPORT_STATE" -> stateCommandHandler.handleImportState(conn, commandId, payload);
                 case "CONVERT_MESSAGE_FORMAT" -> handleConvertMessageFormat(conn, payload, commandId);
                 case "UPDATE_SETTINGS" -> settingsCommandHandler.handleUpdateSettings(conn, payload, commandId);
+                case "UPDATE_OUTPUT_FOLDER" -> settingsCommandHandler.handleUpdateOutputFolder(conn, payload, commandId);
                 default -> sendError(conn, commandId, "UNSUPPORTED_COMMAND", "Unsupported command: " + type, Map.of(
                     "command", type
                 ));

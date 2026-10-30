@@ -309,6 +309,7 @@ export function rootReducer(state: AppState, action: AppAction): AppState {
       groups: normalizedGroups,
       variables: normalizedVars,
       settings,
+      outputFolder: action.payload.outputFolder ?? state.outputFolder,
       savedState,
       isDirty,
       dirtyItems,

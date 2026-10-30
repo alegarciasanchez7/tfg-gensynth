@@ -194,7 +194,18 @@ public final class AppPaths {
      * @return absolute path of the session output folder (not created yet)
      */
     public String newSessionOutputDir() {
+        return newSessionOutputDir(outputsHome);
+    }
+
+    /**
+     * Builds the output folder of a new session inside the given folder, named after the current
+     * date and time.
+     *
+     * @param base folder that holds the session folders
+     * @return absolute path of the session output folder (not created yet)
+     */
+    public static String newSessionOutputDir(Path base) {
         String timestamp = LocalDateTime.now(ZoneId.systemDefault()).format(SESSION_TIMESTAMP);
-        return outputsHome.resolve(OUTPUT_DIR_PREFIX + timestamp).toAbsolutePath().toString();
+        return base.resolve(OUTPUT_DIR_PREFIX + timestamp).toAbsolutePath().toString();
     }
 }

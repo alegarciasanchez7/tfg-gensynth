@@ -307,6 +307,19 @@ export interface ProjectSettings {
   tick: TickSettings;
 }
 
+/**
+ * Folder where each START creates its OUTPUT_FILES_<date> session folder. A preference of this
+ * computer, not saved with the project. Mirrors BridgeContext#outputFolderPayload in the Core.
+ */
+export interface OutputFolderInfo {
+  /** Folder in use: the chosen one, or the default one. */
+  path: string;
+  /** Default folder (~/GenSynth when installed). */
+  defaultPath: string;
+  /** Whether the user chose the folder. */
+  custom: boolean;
+}
+
 /** How the flows of a group send: one FIFO queue + one sender, or one thread per flow. Mirrors OutputMode in the Core. */
 export type OutputMode = 'parallel' | 'sequential';
 

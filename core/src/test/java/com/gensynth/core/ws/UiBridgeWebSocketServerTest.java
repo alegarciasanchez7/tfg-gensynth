@@ -450,6 +450,70 @@ public class UiBridgeWebSocketServerTest {
         server.shutdown();
     }
 
+    // ============ Output folder ============
+
+    private static String outputFolderCommand(String commandId, Path folder) {
+        String path = folder == null ? "null" : "\"" + folder.toString().replace("\\", "\\\\") + "\"";
+        return "{\"type\":\"UPDATE_OUTPUT_FOLDER\",\"commandId\":\"" + commandId + "\",\"protocolVersion\":\"1.0.0\","
+                + "\"payload\":{\"path\":" + path + "}}";
+    }
+
+    @Test
+    public void updateOutputFolderIsSavedReportedAndUsedByTheNextStart() throws Exception {
+        Path tempDir = Files.createTempDirectory("gensynth-ws-test-output-folder-");
+        Path chosen = tempDir.resolve("My results");
+        UiBridgeWebSocketServer server = newServer(tempDir, new JsonStateRepositoryImpl(tempDir.toString()));
+        WebSocket mockConn = mock(WebSocket.class);
+        when(mockConn.isOpen()).thenReturn(true);
+
+        server.onMessage(mockConn, outputFolderCommand("cmd-folder", chosen));
+
+        JsonNode ack = findMessage(sentMessages(mockConn), "CONNECTION_STATUS", "cmd-folder");
+        assertNotNull("UPDATE_OUTPUT_FOLDER should be acknowledged", ack);
+        assertEquals("output_folder_updated", ack.path("payload").path("result").asText());
+        JsonNode folder = ack.path("payload").path("outputFolder");
+        assertEquals(chosen.toAbsolutePath().toString(), folder.path("path").asText());
+        assertTrue(folder.path("custom").asBoolean());
+        assertTrue("A missing folder is created", Files.isDirectory(chosen));
+
+        // A new server on the same state folder (an app restart) keeps the choice
+        server.shutdown();
+        server = newServer(tempDir, new JsonStateRepositoryImpl(tempDir.toString()));
+        server.onMessage(mockConn, "{\"type\":\"GET_INITIAL_STATE\",\"commandId\":\"cmd-init-folder\",\"protocolVersion\":\"1.0.0\"}");
+        JsonNode initial = findMessage(sentMessages(mockConn), "INITIAL_STATE", "cmd-init-folder");
+        assertNotNull(initial);
+        assertEquals(chosen.toAbsolutePath().toString(), initial.path("payload").path("outputFolder").path("path").asText());
+
+        server.onMessage(null, "{\"type\":\"START_SYSTEM\",\"commandId\":\"cmd-start-folder\",\"protocolVersion\":\"1.0.0\",\"payload\":{}}");
+        Path sessionDir = Path.of(server.bridgeContext.getCurrentOutputDir());
+        server.onMessage(null, "{\"type\":\"STOP_SYSTEM\",\"commandId\":\"cmd-stop-folder\",\"protocolVersion\":\"1.0.0\",\"payload\":{}}");
+        assertEquals(chosen.toAbsolutePath(), sessionDir.getParent());
+        assertTrue(sessionDir.getFileName().toString().startsWith("OUTPUT_FILES_"));
+        server.shutdown();
+    }
+
+    @Test
+    public void updateOutputFolderRejectsRelativePathsAndNullRestoresTheDefault() throws Exception {
+        Path tempDir = Files.createTempDirectory("gensynth-ws-test-output-folder-reset-");
+        UiBridgeWebSocketServer server = newServer(tempDir, new JsonStateRepositoryImpl(tempDir.toString()));
+        WebSocket mockConn = mock(WebSocket.class);
+        when(mockConn.isOpen()).thenReturn(true);
+
+        server.onMessage(mockConn, outputFolderCommand("cmd-relative", Path.of("relative", "folder")));
+        server.onMessage(mockConn, outputFolderCommand("cmd-set", tempDir.resolve("results")));
+        server.onMessage(mockConn, outputFolderCommand("cmd-reset", null));
+
+        List<JsonNode> messages = sentMessages(mockConn);
+        JsonNode error = findMessage(messages, "ERROR", "cmd-relative");
+        assertNotNull(error);
+        assertEquals("INVALID_PAYLOAD", error.path("payload").path("code").asText());
+        JsonNode reset = findMessage(messages, "CONNECTION_STATUS", "cmd-reset").path("payload").path("outputFolder");
+        assertFalse(reset.path("custom").asBoolean());
+        assertEquals(reset.path("defaultPath").asText(), reset.path("path").asText());
+        assertTrue(server.devicePreferences.outputFolder().isEmpty());
+        server.shutdown();
+    }
+
     @Test
     public void tickClockRunsOnlyWhileSystemIsRunning() throws Exception {
         Path tempDir = Files.createTempDirectory("gensynth-ws-test-clock-lifecycle-");

@@ -1,5 +1,5 @@
 import { bridge } from '../bridge';
-import type { PluginValidationResultPayload, PluginInstallResultPayload, StateFileResponsePayload } from '../types';
+import type { OutputFolderResponsePayload, PluginValidationResultPayload, PluginInstallResultPayload, StateFileResponsePayload } from '../types';
 import type { ProjectSettings } from '../../types';
 
 export const CoreCommands = {
@@ -58,6 +58,10 @@ export const CoreCommands = {
 
   // Project settings
   updateSettings: (settings: ProjectSettings) => bridge.send('UPDATE_SETTINGS', settings),
+
+  // Preferences of this computer
+  updateOutputFolder: (path: string | null) =>
+    bridge.send<'UPDATE_OUTPUT_FOLDER', OutputFolderResponsePayload>('UPDATE_OUTPUT_FOLDER', { path }),
 
   // Desktop specific
   pickDirectory: () => bridge.send('PICK_DIRECTORY'),

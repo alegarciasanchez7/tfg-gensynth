@@ -9,6 +9,9 @@ export function settingsReducer(state: AppState, action: AppAction): AppState {
         ? state
         : { ...state, settings: action.payload };
 
+    case 'SET_OUTPUT_FOLDER':
+      return { ...state, outputFolder: action.payload };
+
     default:
       return state;
   }

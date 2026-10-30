@@ -31,7 +31,7 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
   {
     id: 'storage',
     label: 'Save & Storage',
-    description: 'How and when the configuration is saved to its file.',
+    description: 'How and when the configuration is saved, and where the generated files go.',
     scope: 'device',
     icon: Save,
     Section: StorageSettingsSection,

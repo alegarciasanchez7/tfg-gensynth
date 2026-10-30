@@ -140,6 +140,12 @@ export function validateCommand<T extends UICommandType>(
         ? null
         : new Error('El comando UPDATE_SETTINGS requiere tick con mode, value y unit');
     }
+    case 'UPDATE_OUTPUT_FOLDER': {
+      const path = readField('path');
+      return isObjectPayload && (typeof path === 'string' || path === null)
+        ? null
+        : new Error('El comando UPDATE_OUTPUT_FOLDER requiere path (texto o null)');
+    }
     case 'PICK_DIRECTORY':
     case 'EXPORT_STATE':
       return null;

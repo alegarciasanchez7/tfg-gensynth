@@ -61,6 +61,7 @@ export const SUPPORTED_COMMANDS = new Set<UICommandType>([
   'PAUSE_GROUP',
   'UI_LOG',
   'UPDATE_SETTINGS',
+  'UPDATE_OUTPUT_FOLDER',
 ]);
 
 /**

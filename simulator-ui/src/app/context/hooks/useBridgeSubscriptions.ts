@@ -142,6 +142,7 @@ export function useBridgeSubscriptions({
             groups: serverGroups,
             variables: serverVariables,
             settings: snapshot.settings ? normalizeProjectSettings(snapshot.settings) : undefined,
+            outputFolder: snapshot.outputFolder,
             connectorCatalog: snapshot.connectorCatalog,
             metrics: snapshot.metrics,
             systemStatus: snapshot.systemStatus.status,

@@ -65,6 +65,8 @@ interface AppContextValue {
 
     // Project settings
     updateTickSettings: (tick: TickSettings) => Promise<void>;
+    /** Changes the folder of the generated files on this computer (null = default one). */
+    setOutputFolder: (path: string | null) => Promise<void>;
     
     // Selection
     selectGroup: (groupId: string) => void;
@@ -447,6 +449,17 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
     [reportCommandError]
   );
 
+  const setOutputFolder = useCallback(
+    (path: string | null) =>
+      settingsActions.setOutputFolder({
+        dispatch,
+        getConnectionMode: () => stateRef.current.connectionMode,
+        getOutputFolder: () => stateRef.current.outputFolder,
+        reportCommandError,
+      })(path),
+    [reportCommandError]
+  );
+
   // UI / Logs
   const setBottomTab = useCallback((tab: 'logs' | 'stats' | 'preview') => {
     dispatch({ type: 'SET_BOTTOM_TAB', payload: tab });
@@ -486,6 +499,7 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
     setAutoSave,
     setAutoSaveInterval,
     updateTickSettings,
+    setOutputFolder,
     selectGroup,
     selectFlow,
     selectVariable,

@@ -1,6 +1,5 @@
 package com.gensynth.core.ws.handler;
 
-import com.gensynth.core.config.AppPaths;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.gensynth.core.ws.BridgeContext;
 import com.gensynth.core.ws.UiBridgeWebSocketServer;
@@ -66,7 +65,7 @@ public class SystemCommandHandler implements CommandHandler {
 
             ctx.setSystemRunning(true);
             ctx.setSystemStartedAt(System.currentTimeMillis());
-            ctx.setCurrentOutputDir(AppPaths.current().newSessionOutputDir());
+            ctx.startOutputSession();
 
             for (GroupRuntime group : ctx.getGroupsById().values()) {
                 if (!"running".equals(group.status)) {

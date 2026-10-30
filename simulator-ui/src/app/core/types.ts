@@ -1,4 +1,4 @@
-import type { ProjectSettings, TickSettings } from '../types';
+import type { OutputFolderInfo, ProjectSettings, TickSettings } from '../types';
 
 /**
  * Tipos para la comunicación con el Core Java
@@ -217,7 +217,8 @@ export type UICommandType =
   | 'PICK_DIRECTORY'
   | 'EXPORT_STATE'
   | 'UI_LOG'
-  | 'UPDATE_SETTINGS';
+  | 'UPDATE_SETTINGS'
+  | 'UPDATE_OUTPUT_FOLDER';
 
 export interface StartGroupCommandPayload {
   groupId: string;
@@ -366,6 +367,18 @@ export interface UpdateSettingsCommandPayload {
   tick: TickSettings;
 }
 
+export interface UpdateOutputFolderCommandPayload {
+  /** Absolute folder, or null to go back to the default one. */
+  path: string | null;
+}
+
+/** Ack of UPDATE_OUTPUT_FOLDER. */
+export interface OutputFolderResponsePayload {
+  status?: string;
+  result?: string;
+  outputFolder?: OutputFolderInfo;
+}
+
 
 export interface ExportStateCommandPayload {
   filePath: string;
@@ -419,6 +432,7 @@ export interface UICommandPayloadMap {
   EXPORT_STATE: ExportStateCommandPayload;
   UI_LOG: UILogCommandPayload;
   UPDATE_SETTINGS: UpdateSettingsCommandPayload;
+  UPDATE_OUTPUT_FOLDER: UpdateOutputFolderCommandPayload;
 }
 
 export interface UICommand<T extends UICommandType = UICommandType> {
@@ -473,6 +487,8 @@ export interface InitialStatePayload {
   rollbackReport?: RollbackReportPayload;
   /** Current project settings (optional for older cores). */
   settings?: ProjectSettings;
+  /** Folder of the generated files on this computer (optional for older cores). */
+  outputFolder?: OutputFolderInfo;
 }
 
 export interface GroupState {

@@ -318,6 +318,7 @@ public class StateCommandHandler implements CommandHandler {
         }
         payload.put("variables", variablesPayload);
         payload.put("settings", ctx.getProjectSettings().toPayload());
+        payload.put("outputFolder", ctx.outputFolderPayload());
         payload.put("metrics", server.systemCommandHandler.buildMetricsPayload(null));
         payload.put("connectorCatalog", ctx.getConnectorCatalogService().listAvailableConnectors());
 

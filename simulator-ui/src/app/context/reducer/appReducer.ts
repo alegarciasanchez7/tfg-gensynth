@@ -4,7 +4,7 @@ import type {
   ConnectorPluginDescriptor,
   RollbackReportPayload,
 } from '../../core/types';
-import type { Selection, Group, Variable, LogEntry, SystemStatus, ProjectSettings } from '../../types';
+import type { Selection, Group, Variable, LogEntry, SystemStatus, ProjectSettings, OutputFolderInfo } from '../../types';
 import type { ConnectorHealthSummary } from '../../types';
 import { createEmptyDirtyItems, type DirtyItems } from '../helpers/dirtyStateHelper';
 import { DEFAULT_PROJECT_SETTINGS } from '../../core/tickSettings';
@@ -75,6 +75,8 @@ export interface AppState {
   variables: Variable[];
   /** Project-wide simulation settings (tick clock), saved with the project. */
   settings: ProjectSettings;
+  /** Folder of the generated files on this computer; null until the Core reports it. */
+  outputFolder: OutputFolderInfo | null;
   logs: LogEntry[];
   formatTemplates: Record<string, string>;
   connectorCatalog: ConnectorPluginDescriptor[];
@@ -109,6 +111,7 @@ export const initialState: AppState = {
   groups: [],
   variables: [],
   settings: DEFAULT_PROJECT_SETTINGS,
+  outputFolder: null,
   logs: [],
   formatTemplates: {},
   connectorCatalog: [],
@@ -132,6 +135,7 @@ export type AppAction =
   | { type: 'TOGGLE_GROUP_EXPANDED'; payload: string }
   | { type: 'SET_VARIABLES'; payload: Variable[] }
   | { type: 'SET_SETTINGS'; payload: ProjectSettings }
+  | { type: 'SET_OUTPUT_FOLDER'; payload: OutputFolderInfo }
   | { type: 'ADD_LOG'; payload: LogEntry }
   | { type: 'SET_LOGS'; payload: LogEntry[] }
   | { type: 'CLEAR_LOGS' }
@@ -157,6 +161,8 @@ export type AppAction =
         variables: Variable[];
         /** Project settings; the current ones are kept when omitted (e.g. older cores). */
         settings?: ProjectSettings;
+        /** Folder of the generated files; the current one is kept when omitted (e.g. older cores). */
+        outputFolder?: OutputFolderInfo;
         logs?: LogEntry[];
         connectorCatalog?: ConnectorPluginDescriptor[];
         metrics?: MetricsPayload | null;
