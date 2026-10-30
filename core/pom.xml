@@ -7,7 +7,7 @@
 
     <groupId>com.gensynth</groupId>
     <artifactId>core</artifactId>
-    <version>0.5.1</version>
+    <version>0.5.2</version>
     <packaging>jar</packaging>
 
     <name>Gen-Synth Core</name>
