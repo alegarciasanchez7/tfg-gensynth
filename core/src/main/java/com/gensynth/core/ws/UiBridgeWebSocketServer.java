@@ -19,7 +19,11 @@ import com.gensynth.core.persistence.StateRepository;
 import com.gensynth.core.ws.handler.*;
 import com.gensynth.core.ws.runtime.*;
 import org.java_websocket.WebSocket;
+import org.java_websocket.drafts.Draft;
+import org.java_websocket.exceptions.InvalidDataException;
+import org.java_websocket.framing.CloseFrame;
 import org.java_websocket.handshake.ClientHandshake;
+import org.java_websocket.handshake.ServerHandshakeBuilder;
 import org.java_websocket.server.WebSocketServer;
 
 import java.net.InetSocketAddress;
@@ -190,6 +194,22 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         }
         this.scheduler = Executors.newScheduledThreadPool(Math.max(4, Runtime.getRuntime().availableProcessors() * 2));
         initializeRuntime();
+    }
+
+    /**
+     * Rejects connections from web pages other than the GenSynth UI (see {@link AllowedOrigins}),
+     * so a site open in the user's browser cannot send commands to the Core.
+     */
+    @Override
+    public ServerHandshakeBuilder onWebsocketHandshakeReceivedAsServer(WebSocket conn, Draft draft, ClientHandshake request)
+            throws InvalidDataException {
+        ServerHandshakeBuilder response = super.onWebsocketHandshakeReceivedAsServer(conn, draft, request);
+        String origin = request.getFieldValue("Origin");
+        if (!AllowedOrigins.isAllowed(origin)) {
+            logger.warn("Rejected a WebSocket connection from origin '{}'", origin);
+            throw new InvalidDataException(CloseFrame.POLICY_VALIDATION, "Origin not allowed");
+        }
+        return response;
     }
 
     @Override
