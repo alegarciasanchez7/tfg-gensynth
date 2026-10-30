@@ -1,5 +1,6 @@
 package com.gensynth.core.ws;
 
+import com.gensynth.core.api.IGroupDispatcher;
 import com.gensynth.core.connectors.plugin.PluginInstallerImpl;
 import com.gensynth.core.connectors.runtime.ConnectorCatalogService;
 import com.gensynth.plugin.api.ConnectorSession;
@@ -356,5 +357,35 @@ public class TickDispatchTest {
         assertEquals("error", flow.connectionStatus);
         assertTrue(flow.errorMessage, flow.errorMessage.startsWith("Invalid connector configuration: File format must be one of"));
         assertFalse(server.connectorByFlowId.containsKey(flow.id));
+    }
+
+    @Test
+    public void reorderingARunningGroupChangesTheOrderOfTheNextTick() throws Exception {
+        GroupRuntime sequential = new GroupRuntime("g2", "Ordered", "running", "", 1, "sequential", true);
+        for (String id : List.of("a", "b", "c")) {
+            FlowRuntime orderedFlow = newFlow(id, "topic", "{}");
+            sequential.flows.add(orderedFlow);
+            server.connectorByFlowId.put(id, mock(ConnectorSession.class));
+        }
+        List<List<String>> dueOrders = new java.util.concurrent.CopyOnWriteArrayList<>();
+        sequential.dispatcher = new IGroupDispatcher() {
+            @Override
+            public boolean dispatch(List<FlowRuntime> dueFlows, long groupTick) {
+                dueOrders.add(dueFlows.stream().map(f -> f.id).toList());
+                return true;
+            }
+
+            @Override
+            public void shutdown() {
+            }
+        };
+        server.groupsById.put(sequential.id, sequential);
+
+        server.flowCommandHandler.onTick(1);
+        server.onMessage(null, "{\"type\":\"UPDATE_GROUP_CONFIG\",\"commandId\":\"reorder\",\"protocolVersion\":\"1.0.0\","
+            + "\"payload\":{\"groupId\":\"g2\",\"flowIds\":[\"c\",\"a\",\"b\"]}}");
+        server.flowCommandHandler.onTick(2);
+
+        assertEquals(List.of(List.of("a", "b", "c"), List.of("c", "a", "b")), dueOrders);
     }
 }

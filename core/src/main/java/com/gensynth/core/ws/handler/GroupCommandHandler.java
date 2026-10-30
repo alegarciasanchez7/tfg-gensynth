@@ -2,6 +2,7 @@ package com.gensynth.core.ws.handler;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.gensynth.core.model.OutputMode;
+import com.gensynth.core.model.SequentialOrder;
 import com.gensynth.core.model.Variable;
 import com.gensynth.core.util.NamingPattern;
 import com.gensynth.core.util.UniqueNames;
@@ -21,6 +22,8 @@ import java.util.UUID;
  */
 public class GroupCommandHandler implements CommandHandler {
     private static final String INVALID_OUTPUT_MODE = "outputMode must be 'parallel' or 'sequential'";
+    private static final String INVALID_SEQUENTIAL_ORDER = "sequentialOrder must be 'flow', 'random' or 'generated'";
+    private static final String INVALID_FLOW_IDS = "flowIds must be a list of flow ids";
     private final BridgeContext ctx;
     private final FlowCommandHandler flowHandler;
 
@@ -62,8 +65,14 @@ public class GroupCommandHandler implements CommandHandler {
                 server.sendError(conn, commandId, clientRequestId, "INVALID_PAYLOAD", INVALID_OUTPUT_MODE, Map.of("outputMode", outputMode));
                 return;
             }
+            String sequentialOrder = payload.path("sequentialOrder").asText(SequentialOrder.FLOW.wireValue());
+            if (!SequentialOrder.isValid(sequentialOrder)) {
+                server.sendError(conn, commandId, clientRequestId, "INVALID_PAYLOAD", INVALID_SEQUENTIAL_ORDER, Map.of("sequentialOrder", sequentialOrder));
+                return;
+            }
 
             GroupRuntime newGroup = new GroupRuntime(id, name, "stopped", description, threads, outputMode, true);
+            newGroup.sequentialOrder = SequentialOrder.fromValue(sequentialOrder).wireValue();
             ctx.getGroupsById().put(id, newGroup);
             server.persistState();
 
@@ -116,8 +125,10 @@ public class GroupCommandHandler implements CommandHandler {
                 return;
             }
 
+            // Validate every field before changing anything, so a rejected update leaves the group as it was
+            String newName = null;
             if (payload.hasNonNull("name")) {
-                String newName = payload.path("name").asText(group.name).trim();
+                newName = payload.path("name").asText(group.name).trim();
                 if (newName.isBlank()) {
                     server.sendError(conn, commandId, "INVALID_PAYLOAD", "Group name cannot be empty", Map.of("groupId", groupId));
                     return;
@@ -129,6 +140,36 @@ public class GroupCommandHandler implements CommandHandler {
                         return;
                     }
                 }
+            }
+
+            String outputMode = null;
+            if (payload.hasNonNull("outputMode")) {
+                outputMode = payload.path("outputMode").asText("");
+                if (!OutputMode.isValid(outputMode)) {
+                    server.sendError(conn, commandId, "INVALID_PAYLOAD", INVALID_OUTPUT_MODE, Map.of("outputMode", outputMode));
+                    return;
+                }
+            }
+
+            String sequentialOrder = null;
+            if (payload.hasNonNull("sequentialOrder")) {
+                sequentialOrder = payload.path("sequentialOrder").asText("");
+                if (!SequentialOrder.isValid(sequentialOrder)) {
+                    server.sendError(conn, commandId, "INVALID_PAYLOAD", INVALID_SEQUENTIAL_ORDER, Map.of("sequentialOrder", sequentialOrder));
+                    return;
+                }
+            }
+
+            List<String> flowIds = null;
+            if (payload.hasNonNull("flowIds")) {
+                flowIds = readFlowIds(payload.path("flowIds"));
+                if (flowIds == null) {
+                    server.sendError(conn, commandId, "INVALID_PAYLOAD", INVALID_FLOW_IDS, Map.of("groupId", groupId));
+                    return;
+                }
+            }
+
+            if (newName != null) {
                 group.name = newName;
             }
 
@@ -140,14 +181,17 @@ public class GroupCommandHandler implements CommandHandler {
                 group.threads = Math.max(1, payload.path("threads").asInt(group.threads));
             }
 
-            if (payload.hasNonNull("outputMode")) {
-                String outputMode = payload.path("outputMode").asText("");
-                if (!OutputMode.isValid(outputMode)) {
-                    server.sendError(conn, commandId, "INVALID_PAYLOAD", INVALID_OUTPUT_MODE, Map.of("outputMode", outputMode));
-                    return;
-                }
-                // Applied the next time the group starts
+            // Output mode and sequential order are applied the next time the group starts
+            if (outputMode != null) {
                 group.outputMode = OutputMode.fromValue(outputMode).wireValue();
+            }
+            if (sequentialOrder != null) {
+                group.sequentialOrder = SequentialOrder.fromValue(sequentialOrder).wireValue();
+            }
+
+            // The flow order applies at once: every tick reads the flow list under the state lock
+            if (flowIds != null) {
+                group.reorderFlows(flowIds);
             }
 
             if (payload.hasNonNull("enabled")) {
@@ -168,6 +212,26 @@ public class GroupCommandHandler implements CommandHandler {
         GroupRuntime group = ctx.getGroupsById().get(groupId);
         server.logToBackend("info", "GROUPS", "Updated config for group '" + (group != null ? group.name : groupId) + "'", commandId);
         server.broadcastGroupsUpdate();
+    }
+
+    /**
+     * Reads the {@code flowIds} array of UPDATE_GROUP_CONFIG.
+     *
+     * @param node the {@code flowIds} value
+     * @return the ids, or null if the value is not an array of strings
+     */
+    private static List<String> readFlowIds(JsonNode node) {
+        if (!node.isArray()) {
+            return null;
+        }
+        List<String> ids = new ArrayList<>();
+        for (JsonNode item : node) {
+            if (!item.isTextual()) {
+                return null;
+            }
+            ids.add(item.asText());
+        }
+        return ids;
     }
 
     public void handleStartGroup(WebSocket conn, JsonNode payload, String commandId) {
@@ -283,6 +347,7 @@ public class GroupCommandHandler implements CommandHandler {
                     original.outputMode,
                     original.enabled
                 );
+                clone.sequentialOrder = original.sequentialOrder;
 
                 // Clone flows
                 for (FlowRuntime originalFlow : original.flows) {

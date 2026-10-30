@@ -11,6 +11,7 @@ import java.util.Objects;
  * A Group is a logical container for multiple Flows with shared configuration:
  * - Name and description
  * - Output mode ({@link OutputMode}: parallel or sequential)
+ * - Sequential order ({@link SequentialOrder}), used by sequential groups only
  * - Number of threads (legacy: kept for file compatibility, ignored by the engine)
  * - Enabled/disabled state
  *
@@ -24,6 +25,7 @@ public class GroupDefinition {
     private boolean enabled;
     private int threads;
     private String outputMode;
+    private String sequentialOrder = SequentialOrder.FLOW.wireValue();
     private final Map<String, FlowDefinition> flows;
     private final Instant createdAt;
     private Instant updatedAt;
@@ -76,6 +78,13 @@ public class GroupDefinition {
 
     public String getOutputMode() {
         return outputMode;
+    }
+
+    /**
+     * @return the sequential order wire value ("flow", "random" or "generated")
+     */
+    public String getSequentialOrder() {
+        return sequentialOrder;
     }
 
     public Map<String, FlowDefinition> getFlows() {
@@ -139,6 +148,16 @@ public class GroupDefinition {
 
     public void setOutputMode(String outputMode) {
         this.outputMode = OutputMode.fromValue(outputMode).wireValue();
+        this.updatedAt = Instant.now();
+    }
+
+    /**
+     * Sets the order of the messages due on the same tick in a sequential group.
+     *
+     * @param sequentialOrder raw value; normalized with {@link SequentialOrder#fromValue(String)}
+     */
+    public void setSequentialOrder(String sequentialOrder) {
+        this.sequentialOrder = SequentialOrder.fromValue(sequentialOrder).wireValue();
         this.updatedAt = Instant.now();
     }
 
@@ -221,6 +240,7 @@ public class GroupDefinition {
         payload.put("enabled", enabled);
         payload.put("threads", threads);
         payload.put("outputMode", outputMode);
+        payload.put("sequentialOrder", sequentialOrder);
         
         java.util.List<Map<String, Object>> flowsPayload = new java.util.ArrayList<>();
         for (FlowDefinition flow : flows.values()) {
@@ -249,6 +269,9 @@ public class GroupDefinition {
         String outputMode = outputModeObj instanceof String ? (String) outputModeObj : null;
 
         GroupDefinition group = new GroupDefinition(groupId, name, description, threads, outputMode);
+        Object sequentialOrderObj = payload.get("sequentialOrder");
+        group.sequentialOrder = SequentialOrder.fromValue(
+            sequentialOrderObj instanceof String ? (String) sequentialOrderObj : null).wireValue();
         
         @SuppressWarnings("unchecked")
         java.util.List<Map<String, Object>> flowsPayload = (java.util.List<Map<String, Object>>) payload.get("flows");
@@ -280,6 +303,7 @@ public class GroupDefinition {
             ", enabled=" + enabled +
             ", threads=" + threads +
             ", outputMode='" + outputMode + '\'' +
+            ", sequentialOrder='" + sequentialOrder + '\'' +
             ", flowCount=" + flows.size() +
             ", createdAt=" + createdAt +
             ", updatedAt=" + updatedAt +

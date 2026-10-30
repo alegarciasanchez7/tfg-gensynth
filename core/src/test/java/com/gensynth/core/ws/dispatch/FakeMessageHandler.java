@@ -26,12 +26,25 @@ class FakeMessageHandler implements IFlowMessageHandler {
     final Map<String, AtomicInteger> generatedByFlow = new ConcurrentHashMap<>();
     final Map<String, AtomicInteger> skippedByFlow = new ConcurrentHashMap<>();
     final Map<String, CountDownLatch> blockedFlows = new ConcurrentHashMap<>();
+    /** Flows whose message generation waits for the latch (to finish generations in a chosen order). */
+    final Map<String, CountDownLatch> blockedGenerations = new ConcurrentHashMap<>();
+    /** Thread of every generate call, in call order. */
+    final List<String> generateThreads = new CopyOnWriteArrayList<>();
     /** Flows whose message generation fails (generate returns null, like a broken template). */
     final Set<String> failingFlows = ConcurrentHashMap.newKeySet();
     volatile boolean failNextPublish;
 
     @Override
     public String generate(GroupRuntime group, FlowRuntime flow) {
+        generateThreads.add(Thread.currentThread().getName());
+        CountDownLatch latch = blockedGenerations.get(flow.id);
+        if (latch != null) {
+            try {
+                latch.await(5, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
         if (failingFlows.contains(flow.id)) {
             return null;
         }

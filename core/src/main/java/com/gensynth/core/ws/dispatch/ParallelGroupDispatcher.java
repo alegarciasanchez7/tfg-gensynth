@@ -5,13 +5,7 @@ import com.gensynth.core.api.IGroupDispatcher;
 import com.gensynth.core.ws.runtime.FlowRuntime;
 import com.gensynth.core.ws.runtime.GroupRuntime;
 
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Parallel output mode: every flow of the group is an independent process with its own
@@ -26,17 +20,8 @@ public class ParallelGroupDispatcher implements IGroupDispatcher {
 
     private final GroupRuntime group;
     private final IFlowMessageHandler handler;
-    private final Map<String, Worker> workersByFlowId = new LinkedHashMap<>();
+    private final FlowWorkers workers;
     private volatile boolean closed;
-
-    private static final class Worker {
-        private final ExecutorService executor;
-        private final AtomicBoolean busy = new AtomicBoolean();
-
-        private Worker(ExecutorService executor) {
-            this.executor = executor;
-        }
-    }
 
     /**
      * Creates one worker thread per flow.
@@ -48,15 +33,7 @@ public class ParallelGroupDispatcher implements IGroupDispatcher {
     public ParallelGroupDispatcher(GroupRuntime group, List<FlowRuntime> flows, IFlowMessageHandler handler) {
         this.group = group;
         this.handler = handler;
-        for (FlowRuntime flow : flows) {
-            String threadName = "gensynth-" + group.name + "-" + flow.name;
-            ExecutorService executor = Executors.newSingleThreadExecutor(runnable -> {
-                Thread thread = new Thread(runnable, threadName);
-                thread.setDaemon(true);
-                return thread;
-            });
-            workersByFlowId.put(flow.id, new Worker(executor));
-        }
+        this.workers = new FlowWorkers(group, flows);
     }
 
     @Override
@@ -66,45 +43,28 @@ public class ParallelGroupDispatcher implements IGroupDispatcher {
         }
         boolean handedOff = false;
         for (FlowRuntime flow : dueFlows) {
-            Worker worker = workersByFlowId.get(flow.id);
-            if (worker == null) {
-                continue;
-            }
-            if (!worker.busy.compareAndSet(false, true)) {
-                handler.onTickSkipped(group, flow);
-                continue;
-            }
-            try {
-                worker.executor.execute(() -> sendOne(worker, flow, groupTick));
-                handedOff = true;
-            } catch (RejectedExecutionException e) {
-                // Shut down concurrently
-                worker.busy.set(false);
+            switch (workers.tryRun(flow, () -> sendOne(flow, groupTick))) {
+                case STARTED -> handedOff = true;
+                case BUSY -> handler.onTickSkipped(group, flow);
+                case UNAVAILABLE -> { }
             }
         }
         return handedOff;
     }
 
-    private void sendOne(Worker worker, FlowRuntime flow, long groupTick) {
-        try {
-            if (closed) {
-                return;
-            }
-            String payload = handler.generate(group, flow);
-            if (payload != null && !closed) {
-                handler.publish(group, flow, payload, groupTick);
-            }
-        } finally {
-            worker.busy.set(false);
+    private void sendOne(FlowRuntime flow, long groupTick) {
+        if (closed) {
+            return;
+        }
+        String payload = handler.generate(group, flow);
+        if (payload != null && !closed) {
+            handler.publish(group, flow, payload, groupTick);
         }
     }
 
     @Override
     public void shutdown() {
         closed = true;
-        for (Worker worker : workersByFlowId.values()) {
-            // No interrupt: interrupting a publish can break the connector (e.g. a RabbitMQ channel)
-            worker.executor.shutdown();
-        }
+        workers.shutdown();
     }
 }

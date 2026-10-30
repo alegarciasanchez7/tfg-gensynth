@@ -27,6 +27,36 @@ public class GroupFlowDefinitionTest {
     }
 
     @Test
+    public void sequentialOrderIsStrictForCommandsAndLenientForFiles() {
+        assertTrue(SequentialOrder.isValid("flow"));
+        assertTrue(SequentialOrder.isValid(" Random "));
+        assertTrue(SequentialOrder.isValid("GENERATED"));
+        assertFalse(SequentialOrder.isValid("fifo"));
+        assertFalse(SequentialOrder.isValid(null));
+
+        assertEquals(SequentialOrder.GENERATED, SequentialOrder.fromValue("generated"));
+        assertEquals(SequentialOrder.FLOW, SequentialOrder.fromValue("fifo"));
+        assertEquals(SequentialOrder.FLOW, SequentialOrder.fromValue(null));
+    }
+
+    @Test
+    public void sequentialOrderIsSavedAndOldProjectsLoadWithFlowOrder() {
+        GroupDefinition group = new GroupDefinition("g1", "Group", "", 1, "sequential");
+        group.setSequentialOrder("random");
+
+        GroupDefinition loaded = GroupDefinition.fromPayload(new HashMap<>(group.toPayload()));
+        assertEquals("random", loaded.getSequentialOrder());
+
+        Map<String, Object> old = new HashMap<>();
+        old.put("id", "g2");
+        old.put("name", "Old");
+        old.put("outputMode", "sequential");
+        assertEquals("flow", GroupDefinition.fromPayload(old).getSequentialOrder());
+        old.put("sequentialOrder", "unknown");
+        assertEquals("flow", GroupDefinition.fromPayload(old).getSequentialOrder());
+    }
+
+    @Test
     public void groupWithoutLegacyFieldsLoadsWithDefaults() {
         Map<String, Object> payload = new HashMap<>();
         payload.put("id", "g1");
