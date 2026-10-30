@@ -75,13 +75,33 @@ Everything GenSynth needs is included: you do not need to install Java.
 > - **First start:** GenSynth downloads its embedded browser (about 150 MB), so it needs an
 >   internet connection. A window shows the progress; it only happens once.
 
-To update, install the new version over the old one: your plugins and settings are kept.
+### Updating
+
+From version 0.5.2, GenSynth checks for new versions when it starts (it needs internet; offline,
+nothing happens). When there is one, a notice shows what is new and lets **you** choose:
+
+- **Update now**: GenSynth asks for confirmation (save your project first), downloads the installer
+  of your system, checks that it is complete and has not been modified (SHA-256), and installs it.
+  The download can be cancelled.
+  - **Windows**: GenSynth closes and the installer opens; Windows asks for permission as in the
+    first installation. Open GenSynth again when it finishes.
+  - **Linux** (`.deb` / `.rpm`): enter your password when asked; GenSynth restarts by itself.
+  - **macOS**: GenSynth closes and the disk image opens: drag GenSynth to *Applications* again.
+- **Not now**: keep working with the version you have; GenSynth asks again the next time it
+  starts. A small **Update available** button stays next to the version in the top bar.
+- **Skip this version**: GenSynth does not offer that version again (only a newer one).
+
+Nothing is downloaded or installed unless you choose **Update now**. You can also check at any
+time, or turn the check off, in **Settings → About & Updates**. Updating keeps your plugins,
+settings and projects. To update by hand, install the new version over the old one.
+
+Versions before 0.5.2 do not have this feature: install 0.5.2 by hand once.
 
 ### Where GenSynth keeps its files
 
 | What | Installed application | Built from source |
 |---|---|---|
-| Plugins, autosave and embedded browser | Windows: `%LOCALAPPDATA%\GenSynth`<br>Linux: `~/.local/share/gensynth`<br>macOS: `~/Library/Application Support/GenSynth` | `core/` |
+| Plugins, autosave, embedded browser and downloaded updates | Windows: `%LOCALAPPDATA%\GenSynth`<br>Linux: `~/.local/share/gensynth`<br>macOS: `~/Library/Application Support/GenSynth` | `core/` |
 | Generated files (`OUTPUT_FILES_<date>`) | `~/GenSynth` in your user folder (on Windows, `C:\Users\<you>\GenSynth`) | `core/` |
 
 You can choose another folder for the generated files in **Settings → Save & Storage → Output
@@ -272,8 +292,9 @@ Click a group to open its workspace:
 | **THROUGHPUT** / **FLOWS** / **ERRORS** | Messages per second of the whole group, number of flows, and flows currently in error. |
 | **Group Name** | Name of the group. It is also the sub-folder used by File Output. |
 | **Output Mode** | **Parallel** (default) or **Sequential**, see below. Applies the next time the group starts. |
+| **Sequential Order** | Only for sequential groups: **Flow order**, **Random** or **First generated**, see below. Applies the next time the group starts. |
 | **Description** | Free text for your own notes. |
-| **Flows in this group** | Click a flow to open it. |
+| **Flows in this group** | Click a flow to open it. The number on the left is its position; the ↑ / ↓ arrows move it. The order is also the order of the flows in the left panel and, with **Flow order**, the order in which a sequential group sends. It applies at once, even while the group runs. |
 | **Discard** / **Delete** | Revert the unsaved changes of the group / delete it with all its flows. |
 
 ### Output modes
@@ -281,7 +302,15 @@ Click a group to open its workspace:
 | Mode | Behaviour | When to use it |
 |---|---|---|
 | **Parallel** | Each flow has its own sender thread and sends as soon as it generates its message. If a flow is still sending when its next tick arrives, that tick is skipped for that flow (the log warns *"Sending is slower than the tick rate"*). | Independent devices; maximum throughput. |
-| **Sequential** | The messages of all flows go into one queue in generation order (tick order, then flow order) and a single sender publishes them one after another. If the queue (10 000 messages) is full, the whole tick is skipped for the group. | When the arrival order at the broker must match the generation order, e.g. to test rules that depend on event order across devices. |
+| **Sequential** | The messages of all flows go into one queue and a single sender publishes them one after another, in tick order and, inside a tick, in the group's **Sequential Order**. If the queue (10 000 messages) is full, the whole tick is skipped for the group. | When the arrival order at the broker matters, e.g. to test rules that depend on event order across devices. |
+
+**Sequential Order** decides the order of the messages of the same tick:
+
+| Order | Messages of a tick are sent… | Use it to test… |
+|---|---|---|
+| **Flow order** (default) | In the order of the flow list, which you set with the ↑ / ↓ arrows. Always the same order. | A fixed, reproducible sequence (e.g. sensor A always before sensor B). |
+| **Random** | In a new random order on every tick. | Rules that must not depend on which device reports first. |
+| **First generated** | As soon as each one is ready: the flows generate at the same time and the fastest one is sent first. A flow still generating when its next tick arrives skips that tick. | Arrival order driven by generation time, like real devices. `{{n}}` may then arrive out of order. |
 
 ### Group menu (⋮)
 
@@ -678,6 +707,8 @@ this device* or *Saved with the project*.
 | | **Output folder** | Where every **START** creates its `OUTPUT_FILES_<date>` folder. Type a full path or click **Browse**; **Default** goes back to the default folder. It must be a folder you can write in; the change applies from the next START. The **Output directory** of a File Output flow overrides it. | `~/GenSynth` |
 | **Simulation** (project) | **Tick mode** | **Fixed period** or **As Fast As You Can**. | Fixed period |
 | | Period value and unit | Length of a tick. | 1 Seconds |
+| **About & Updates** (device) | **Check now** | Checks whether a newer version exists; if it does, offers **Update now** and **Release notes** (see [Updating](#updating)). Only in the installed desktop app. | — |
+| | **Check for updates at startup** | Shows a notice when a new version is published. It never installs by itself. | On |
 
 ![Save and storage settings](docs-assets/user-guide/30-settings-storage.png)
 
