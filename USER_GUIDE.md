@@ -107,11 +107,11 @@ Versions before 0.5.2 do not have this feature: install 0.5.2 by hand once.
 You can choose another folder for the generated files in **Settings → Save & Storage → Output
 folder** (see [Settings](#settings)). Uninstalling GenSynth does not delete these folders.
 
-### Optional: the RabbitMQ connector
+### Connectors included
 
-GenSynth always includes the **File Output** connector. To publish to RabbitMQ, also download
-`rabbitmq-connector-1.0.0.jar` from the **Assets** of the same release page. You install it from
-inside GenSynth (see [Importing a plugin](#importing-a-plugin)); there is nothing to unpack.
+GenSynth includes two connectors, ready to use after installing: **File Output** and **RabbitMQ**
+(see [Connectors](#connectors)). Other technologies are added with a connector plugin (see
+[Importing a plugin](#importing-a-plugin)).
 
 ---
 
@@ -123,7 +123,7 @@ inside GenSynth (see [Importing a plugin](#importing-a-plugin)); there is nothin
 | **Flow** | One stream of messages: a message format (template), a pace (*Every N ticks*) and a destination (connector). Think of it as one device. |
 | **Variable** | A value generator (number, text, list item, boolean, date/time or position) that you insert in a template with `{{name}}`. |
 | **Template** | The text of each message (JSON, XML, CSV or plain text) with `{{…}}` placeholders. |
-| **Connector** | Where messages go: a file, or a broker added with a plugin (RabbitMQ…). |
+| **Connector** | Where messages go: a file, RabbitMQ, or another destination added with a plugin. |
 | **Tick** | The global clock of the simulation. On every tick, each flow that is due generates one message. |
 
 ---
@@ -240,10 +240,8 @@ It takes about five minutes.
    docker run -d --name rabbitmq -p 5672:5672 -p 15672:15672 rabbitmq:3-management
    ```
 
-2. **Install the plugin.** Click **+** (Import Plugin) in the top bar, drop
-   `rabbitmq-connector-1.0.0.jar`, wait for the validation and click **Import Validated Plugin →
-   INSTALL & RESTART**. GenSynth restarts (see [Importing a plugin](#importing-a-plugin)).
-3. **Point the flows to RabbitMQ.** Select *Station 1* in the left panel. In the flow settings, in
+2. **Point the flows to RabbitMQ.** The RabbitMQ connector is included in GenSynth: there is
+   nothing to install. Select *Station 1* in the left panel. In the flow settings, in
    the centre of the window (above **Message Format**), change **Connector** to **RabbitMQ** and
    fill in the fields. For a local broker only three fields need a value:
 
@@ -256,10 +254,10 @@ It takes about five minutes.
    Setting **Queue** makes GenSynth create a durable queue bound to the exchange, so messages are
    kept until your consumer reads them. Tip: configure *Station 1* first and then clone it; clones
    copy the connector settings.
-4. **Start** and open the management UI at <http://localhost:15672> (user `guest`, password
+3. **Start** and open the management UI at <http://localhost:15672> (user `guest`, password
    `guest`). In **Queues → weather-readings → Get messages** you can see the JSON of each reading.
 
-All the RabbitMQ fields are described in [RabbitMQ connector](#rabbitmq-connector).
+All the RabbitMQ fields are described in [RabbitMQ connector](#rabbitmq-connector-built-in).
 
 ### Consuming the events
 
@@ -581,7 +579,8 @@ counts as a **fail**.
 
 ### File Output (built in)
 
-GenSynth includes one connector, always available, that writes the messages of each flow to a file:
+GenSynth includes two connectors, always available: this one, which writes the messages of each flow
+to a file, and [RabbitMQ](#rabbitmq-connector-built-in).
 
 | Field | What it does | Default |
 |---|---|---|
@@ -626,7 +625,7 @@ Click **Connectors (N)** in the top bar to open the catalog. For each loaded con
 
 ![Plugin import](docs-assets/user-guide/11-plugin-import.png)
 
-Any destination other than a file is added with a **connector plugin**: a single `.jar` file that
+Any destination other than a file or RabbitMQ is added with a **connector plugin**: a single `.jar` file that
 teaches GenSynth to send messages to a technology such as a message broker (AMQP, MQTT, Kafka…),
 a TCP/UDP socket or an HTTP endpoint. Plugins are distributed separately from GenSynth, and anyone
 can implement one by following the [Plugin Developer Guide](plugin-api/PLUGIN_DEVELOPER_GUIDE.md).
@@ -638,12 +637,14 @@ can implement one by following the [Plugin Developer Guide](plugin-api/PLUGIN_DE
 4. Click **Import Validated Plugin** and confirm with **INSTALL & RESTART**. GenSynth restarts
    (running flows stop) and the new connector appears in the connector list of every flow.
 
-### RabbitMQ connector
+### RabbitMQ connector (built in)
 
 ![RabbitMQ fields](docs-assets/user-guide/12-rabbitmq-fields.png)
 
-The RabbitMQ plugin publishes each message to an exchange and waits for the broker's
-confirmation before counting it as sent.
+The RabbitMQ connector is included in GenSynth (since 0.5.2; before, it was a separate plugin). It
+publishes each message to an exchange and waits for the broker's confirmation before counting it
+as sent. Its source code is in [`connectors/rabbitmq`](connectors/rabbitmq), a complete example of
+a connector plugin.
 
 | Field | What it does | Default |
 |---|---|---|

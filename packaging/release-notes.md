@@ -1,6 +1,7 @@
 ## What's new in 0.5.2
 
 - **Update from the app:** GenSynth checks for new versions when it starts and lets you choose: **Update now** (it downloads the installer of your system, checks it with SHA-256 and installs it), **Not now** (keep the installed version) or **Skip this version**. Nothing is installed unless you ask; you can also check, or turn the check off, in *Settings → About & Updates*. Versions before 0.5.2 do not have it, so install this version by hand once.
+- **RabbitMQ included:** the RabbitMQ connector now comes with GenSynth, so there is no plugin to download or import. If you imported `rabbitmq-connector-1.0.0.jar` in 0.5.1, there is nothing to do: GenSynth uses the included one and ignores the old copy.
 - **Order of a sequential group:** choose how the messages of the same tick are ordered: **Flow order** (set it with the new ↑ / ↓ arrows of the flow list), **Random** (a new order every tick) or **First generated** (each message is sent as soon as it is ready).
 
 Fixes for the first reviews of the [user guide](https://github.com/alegarciasanchez7/tfg-gensynth/blob/main/USER_GUIDE.md) walkthrough:
@@ -33,6 +34,4 @@ No Java installation is needed: everything GenSynth needs is included.
 
 `SHA256SUMS.txt` lists the checksum of every file.
 
-### Optional downloads
 
-- `rabbitmq-connector-1.0.0.jar`: connector plugin to publish to RabbitMQ. Install it with **Connectors → Import plugin**; GenSynth restarts and RabbitMQ appears in the connector list.
