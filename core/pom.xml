@@ -191,6 +191,18 @@
     </dependencies>
 
     <build>
+        <resources>
+            <!-- Copied as is: the UI bundle may contain ${...} that must not be replaced -->
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>false</filtering>
+            </resource>
+            <!-- Filtered: gensynth-version.properties gets the project version -->
+            <resource>
+                <directory>src/main/resources-filtered</directory>
+                <filtering>true</filtering>
+            </resource>
+        </resources>
         <plugins>
             <!-- 1. Build React UI -->
             <plugin>

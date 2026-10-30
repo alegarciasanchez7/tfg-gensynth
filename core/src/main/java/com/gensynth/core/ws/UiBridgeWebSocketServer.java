@@ -2,6 +2,7 @@ package com.gensynth.core.ws;
 
 import com.gensynth.core.config.AppPaths;
 import com.gensynth.core.config.DevicePreferences;
+import com.gensynth.core.update.GitHubUpdateService;
 import com.fasterxml.jackson.core.StreamReadConstraints;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -79,7 +80,10 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         "UI_LOG",
         "CONVERT_MESSAGE_FORMAT",
         "UPDATE_SETTINGS",
-        "UPDATE_OUTPUT_FOLDER"
+        "UPDATE_OUTPUT_FOLDER",
+        "CHECK_FOR_UPDATES",
+        "INSTALL_UPDATE",
+        "CANCEL_UPDATE"
     );
 
     private final ObjectMapper objectMapper = createConfiguredMapper();
@@ -135,6 +139,8 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
     public final StateCommandHandler stateCommandHandler = new StateCommandHandler(bridgeContext);
     public final SystemCommandHandler systemCommandHandler = new SystemCommandHandler(bridgeContext);
     public final SettingsCommandHandler settingsCommandHandler = new SettingsCommandHandler(bridgeContext);
+    public final UpdateCommandHandler updateCommandHandler =
+        new UpdateCommandHandler(bridgeContext, GitHubUpdateService.forCurrentInstallation());
     /** Global simulation clock; runs exactly while the system is running (see BridgeContext#setSystemRunning). */
     final ITickClock tickClock = new TickClockImpl(flowCommandHandler);
     
@@ -339,6 +345,9 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                 case "CONVERT_MESSAGE_FORMAT" -> handleConvertMessageFormat(conn, payload, commandId);
                 case "UPDATE_SETTINGS" -> settingsCommandHandler.handleUpdateSettings(conn, payload, commandId);
                 case "UPDATE_OUTPUT_FOLDER" -> settingsCommandHandler.handleUpdateOutputFolder(conn, payload, commandId);
+                case "CHECK_FOR_UPDATES" -> updateCommandHandler.handleCheckForUpdates(conn, commandId);
+                case "INSTALL_UPDATE" -> updateCommandHandler.handleInstallUpdate(conn, payload, commandId);
+                case "CANCEL_UPDATE" -> updateCommandHandler.handleCancelUpdate(conn, commandId);
                 default -> sendError(conn, commandId, "UNSUPPORTED_COMMAND", "Unsupported command: " + type, Map.of(
                     "command", type
                 ));
