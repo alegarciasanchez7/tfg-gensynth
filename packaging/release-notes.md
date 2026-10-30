@@ -10,6 +10,7 @@ Fixes for the first reviews of the [user guide](https://github.com/alegarciasanc
 - **Saving where you cannot write** (for example in `C:\Program Files\GenSynth`, the installation folder) now says that the folder is not writable and asks for another one, right in the save dialog, instead of *"Failed to export state"*.
 - The **Feedback** button tooltip no longer says the form is anonymous: it asks for your email to follow up on bugs.
 - A group update that is rejected (for example an unknown output mode) no longer applies the other changes sent with it, such as a new name.
+- **Security:** GenSynth only accepts connections from its own interface. Before, a web page open in your browser while GenSynth was running could send it commands.
 
 ## Download and install
 

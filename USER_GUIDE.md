@@ -714,6 +714,8 @@ this device* or *Saved with the project*.
 
 ![Simulation settings](docs-assets/user-guide/31-settings-simulation.png)
 
+![About and updates settings](docs-assets/user-guide/42-settings-updates.png)
+
 ---
 
 ## Variables
