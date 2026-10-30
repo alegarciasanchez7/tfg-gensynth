@@ -1,6 +1,8 @@
 package com.gensynth.core.ws;
 
 import com.gensynth.core.config.AppPaths;
+import com.gensynth.core.config.DevicePreferences;
+import com.gensynth.core.update.GitHubUpdateService;
 import com.fasterxml.jackson.core.StreamReadConstraints;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -17,7 +19,11 @@ import com.gensynth.core.persistence.StateRepository;
 import com.gensynth.core.ws.handler.*;
 import com.gensynth.core.ws.runtime.*;
 import org.java_websocket.WebSocket;
+import org.java_websocket.drafts.Draft;
+import org.java_websocket.exceptions.InvalidDataException;
+import org.java_websocket.framing.CloseFrame;
 import org.java_websocket.handshake.ClientHandshake;
+import org.java_websocket.handshake.ServerHandshakeBuilder;
 import org.java_websocket.server.WebSocketServer;
 
 import java.net.InetSocketAddress;
@@ -77,7 +83,11 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         "PAUSE_GROUP",
         "UI_LOG",
         "CONVERT_MESSAGE_FORMAT",
-        "UPDATE_SETTINGS"
+        "UPDATE_SETTINGS",
+        "UPDATE_OUTPUT_FOLDER",
+        "CHECK_FOR_UPDATES",
+        "INSTALL_UPDATE",
+        "CANCEL_UPDATE"
     );
 
     private final ObjectMapper objectMapper = createConfiguredMapper();
@@ -99,6 +109,8 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
     final ConnectorCatalogService connectorCatalogService;
     final StateRepository stateRepository;
     final IPluginInstaller pluginInstaller;
+    /** Preferences of this computer, stored next to the autosaved state. */
+    final DevicePreferences devicePreferences;
 
     final Map<String, GroupRuntime> groupsById = new LinkedHashMap<>();
     final Map<String, Variable> variablesById = new ConcurrentHashMap<>();
@@ -131,6 +143,8 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
     public final StateCommandHandler stateCommandHandler = new StateCommandHandler(bridgeContext);
     public final SystemCommandHandler systemCommandHandler = new SystemCommandHandler(bridgeContext);
     public final SettingsCommandHandler settingsCommandHandler = new SettingsCommandHandler(bridgeContext);
+    public final UpdateCommandHandler updateCommandHandler =
+        new UpdateCommandHandler(bridgeContext, GitHubUpdateService.forCurrentInstallation());
     /** Global simulation clock; runs exactly while the system is running (see BridgeContext#setSystemRunning). */
     final ITickClock tickClock = new TickClockImpl(flowCommandHandler);
     
@@ -174,11 +188,28 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         this.connectorCatalogService = connectorCatalogService;
         this.stateRepository = stateRepository;
         this.pluginInstaller = pluginInstaller;
+        this.devicePreferences = DevicePreferences.inFolder(stateRepository.getStateDirectory());
         if (this.pluginInstaller instanceof PluginInstallerImpl) {
             ((PluginInstallerImpl) this.pluginInstaller).setPluginManager(this.connectorCatalogService.getPluginManager());
         }
         this.scheduler = Executors.newScheduledThreadPool(Math.max(4, Runtime.getRuntime().availableProcessors() * 2));
         initializeRuntime();
+    }
+
+    /**
+     * Rejects connections from web pages other than the GenSynth UI (see {@link AllowedOrigins}),
+     * so a site open in the user's browser cannot send commands to the Core.
+     */
+    @Override
+    public ServerHandshakeBuilder onWebsocketHandshakeReceivedAsServer(WebSocket conn, Draft draft, ClientHandshake request)
+            throws InvalidDataException {
+        ServerHandshakeBuilder response = super.onWebsocketHandshakeReceivedAsServer(conn, draft, request);
+        String origin = request.getFieldValue("Origin");
+        if (!AllowedOrigins.isAllowed(origin)) {
+            logger.warn("Rejected a WebSocket connection from origin '{}'", origin);
+            throw new InvalidDataException(CloseFrame.POLICY_VALIDATION, "Origin not allowed");
+        }
+        return response;
     }
 
     @Override
@@ -333,6 +364,10 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                 case "IMPORT_STATE" -> stateCommandHandler.handleImportState(conn, commandId, payload);
                 case "CONVERT_MESSAGE_FORMAT" -> handleConvertMessageFormat(conn, payload, commandId);
                 case "UPDATE_SETTINGS" -> settingsCommandHandler.handleUpdateSettings(conn, payload, commandId);
+                case "UPDATE_OUTPUT_FOLDER" -> settingsCommandHandler.handleUpdateOutputFolder(conn, payload, commandId);
+                case "CHECK_FOR_UPDATES" -> updateCommandHandler.handleCheckForUpdates(conn, commandId);
+                case "INSTALL_UPDATE" -> updateCommandHandler.handleInstallUpdate(conn, payload, commandId);
+                case "CANCEL_UPDATE" -> updateCommandHandler.handleCancelUpdate(conn, commandId);
                 default -> sendError(conn, commandId, "UNSUPPORTED_COMMAND", "Unsupported command: " + type, Map.of(
                     "command", type
                 ));

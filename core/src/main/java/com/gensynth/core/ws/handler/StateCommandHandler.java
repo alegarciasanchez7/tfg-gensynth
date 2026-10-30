@@ -199,7 +199,7 @@ public class StateCommandHandler implements CommandHandler {
             server.sendAck(conn, commandId, "state_exported", Map.of("filePath", filePath));
             server.sendLog(conn, "info", "SYSTEM", "State exported to: " + filePath);
         } catch (Exception e) {
-            server.sendError(conn, commandId, "EXPORT_FAILED", "Failed to export state: " + e.getMessage(), Map.of("path", filePath));
+            server.sendError(conn, commandId, "EXPORT_FAILED", "Could not save the project. " + e.getMessage(), Map.of("path", filePath));
         }
     }
 
@@ -318,6 +318,7 @@ public class StateCommandHandler implements CommandHandler {
         }
         payload.put("variables", variablesPayload);
         payload.put("settings", ctx.getProjectSettings().toPayload());
+        payload.put("outputFolder", ctx.outputFolderPayload());
         payload.put("metrics", server.systemCommandHandler.buildMetricsPayload(null));
         payload.put("connectorCatalog", ctx.getConnectorCatalogService().listAvailableConnectors());
 

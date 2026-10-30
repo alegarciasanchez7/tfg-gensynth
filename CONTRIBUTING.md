@@ -19,9 +19,10 @@ the [User Guide](USER_GUIDE.md).
 | `core/` | Simulation engine and desktop application (Java 21, Maven). |
 | `simulator-ui/` | User interface (React + TypeScript, Vite, Vitest). |
 | `plugin-api/` | Public API for connector plugins: see the [Plugin Developer Guide](plugin-api/PLUGIN_DEVELOPER_GUIDE.md). |
+| `connectors/rabbitmq/` | RabbitMQ connector, written as a plugin and included in the application (it is on the core's classpath, like File Output). |
 | `packaging/` | Icons, release notes and other resources of the installers. |
 
-The root `pom.xml` builds the plugin API and the engine. The engine and the interface talk through
+The root `pom.xml` builds the plugin API, the included connectors and the engine. The engine and the interface talk through
 a WebSocket bridge on port **8765**.
 
 ## Requirements

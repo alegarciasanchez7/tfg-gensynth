@@ -11,29 +11,20 @@
     -->
     <groupId>com.gensynth</groupId>
     <artifactId>gensynth-build</artifactId>
-    <version>0.5.1</version>
+    <version>0.5.2</version>
     <packaging>pom</packaging>
 
     <name>GenSynth</name>
 
     <modules>
         <module>plugin-api</module>
+        <!-- RabbitMQ connector, included in the application like File Output -->
+        <module>connectors/rabbitmq</module>
         <module>core</module>
     </modules>
 
     <!-- Connector plugins are built when their sources are present -->
     <profiles>
-        <profile>
-            <id>rabbitmq-plugin</id>
-            <activation>
-                <file>
-                    <exists>${basedir}/plugins/rabbitmq_3.12.4/rabbitmq-plugin/pom.xml</exists>
-                </file>
-            </activation>
-            <modules>
-                <module>plugins/rabbitmq_3.12.4/rabbitmq-plugin</module>
-            </modules>
-        </profile>
         <profile>
             <id>kafka-plugin</id>
             <activation>

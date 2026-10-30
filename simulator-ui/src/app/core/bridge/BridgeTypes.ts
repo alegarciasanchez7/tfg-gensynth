@@ -15,6 +15,7 @@ import type {
   RestartRequiredPayload,
   RollbackReportPayload,
   InitialStatePayload,
+  UpdateStatusPayload,
 } from '../types';
 import type { ProjectSettings } from '../../types';
 
@@ -61,6 +62,10 @@ export const SUPPORTED_COMMANDS = new Set<UICommandType>([
   'PAUSE_GROUP',
   'UI_LOG',
   'UPDATE_SETTINGS',
+  'UPDATE_OUTPUT_FOLDER',
+  'CHECK_FOR_UPDATES',
+  'INSTALL_UPDATE',
+  'CANCEL_UPDATE',
 ]);
 
 /**
@@ -93,5 +98,6 @@ export interface EventMap {
   'restart-required': RestartRequiredPayload;
   'rollback-report': RollbackReportPayload;
   'settings-update': ProjectSettings;
+  'update-status': UpdateStatusPayload;
   'NATIVE_FILE_DROPPED': { filename: string; base64: string };
 }

@@ -10,6 +10,7 @@ export const mockGroups: Group[] = [
     description: 'Simulación de sensores industriales de temperatura y presión.',
     threads: 4,
     outputMode: 'parallel',
+    sequentialOrder: 'flow',
     expanded: true,
     enabled: true,
     flows: [
@@ -72,6 +73,7 @@ export const mockGroups: Group[] = [
     description: 'Generación de transacciones financieras sintéticas.',
     threads: 2,
     outputMode: 'sequential',
+    sequentialOrder: 'flow',
     expanded: false,
     enabled: true,
     flows: [
@@ -117,6 +119,7 @@ export const mockGroups: Group[] = [
     description: 'Simulación de logs de acceso web y autenticación.',
     threads: 8,
     outputMode: 'parallel',
+    sequentialOrder: 'flow',
     expanded: false,
     enabled: true,
     flows: [

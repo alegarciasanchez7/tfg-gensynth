@@ -136,9 +136,21 @@ describe('RightPanel', () => {
     });
     
     await waitFor(() => expect(mockToast.success).toHaveBeenCalledWith('Variable created'));
+    // The editor of the new variable opens
+    expect(onSelectVariable).toHaveBeenCalledWith('v2');
 
     fireEvent.click(screen.getByText('temperature'));
     expect(onSelectVariable).toHaveBeenCalledWith('v1');
+  });
+
+  it('does not select anything when the variable cannot be created', async () => {
+    actions.createVariable.mockRejectedValueOnce(new Error('Core unavailable'));
+    render(<RightPanel variables={variables} selection={selection} onSelectVariable={onSelectVariable} onInsertVariable={onInsertVariable} />);
+
+    await createFromAddMenu(/^numeric$/i, 'pressure');
+
+    await waitFor(() => expect(mockToast.error).toHaveBeenCalledWith('Core unavailable'));
+    expect(onSelectVariable).not.toHaveBeenCalled();
   });
 
   const createFromAddMenu = async (type: RegExp, name: string) => {

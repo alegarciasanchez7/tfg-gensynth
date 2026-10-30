@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mapFlowFromCore, mapGroupFromCore } from './groupHelpers';
+import { mapFlowFromCore, mapGroupFromCore, reorderFlows } from './groupHelpers';
 import type { FlowState, GroupState } from '../../core/types';
 import type { Group } from '../../types';
 
@@ -68,5 +68,23 @@ describe('mapGroupFromCore', () => {
     const group = mapGroupFromCore(coreGroup({ flows: [coreFlow({ connectionStatus: 'ok' as never })] }));
 
     expect(group.flows[0].connectionStatus).toBe('disconnected');
+  });
+
+  it('reads the sequential order, with flow order for older cores', () => {
+    expect(mapGroupFromCore(coreGroup({ sequentialOrder: 'generated' })).sequentialOrder).toBe('generated');
+    expect(mapGroupFromCore(coreGroup()).sequentialOrder).toBe('flow');
+  });
+});
+
+describe('reorderFlows', () => {
+  const flows = ['a', 'b', 'c', 'd'].map((id) => mapFlowFromCore(coreFlow({ id })));
+  const ids = (list: { id: string }[]) => list.map((flow) => flow.id);
+
+  it('puts the listed flows first and keeps the others in order after them', () => {
+    expect(ids(reorderFlows(flows, ['d', 'b']))).toEqual(['d', 'b', 'a', 'c']);
+  });
+
+  it('ignores unknown and repeated ids', () => {
+    expect(ids(reorderFlows(flows, ['x', 'c', 'c']))).toEqual(['c', 'a', 'b', 'd']);
   });
 });

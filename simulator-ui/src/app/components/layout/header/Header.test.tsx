@@ -32,9 +32,11 @@ vi.mock('./PluginImportPanel', () => ({
 
 import { Header } from './Header';
 
-function renderHeader(currentFileName: string | null) {
+function renderHeader(currentFileName: string | null, update: { version: string | null; onShow?: () => void } = { version: null }) {
   return render(
     <Header
+      availableUpdateVersion={update.version}
+      onShowUpdate={update.onShow}
       systemStatus="stopped"
       onStatusToggle={vi.fn()}
       onNewProject={vi.fn()}
@@ -52,6 +54,18 @@ function renderHeader(currentFileName: string | null) {
 
 describe('Header', () => {
   afterEach(() => cleanup());
+
+  it('shows a button for an available update that only reopens its dialog', () => {
+    const onShow = vi.fn();
+    renderHeader(null, { version: '0.5.3', onShow });
+
+    fireEvent.click(screen.getByRole('button', { name: /Update available/ }));
+    expect(onShow).toHaveBeenCalled();
+    cleanup();
+
+    renderHeader(null);
+    expect(screen.queryByRole('button', { name: /Update available/ })).not.toBeInTheDocument();
+  });
 
   it('shows the file name without the project extension and keeps the full name as tooltip', () => {
     const longName = 'a_very_long_project_configuration_file_name.gsynth';

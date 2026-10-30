@@ -1,5 +1,5 @@
 import { bridge } from '../bridge';
-import type { PluginValidationResultPayload, PluginInstallResultPayload, StateFileResponsePayload } from '../types';
+import type { OutputFolderResponsePayload, PluginValidationResultPayload, PluginInstallResultPayload, StateFileResponsePayload, UpdateCheckPayload } from '../types';
 import type { ProjectSettings } from '../../types';
 
 export const CoreCommands = {
@@ -14,10 +14,10 @@ export const CoreCommands = {
   startGroup: (groupId: string) => bridge.send('START_GROUP', { groupId }),
   stopGroup: (groupId: string) => bridge.send('STOP_GROUP', { groupId }),
   pauseGroup: (groupId: string) => bridge.send('PAUSE_GROUP', { groupId }),
-  createGroup: (config: { name: string; threads?: number; outputMode?: string }) =>
+  createGroup: (config: { name: string; threads?: number; outputMode?: string; sequentialOrder?: string }) =>
     bridge.send('CREATE_GROUP', config),
   deleteGroup: (groupId: string) => bridge.send('DELETE_GROUP', { groupId }),
-  updateGroup: (config: { groupId: string; name?: string; threads?: number; outputMode?: string }) =>
+  updateGroup: (config: { groupId: string; name?: string; threads?: number; outputMode?: string; sequentialOrder?: string; flowIds?: string[] }) =>
     bridge.send('UPDATE_GROUP_CONFIG', config),
 
   // Flows
@@ -58,6 +58,15 @@ export const CoreCommands = {
 
   // Project settings
   updateSettings: (settings: ProjectSettings) => bridge.send('UPDATE_SETTINGS', settings),
+
+  // Preferences of this computer
+  updateOutputFolder: (path: string | null) =>
+    bridge.send<'UPDATE_OUTPUT_FOLDER', OutputFolderResponsePayload>('UPDATE_OUTPUT_FOLDER', { path }),
+
+  // Updates: the Core builds every URL; the UI only names the version the user accepted
+  checkForUpdates: () => bridge.send<'CHECK_FOR_UPDATES', UpdateCheckPayload>('CHECK_FOR_UPDATES'),
+  installUpdate: (version: string) => bridge.send('INSTALL_UPDATE', { version }),
+  cancelUpdate: () => bridge.send('CANCEL_UPDATE'),
 
   // Desktop specific
   pickDirectory: () => bridge.send('PICK_DIRECTORY'),

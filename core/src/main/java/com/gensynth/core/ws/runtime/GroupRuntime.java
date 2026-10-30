@@ -4,11 +4,14 @@ import com.gensynth.core.api.IGroupDispatcher;
 import com.gensynth.core.model.FlowDefinition;
 import com.gensynth.core.model.GroupDefinition;
 import com.gensynth.core.model.OutputMode;
+import com.gensynth.core.model.SequentialOrder;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Represents the runtime state of a simulation group.
@@ -22,6 +25,8 @@ public class GroupRuntime {
     public int threads;
     /** Output mode wire value ("parallel" or "sequential"); applied when the group starts. */
     public String outputMode;
+    /** Sequential order wire value ("flow", "random" or "generated"); applied when the group starts. */
+    public String sequentialOrder = SequentialOrder.FLOW.wireValue();
     public boolean enabled;
     public final List<FlowRuntime> flows = new ArrayList<>();
     /** Sends the messages of the group while it runs; null while stopped or paused. Guarded by the state lock. */
@@ -55,6 +60,36 @@ public class GroupRuntime {
         return names;
     }
 
+    /**
+     * Changes the order of the flows: the listed flows go first, in the given order, and the
+     * others keep their relative order after them. Unknown or repeated ids are ignored, so a
+     * flow created meanwhile is never lost. The caller must hold the state lock.
+     *
+     * @param flowIds ids of the flows in their new order
+     * @return true if the order changed
+     */
+    public boolean reorderFlows(List<String> flowIds) {
+        Map<String, FlowRuntime> byId = new LinkedHashMap<>();
+        for (FlowRuntime flow : flows) {
+            byId.put(flow.id, flow);
+        }
+        Set<FlowRuntime> ordered = new LinkedHashSet<>();
+        for (String flowId : flowIds) {
+            FlowRuntime flow = byId.get(flowId);
+            if (flow != null) {
+                ordered.add(flow);
+            }
+        }
+        ordered.addAll(flows);
+        List<FlowRuntime> newOrder = new ArrayList<>(ordered);
+        if (newOrder.equals(flows)) {
+            return false;
+        }
+        flows.clear();
+        flows.addAll(newOrder);
+        return true;
+    }
+
     public static GroupRuntime fromDefinition(GroupDefinition definition) {
         GroupRuntime runtime = new GroupRuntime(
             definition.getGroupId(),
@@ -65,6 +100,7 @@ public class GroupRuntime {
             definition.getOutputMode(),
             definition.isEnabled()
         );
+        runtime.sequentialOrder = definition.getSequentialOrder();
 
         for (FlowDefinition flowDefinition : definition.getAllFlows().values()) {
             runtime.flows.add(FlowRuntime.fromDefinition(flowDefinition));
@@ -76,6 +112,7 @@ public class GroupRuntime {
     public GroupDefinition toDefinition() {
         GroupDefinition definition = new GroupDefinition(id, name, description, threads, outputMode);
         definition.setEnabled(enabled);
+        definition.setSequentialOrder(sequentialOrder);
         for (FlowRuntime flow : flows) {
             definition.addFlow(flow.toDefinition(id));
         }
@@ -91,6 +128,7 @@ public class GroupRuntime {
         payload.put("description", description);
         payload.put("threads", threads);
         payload.put("outputMode", outputMode);
+        payload.put("sequentialOrder", sequentialOrder);
         payload.put("enabled", enabled);
 
         List<Map<String, Object>> flowPayload = new ArrayList<>();

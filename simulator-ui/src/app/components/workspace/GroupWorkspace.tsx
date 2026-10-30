@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Layers, ChevronRight, Cpu, AlertCircle, Trash2, RotateCcw, Lock } from 'lucide-react';
+import { Layers, ChevronRight, ChevronUp, ChevronDown, Cpu, AlertCircle, Trash2, RotateCcw, Lock } from 'lucide-react';
 import { toast } from 'sonner';
-import type { Group, Flow, OutputMode } from '../../types';
+import type { Group, Flow, OutputMode, SequentialOrder } from '../../types';
 import { useApp } from '../../context';
 import { StatusDot } from '../common/StatusDot';
-import { OUTPUT_MODE_OPTIONS } from '../../core/outputMode';
+import { OUTPUT_MODE_OPTIONS, SEQUENTIAL_ORDER_OPTIONS } from '../../core/outputMode';
+import { Button } from '../ui/button';
 import { formatRate, groupRate } from '../../core/metricsFormat';
 import { commandErrorMessage } from '../../core/errorMessage';
 import { normalizeGroupStatus } from '../../core/entityStatus';
@@ -36,55 +37,92 @@ function EditableField({
   );
 }
 
-function OutputModeField({
+function SelectField<T extends string>({
+  id,
+  label,
   value,
+  options,
   onChange,
+  hint,
+  disabled,
 }: {
-  value: OutputMode;
-  onChange: (value: OutputMode) => void;
+  id: string;
+  label: string;
+  value: T;
+  options: readonly { value: T; label: string }[];
+  onChange: (value: T) => void;
+  hint: string;
+  disabled?: boolean;
 }) {
   return (
     <div className="flex flex-col gap-1">
-      <label htmlFor="group-output-mode" className="text-[10px] text-[var(--c-tx4)] tracking-wider uppercase"
+      <label htmlFor={id} className="text-[10px] text-[var(--c-tx4)] tracking-wider uppercase"
         style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-        Output Mode
+        {label}
       </label>
       <select
-        id="group-output-mode"
+        id={id}
         value={value}
-        onChange={e => onChange(e.target.value as OutputMode)}
-        className="bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded px-2.5 py-1.5 text-xs text-[var(--c-tx1)] outline-none focus:border-cyan-500/50 transition-all"
+        disabled={disabled}
+        onChange={e => onChange(e.target.value as T)}
+        className="bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded px-2.5 py-1.5 text-xs text-[var(--c-tx1)] outline-none focus:border-cyan-500/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         style={{ fontFamily: 'JetBrains Mono, monospace' }}
       >
-        {OUTPUT_MODE_OPTIONS.map(option => (
+        {options.map(option => (
           <option key={option.value} value={option.value}>{option.label}</option>
         ))}
       </select>
       <span className="text-[9px] text-[var(--c-tx4)]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-        {value === 'sequential'
-          ? 'One FIFO queue: messages are sent in generation order by a single sender.'
-          : 'Each flow runs on its own thread and sends as soon as it generates.'}
-        {' '}Applies on next start.
+        {hint}
       </span>
     </div>
   );
 }
 
-function FlowSummaryRow({ flow, onSelect }: { flow: Flow; onSelect: () => void }) {
+function FlowSummaryRow({
+  flow,
+  position,
+  isFirst,
+  isLast,
+  onSelect,
+  onMove,
+}: {
+  flow: Flow;
+  position: number;
+  isFirst: boolean;
+  isLast: boolean;
+  onSelect: () => void;
+  onMove: (direction: 'up' | 'down') => void;
+}) {
+  const moveClass = 'h-6 w-6 p-0 text-[var(--c-tx4)] hover:text-[var(--c-tx1)] disabled:opacity-30';
   return (
-    <button
-      type="button"
-      onClick={onSelect}
-      title={`Open ${flow.name}`}
-      className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded text-left hover:bg-[var(--c-bg5)] transition-colors group"
-      style={{ fontFamily: 'JetBrains Mono, monospace' }}
-    >
-      <StatusDot status={flow.connectionStatus} />
-      <span className="text-[11px] text-[var(--c-tx2)] flex-1 truncate group-hover:text-[var(--c-tx1)]">{flow.name}</span>
-      {flow.hasError && <AlertCircle size={10} className="text-red-500 shrink-0" />}
-      <span className="text-[9px] text-[var(--c-tx4)] uppercase shrink-0">{flow.technology}</span>
-      <ChevronRight size={11} className="text-[var(--c-tx5)] group-hover:text-cyan-500 shrink-0" />
-    </button>
+    <div className="flex items-center gap-1">
+      <span className="w-5 text-right text-[10px] text-[var(--c-tx4)] shrink-0" title={`Position ${position}`}
+        style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+        {position}
+      </span>
+      <button
+        type="button"
+        onClick={onSelect}
+        title={`Open ${flow.name}`}
+        className="flex-1 min-w-0 flex items-center gap-2 px-2.5 py-1.5 rounded text-left hover:bg-[var(--c-bg5)] transition-colors group"
+        style={{ fontFamily: 'JetBrains Mono, monospace' }}
+      >
+        <StatusDot status={flow.connectionStatus} />
+        <span className="text-[11px] text-[var(--c-tx2)] flex-1 truncate group-hover:text-[var(--c-tx1)]">{flow.name}</span>
+        {flow.hasError && <AlertCircle size={10} className="text-red-500 shrink-0" />}
+        <span className="text-[9px] text-[var(--c-tx4)] uppercase shrink-0">{flow.technology}</span>
+        <ChevronRight size={11} className="text-[var(--c-tx5)] group-hover:text-cyan-500 shrink-0" />
+      </button>
+      <Button type="button" variant="ghost" size="icon" className={moveClass} disabled={isFirst}
+        onClick={() => onMove('up')} title="Move Up" aria-label={`Move ${flow.name} up`}>
+        <ChevronUp className="w-3.5 h-3.5" />
+      </Button>
+      <Button type="button" variant="ghost" size="icon" className={moveClass} disabled={isLast}
+        onClick={() => onMove('down')} title="Move Down" aria-label={`Move ${flow.name} down`}>
+        <ChevronDown className="w-3.5 h-3.5" />
+      </Button>
+    </div>
   );
 }
 
@@ -106,6 +144,21 @@ export function GroupWorkspace({ group }: GroupWorkspaceProps) {
   const handleUpdate = (updates: Partial<Omit<Group, 'id' | 'flows'>>) => {
     actions.updateGroupConfig(group.id, updates, group.name);
   };
+
+  const handleMoveFlow = (index: number, direction: 'up' | 'down') => {
+    const target = direction === 'up' ? index - 1 : index + 1;
+    if (target < 0 || target >= group.flows.length) return;
+    const ids = group.flows.map(f => f.id);
+    [ids[index], ids[target]] = [ids[target], ids[index]];
+    actions.reorderGroupFlows(group.id, ids).catch(error => {
+      toast.error(commandErrorMessage(error, 'Unable to change the order of the flows'));
+    });
+  };
+
+  const isSequential = group.outputMode === 'sequential';
+  const sequentialOrderHint = isSequential
+    ? `${SEQUENTIAL_ORDER_OPTIONS.find(option => option.value === group.sequentialOrder)?.hint ?? ''} Applies on next start.`
+    : 'Only for sequential groups.';
 
   const handleDiscard = () => {
     actions.discardItemChanges('group', group.id);
@@ -217,9 +270,24 @@ export function GroupWorkspace({ group }: GroupWorkspaceProps) {
             value={group.name}
             onChange={name => handleUpdate({ name })}
           />
-          <OutputModeField
+          <SelectField<OutputMode>
+            id="group-output-mode"
+            label="Output Mode"
             value={group.outputMode}
+            options={OUTPUT_MODE_OPTIONS}
             onChange={outputMode => handleUpdate({ outputMode })}
+            hint={`${isSequential
+              ? 'One FIFO queue: messages are sent one after another by a single sender.'
+              : 'Each flow runs on its own thread and sends as soon as it generates.'} Applies on next start.`}
+          />
+          <SelectField<SequentialOrder>
+            id="group-sequential-order"
+            label="Sequential Order"
+            value={group.sequentialOrder}
+            options={SEQUENTIAL_ORDER_OPTIONS}
+            onChange={sequentialOrder => handleUpdate({ sequentialOrder })}
+            hint={sequentialOrderHint}
+            disabled={!isSequential}
           />
           <EditableField
             label="Description"
@@ -236,14 +304,27 @@ export function GroupWorkspace({ group }: GroupWorkspaceProps) {
           style={{ fontFamily: 'JetBrains Mono, monospace' }}>
           Flows in this group ({group.flows.length})
         </span>
+        {isSequential && group.sequentialOrder === 'flow' && group.flows.length > 1 && (
+          <span className="text-[9px] text-[var(--c-tx4)] px-1" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+            Messages of a tick are sent in this order. Use the arrows to change it.
+          </span>
+        )}
         {group.flows.length === 0 ? (
           <span className="text-[10px] text-[var(--c-tx4)] italic px-1" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
             No flows yet
           </span>
         ) : (
           <div className="flex flex-col">
-            {group.flows.map(f => (
-              <FlowSummaryRow key={f.id} flow={f} onSelect={() => actions.selectFlow(group.id, f.id)} />
+            {group.flows.map((f, index) => (
+              <FlowSummaryRow
+                key={f.id}
+                flow={f}
+                position={index + 1}
+                isFirst={index === 0}
+                isLast={index === group.flows.length - 1}
+                onSelect={() => actions.selectFlow(group.id, f.id)}
+                onMove={direction => handleMoveFlow(index, direction)}
+              />
             ))}
           </div>
         )}

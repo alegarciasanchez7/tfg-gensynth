@@ -160,7 +160,7 @@ export function RightPanel({ variables, selection, onSelectVariable, onInsertVar
       const configText = createState.configText.trim();
       const config = configText ? JSON.parse(configText) : {};
       
-      await actions.createVariable(
+      const created = await actions.createVariable(
         createState.name.trim(),
         createState.type,
         createState.scope,
@@ -183,6 +183,8 @@ export function RightPanel({ variables, selection, onSelectVariable, onInsertVar
         flowId: selection.flowId,
         groupId: selection.groupId,
       });
+      // Open the editor of the new variable so it can be configured right away
+      onSelectVariable(created.id);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to create variable';
       toast.error(message);

@@ -7,6 +7,7 @@ import { connectorsReducer } from './connectorsSlice';
 import { logsReducer } from './logsSlice';
 import { metricsReducer } from './metricsSlice';
 import { settingsReducer } from './settingsSlice';
+import { updateReducer } from './updateSlice';
 import { DEFAULT_PROJECT_SETTINGS } from '../../core/tickSettings';
 import { normalizeVariableListFromCore } from '../variableNormalization';
 import {
@@ -309,6 +310,7 @@ export function rootReducer(state: AppState, action: AppAction): AppState {
       groups: normalizedGroups,
       variables: normalizedVars,
       settings,
+      outputFolder: action.payload.outputFolder ?? state.outputFolder,
       savedState,
       isDirty,
       dirtyItems,
@@ -337,6 +339,7 @@ export function rootReducer(state: AppState, action: AppAction): AppState {
   newState = logsReducer(newState, action);
   newState = metricsReducer(newState, action);
   newState = settingsReducer(newState, action);
+  newState = updateReducer(newState, action);
 
   // Automatically recalculate dirty state if groups, variables or settings changed
   if (

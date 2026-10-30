@@ -9,6 +9,7 @@ import type {
   FlowMetricsPayload,
   InitialStatePayload,
   TracePayload,
+  UpdateStatusPayload,
 } from '../../core/types';
 import type { Variable, ProjectSettings } from '../../types';
 import { normalizeProjectSettings } from '../../core/tickSettings';
@@ -142,6 +143,7 @@ export function useBridgeSubscriptions({
             groups: serverGroups,
             variables: serverVariables,
             settings: snapshot.settings ? normalizeProjectSettings(snapshot.settings) : undefined,
+            outputFolder: snapshot.outputFolder,
             connectorCatalog: snapshot.connectorCatalog,
             metrics: snapshot.metrics,
             systemStatus: snapshot.systemStatus.status,
@@ -213,6 +215,10 @@ export function useBridgeSubscriptions({
       
       bridge.on('settings-update', (settings: ProjectSettings) => {
         dispatch({ type: 'SET_SETTINGS', payload: normalizeProjectSettings(settings) });
+      }),
+
+      bridge.on('update-status', (status: UpdateStatusPayload) => {
+        dispatch({ type: 'SET_UPDATE_STATUS', payload: status });
       }),
 
       bridge.on('flows-metrics', (flowsMetrics: FlowMetricsPayload[]) => {

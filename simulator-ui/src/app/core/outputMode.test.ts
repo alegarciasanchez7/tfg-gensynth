@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { OUTPUT_MODE_OPTIONS, normalizeOutputMode } from './outputMode';
+import { OUTPUT_MODE_OPTIONS, SEQUENTIAL_ORDER_OPTIONS, normalizeOutputMode, normalizeSequentialOrder } from './outputMode';
 
 describe('outputMode', () => {
   it('offers only Sequential and Parallel', () => {
@@ -14,5 +14,13 @@ describe('outputMode', () => {
     expect(normalizeOutputMode('TEXT')).toBe('parallel');
     expect(normalizeOutputMode('round-robin')).toBe('parallel');
     expect(normalizeOutputMode(undefined)).toBe('parallel');
+  });
+
+  it('offers the three sequential orders and maps unknown values to flow order', () => {
+    expect(SEQUENTIAL_ORDER_OPTIONS.map((option) => option.value)).toEqual(['flow', 'random', 'generated']);
+    expect(normalizeSequentialOrder('random')).toBe('random');
+    expect(normalizeSequentialOrder(' Generated ')).toBe('generated');
+    expect(normalizeSequentialOrder('fifo')).toBe('flow');
+    expect(normalizeSequentialOrder(undefined)).toBe('flow');
   });
 });

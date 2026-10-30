@@ -8,7 +8,10 @@ import java.util.Locale;
 public enum OutputMode {
     /** Every flow runs on its own thread and sends as soon as it generates a message. */
     PARALLEL("parallel"),
-    /** Messages of all flows go into one FIFO queue, published in generation order by a single sender. */
+    /**
+     * Messages of all flows go into one FIFO queue, published by a single sender in tick order and,
+     * inside a tick, in the group's {@link SequentialOrder}.
+     */
     SEQUENTIAL("sequential");
 
     private final String wireValue;

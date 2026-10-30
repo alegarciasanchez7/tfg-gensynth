@@ -18,6 +18,7 @@ import com.gensynth.core.api.IFlowMessageHandler;
 import com.gensynth.core.api.IGroupDispatcher;
 import com.gensynth.core.api.ITickListener;
 import com.gensynth.core.model.OutputMode;
+import com.gensynth.core.model.SequentialOrder;
 import com.gensynth.core.ws.dispatch.FlowMessagePublisher;
 import com.gensynth.core.ws.dispatch.ParallelGroupDispatcher;
 import com.gensynth.core.ws.dispatch.SequentialGroupDispatcher;
@@ -572,14 +573,15 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
      * @return a parallel or sequential dispatcher
      */
     public IGroupDispatcher createDispatcher(GroupRuntime group) {
-        if (OutputMode.fromValue(group.outputMode) == OutputMode.SEQUENTIAL) {
-            return new SequentialGroupDispatcher(group, messageHandler, SequentialGroupDispatcher.DEFAULT_QUEUE_CAPACITY);
-        }
         List<FlowRuntime> sendingFlows = new ArrayList<>();
         for (FlowRuntime flow : group.flows) {
             if (ctx.getConnectorByFlowId().containsKey(flow.id)) {
                 sendingFlows.add(flow);
             }
+        }
+        if (OutputMode.fromValue(group.outputMode) == OutputMode.SEQUENTIAL) {
+            return new SequentialGroupDispatcher(group, sendingFlows, messageHandler,
+                SequentialGroupDispatcher.DEFAULT_QUEUE_CAPACITY, SequentialOrder.fromValue(group.sequentialOrder), new Random());
         }
         return new ParallelGroupDispatcher(group, sendingFlows, messageHandler);
     }

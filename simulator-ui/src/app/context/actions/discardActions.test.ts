@@ -41,6 +41,7 @@ const group = (id: string, flows: Flow[], overrides: Partial<Group> = {}): Group
   description: '',
   threads: 1,
   outputMode: 'parallel',
+  sequentialOrder: 'flow',
   expanded: true,
   enabled: true,
   flows,
@@ -124,6 +125,26 @@ describe('buildDiscardCommands', () => {
     // CREATE_FLOW ignores `enabled`, so a disabled flow is disabled right after
     expect(commands[3].payload).toEqual({ groupId: 'g1', flowId: 'f2', enabled: false });
     expect(commands[4].payload).toEqual({ groupId: 'g1', flowId: 'f3' });
+  });
+
+  it('restores the saved order of the flows and the sequential order', () => {
+    const groups = [group('g1', [flow('f2', { enabled: false }), flow('f1')], { sequentialOrder: 'random' })];
+
+    const commands = buildDiscardCommands(saved, groups, saved.variables, 'group', 'g1');
+
+    expect(commands.map((c) => c.type)).toEqual(['UPDATE_GROUP_CONFIG', 'UPDATE_GROUP_CONFIG']);
+    expect(commands[0].payload).toMatchObject({ groupId: 'g1', sequentialOrder: 'flow' });
+    expect(commands[1].payload).toEqual({ groupId: 'g1', flowIds: ['f1', 'f2'] });
+  });
+
+  it('puts a restored flow back in its saved place', () => {
+    const groups = [group('g1', [flow('f2', { enabled: false })])];
+
+    const commands = buildDiscardCommands(saved, groups, saved.variables, 'group', 'g1');
+
+    expect(commands[0]).toMatchObject({ type: 'CREATE_FLOW', payload: { flowId: 'f1' } });
+    // CREATE_FLOW adds f1 at the end, so the saved order is set last
+    expect(commands[commands.length - 1]).toEqual({ type: 'UPDATE_GROUP_CONFIG', payload: { groupId: 'g1', flowIds: ['f1', 'f2'] } });
   });
 
   it('sends nothing for an unchanged group', () => {

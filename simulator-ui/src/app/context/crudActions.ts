@@ -114,6 +114,7 @@ export async function createGroup(
       throughput: 0,
       threads: 1,
       outputMode: 'parallel',
+      sequentialOrder: 'flow',
       enabled: true,
       flows: [],
     };
@@ -124,6 +125,28 @@ export async function createGroup(
     const err = extractCommandError(error);
     ctx.reportError('GROUPS', `createGroup(${name})`, error);
     throw err;
+  }
+}
+
+/**
+ * Sends the new order of a group's flows. The flows not listed keep their order after them.
+ */
+export async function reorderGroupFlows(
+  ctx: CRUDActionContext,
+  groupId: string,
+  flowIds: string[],
+): Promise<void> {
+  if (!groupId?.trim()) {
+    throwValidationError('groupId', 'is required');
+  }
+
+  try {
+    if (ctx.connectionMode !== 'mock') {
+      await bridge.send('UPDATE_GROUP_CONFIG', { groupId: groupId.trim(), flowIds });
+    }
+  } catch (error) {
+    ctx.reportError('GROUPS', `reorderGroupFlows(${groupId})`, error);
+    throw extractCommandError(error);
   }
 }
 

@@ -28,6 +28,7 @@ const group = (flows: Flow[]): Group => ({
   description: '',
   threads: 1,
   outputMode: 'parallel',
+  sequentialOrder: 'flow' as const,
   expanded: true,
   enabled: true,
   flows,

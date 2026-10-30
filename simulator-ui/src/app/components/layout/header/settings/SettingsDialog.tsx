@@ -1,12 +1,13 @@
 import { useState, type ComponentType } from 'react';
-import { Palette, Save, Timer, type LucideIcon } from 'lucide-react';
+import { Palette, RefreshCw, Save, Timer, type LucideIcon } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../../../ui/dialog';
 import { AppearanceSettingsSection } from './AppearanceSettingsSection';
 import { StorageSettingsSection } from './StorageSettingsSection';
 import { TickSettingsSection } from './TickSettingsSection';
+import { UpdatesSettingsSection } from './UpdatesSettingsSection';
 import { APP_VERSION } from '../../../../core/appInfo';
 
-export type SettingsCategoryId = 'appearance' | 'storage' | 'simulation';
+export type SettingsCategoryId = 'appearance' | 'storage' | 'simulation' | 'updates';
 
 interface SettingsCategory {
   id: SettingsCategoryId;
@@ -31,7 +32,7 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
   {
     id: 'storage',
     label: 'Save & Storage',
-    description: 'How and when the configuration is saved to its file.',
+    description: 'How and when the configuration is saved, and where the generated files go.',
     scope: 'device',
     icon: Save,
     Section: StorageSettingsSection,
@@ -43,6 +44,14 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
     scope: 'project',
     icon: Timer,
     Section: TickSettingsSection,
+  },
+  {
+    id: 'updates',
+    label: 'About & Updates',
+    description: 'Installed version and new releases. You always decide whether to update.',
+    scope: 'device',
+    icon: RefreshCw,
+    Section: UpdatesSettingsSection,
   },
 ];
 

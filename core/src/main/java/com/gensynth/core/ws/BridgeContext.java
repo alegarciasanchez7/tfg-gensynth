@@ -3,6 +3,9 @@ package com.gensynth.core.ws;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gensynth.core.api.IPluginInstaller;
 import com.gensynth.core.api.ITickClock;
+import com.gensynth.core.config.AppPaths;
+import com.gensynth.core.config.DevicePreferences;
+import com.gensynth.core.config.FolderAccess;
 import com.gensynth.core.connectors.runtime.ConnectorCatalogService;
 import com.gensynth.core.flow.TemplateEngine;
 import com.gensynth.core.model.ProjectSettings;
@@ -11,6 +14,10 @@ import com.gensynth.core.persistence.StateRepository;
 import com.gensynth.core.ws.runtime.GroupRuntime;
 import org.java_websocket.WebSocket;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ScheduledExecutorService;
@@ -175,6 +182,62 @@ public class BridgeContext {
 
     public void setCurrentOutputDir(String currentOutputDir) {
         server.currentOutputDir = currentOutputDir;
+    }
+
+    /**
+     * @return the preferences of this computer (output folder)
+     */
+    public DevicePreferences getDevicePreferences() {
+        return server.devicePreferences;
+    }
+
+    /**
+     * Describes the folder where each START creates its session folder.
+     *
+     * @return map with {@code path} (folder in use), {@code defaultPath} and {@code custom}
+     *         (whether the user chose the folder)
+     */
+    public Map<String, Object> outputFolderPayload() {
+        Path defaultPath = AppPaths.current().outputsHome().toAbsolutePath();
+        Path chosen = server.devicePreferences.outputFolder().orElse(null);
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("path", (chosen != null ? chosen : defaultPath).toString());
+        payload.put("defaultPath", defaultPath.toString());
+        payload.put("custom", chosen != null);
+        return payload;
+    }
+
+    /**
+     * Starts a new output session: picks its folder inside the chosen output folder (or the
+     * default one when none was chosen or it is no longer writable) and tells every client where
+     * the files go.
+     *
+     * @return absolute path of the session output folder
+     */
+    public String startOutputSession() {
+        Path base = AppPaths.current().outputsHome();
+        Path chosen = server.devicePreferences.outputFolder().orElse(null);
+        if (chosen != null) {
+            if (isWritableFolder(chosen)) {
+                base = chosen;
+            } else {
+                server.sendLogToAll("warn", "SYSTEM", FolderAccess.noPermissionMessage(chosen)
+                    + " Using the default output folder instead.");
+            }
+        }
+        String sessionDir = AppPaths.newSessionOutputDir(base);
+        server.currentOutputDir = sessionDir;
+        server.sendLogToAll("info", "SYSTEM", "Output folder of this session: " + sessionDir);
+        return sessionDir;
+    }
+
+    private static boolean isWritableFolder(Path folder) {
+        try {
+            Files.createDirectories(folder);
+        } catch (IOException | SecurityException e) {
+            return false;
+        }
+        return FolderAccess.canWriteIn(folder);
     }
 
     public double getMessagesPerSecond() {

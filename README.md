@@ -14,7 +14,8 @@ other destination. It lets you test consumers, dashboards and data pipelines wit
 - **Flows and groups**: model many data sources and run them in parallel or in sequence.
 - **Precise pacing**: a global clock sets how often each flow sends.
 - **Live metrics**: messages per second, deliveries and failures for every flow.
-- **Extensible**: new destinations are added as connector plugins.
+- **Ready-made destinations**: files (JSON, text, XML, CSV) and RabbitMQ are included.
+- **Extensible**: other destinations are added as connector plugins.
 
 ## Installation
 
@@ -49,7 +50,8 @@ java -cp "target/classes:target/dependency/*" com.gensynth.core.App --desktop   
 
 - [Contributing](CONTRIBUTING.md): project structure, build, tests, CI and releases.
 - [Plugin Developer Guide](plugin-api/PLUGIN_DEVELOPER_GUIDE.md): create a connector plugin to send
-  messages to a new technology.
+  messages to a new technology. The included [RabbitMQ connector](connectors/rabbitmq) is a complete
+  example.
 
 ## Credits
 
