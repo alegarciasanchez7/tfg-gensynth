@@ -51,7 +51,7 @@ describe('CustomDropdown', () => {
     const onChange = vi.fn();
     render(<Controlled onChange={onChange} />);
     fireEvent.click(trigger());
-    fireEvent.click(screen.getByRole('button', { name: 'Beta' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Beta' }));
 
     expect(onChange).toHaveBeenCalledWith('b');
     expect(menu()).not.toBeInTheDocument();
@@ -132,7 +132,7 @@ describe('CustomDropdown', () => {
     // The modal disables pointer events on the body: the menu re-enables them for itself
     expect(menu()).toHaveStyle({ pointerEvents: 'auto' });
 
-    const option = screen.getByRole('button', { name: 'Gamma' });
+    const option = screen.getByRole('option', { name: 'Gamma' });
     fireEvent.pointerDown(option);
     fireEvent.mouseDown(option);
     fireEvent.click(option);

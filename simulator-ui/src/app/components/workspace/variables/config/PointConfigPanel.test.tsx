@@ -59,7 +59,7 @@ describe('PointConfigPanel', () => {
 
   const switchTo = (label: RegExp) => {
     fireEvent.click(document.getElementById('point-coord-system')!);
-    fireEvent.click(screen.getAllByRole('button', { name: label }).pop()!);
+    fireEvent.click(screen.getByRole('option', { name: label }));
   };
 
   it('asks before resetting the region when switching to Geospatial, and keeps it if cancelled', () => {

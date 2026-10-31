@@ -36,7 +36,7 @@ export function checkForUpdates(ctx: UpdateActionContext) {
     try {
       const check = await CoreCommands.checkForUpdates();
       const update = check?.supported ? toUpdateInfo(check) : null;
-      if (silent && update && update.latestVersion === ctx.getSkippedVersion()) {
+      if (silent && update?.latestVersion === ctx.getSkippedVersion()) {
         return check;
       }
       ctx.dispatch({ type: 'SET_AVAILABLE_UPDATE', payload: { update, openDialog: silent } });

@@ -78,7 +78,7 @@ describe('DistributionGraphEditor', () => {
     
     fireEvent.click(dropdownTrigger);
 
-    const leftOption = screen.getByRole('button', { name: 'Left (A, B]' });
+    const leftOption = screen.getByRole('option', { name: 'Left (A, B]' });
     fireEvent.click(leftOption);
 
     expect(mockOnBoundaryChange).toHaveBeenCalledWith('LEFT');

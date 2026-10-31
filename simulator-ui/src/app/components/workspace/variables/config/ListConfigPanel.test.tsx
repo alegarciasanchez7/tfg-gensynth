@@ -66,7 +66,7 @@ describe('ListConfigPanel', () => {
     fireEvent.click(dropdownBtn);
 
     // Click Markov Chain option
-    const markovOpt = screen.getByRole('button', { name: /Markov Chain/i });
+    const markovOpt = screen.getByRole('option', { name: /Markov Chain/i });
     fireEvent.click(markovOpt);
 
     expect(handleChange).toHaveBeenCalledWith(expect.objectContaining({
@@ -80,7 +80,7 @@ describe('ListConfigPanel', () => {
 
     const modeTriggers = screen.getAllByRole('button', { name: /^Literal$/ });
     fireEvent.click(modeTriggers[modeTriggers.length - 1]);
-    const option = screen.getByRole('button', { name: /Dynamic Generator/ });
+    const option = screen.getByRole('option', { name: /Dynamic Generator/ });
     // Rendered outside the scrollable item list, which clips its overflow
     expect(option.closest('.overflow-y-auto.max-h-80')).toBeNull();
     fireEvent.click(option);
@@ -97,7 +97,7 @@ describe('ListConfigPanel', () => {
     render(<ListConfigPanel config={config} onChange={handleChange} />);
 
     fireEvent.click(screen.getByRole('button', { name: /^Numeric$/ }));
-    fireEvent.click(screen.getByRole('button', { name: /^Boolean$/ }));
+    fireEvent.click(screen.getByRole('option', { name: /^Boolean$/ }));
 
     expect(handleChange.mock.calls[0][0].items[0]).toMatchObject({
       embeddedType: 'boolean',
@@ -297,7 +297,7 @@ describe('ListConfigPanel', () => {
     );
 
     fireEvent.click(document.getElementById('selection-strategy-select')!);
-    fireEvent.click(screen.getByRole('button', { name: /Markov Chain/i }));
+    fireEvent.click(screen.getByRole('option', { name: /Markov Chain/i }));
 
     expect(handleChange).toHaveBeenCalledWith({
       selectionStrategy: 'MARKOV_CHAIN',

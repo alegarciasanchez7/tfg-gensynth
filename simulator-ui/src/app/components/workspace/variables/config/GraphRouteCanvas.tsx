@@ -937,6 +937,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
                       variant={activeTool === tool ? (tool === 'DELETE' ? 'destructive' : 'default') : 'outline'}
                       size="sm"
                       className="h-7 px-2 text-xs gap-1"
+                      aria-pressed={activeTool === tool}
                       onClick={() => selectTool(tool)}
                     >
                       {icon}

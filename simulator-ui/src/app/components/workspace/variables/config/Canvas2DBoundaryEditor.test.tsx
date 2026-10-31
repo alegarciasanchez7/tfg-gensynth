@@ -50,11 +50,15 @@ describe('Canvas2DBoundaryEditor', () => {
       />
     );
 
-    const moveObstaclesBtn = screen.getByText('Move Obstacles (Red)');
-    fireEvent.click(moveObstaclesBtn);
+    const moveObstaclesBtn = screen.getByRole('button', { name: /Move Obstacles/ });
+    const moveBoundariesBtn = screen.getByRole('button', { name: /Move Boundaries/ });
 
-    const moveBoundariesBtn = screen.getByText('Move Boundaries (Purple)');
+    fireEvent.click(moveObstaclesBtn);
+    expect(moveObstaclesBtn).toHaveAttribute('aria-pressed', 'true');
+    expect(moveBoundariesBtn).toHaveAttribute('aria-pressed', 'false');
+
     fireEvent.click(moveBoundariesBtn);
+    expect(moveBoundariesBtn).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('applies preset shape when Square preset button is clicked', () => {

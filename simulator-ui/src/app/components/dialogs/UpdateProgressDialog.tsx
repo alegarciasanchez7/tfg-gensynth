@@ -23,7 +23,7 @@ const TITLES: Record<UpdateStatusPayload['phase'], string> = {
  * Shows the progress of an update the user started. The download can be cancelled until the
  * installer starts; a failed or cancelled update leaves the installed version as it was.
  */
-export function UpdateProgressDialog({ status, onCancel, onClose }: UpdateProgressDialogProps) {
+export function UpdateProgressDialog({ status, onCancel, onClose }: Readonly<UpdateProgressDialogProps>) {
   if (!status) return null;
 
   const { phase } = status;

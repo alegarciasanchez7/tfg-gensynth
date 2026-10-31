@@ -25,7 +25,7 @@ export function UpdateAvailableDialog({
   onNotNow,
   onSkipVersion,
   onOpenReleaseNotes,
-}: UpdateAvailableDialogProps) {
+}: Readonly<UpdateAvailableDialogProps>) {
   if (!update) return null;
 
   return (
