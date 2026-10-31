@@ -14,10 +14,20 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 
+import static com.gensynth.core.ws.BridgeProtocol.CLIENT_REQUEST_ID;
+import static com.gensynth.core.ws.BridgeProtocol.FLOW_ID;
+import static com.gensynth.core.ws.BridgeProtocol.GROUP_ID;
+import static com.gensynth.core.ws.BridgeProtocol.INVALID_PAYLOAD;
+import static com.gensynth.core.ws.BridgeProtocol.SOURCE_VARIABLES;
+import static com.gensynth.core.ws.BridgeProtocol.VARIABLE_ID;
+
 /**
  * Handles variable management commands (CREATE_VARIABLE, DELETE_VARIABLE, UPDATE_VARIABLE).
  */
 public class VariableCommandHandler implements CommandHandler {
+    private static final String CREATE_VARIABLE = "CREATE_VARIABLE";
+    private static final String SCOPE = "scope";
+    private static final String CONFIG = "config";
 
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
     
@@ -46,34 +56,34 @@ public class VariableCommandHandler implements CommandHandler {
      */
     public void handleCreateVariable(WebSocket conn, JsonNode payload, String commandId) {
         UiBridgeWebSocketServer server = ctx.getServer();
-        String name = server.requireTextField(conn, commandId, payload, "name", "INVALID_PAYLOAD", "CREATE_VARIABLE");
-        String type = server.requireTextField(conn, commandId, payload, "type", "INVALID_PAYLOAD", "CREATE_VARIABLE");
-        String scope = server.requireTextField(conn, commandId, payload, "scope", "INVALID_PAYLOAD", "CREATE_VARIABLE");
+        String name = server.requireTextField(conn, commandId, payload, "name", INVALID_PAYLOAD, CREATE_VARIABLE);
+        String type = server.requireTextField(conn, commandId, payload, "type", INVALID_PAYLOAD, CREATE_VARIABLE);
+        String scope = server.requireTextField(conn, commandId, payload, SCOPE, INVALID_PAYLOAD, CREATE_VARIABLE);
         if (name == null || type == null || scope == null) {
             return;
         }
 
-        String clientRequestId = payload.path("clientRequestId").asText(null);
+        String clientRequestId = payload.path(CLIENT_REQUEST_ID).asText(null);
         String coreType = normalizeVariableTypeForCore(type);
         ObjectMapper objectMapper = ctx.getObjectMapper();
 
-        Map<String, Object> config = payload.has("config") && payload.get("config").isObject()
-            ? objectMapper.convertValue(payload.get("config"), MAP_TYPE)
+        Map<String, Object> config = payload.has(CONFIG) && payload.get(CONFIG).isObject()
+            ? objectMapper.convertValue(payload.get(CONFIG), MAP_TYPE)
             : Map.of();
-        Object defaultValue = payload.has("config") ? payload.get("config").toString() : "";
+        Object defaultValue = payload.has(CONFIG) ? payload.get(CONFIG).toString() : "";
         Variable createdVariable;
 
         synchronized (ctx.getStateLock()) {
-            String variableId = payload.path("variableId").asText("");
+            String variableId = payload.path(VARIABLE_ID).asText("");
             if (variableId.isBlank()) {
                 variableId = UUID.randomUUID().toString();
             }
 
-            String flowId = payload.path("flowId").asText(null);
+            String flowId = payload.path(FLOW_ID).asText(null);
             if (flowId == null || flowId.trim().isEmpty() || "null".equalsIgnoreCase(flowId)) {
                 flowId = null;
             }
-            String groupId = payload.path("groupId").asText(null);
+            String groupId = payload.path(GROUP_ID).asText(null);
             if (groupId == null || groupId.trim().isEmpty() || "null".equalsIgnoreCase(groupId)) {
                 groupId = null;
             }
@@ -83,10 +93,10 @@ public class VariableCommandHandler implements CommandHandler {
                 ctx.getVariablesById().put(variableId, createdVariable);
                 server.persistState();
             } catch (InvalidVariableConfigException ex) {
-                server.sendError(conn, commandId, clientRequestId, "VALIDATION_ERROR", ex.getMessage(), Map.of("variableId", variableId, "errors", ex.getErrors()));
+                server.sendError(conn, commandId, clientRequestId, "VALIDATION_ERROR", ex.getMessage(), Map.of(VARIABLE_ID, variableId, "errors", ex.getErrors()));
                 return;
             } catch (IllegalArgumentException ex) {
-                server.sendError(conn, commandId, clientRequestId, "INVALID_PAYLOAD", ex.getMessage(), Map.of("name", name, "type", type, "scope", scope));
+                server.sendError(conn, commandId, clientRequestId, INVALID_PAYLOAD, ex.getMessage(), Map.of("name", name, "type", type, SCOPE, scope));
                 return;
             }
         }
@@ -94,14 +104,14 @@ public class VariableCommandHandler implements CommandHandler {
         Map<String, Object> response = new LinkedHashMap<>(createdVariable.toPayload());
         response.put("commandId", commandId);
         if (clientRequestId != null) {
-            response.put("clientRequestId", clientRequestId);
+            response.put(CLIENT_REQUEST_ID, clientRequestId);
         }
         response.putIfAbsent("status", "ok");
         response.put("result", "variable_created");
         response.put("type", type);
-        response.put("scope", scope.toLowerCase());
+        response.put(SCOPE, scope.toLowerCase());
         server.sendMessage(conn, "CONNECTION_STATUS", commandId, response);
-        server.logToBackend("info", "VARIABLES", "Created variable '" + name + "'", commandId);
+        server.logToBackend("info", SOURCE_VARIABLES, "Created variable '" + name + "'", commandId);
         server.sendVariablesUpdate();
     }
 
@@ -114,20 +124,20 @@ public class VariableCommandHandler implements CommandHandler {
      */
     public void handleDeleteVariable(WebSocket conn, JsonNode payload, String commandId) {
         UiBridgeWebSocketServer server = ctx.getServer();
-        String variableId = server.requireTextField(conn, commandId, payload, "variableId", "INVALID_PAYLOAD", "DELETE_VARIABLE");
+        String variableId = server.requireTextField(conn, commandId, payload, VARIABLE_ID, INVALID_PAYLOAD, "DELETE_VARIABLE");
         if (variableId == null) {
             return;
         }
 
-        String clientRequestId = payload.path("clientRequestId").asText(null);
+        String clientRequestId = payload.path(CLIENT_REQUEST_ID).asText(null);
 
         synchronized (ctx.getStateLock()) {
             Variable removed = ctx.getVariablesById().remove(variableId);
             if (removed == null) {
-                server.sendError(conn, commandId, clientRequestId, "NOT_FOUND", "Variable not found: " + variableId, Map.of("variableId", variableId));
+                server.sendError(conn, commandId, clientRequestId, "NOT_FOUND", "Variable not found: " + variableId, Map.of(VARIABLE_ID, variableId));
                 return;
             }
-            server.logToBackend("info", "VARIABLES", "Deleted variable '" + removed.getName() + "'", commandId);
+            server.logToBackend("info", SOURCE_VARIABLES, "Deleted variable '" + removed.getName() + "'", commandId);
             server.persistState();
         }
 
@@ -144,7 +154,7 @@ public class VariableCommandHandler implements CommandHandler {
      */
     public void handleUpdateVariable(WebSocket conn, JsonNode payload, String commandId) {
         UiBridgeWebSocketServer server = ctx.getServer();
-        String variableId = server.requireTextField(conn, commandId, payload, "variableId", "INVALID_PAYLOAD", "UPDATE_VARIABLE");
+        String variableId = server.requireTextField(conn, commandId, payload, VARIABLE_ID, INVALID_PAYLOAD, "UPDATE_VARIABLE");
         if (variableId == null) {
             return;
         }
@@ -153,28 +163,28 @@ public class VariableCommandHandler implements CommandHandler {
         synchronized (ctx.getStateLock()) {
             Variable existing = ctx.getVariablesById().get(variableId);
             if (existing == null) {
-                server.sendError(conn, commandId, "NOT_FOUND", "Variable not found: " + variableId, Map.of("variableId", variableId));
+                server.sendError(conn, commandId, "NOT_FOUND", "Variable not found: " + variableId, Map.of(VARIABLE_ID, variableId));
                 return;
             }
 
             String name = payload.path("name").asText(existing.getName());
             updatedVariableName = name;
             String type = normalizeVariableTypeForCore(payload.path("type").asText(existing.getType()));
-            String scope = payload.path("scope").asText(existing.getScope()).toUpperCase();
+            String scope = payload.path(SCOPE).asText(existing.getScope()).toUpperCase();
             
-            String flowId = payload.has("flowId") ? payload.get("flowId").asText() : existing.getFlowId();
+            String flowId = payload.has(FLOW_ID) ? payload.get(FLOW_ID).asText() : existing.getFlowId();
             if (flowId == null || flowId.trim().isEmpty() || "null".equalsIgnoreCase(flowId)) {
                 flowId = null;
             }
-            String groupId = payload.has("groupId") ? payload.get("groupId").asText() : existing.getGroupId();
+            String groupId = payload.has(GROUP_ID) ? payload.get(GROUP_ID).asText() : existing.getGroupId();
             if (groupId == null || groupId.trim().isEmpty() || "null".equalsIgnoreCase(groupId)) {
                 groupId = null;
             }
             ObjectMapper objectMapper = ctx.getObjectMapper();
-            Map<String, Object> config = payload.has("config") && payload.get("config").isObject()
-                ? objectMapper.convertValue(payload.get("config"), MAP_TYPE)
+            Map<String, Object> config = payload.has(CONFIG) && payload.get(CONFIG).isObject()
+                ? objectMapper.convertValue(payload.get(CONFIG), MAP_TYPE)
                 : existing.getConfig();
-            Object defaultValue = payload.has("config") ? payload.get("config").toString() : existing.getDefaultValue();
+            Object defaultValue = payload.has(CONFIG) ? payload.get(CONFIG).toString() : existing.getDefaultValue();
 
             try {
                 Variable updated = new Variable(variableId, name, scope, type, defaultValue, config, flowId, groupId);
@@ -182,16 +192,16 @@ public class VariableCommandHandler implements CommandHandler {
                 ctx.getTemplateEngine().removeCachedVariable(variableId);
                 server.persistState();
             } catch (InvalidVariableConfigException ex) {
-                server.sendError(conn, commandId, "VALIDATION_ERROR", ex.getMessage(), Map.of("variableId", variableId, "errors", ex.getErrors()));
+                server.sendError(conn, commandId, "VALIDATION_ERROR", ex.getMessage(), Map.of(VARIABLE_ID, variableId, "errors", ex.getErrors()));
                 return;
             } catch (IllegalArgumentException ex) {
-                server.sendError(conn, commandId, "INVALID_PAYLOAD", ex.getMessage(), Map.of("variableId", variableId));
+                server.sendError(conn, commandId, INVALID_PAYLOAD, ex.getMessage(), Map.of(VARIABLE_ID, variableId));
                 return;
             }
         }
 
         server.sendAck(conn, commandId, "variable_updated");
-        server.logToBackend("info", "VARIABLES", "Updated variable '" + updatedVariableName + "'", commandId);
+        server.logToBackend("info", SOURCE_VARIABLES, "Updated variable '" + updatedVariableName + "'", commandId);
         server.sendVariablesUpdate();
     }
 
@@ -217,9 +227,9 @@ public class VariableCommandHandler implements CommandHandler {
         if (type instanceof String typeName && VariableType.TEMPORAL.matches(typeName)) {
             normalized.put("type", "temporal");
         }
-        Object scope = normalized.get("scope");
+        Object scope = normalized.get(SCOPE);
         if (scope instanceof String) {
-            normalized.put("scope", ((String) scope).toLowerCase());
+            normalized.put(SCOPE, ((String) scope).toLowerCase());
         }
         return normalized;
     }

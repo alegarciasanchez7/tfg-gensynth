@@ -46,8 +46,12 @@ describe('GraphRouteCanvas', () => {
     const connectBtn = screen.getByRole('button', { name: /Connect Nodes/i });
     fireEvent.click(connectBtn);
 
+    expect(connectBtn).toHaveAttribute('aria-pressed', 'true');
+
     const deleteBtn = screen.getByRole('button', { name: /Delete/i });
     fireEvent.click(deleteBtn);
+    expect(deleteBtn).toHaveAttribute('aria-pressed', 'true');
+    expect(connectBtn).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('renders obstacle forbidden zone warnings when obstacles are present in config', () => {

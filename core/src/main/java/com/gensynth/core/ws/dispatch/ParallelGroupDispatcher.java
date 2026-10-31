@@ -46,7 +46,9 @@ public class ParallelGroupDispatcher implements IGroupDispatcher {
             switch (workers.tryRun(flow, () -> sendOne(flow, groupTick))) {
                 case STARTED -> handedOff = true;
                 case BUSY -> handler.onTickSkipped(group, flow);
-                case UNAVAILABLE -> { }
+                case UNAVAILABLE -> {
+                    // No worker (flow without a connector) or shutting down: nothing to send
+                }
             }
         }
         return handedOff;

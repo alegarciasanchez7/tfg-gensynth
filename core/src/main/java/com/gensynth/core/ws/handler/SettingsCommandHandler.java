@@ -16,11 +16,14 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Map;
 
+import static com.gensynth.core.ws.BridgeProtocol.INVALID_PAYLOAD;
+
 /**
  * Handles project settings commands (UPDATE_SETTINGS), which broadcast SETTINGS_UPDATE, and the
  * preferences of this computer (UPDATE_OUTPUT_FOLDER).
  */
 public class SettingsCommandHandler implements CommandHandler {
+    private static final String FIELD = "field";
 
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
@@ -52,7 +55,7 @@ public class SettingsCommandHandler implements CommandHandler {
         UiBridgeWebSocketServer server = ctx.getServer();
         JsonNode tickNode = payload == null ? null : payload.path("tick");
         if (tickNode == null || !tickNode.isObject()) {
-            server.sendError(conn, commandId, "INVALID_PAYLOAD", "UPDATE_SETTINGS requires a 'tick' object", Map.of("field", "tick"));
+            server.sendError(conn, commandId, INVALID_PAYLOAD, "UPDATE_SETTINGS requires a 'tick' object", Map.of(FIELD, "tick"));
             return;
         }
 
@@ -60,7 +63,7 @@ public class SettingsCommandHandler implements CommandHandler {
         try {
             tick = TickSettings.fromPayload(ctx.getObjectMapper().convertValue(tickNode, MAP_TYPE));
         } catch (IllegalArgumentException e) {
-            server.sendError(conn, commandId, "INVALID_PAYLOAD", e.getMessage(), Map.of("field", "tick"));
+            server.sendError(conn, commandId, INVALID_PAYLOAD, e.getMessage(), Map.of(FIELD, "tick"));
             return;
         }
 
@@ -117,7 +120,7 @@ public class SettingsCommandHandler implements CommandHandler {
         try {
             ctx.getDevicePreferences().setOutputFolder(folder);
         } catch (IOException e) {
-            server.sendError(conn, commandId, "INTERNAL_ERROR", "Could not save the output folder: " + e.getMessage(), Map.of("field", "path"));
+            server.sendError(conn, commandId, "INTERNAL_ERROR", "Could not save the output folder: " + e.getMessage(), Map.of(FIELD, "path"));
             return;
         }
 
@@ -127,7 +130,7 @@ public class SettingsCommandHandler implements CommandHandler {
     }
 
     private void sendInvalidFolder(WebSocket conn, String commandId, String message) {
-        ctx.getServer().sendError(conn, commandId, "INVALID_PAYLOAD", message, Map.of("field", "path"));
+        ctx.getServer().sendError(conn, commandId, INVALID_PAYLOAD, message, Map.of(FIELD, "path"));
     }
 
     /**

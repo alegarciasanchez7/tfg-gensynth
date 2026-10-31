@@ -314,10 +314,14 @@ public class TemplateEngineTest {
     }
 
     @Test
-    public void testStripTrailingZerosMatchesTheOldRegex() {
-        String[] inputs = {"", "0", "000000", "456000", "050000", "100", "123", "1000001000", "0".repeat(10_000) + "1"};
-        for (String input : inputs) {
-            assertEquals(input, input.replaceAll("0+$", ""), TemplateEngine.stripTrailingZeros(input));
+    public void testStripTrailingZerosRemovesOnlyTheTrailingZeros() {
+        String longInput = "0".repeat(10_000) + "1";
+        String[][] cases = {
+            {"", ""}, {"0", ""}, {"000000", ""}, {"456000", "456"}, {"050000", "05"}, {"100", "1"},
+            {"123", "123"}, {"1000001000", "1000001"}, {longInput, longInput},
+        };
+        for (String[] c : cases) {
+            assertEquals(c[0], c[1], TemplateEngine.stripTrailingZeros(c[0]));
         }
     }
 

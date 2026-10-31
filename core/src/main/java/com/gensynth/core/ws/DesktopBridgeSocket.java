@@ -70,26 +70,32 @@ public class DesktopBridgeSocket implements WebSocket {
 
     @Override
     public void close(int code, String message) {
+        // The desktop bridge has no network connection to close: it lives as long as the window
     }
 
     @Override
     public void close(int code) {
+        // The desktop bridge has no network connection to close: it lives as long as the window
     }
 
     @Override
     public void close() {
+        // The desktop bridge has no network connection to close: it lives as long as the window
     }
 
     @Override
     public void closeConnection(int code, String message) {
+        // The desktop bridge has no network connection to close: it lives as long as the window
     }
 
     @Override
     public void send(ByteBuffer bytes) {
+        // The UI bridge only exchanges text messages; binary data is never sent to the desktop UI
     }
 
     @Override
     public void send(byte[] bytes) {
+        // The UI bridge only exchanges text messages; binary data is never sent to the desktop UI
     }
 
     @Override
@@ -134,6 +140,7 @@ public class DesktopBridgeSocket implements WebSocket {
 
     @Override
     public <T> void setAttachment(T attachment) {
+        // No attachment is kept for the desktop bridge
     }
 
     @Override
@@ -143,18 +150,22 @@ public class DesktopBridgeSocket implements WebSocket {
 
     @Override
     public void sendFragmentedFrame(Opcode op, ByteBuffer buffer, boolean fin) {
+        // Raw WebSocket frames do not apply to the desktop bridge, which passes whole text messages
     }
 
     @Override
     public void sendFrame(Framedata framedata) {
+        // Raw WebSocket frames do not apply to the desktop bridge, which passes whole text messages
     }
 
     @Override
     public void sendFrame(Collection<Framedata> frames) {
+        // Raw WebSocket frames do not apply to the desktop bridge, which passes whole text messages
     }
 
     @Override
     public void sendPing() {
+        // The desktop bridge needs no keep-alive pings: it is not a network connection
     }
 
     @Override

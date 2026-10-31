@@ -5,8 +5,17 @@ import type {
   RollbackReportPayload,
   UpdateStatusPayload,
 } from '../../core/types';
-import type { Selection, Group, Variable, LogEntry, SystemStatus, ProjectSettings, OutputFolderInfo, UpdateInfo } from '../../types';
-import type { ConnectorHealthSummary } from '../../types';
+import type {
+  Selection,
+  Group,
+  Variable,
+  LogEntry,
+  SystemStatus,
+  ProjectSettings,
+  OutputFolderInfo,
+  UpdateInfo,
+  ConnectorHealthSummary,
+} from '../../types';
 import { createEmptyDirtyItems, type DirtyItems } from '../helpers/dirtyStateHelper';
 import { DEFAULT_PROJECT_SETTINGS } from '../../core/tickSettings';
 

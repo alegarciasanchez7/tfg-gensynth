@@ -28,6 +28,7 @@ import java.util.Set;
  * and discovery of currently installed plugins.
  */
 public class PluginInstallerImpl implements IPluginInstaller {
+    private static final String JAR_GLOB = "*.jar";
 
     private static final Logger logger = LoggerFactory.getLogger(PluginInstallerImpl.class);
 
@@ -124,7 +125,7 @@ public class PluginInstallerImpl implements IPluginInstaller {
                 Files.createDirectories(backupDir);
             }
 
-            try (DirectoryStream<Path> stream = Files.newDirectoryStream(pluginsDirectory, "*.jar")) {
+            try (DirectoryStream<Path> stream = Files.newDirectoryStream(pluginsDirectory, JAR_GLOB)) {
                 for (Path jarPath : stream) {
                     InstalledPluginInfo info = loadPluginInfoFromJar(jarPath);
                     if (info != null && info.getPluginId().equals(pluginId)) {
@@ -168,7 +169,7 @@ public class PluginInstallerImpl implements IPluginInstaller {
         }
 
         // Find the JAR file by scanning and matching descriptors
-        try (DirectoryStream<Path> stream = Files.newDirectoryStream(pluginsDirectory, "*.jar")) {
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(pluginsDirectory, JAR_GLOB)) {
             for (Path jarPath : stream) {
                 logger.debug("Scanning JAR for uninstall: {}", jarPath.getFileName());
                 InstalledPluginInfo info = loadPluginInfoFromJar(jarPath);
@@ -209,7 +210,7 @@ public class PluginInstallerImpl implements IPluginInstaller {
             return plugins;
         }
 
-        try (DirectoryStream<Path> stream = Files.newDirectoryStream(pluginsDirectory, "*.jar")) {
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(pluginsDirectory, JAR_GLOB)) {
             for (Path jarPath : stream) {
                 InstalledPluginInfo info = loadPluginInfoFromJar(jarPath);
                 if (info != null) {

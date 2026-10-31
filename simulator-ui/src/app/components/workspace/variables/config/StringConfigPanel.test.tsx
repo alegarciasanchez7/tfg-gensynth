@@ -109,7 +109,7 @@ describe('StringConfigPanel', () => {
     expect(screen.queryByLabelText(/Custom Format Pattern/i)).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByLabelText('Preset Format Mask'));
-    fireEvent.click(screen.getByRole('button', { name: 'Custom Format Mask' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Custom Format Mask' }));
 
     expect(handleChange).toHaveBeenCalledWith({ formattedMaskType: 'CUSTOM_MASK', customMask: 'SENSOR-####-$$$$' });
   });

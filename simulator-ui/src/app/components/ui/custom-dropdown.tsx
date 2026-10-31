@@ -145,6 +145,7 @@ export const CustomDropdown: React.FC<CustomDropdownProps> = ({ value, onChange,
   const menu = isOpen && position && (
     <div
       ref={menuRef}
+      role="listbox"
       data-testid="custom-dropdown-menu"
       // Keep the focus on the trigger (inside dialogs, a focused portal would fight their focus trap)
       onMouseDown={event => event.preventDefault()}
@@ -166,6 +167,8 @@ export const CustomDropdown: React.FC<CustomDropdownProps> = ({ value, onChange,
           <button
             key={opt.value}
             type="button"
+            role="option"
+            aria-selected={opt.value === value}
             tabIndex={-1}
             data-highlighted={index === highlighted ? '' : undefined}
             onMouseEnter={() => setHighlighted(index)}
@@ -202,7 +205,7 @@ export const CustomDropdown: React.FC<CustomDropdownProps> = ({ value, onChange,
         ref={triggerRef}
         id={id}
         type="button"
-        aria-haspopup="true"
+        aria-haspopup="listbox"
         aria-expanded={isOpen}
         onClick={() => (isOpen ? close() : open())}
         onKeyDown={handleTriggerKeyDown}

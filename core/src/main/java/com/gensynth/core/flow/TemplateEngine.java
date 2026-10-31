@@ -13,6 +13,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class TemplateEngine {
+    private static final String CONFIG_SUFFIX = "_config";
+    private static final String LENGTH = "length";
 
     private final DataGenerator dataGenerator;
     private static final Pattern VARIABLE_PATTERN = Pattern.compile("\\{\\{([^}]+)\\}\\}");
@@ -188,7 +190,7 @@ public class TemplateEngine {
                     Object targetObj = generatedValue;
                     if (propertyPart != null && VariableType.TEMPORAL.matches(variable.getType())) {
                         // Read date parts from the generated instant, not from the formatted text
-                        java.time.Instant instant = lastInstantOf(context.get(variable.getId() + "_config"));
+                        java.time.Instant instant = lastInstantOf(context.get(variable.getId() + CONFIG_SUFFIX));
                         if (instant != null) {
                             targetObj = instant;
                         }
@@ -239,7 +241,7 @@ public class TemplateEngine {
         }
         switch (propertyPart.toLowerCase(java.util.Locale.ROOT)) {
             case "size":
-            case "length":
+            case LENGTH:
             case "count":
             case "first":
             case "firstitem":
@@ -423,7 +425,7 @@ public class TemplateEngine {
         if (varType == VariableType.STRING || targetObj instanceof String) {
             String str = targetObj != null ? targetObj.toString() : "";
             switch (prop) {
-                case "length":
+                case LENGTH:
                 case "size":
                     return String.valueOf(str.length());
                 case "upper":
@@ -479,7 +481,7 @@ public class TemplateEngine {
             if (targetObj instanceof java.util.List<?> list) {
                 switch (prop) {
                     case "size":
-                    case "length":
+                    case LENGTH:
                     case "count":
                         return String.valueOf(list.size());
                     case "first":
@@ -597,7 +599,7 @@ public class TemplateEngine {
                 if (depNameOrId.equals(variable.getName()) || depNameOrId.equals(variable.getId())) {
                     continue;
                 }
-                if (context.containsKey(depNameOrId) || context.containsKey(depNameOrId + "_config")) {
+                if (context.containsKey(depNameOrId) || context.containsKey(depNameOrId + CONFIG_SUFFIX)) {
                     continue;
                 }
 
@@ -612,7 +614,7 @@ public class TemplateEngine {
                     continue;
                 }
 
-                if (dependencyVariable.getId() != null && (context.containsKey(dependencyVariable.getId()) || context.containsKey(dependencyVariable.getId() + "_config"))) {
+                if (dependencyVariable.getId() != null && (context.containsKey(dependencyVariable.getId()) || context.containsKey(dependencyVariable.getId() + CONFIG_SUFFIX))) {
                     continue;
                 }
 

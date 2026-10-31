@@ -11,6 +11,11 @@ import java.util.concurrent.ThreadLocalRandom;
  * Supports multiple patterns: Random, Constant, Sequential, Trend.
  */
 public class NumericVariableConfig extends VariableConfiguration {
+    private static final String UNIFORM = "UNIFORM";
+    private static final String CLAMP = "CLAMP";
+    private static final String FIXED_OFFSET = "FIXED_OFFSET";
+    private static final String WEIGHT = "weight";
+    private static final String VALUE = "value";
 
     // Range and format
     private double fromValue = 0.0;
@@ -22,13 +27,13 @@ public class NumericVariableConfig extends VariableConfiguration {
     // Advanced config
     private String formula;
     private String precision = "DOUBLE"; // "INTEGER", "FLOAT", "DOUBLE"
-    private String distribution = "UNIFORM"; // "UNIFORM", "NORMAL", "EXPONENTIAL"
+    private String distribution = UNIFORM; // "UNIFORM", "NORMAL", "EXPONENTIAL"
 
     // Pattern: SEQUENTIAL
-    private SequentialConfig sequentialConfig;
+    private final SequentialConfig sequentialConfig;
 
     // Pattern: TREND
-    private TrendConfig trendConfig;
+    private final TrendConfig trendConfig;
 
     // Pattern: RANDOM / CONSTANT
     private double constantValue;
@@ -40,7 +45,7 @@ public class NumericVariableConfig extends VariableConfiguration {
     private String suffix = "";
     private double step = 0.0;
     private double constantMargin = 0.0;
-    private String distributionType = "UNIFORM";
+    private String distributionType = UNIFORM;
     private String boundaryMode = "RIGHT"; // "LEFT", "RIGHT", "SPLIT"
     private List<Map<String, Object>> sequentialGraph = new ArrayList<>();
     private List<Map<String, Object>> customDistributionGraph = new ArrayList<>();
@@ -54,7 +59,7 @@ public class NumericVariableConfig extends VariableConfiguration {
     // Pattern: DRIFT
     private double driftRate = 0.5;
     private Double driftInitialValue = null;
-    private String driftLimitMode = "CLAMP"; // "CLAMP", "WRAP", "RESET", "BOUNCE"
+    private String driftLimitMode = CLAMP; // "CLAMP", "WRAP", "RESET", "BOUNCE"
 
     // Virtual Simulation Clock
     private double simulationTimeStep = 1.0; // Seconds per tick
@@ -68,7 +73,7 @@ public class NumericVariableConfig extends VariableConfiguration {
     // Spike Anomaly Modifier Layer
     private boolean spikeEnabled = false;
     private double spikeProbability = 0.05; // 0.0 to 1.0 (or 0 to 100%)
-    private String spikeMode = "FIXED_OFFSET"; // "FIXED_OFFSET", "RANGE_SPIKE", "MULTIPLIER"
+    private String spikeMode = FIXED_OFFSET; // "FIXED_OFFSET", "RANGE_SPIKE", "MULTIPLIER"
     private double spikeMagnitude = 50.0;
     private double spikeMin = 100.0;
     private double spikeMax = 200.0;
@@ -125,7 +130,7 @@ public class NumericVariableConfig extends VariableConfiguration {
             } else {
                 double totalWeight = 0;
                 for (Map<String, Object> pt : customDistributionGraph) {
-                    Number wNum = (Number) pt.get("weight");
+                    Number wNum = (Number) pt.get(WEIGHT);
                     if (wNum != null) {
                         totalWeight += wNum.doubleValue();
                     }
@@ -269,7 +274,7 @@ public class NumericVariableConfig extends VariableConfiguration {
         double rawVal = startVal + driftRate * t;
 
         if (fromValue < toValue) {
-            String mode = driftLimitMode != null ? driftLimitMode.toUpperCase() : "CLAMP";
+            String mode = driftLimitMode != null ? driftLimitMode.toUpperCase() : CLAMP;
             switch (mode) {
                 case "BOUNCE": {
                     // Triangle wave: the value goes back and forth between the limits like a reflection
@@ -290,7 +295,7 @@ public class NumericVariableConfig extends VariableConfiguration {
                         rawVal = toValue - ((toValue - rawVal) % range);
                     }
                     return rawVal;
-                case "CLAMP":
+                case CLAMP:
                 default:
                     return Math.min(Math.max(rawVal, fromValue), toValue);
             }
@@ -299,7 +304,7 @@ public class NumericVariableConfig extends VariableConfiguration {
     }
 
     private double applyNoise(double val) {
-        if ("UNIFORM".equalsIgnoreCase(noiseType)) {
+        if (UNIFORM.equalsIgnoreCase(noiseType)) {
             double jitter = ThreadLocalRandom.current().nextDouble(-noiseAmplitude, noiseAmplitude);
             return val + jitter;
         } else { // GAUSSIAN
@@ -311,7 +316,7 @@ public class NumericVariableConfig extends VariableConfiguration {
     private double applySpike(double val) {
         double probThreshold = spikeProbability > 1.0 ? spikeProbability / 100.0 : spikeProbability;
         if (ThreadLocalRandom.current().nextDouble() < probThreshold) {
-            String mode = spikeMode != null ? spikeMode.toUpperCase() : "FIXED_OFFSET";
+            String mode = spikeMode != null ? spikeMode.toUpperCase() : FIXED_OFFSET;
             switch (mode) {
                 case "RANGE_SPIKE":
                 case "OUT_OF_RANGE":
@@ -321,7 +326,7 @@ public class NumericVariableConfig extends VariableConfiguration {
                     return spikeMin;
                 case "MULTIPLIER":
                     return val * spikeMultiplier;
-                case "FIXED_OFFSET":
+                case FIXED_OFFSET:
                 default:
                     boolean positive = ThreadLocalRandom.current().nextBoolean();
                     return val + (positive ? spikeMagnitude : -spikeMagnitude);
@@ -331,7 +336,7 @@ public class NumericVariableConfig extends VariableConfiguration {
     }
 
     private double generateDistribution() {
-        String dist = (distributionType != null && !distributionType.equalsIgnoreCase("UNIFORM")) ? distributionType
+        String dist = (distributionType != null && !distributionType.equalsIgnoreCase(UNIFORM)) ? distributionType
                 : distribution;
         return sampleDistribution(dist);
     }
@@ -342,7 +347,7 @@ public class NumericVariableConfig extends VariableConfiguration {
      * Distribution pattern and may be a leftover from it.
      */
     private double generateRandom() {
-        if (distribution != null && !"UNIFORM".equalsIgnoreCase(distribution)) {
+        if (distribution != null && !UNIFORM.equalsIgnoreCase(distribution)) {
             return sampleDistribution(distribution);
         }
         if ("INTEGER".equalsIgnoreCase(precision) && Math.ceil(fromValue) <= Math.floor(toValue)) {
@@ -581,7 +586,7 @@ public class NumericVariableConfig extends VariableConfiguration {
 
         double totalWeight = 0;
         for (Map<String, Object> pt : customDistributionGraph) {
-            Number wNum = (Number) pt.get("weight");
+            Number wNum = (Number) pt.get(WEIGHT);
             if (wNum != null) {
                 totalWeight += wNum.doubleValue();
             }
@@ -594,14 +599,14 @@ public class NumericVariableConfig extends VariableConfiguration {
             if (fromNum != null && toNum != null) {
                 return generateRandomInInterval(fromNum.doubleValue(), toNum.doubleValue());
             }
-            Number valNum = (Number) first.get("value");
+            Number valNum = (Number) first.get(VALUE);
             return valNum != null ? valNum.doubleValue() : fromValue;
         }
 
         double r = ThreadLocalRandom.current().nextDouble() * totalWeight;
         double cumulativeWeight = 0;
         for (Map<String, Object> pt : customDistributionGraph) {
-            Number wNum = (Number) pt.get("weight");
+            Number wNum = (Number) pt.get(WEIGHT);
             if (wNum == null)
                 continue;
             cumulativeWeight += wNum.doubleValue();
@@ -611,7 +616,7 @@ public class NumericVariableConfig extends VariableConfiguration {
                 if (fromNum != null && toNum != null) {
                     return generateRandomInInterval(fromNum.doubleValue(), toNum.doubleValue());
                 }
-                Number valNum = (Number) pt.get("value");
+                Number valNum = (Number) pt.get(VALUE);
                 return valNum != null ? valNum.doubleValue() : fromValue;
             }
         }
@@ -622,7 +627,7 @@ public class NumericVariableConfig extends VariableConfiguration {
         if (fromNum != null && toNum != null) {
             return generateRandomInInterval(fromNum.doubleValue(), toNum.doubleValue());
         }
-        Number valNum = (Number) last.get("value");
+        Number valNum = (Number) last.get(VALUE);
         return valNum != null ? valNum.doubleValue() : fromValue;
     }
 
@@ -1132,21 +1137,6 @@ public class NumericVariableConfig extends VariableConfiguration {
         public boolean descending = false;
         public boolean goBack = true;
         public boolean proportional = true;
-
-        public SequentialConfig descending(boolean desc) {
-            this.descending = desc;
-            return this;
-        }
-
-        public SequentialConfig goBack(boolean back) {
-            this.goBack = back;
-            return this;
-        }
-
-        public SequentialConfig proportional(boolean prop) {
-            this.proportional = prop;
-            return this;
-        }
     }
 
     /**
@@ -1161,16 +1151,6 @@ public class NumericVariableConfig extends VariableConfiguration {
         public TrendMode mode = TrendMode.NORMAL;
         public int intervalCount = 10;
         public int intervalSize = 1;
-
-        public TrendConfig mode(TrendMode mode) {
-            this.mode = mode;
-            return this;
-        }
-
-        public TrendConfig intervalCount(int count) {
-            this.intervalCount = count;
-            return this;
-        }
 
         public int getIntervalCount() {
             return intervalCount;

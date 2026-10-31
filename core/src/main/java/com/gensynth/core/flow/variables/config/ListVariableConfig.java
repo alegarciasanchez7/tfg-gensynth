@@ -10,6 +10,8 @@ import java.util.concurrent.ThreadLocalRandom;
  * Supports embedded sub-variable generators for polymorphic/heterogeneous list items.
  */
 public class ListVariableConfig extends VariableConfiguration {
+    private static final String VALUE = "value";
+    private static final String WEIGHT = "weight";
 
     public enum SelectionStrategy {
         WEIGHTED_RANDOM,
@@ -91,7 +93,7 @@ public class ListVariableConfig extends VariableConfiguration {
 
     // Runtime state
     private int currentIndex = 0;
-    private List<Integer> shuffleIndices = new ArrayList<>();
+    private final List<Integer> shuffleIndices = new ArrayList<>();
     private int currentShufflePointer = 0;
     private String currentMarkovStateId = null;
 
@@ -199,8 +201,8 @@ public class ListVariableConfig extends VariableConfiguration {
             } else if (obj instanceof Map) {
                 Map<?, ?> map = (Map<?, ?>) obj;
                 String itemId = map.containsKey("id") ? String.valueOf(map.get("id")) : null;
-                Object val = map.containsKey("value") ? map.get("value") : obj;
-                double w = map.containsKey("weight") ? ((Number) map.get("weight")).doubleValue() : 1.0;
+                Object val = map.containsKey(VALUE) ? map.get(VALUE) : obj;
+                double w = map.containsKey(WEIGHT) ? ((Number) map.get(WEIGHT)).doubleValue() : 1.0;
                 parsedItems.add(new ListItem(itemId, val, w));
             } else {
                 parsedItems.add(new ListItem(null, obj, 1.0));
@@ -514,8 +516,8 @@ public class ListVariableConfig extends VariableConfiguration {
             for (ListItem item : items) {
                 Map<String, Object> itemMap = new HashMap<>();
                 itemMap.put("id", item.getId());
-                itemMap.put("value", item.getValue());
-                itemMap.put("weight", item.getWeight());
+                itemMap.put(VALUE, item.getValue());
+                itemMap.put(WEIGHT, item.getWeight());
                 if (item.getEmbeddedConfig() != null) {
                     itemMap.put("isEmbedded", true);
                     itemMap.put("embeddedType", item.getEmbeddedConfig().getType().name());

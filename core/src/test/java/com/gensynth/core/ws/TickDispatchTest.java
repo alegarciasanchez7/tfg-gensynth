@@ -73,6 +73,27 @@ public class TickDispatchTest {
         server.shutdown();
     }
 
+    /**
+     * Runs a tick of the single-flow group. The worker clears its busy flag just after its
+     * send, so a due tick may find it still busy and skip it: retry until it is handed over.
+     */
+    private void tick(long tickNumber) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + TIMEOUT_MS;
+        while (!server.flowCommandHandler.onTick(tickNumber) && flow.isDueOn(tickNumber, group.startTick)) {
+            assertTrue("tick " + tickNumber + " not dispatched", System.currentTimeMillis() < deadline);
+            Thread.sleep(5);
+        }
+    }
+
+    /** Hands one message of a flow to its worker, retrying while the worker finishes the previous one. */
+    private void dispatchWhenIdle(FlowRuntime target, long groupTick) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + TIMEOUT_MS;
+        while (!group.dispatcher.dispatch(List.of(target), groupTick)) {
+            assertTrue(target.id + " not dispatched", System.currentTimeMillis() < deadline);
+            Thread.sleep(5);
+        }
+    }
+
     private void awaitSent(FlowRuntime target, long expected) throws InterruptedException {
         long deadline = System.currentTimeMillis() + TIMEOUT_MS;
         while (target.sent.get() < expected && System.currentTimeMillis() < deadline) {
@@ -83,10 +104,9 @@ public class TickDispatchTest {
 
     @Test
     public void runningGroupSendsOneMessagePerTick() throws Exception {
-        assertTrue(server.flowCommandHandler.onTick(1));
+        tick(1);
         awaitSent(flow, 1);
-        Thread.sleep(20); // the worker clears its busy flag right after recording the send
-        assertTrue(server.flowCommandHandler.onTick(2));
+        tick(2);
         awaitSent(flow, 2);
 
         verify(connector, times(2)).send(any(byte[].class), anyMap());
@@ -99,8 +119,7 @@ public class TickDispatchTest {
     public void everyTicksSendsOnlyOnDueTicks() throws Exception {
         flow.everyTicks.set(3);
         for (long tick = 1; tick <= 7; tick++) {
-            server.flowCommandHandler.onTick(tick);
-            Thread.sleep(20); // let the worker finish so no tick is skipped as busy
+            tick(tick);
         }
         // Due on ticks 1, 4 and 7 (counted from the group's first tick)
         awaitSent(flow, 3);
@@ -144,9 +163,10 @@ public class TickDispatchTest {
         group.dispatcher.shutdown();
         group.dispatcher = server.flowCommandHandler.createDispatcher(group);
 
-        for (long tick = 1; tick <= 5; tick++) {
-            server.flowCommandHandler.onTick(tick);
-            Thread.sleep(20);
+        // Through the dispatcher, so a retry for a busy flow does not send twice for the other one
+        for (long tick = 0; tick < 5; tick++) {
+            dispatchWhenIdle(flow, tick);
+            dispatchWhenIdle(other, tick);
         }
         awaitSent(flow, 5);
         awaitSent(other, 5);
@@ -276,8 +296,7 @@ public class TickDispatchTest {
         flow.outageEveryTicks.set(4);
         flow.outageDurationTicks.set(2);
         for (long tick = 1; tick <= 8; tick++) {
-            server.flowCommandHandler.onTick(tick);
-            Thread.sleep(20); // let the worker finish so no tick is skipped as busy
+            tick(tick);
         }
         // Group ticks 0-7: 2, 3, 6 and 7 are in the outage
         awaitSent(flow, 4);
@@ -377,6 +396,7 @@ public class TickDispatchTest {
 
             @Override
             public void shutdown() {
+                // Records only: there are no threads to stop
             }
         };
         server.groupsById.put(sequential.id, sequential);

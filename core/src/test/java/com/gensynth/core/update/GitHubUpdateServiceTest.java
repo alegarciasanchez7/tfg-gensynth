@@ -77,7 +77,7 @@ public class GitHubUpdateServiceTest {
 
     private GitHubUpdateService service(URI api, String currentVersion, boolean installed, Optional<InstallerType> type,
                                         boolean pkexec) {
-        return new GitHubUpdateService(api, base + "/download/", currentVersion, installed, () -> type, () -> pkexec,
+        return new GitHubUpdateService(new GitHubUpdateService.ReleaseEndpoints(api, base + "/download/"), currentVersion, installed, () -> type, () -> pkexec,
             downloadDir, HttpClient.newHttpClient());
     }
 

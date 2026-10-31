@@ -236,8 +236,8 @@ public class StringVariableConfigTest {
         config.alphanumericCase("MIXED");
         String mixed = (String) config.generateNextValue();
         assertTrue(mixed, mixed.startsWith("Mensaje-"));
-        assertTrue("Mixed Case must give lower-case letters: " + mixed, mixed.substring(8).matches(".*[a-z].*"));
-        assertTrue("Mixed Case must give upper-case letters: " + mixed, mixed.substring(8).matches(".*[A-Z].*"));
+        assertTrue("Mixed Case must give lower-case letters: " + mixed, mixed.substring(8).chars().anyMatch(Character::isLowerCase));
+        assertTrue("Mixed Case must give upper-case letters: " + mixed, mixed.substring(8).chars().anyMatch(Character::isUpperCase));
     }
 
     @Test

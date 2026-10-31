@@ -1030,6 +1030,7 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
           <div className="flex items-center gap-1 border border-[var(--c-br1)] p-0.5 rounded bg-[var(--c-bg1)]">
             <button
               type="button"
+              aria-pressed={editMode === 'BOUNDARIES'}
               onClick={() => setEditMode('BOUNDARIES')}
               className={`px-2.5 py-1 rounded font-medium text-[11px] flex items-center gap-1.5 transition-colors cursor-pointer ${
                 editMode === 'BOUNDARIES'
@@ -1042,6 +1043,7 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
             </button>
             <button
               type="button"
+              aria-pressed={editMode === 'OBSTACLES'}
               onClick={() => setEditMode('OBSTACLES')}
               className={`px-2.5 py-1 rounded font-medium text-[11px] flex items-center gap-1.5 transition-colors cursor-pointer ${
                 editMode === 'OBSTACLES'

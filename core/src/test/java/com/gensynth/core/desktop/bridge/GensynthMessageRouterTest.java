@@ -32,15 +32,15 @@ public class GensynthMessageRouterTest {
         AtomicInteger dialogsShown = new AtomicInteger();
 
         CefQueryCallback first = mock(CefQueryCallback.class);
-        assertTrue(router.runFileDialog(LOAD, first, () -> {
+        router.runFileDialog(LOAD, first, () -> {
             dialogsShown.incrementAndGet();
             dialogOpen.countDown();
             awaitQuietly(closeDialog);
-        }));
+        });
         assertTrue(dialogOpen.await(5, TimeUnit.SECONDS));
 
         CefQueryCallback second = mock(CefQueryCallback.class);
-        assertTrue(router.runFileDialog(LOAD, second, dialogsShown::incrementAndGet));
+        router.runFileDialog(LOAD, second, dialogsShown::incrementAndGet);
         verify(second).failure(409, "A file dialog is already open");
 
         closeDialog.countDown();

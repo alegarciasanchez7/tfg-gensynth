@@ -45,7 +45,7 @@ function SelectField<T extends string>({
   onChange,
   hint,
   disabled,
-}: {
+}: Readonly<{
   id: string;
   label: string;
   value: T;
@@ -53,7 +53,7 @@ function SelectField<T extends string>({
   onChange: (value: T) => void;
   hint: string;
   disabled?: boolean;
-}) {
+}>) {
   return (
     <div className="flex flex-col gap-1">
       <label htmlFor={id} className="text-[10px] text-[var(--c-tx4)] tracking-wider uppercase"
@@ -86,14 +86,14 @@ function FlowSummaryRow({
   isLast,
   onSelect,
   onMove,
-}: {
+}: Readonly<{
   flow: Flow;
   position: number;
   isFirst: boolean;
   isLast: boolean;
   onSelect: () => void;
   onMove: (direction: 'up' | 'down') => void;
-}) {
+}>) {
   const moveClass = 'h-6 w-6 p-0 text-[var(--c-tx4)] hover:text-[var(--c-tx1)] disabled:opacity-30';
   return (
     <div className="flex items-center gap-1">

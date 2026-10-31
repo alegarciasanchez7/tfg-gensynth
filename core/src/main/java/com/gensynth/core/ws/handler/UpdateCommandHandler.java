@@ -16,6 +16,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Handles the update commands (CHECK_FOR_UPDATES, INSTALL_UPDATE, CANCEL_UPDATE) and broadcasts
@@ -26,6 +27,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * scheduler, which is stopped while the application closes to install.
  */
 public class UpdateCommandHandler implements CommandHandler {
+    private static final String VERSION = "version";
+    private static final String CANCELLED = "cancelled";
 
     private static final Logger logger = LoggerFactory.getLogger(UpdateCommandHandler.class);
 
@@ -33,7 +36,7 @@ public class UpdateCommandHandler implements CommandHandler {
     private final IUpdateService service;
     private final ExecutorService executor;
     private final AtomicBoolean inProgress = new AtomicBoolean();
-    private volatile Future<?> currentUpdate;
+    private final AtomicReference<Future<?>> currentUpdate = new AtomicReference<>();
     private volatile boolean cancelRequested;
     private volatile boolean installing;
 
@@ -112,7 +115,7 @@ public class UpdateCommandHandler implements CommandHandler {
      */
     public void handleInstallUpdate(WebSocket conn, JsonNode payload, String commandId) {
         UiBridgeWebSocketServer server = ctx.getServer();
-        String version = server.requireTextField(conn, commandId, payload, "version", "INVALID_PAYLOAD", "INSTALL_UPDATE");
+        String version = server.requireTextField(conn, commandId, payload, VERSION, "INVALID_PAYLOAD", "INSTALL_UPDATE");
         if (version == null) {
             return;
         }
@@ -127,8 +130,8 @@ public class UpdateCommandHandler implements CommandHandler {
         }
         cancelRequested = false;
         installing = false;
-        server.sendAck(conn, commandId, "update_started", Map.of("version", version));
-        currentUpdate = executor.submit(() -> runUpdate(version));
+        server.sendAck(conn, commandId, "update_started", Map.of(VERSION, version));
+        currentUpdate.set(executor.submit(() -> runUpdate(version)));
     }
 
     /**
@@ -140,15 +143,15 @@ public class UpdateCommandHandler implements CommandHandler {
      */
     public void handleCancelUpdate(WebSocket conn, String commandId) {
         UiBridgeWebSocketServer server = ctx.getServer();
-        Future<?> update = currentUpdate;
+        Future<?> update = currentUpdate.get();
         if (!inProgress.get() || update == null || installing) {
-            server.sendAck(conn, commandId, "update_not_cancelled", Map.of("cancelled", false));
+            server.sendAck(conn, commandId, "update_not_cancelled", Map.of(CANCELLED, false));
             return;
         }
         cancelRequested = true;
         update.cancel(true);
-        broadcastStatus("cancelled", null, 0, 0, null);
-        server.sendAck(conn, commandId, "update_cancelled", Map.of("cancelled", true));
+        broadcastStatus(CANCELLED, null, 0, 0, null);
+        server.sendAck(conn, commandId, "update_cancelled", Map.of(CANCELLED, true));
     }
 
     private void runUpdate(String version) {
@@ -186,7 +189,7 @@ public class UpdateCommandHandler implements CommandHandler {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             if (!cancelRequested) {
-                broadcastStatus("cancelled", version, 0, 0, null);
+                broadcastStatus(CANCELLED, version, 0, 0, null);
             }
         } catch (Exception e) {
             if (!cancelRequested) {
@@ -202,7 +205,7 @@ public class UpdateCommandHandler implements CommandHandler {
     private void broadcastStatus(String phase, String version, long receivedBytes, long totalBytes, String message) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("phase", phase);
-        payload.put("version", version);
+        payload.put(VERSION, version);
         payload.put("receivedBytes", receivedBytes);
         payload.put("totalBytes", totalBytes);
         if (message != null) {

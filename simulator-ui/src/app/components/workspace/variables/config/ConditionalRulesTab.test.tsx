@@ -61,7 +61,7 @@ describe('ConditionalRulesTab', () => {
 
     expect(screen.getByRole('switch')).not.toBeChecked();
     fireEvent.click(document.getElementById('boolean-pattern-select')!);
-    fireEvent.click(screen.getByRole('button', { name: /Flip Interval/ }));
+    fireEvent.click(screen.getByRole('option', { name: /Flip Interval/ }));
 
     expect(handleChange).toHaveBeenLastCalledWith([
       expect.objectContaining({ overrides: { pattern: 'FLIP_INTERVAL', currentValue: false } }),

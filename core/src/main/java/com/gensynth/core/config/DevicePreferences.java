@@ -13,6 +13,7 @@ import java.nio.file.Paths;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Preferences of this computer, kept out of the project files: a path such as
@@ -32,7 +33,7 @@ public final class DevicePreferences {
 
     private final Path file;
     private final ObjectMapper mapper = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
-    private volatile Path outputFolder;
+    private final AtomicReference<Path> outputFolder = new AtomicReference<>();
 
     /**
      * Loads the preferences from a file.
@@ -41,7 +42,7 @@ public final class DevicePreferences {
      */
     public DevicePreferences(Path file) {
         this.file = file;
-        this.outputFolder = loadOutputFolder();
+        this.outputFolder.set(loadOutputFolder());
     }
 
     /**
@@ -58,7 +59,7 @@ public final class DevicePreferences {
      * @return the folder chosen for the generated files, empty when the default one is used
      */
     public Optional<Path> outputFolder() {
-        return Optional.ofNullable(outputFolder);
+        return Optional.ofNullable(outputFolder.get());
     }
 
     /**
@@ -68,14 +69,10 @@ public final class DevicePreferences {
      * @throws IOException if the preferences file cannot be written
      */
     public synchronized void setOutputFolder(Path folder) throws IOException {
-        Path previous = outputFolder;
-        outputFolder = folder == null ? null : folder.toAbsolutePath().normalize();
-        try {
-            save();
-        } catch (IOException e) {
-            outputFolder = previous;
-            throw e;
-        }
+        Path normalized = folder == null ? null : folder.toAbsolutePath().normalize();
+        // Saved first, so a failed save leaves the preference unchanged
+        save(normalized);
+        outputFolder.set(normalized);
     }
 
     private Path loadOutputFolder() {
@@ -99,13 +96,13 @@ public final class DevicePreferences {
         }
     }
 
-    private void save() throws IOException {
+    private void save(Path folder) throws IOException {
         if (file == null) {
             return;
         }
         Map<String, Object> data = new LinkedHashMap<>();
-        if (outputFolder != null) {
-            data.put(OUTPUT_FOLDER, outputFolder.toString());
+        if (folder != null) {
+            data.put(OUTPUT_FOLDER, folder.toString());
         }
         if (file.getParent() != null) {
             Files.createDirectories(file.getParent());
