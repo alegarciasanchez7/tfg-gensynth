@@ -2,6 +2,8 @@ package com.gensynth.core.util;
 
 import org.junit.Test;
 
+import java.util.regex.Pattern;
+
 import static org.junit.Assert.*;
 
 public class VersionsTest {
@@ -28,6 +30,6 @@ public class VersionsTest {
     public void readsTheVersionOfThisBuild() {
         String version = Versions.current();
         assertNotNull("gensynth-version.properties is filtered by Maven", version);
-        assertTrue(version, version.matches("\\d+\\.\\d+\\.\\d+.*"));
+        assertTrue(version, Pattern.compile("\\d++\\.\\d++\\.\\d++").matcher(version).lookingAt());
     }
 }

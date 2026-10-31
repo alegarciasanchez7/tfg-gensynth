@@ -14,6 +14,7 @@ import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.Assert.*;
@@ -48,13 +49,17 @@ public class AllowedOriginsTest {
     @Before
     public void startServer() throws Exception {
         Path tempDir = Files.createTempDirectory("gensynth-ws-test-origin-");
+        CountDownLatch started = new CountDownLatch(1);
         server = new UiBridgeWebSocketServer(new InetSocketAddress("127.0.0.1", 0), new ConnectorCatalogService(),
-            new JsonStateRepositoryImpl(tempDir.toString()), new PluginInstallerImpl(tempDir));
+            new JsonStateRepositoryImpl(tempDir.toString()), new PluginInstallerImpl(tempDir)) {
+            @Override
+            public void onStart() {
+                super.onStart();
+                started.countDown();
+            }
+        };
         server.start();
-        long deadline = System.currentTimeMillis() + 5000;
-        while (server.getPort() == 0 && System.currentTimeMillis() < deadline) {
-            Thread.sleep(10);
-        }
+        assertTrue("The server should start", started.await(5, TimeUnit.SECONDS));
     }
 
     @After
@@ -64,20 +69,25 @@ public class AllowedOriginsTest {
 
     private boolean connects(Map<String, String> headers) throws Exception {
         WebSocketClient client = new WebSocketClient(URI.create("ws://127.0.0.1:" + server.getPort()), headers) {
+            // Only whether the connection opens matters: the messages are not needed
             @Override
             public void onOpen(ServerHandshake handshake) {
+                // Nothing to do: connects() checks isOpen()
             }
 
             @Override
             public void onMessage(String message) {
+                // The Core's greetings are not needed by these tests
             }
 
             @Override
             public void onClose(int code, String reason, boolean remote) {
+                // A rejected handshake closes the connection: connects() returns false
             }
 
             @Override
             public void onError(Exception ex) {
+                // A rejected handshake is reported here: connects() returns false
             }
         };
         try {

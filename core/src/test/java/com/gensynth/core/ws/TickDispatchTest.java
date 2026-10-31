@@ -377,6 +377,7 @@ public class TickDispatchTest {
 
             @Override
             public void shutdown() {
+                // Records only: there are no threads to stop
             }
         };
         server.groupsById.put(sequential.id, sequential);

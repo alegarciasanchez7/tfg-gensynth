@@ -227,7 +227,8 @@ public class SequentialGroupDispatcherTest {
         dispatcher.shutdown();
         slowA.countDown();
 
-        Thread.sleep(200);
+        // Once the generation ends, the closed dispatcher drops its message instead of queueing it
+        await("A finished generating", () -> handler.generated("A") == 1);
         assertTrue(handler.published.isEmpty());
         assertEquals(0, dispatcher.pendingMessages());
     }

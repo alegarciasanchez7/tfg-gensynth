@@ -21,6 +21,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -40,6 +41,7 @@ public class UpdateCommandsTest {
     private UpdateCommandHandler handler;
     private FakeUpdateService service;
     private WebSocket conn;
+    private ExecutorService executor;
 
     /** Update service whose answers each test chooses. */
     private static final class FakeUpdateService implements IUpdateService {
@@ -106,7 +108,8 @@ public class UpdateCommandsTest {
         // Broadcasts reach the desktop socket too: use the same mock to capture them
         server.desktopSocket = conn;
         service = new FakeUpdateService();
-        handler = new UpdateCommandHandler(server.bridgeContext, service, Executors.newSingleThreadExecutor());
+        executor = Executors.newSingleThreadExecutor();
+        handler = new UpdateCommandHandler(server.bridgeContext, service, executor);
     }
 
     @After
@@ -125,16 +128,14 @@ public class UpdateCommandsTest {
         return result;
     }
 
+    /** Waits until the handler sends a message of this type for this command, and returns it. */
     private JsonNode await(String type, String commandId) throws Exception {
-        long deadline = System.currentTimeMillis() + 3000;
-        while (System.currentTimeMillis() < deadline) {
-            for (JsonNode message : messages()) {
-                if (type.equals(message.path("type").asText())
-                        && (commandId == null || commandId.equals(message.path("commandId").asText()))) {
-                    return message;
-                }
+        verify(conn, timeout(3000).atLeastOnce()).send(argThat((String sent) ->
+            sent.contains("\"type\":\"" + type + "\"") && sent.contains("\"" + commandId + "\"")));
+        for (JsonNode message : messages()) {
+            if (type.equals(message.path("type").asText()) && commandId.equals(message.path("commandId").asText())) {
+                return message;
             }
-            Thread.sleep(10);
         }
         throw new AssertionError("No " + type + " for " + commandId);
     }
@@ -153,14 +154,15 @@ public class UpdateCommandsTest {
         handler.handleInstallUpdate(conn, MAPPER.createObjectNode().put("version", version), commandId);
     }
 
-    private void awaitPhase(String phase) throws Exception {
-        long deadline = System.currentTimeMillis() + 3000;
-        while (!phases().contains(phase)) {
-            if (System.currentTimeMillis() > deadline) {
-                throw new AssertionError("No phase " + phase + " in " + phases());
-            }
-            Thread.sleep(10);
-        }
+    /** Waits until an UPDATE_STATUS with this phase is broadcast. */
+    private void awaitPhase(String phase) {
+        verify(conn, timeout(3000).atLeastOnce()).send(argThat((String sent) ->
+            sent.contains("\"UPDATE_STATUS\"") && sent.contains("\"phase\":\"" + phase + "\"")));
+    }
+
+    /** Waits until the handler's thread has finished every task submitted so far. */
+    private void awaitIdleUpdater() throws Exception {
+        executor.submit(() -> { }).get(3, TimeUnit.SECONDS);
     }
 
     @Test
@@ -199,6 +201,7 @@ public class UpdateCommandsTest {
 
         assertEquals("update_started", await("CONNECTION_STATUS", "c1").path("payload").path("result").asText());
         awaitPhase("installing");
+        awaitIdleUpdater();
         assertEquals(List.of("downloading", "downloading", "downloading", "verifying", "installing"), phases());
         assertEquals(Path.of("installer.deb"), service.installed.get());
     }
@@ -208,6 +211,7 @@ public class UpdateCommandsTest {
         install("c1", "0.5.4");
 
         awaitPhase("failed");
+        awaitIdleUpdater();
         assertNull(service.installed.get());
     }
 
@@ -223,7 +227,7 @@ public class UpdateCommandsTest {
         handler.handleCancelUpdate(conn, "c3");
         assertTrue(await("CONNECTION_STATUS", "c3").path("payload").path("cancelled").asBoolean());
         awaitPhase("cancelled");
-        Thread.sleep(200);
+        awaitIdleUpdater();
         assertNull("A cancelled update installs nothing", service.installed.get());
         assertFalse(phases().contains("installing"));
 
