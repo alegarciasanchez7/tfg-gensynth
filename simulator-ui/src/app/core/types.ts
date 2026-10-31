@@ -1,4 +1,4 @@
-import type { ProjectSettings, TickSettings } from '../types';
+import type { OutputFolderInfo, ProjectSettings, TickSettings } from '../types';
 
 /**
  * Tipos para la comunicación con el Core Java
@@ -33,7 +33,8 @@ export type CoreMessageType =
   | 'PLUGIN_INSTALL_RESULT'
   | 'RESTART_REQUIRED'
   | 'ROLLBACK_REPORT'
-  | 'SETTINGS_UPDATE';
+  | 'SETTINGS_UPDATE'
+  | 'UPDATE_STATUS';
 
 export interface CoreMessage<T = unknown> {
   type: CoreMessageType;
@@ -217,7 +218,11 @@ export type UICommandType =
   | 'PICK_DIRECTORY'
   | 'EXPORT_STATE'
   | 'UI_LOG'
-  | 'UPDATE_SETTINGS';
+  | 'UPDATE_SETTINGS'
+  | 'UPDATE_OUTPUT_FOLDER'
+  | 'CHECK_FOR_UPDATES'
+  | 'INSTALL_UPDATE'
+  | 'CANCEL_UPDATE';
 
 export interface StartGroupCommandPayload {
   groupId: string;
@@ -237,6 +242,8 @@ export interface CreateGroupCommandPayload {
   name: string;
   threads?: number;
   outputMode?: string;
+  /** 'flow' | 'random' | 'generated'; any other value is rejected with INVALID_PAYLOAD. */
+  sequentialOrder?: string;
   description?: string;
   clientRequestId?: string; // For optimistic UI correlation
 }
@@ -298,6 +305,10 @@ export interface UpdateGroupCommandPayload {
   threads?: number;
   /** 'parallel' | 'sequential'; any other value is rejected with INVALID_PAYLOAD. */
   outputMode?: string;
+  /** 'flow' | 'random' | 'generated'; applied the next time the group starts. */
+  sequentialOrder?: string;
+  /** New order of the group's flows (applied at once); flows not listed keep their order after them. */
+  flowIds?: string[];
   description?: string;
   enabled?: boolean;
 }
@@ -366,6 +377,48 @@ export interface UpdateSettingsCommandPayload {
   tick: TickSettings;
 }
 
+export interface UpdateOutputFolderCommandPayload {
+  /** Absolute folder, or null to go back to the default one. */
+  path: string | null;
+}
+
+export interface InstallUpdateCommandPayload {
+  /** Version the user accepted; the Core checks again that it is still the latest. */
+  version: string;
+}
+
+/** Ack of CHECK_FOR_UPDATES. Mirrors UpdateCheck#toPayload in the Core, plus support info. */
+export interface UpdateCheckPayload {
+  status?: string;
+  result?: string;
+  currentVersion?: string | null;
+  /** False in development builds, in the browser or on systems without an installer. */
+  supported: boolean;
+  /** Why updates are not supported. */
+  reason?: string;
+  available: boolean;
+  latestVersion?: string;
+  releaseUrl?: string;
+  assetName?: string | null;
+  assetSize?: number;
+}
+
+/** UPDATE_STATUS event: progress of an update the user started. */
+export interface UpdateStatusPayload {
+  phase: 'downloading' | 'verifying' | 'installing' | 'failed' | 'cancelled';
+  version: string | null;
+  receivedBytes: number;
+  totalBytes: number;
+  message?: string;
+}
+
+/** Ack of UPDATE_OUTPUT_FOLDER. */
+export interface OutputFolderResponsePayload {
+  status?: string;
+  result?: string;
+  outputFolder?: OutputFolderInfo;
+}
+
 
 export interface ExportStateCommandPayload {
   filePath: string;
@@ -419,6 +472,10 @@ export interface UICommandPayloadMap {
   EXPORT_STATE: ExportStateCommandPayload;
   UI_LOG: UILogCommandPayload;
   UPDATE_SETTINGS: UpdateSettingsCommandPayload;
+  UPDATE_OUTPUT_FOLDER: UpdateOutputFolderCommandPayload;
+  CHECK_FOR_UPDATES: undefined;
+  INSTALL_UPDATE: InstallUpdateCommandPayload;
+  CANCEL_UPDATE: undefined;
 }
 
 export interface UICommand<T extends UICommandType = UICommandType> {
@@ -434,6 +491,7 @@ export interface GroupConfigPayload {
   name?: string;
   threads?: number;
   outputMode?: string;
+  sequentialOrder?: string;
   description?: string;
 }
 
@@ -473,6 +531,8 @@ export interface InitialStatePayload {
   rollbackReport?: RollbackReportPayload;
   /** Current project settings (optional for older cores). */
   settings?: ProjectSettings;
+  /** Folder of the generated files on this computer (optional for older cores). */
+  outputFolder?: OutputFolderInfo;
 }
 
 export interface GroupState {
@@ -483,6 +543,8 @@ export interface GroupState {
   description: string;
   threads: number;
   outputMode: string;
+  /** Missing in projects or cores older than 0.5.2: means 'flow'. */
+  sequentialOrder?: string;
   enabled: boolean;
   flows: FlowState[];
 }

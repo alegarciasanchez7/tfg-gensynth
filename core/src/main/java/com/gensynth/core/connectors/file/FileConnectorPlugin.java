@@ -51,7 +51,8 @@ public class FileConnectorPlugin implements ConnectorPlugin {
             .label("Output directory")
             .placeholder("Session folder")
             .tooltip("Folder for the file. Leave empty to use the folder of the current simulation session "
-                + "(OUTPUT_FILES_<date>). A sub-folder with the group name is always added."),
+                + "(OUTPUT_FILES_<date>, inside the Output folder of Settings). A sub-folder with the group name "
+                + "is always added."),
         ConnectorField.text("fileName")
             .label("File name")
             .placeholder("Flow name")

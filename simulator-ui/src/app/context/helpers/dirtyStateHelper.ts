@@ -60,6 +60,7 @@ export function getGroupComparable(group: Group) {
     description: group.description,
     threads: group.threads,
     outputMode: group.outputMode,
+    sequentialOrder: group.sequentialOrder,
     enabled: group.enabled,
     flows: (group.flows || []).map(getFlowComparable),
   };

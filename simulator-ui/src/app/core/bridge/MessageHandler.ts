@@ -16,6 +16,7 @@ import type {
   RestartRequiredPayload,
   RollbackReportPayload,
   InitialStatePayload,
+  UpdateStatusPayload,
 } from '../types';
 import type { ProjectSettings } from '../../types';
 
@@ -87,6 +88,9 @@ export class MessageHandler {
           break;
         case 'SETTINGS_UPDATE':
           this.emit('settings-update', message.payload as ProjectSettings);
+          break;
+        case 'UPDATE_STATUS':
+          this.emit('update-status', message.payload as UpdateStatusPayload);
           break;
       }
 

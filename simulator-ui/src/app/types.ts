@@ -307,8 +307,37 @@ export interface ProjectSettings {
   tick: TickSettings;
 }
 
+/**
+ * Folder where each START creates its OUTPUT_FILES_<date> session folder. A preference of this
+ * computer, not saved with the project. Mirrors BridgeContext#outputFolderPayload in the Core.
+ */
+export interface OutputFolderInfo {
+  /** Folder in use: the chosen one, or the default one. */
+  path: string;
+  /** Default folder (~/GenSynth when installed). */
+  defaultPath: string;
+  /** Whether the user chose the folder. */
+  custom: boolean;
+}
+
+/** A newer release the user may install. Mirrors UpdateCheck in the Core. */
+export interface UpdateInfo {
+  currentVersion: string;
+  latestVersion: string;
+  /** Release page, to read the notes. */
+  releaseUrl: string;
+  /** Size of the installer, in bytes. */
+  assetSize: number;
+}
+
 /** How the flows of a group send: one FIFO queue + one sender, or one thread per flow. Mirrors OutputMode in the Core. */
 export type OutputMode = 'parallel' | 'sequential';
+
+/**
+ * Order of the messages due on the same tick in a sequential group: the flow list order, a
+ * random order every tick, or the order in which generation ends. Mirrors SequentialOrder in the Core.
+ */
+export type SequentialOrder = 'flow' | 'random' | 'generated';
 
 export interface Group {
   id: string;
@@ -320,6 +349,8 @@ export interface Group {
   /** @deprecated Legacy; ignored by the engine. */
   threads: number;
   outputMode: OutputMode;
+  /** Used by sequential groups only; kept when the group is parallel. */
+  sequentialOrder: SequentialOrder;
   flows: Flow[];
   expanded: boolean;
   enabled: boolean;

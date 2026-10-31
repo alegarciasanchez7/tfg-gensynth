@@ -71,6 +71,18 @@ public class ConnectorPluginManagerTest {
     }
 
     @Test
+    public void rabbitMqIsIncludedLikeFileOutput() throws Exception {
+        // Built-in connectors come from the application classpath: never external, never uninstallable
+        ConnectorPluginManager manager = new ConnectorPluginManager(Files.createTempDirectory("gensynth-plugins-"));
+
+        for (String id : List.of("file", "rabbitmq")) {
+            ConnectorDescriptor descriptor = manager.findLatestDescriptor(id).orElseThrow(() -> new AssertionError(id + " missing"));
+            assertFalse(id + " is built in", descriptor.isExternal());
+        }
+        assertEquals("1.0.0", manager.findLatestDescriptor("rabbitmq").orElseThrow().getPluginVersion());
+    }
+
+    @Test
     public void legacyPluginJarsAreDetected() throws Exception {
         Path dir = Files.createTempDirectory("gensynth-plugins-");
         Path legacy = jarWith(dir.resolve("legacy.jar"), ConnectorPluginManager.LEGACY_SERVICE_FILE);

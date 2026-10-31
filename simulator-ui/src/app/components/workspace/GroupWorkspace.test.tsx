@@ -34,6 +34,7 @@ const group: Group = {
   description: '',
   threads: 4,
   outputMode: 'parallel',
+  sequentialOrder: 'flow' as const,
   expanded: true,
   enabled: true,
   flows: [flow('f1', 'Temperature'), flow('f2', 'Humidity')],
@@ -54,6 +55,7 @@ const metrics = (flowId: string, throughput: number): FlowMetricsPayload => ({
 describe('GroupWorkspace', () => {
   const actions = {
     updateGroupConfig: vi.fn(),
+    reorderGroupFlows: vi.fn().mockResolvedValue(undefined),
     selectFlow: vi.fn(),
     discardItemChanges: vi.fn(),
     deleteGroup: vi.fn(),
@@ -99,8 +101,40 @@ describe('GroupWorkspace', () => {
     render(<GroupWorkspace group={group} />);
     expect(screen.getByText('Flows in this group (2)')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /Humidity/ }));
+    fireEvent.click(screen.getByTitle('Open Humidity'));
     expect(actions.selectFlow).toHaveBeenCalledWith('g1', 'f2');
+  });
+
+  it('disables the sequential order for parallel groups', () => {
+    render(<GroupWorkspace group={group} />);
+    const select = screen.getByLabelText('Sequential Order') as HTMLSelectElement;
+    expect(select).toBeDisabled();
+    expect(screen.getByText('Only for sequential groups.')).toBeInTheDocument();
+  });
+
+  it('changes the sequential order of a sequential group', () => {
+    render(<GroupWorkspace group={{ ...group, outputMode: 'sequential' }} />);
+    const select = screen.getByLabelText('Sequential Order') as HTMLSelectElement;
+    expect(select).not.toBeDisabled();
+    expect(Array.from(select.options).map((o) => o.textContent)).toEqual(['Flow order', 'Random', 'First generated']);
+
+    fireEvent.change(select, { target: { value: 'random' } });
+    expect(actions.updateGroupConfig).toHaveBeenCalledWith('g1', { sequentialOrder: 'random' }, 'Sensors');
+  });
+
+  it('numbers the flows and moves them with the arrows', () => {
+    const three = { ...group, flows: [flow('f1', 'Temperature'), flow('f2', 'Humidity'), flow('f3', 'Pressure')] };
+    render(<GroupWorkspace group={three} />);
+
+    expect(screen.getByRole('button', { name: 'Move Temperature up' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Move Pressure down' })).toBeDisabled();
+    ['1', '2', '3'].forEach((position) => expect(screen.getByTitle(`Position ${position}`)).toHaveTextContent(position));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Move Humidity up' }));
+    expect(actions.reorderGroupFlows).toHaveBeenCalledWith('g1', ['f2', 'f1', 'f3']);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Move Humidity down' }));
+    expect(actions.reorderGroupFlows).toHaveBeenLastCalledWith('g1', ['f1', 'f3', 'f2']);
   });
 
   it('shows a LOCKED badge instead of the run status for a locked group', () => {

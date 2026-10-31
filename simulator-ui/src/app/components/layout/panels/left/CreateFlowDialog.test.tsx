@@ -73,6 +73,7 @@ describe('CreateFlowDialog', () => {
     description: '',
     threads: 1,
     outputMode: 'parallel',
+    sequentialOrder: 'flow' as const,
     expanded: true,
     enabled: true,
     flows: [createdFlow('e1', 'Sensor 1'), createdFlow('e2', 'Sensor 2')],

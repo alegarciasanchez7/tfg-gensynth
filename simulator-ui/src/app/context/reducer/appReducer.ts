@@ -3,9 +3,19 @@ import type {
   FlowMetricsPayload,
   ConnectorPluginDescriptor,
   RollbackReportPayload,
+  UpdateStatusPayload,
 } from '../../core/types';
-import type { Selection, Group, Variable, LogEntry, SystemStatus, ProjectSettings } from '../../types';
-import type { ConnectorHealthSummary } from '../../types';
+import type {
+  Selection,
+  Group,
+  Variable,
+  LogEntry,
+  SystemStatus,
+  ProjectSettings,
+  OutputFolderInfo,
+  UpdateInfo,
+  ConnectorHealthSummary,
+} from '../../types';
 import { createEmptyDirtyItems, type DirtyItems } from '../helpers/dirtyStateHelper';
 import { DEFAULT_PROJECT_SETTINGS } from '../../core/tickSettings';
 
@@ -34,6 +44,10 @@ export function clampAutoSaveInterval(seconds: number): number {
   if (!Number.isFinite(seconds)) return AUTO_SAVE_DEFAULT_SECONDS;
   return Math.min(AUTO_SAVE_MAX_SECONDS, Math.max(AUTO_SAVE_MIN_SECONDS, Math.round(seconds)));
 }
+
+/** localStorage keys of the update preferences of this device. */
+export const CHECK_UPDATES_KEY = 'gensynth-check-updates';
+export const SKIPPED_UPDATE_KEY = 'gensynth-skipped-version';
 
 function readStoredAutoSaveInterval(): number {
   if (typeof localStorage === 'undefined') return AUTO_SAVE_DEFAULT_SECONDS;
@@ -75,6 +89,20 @@ export interface AppState {
   variables: Variable[];
   /** Project-wide simulation settings (tick clock), saved with the project. */
   settings: ProjectSettings;
+  /** Folder of the generated files on this computer; null until the Core reports it. */
+  outputFolder: OutputFolderInfo | null;
+
+  // Updates (the user always decides whether to install)
+  /** Newer release found by the last check, or null. */
+  availableUpdate: UpdateInfo | null;
+  /** Whether the "update available" dialog is shown. */
+  updateDialogOpen: boolean;
+  /** Progress of an update the user started, or null. */
+  updateStatus: UpdateStatusPayload | null;
+  /** Check for updates when the app starts (stored on this device). */
+  checkUpdatesAtStartup: boolean;
+  /** Version the user chose to skip: the startup check does not offer it again. */
+  skippedUpdateVersion: string | null;
   logs: LogEntry[];
   formatTemplates: Record<string, string>;
   connectorCatalog: ConnectorPluginDescriptor[];
@@ -109,6 +137,12 @@ export const initialState: AppState = {
   groups: [],
   variables: [],
   settings: DEFAULT_PROJECT_SETTINGS,
+  outputFolder: null,
+  availableUpdate: null,
+  updateDialogOpen: false,
+  updateStatus: null,
+  checkUpdatesAtStartup: typeof localStorage !== 'undefined' ? localStorage.getItem(CHECK_UPDATES_KEY) !== 'false' : true,
+  skippedUpdateVersion: typeof localStorage !== 'undefined' ? localStorage.getItem(SKIPPED_UPDATE_KEY) : null,
   logs: [],
   formatTemplates: {},
   connectorCatalog: [],
@@ -132,6 +166,12 @@ export type AppAction =
   | { type: 'TOGGLE_GROUP_EXPANDED'; payload: string }
   | { type: 'SET_VARIABLES'; payload: Variable[] }
   | { type: 'SET_SETTINGS'; payload: ProjectSettings }
+  | { type: 'SET_OUTPUT_FOLDER'; payload: OutputFolderInfo }
+  | { type: 'SET_AVAILABLE_UPDATE'; payload: { update: UpdateInfo | null; openDialog: boolean } }
+  | { type: 'SET_UPDATE_DIALOG_OPEN'; payload: boolean }
+  | { type: 'SET_UPDATE_STATUS'; payload: UpdateStatusPayload | null }
+  | { type: 'SET_CHECK_UPDATES_AT_STARTUP'; payload: boolean }
+  | { type: 'SKIP_UPDATE_VERSION'; payload: string }
   | { type: 'ADD_LOG'; payload: LogEntry }
   | { type: 'SET_LOGS'; payload: LogEntry[] }
   | { type: 'CLEAR_LOGS' }
@@ -157,6 +197,8 @@ export type AppAction =
         variables: Variable[];
         /** Project settings; the current ones are kept when omitted (e.g. older cores). */
         settings?: ProjectSettings;
+        /** Folder of the generated files; the current one is kept when omitted (e.g. older cores). */
+        outputFolder?: OutputFolderInfo;
         logs?: LogEntry[];
         connectorCatalog?: ConnectorPluginDescriptor[];
         metrics?: MetricsPayload | null;

@@ -5,7 +5,7 @@
 
 import { Group, Variable, Flow, ProjectSettings } from '../types';
 import { normalizeProjectSettings } from './tickSettings';
-import { normalizeOutputMode } from './outputMode';
+import { normalizeOutputMode, normalizeSequentialOrder } from './outputMode';
 import { randomUUID } from './randomId';
 import { normalizeConnectionStatus, normalizeGroupStatus } from './entityStatus';
 
@@ -124,6 +124,7 @@ export function normalizeGroupFromSnapshot(group: Partial<Group>): Group {
     description: group.description ?? '',
     threads: typeof group.threads === 'number' ? group.threads : 1,
     outputMode: normalizeOutputMode(group.outputMode),
+    sequentialOrder: normalizeSequentialOrder(group.sequentialOrder),
     expanded: group.expanded ?? false,
     enabled: group.enabled ?? true,
     // Ensure flows is an array and normalize each flow

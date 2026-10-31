@@ -1,9 +1,10 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockUseApp, mockSupportsFileSystemAccess } = vi.hoisted(() => ({
+const { mockUseApp, mockSupportsFileSystemAccess, mockPickDirectory } = vi.hoisted(() => ({
   mockUseApp: vi.fn(),
   mockSupportsFileSystemAccess: vi.fn(),
+  mockPickDirectory: vi.fn(),
 }));
 
 vi.mock('../../../../context', () => ({
@@ -14,9 +15,19 @@ vi.mock('../../../../core/fileStorage', () => ({
   supportsFileSystemAccess: () => mockSupportsFileSystemAccess(),
 }));
 
+vi.mock('../../../../core/bridge', () => ({
+  CoreCommands: { pickDirectory: () => mockPickDirectory() },
+}));
+
 import { StorageSettingsSection } from './StorageSettingsSection';
 
-const actions = { setAutoSave: vi.fn(), setAutoSaveInterval: vi.fn() };
+const actions = {
+  setAutoSave: vi.fn(),
+  setAutoSaveInterval: vi.fn(),
+  setOutputFolder: vi.fn().mockResolvedValue(undefined),
+};
+
+const defaultFolder = { path: '/home/ana/GenSynth', defaultPath: '/home/ana/GenSynth', custom: false };
 
 function renderWith(state: Record<string, unknown>) {
   mockUseApp.mockReturnValue({
@@ -26,6 +37,7 @@ function renderWith(state: Record<string, unknown>) {
       connectionMode: 'websocket',
       currentFilePath: null,
       currentFileHandle: null,
+      outputFolder: defaultFolder,
       ...state,
     },
     actions,
@@ -37,6 +49,8 @@ describe('StorageSettingsSection', () => {
   beforeEach(() => {
     actions.setAutoSave.mockClear();
     actions.setAutoSaveInterval.mockClear();
+    actions.setOutputFolder.mockClear();
+    mockPickDirectory.mockReset();
     mockSupportsFileSystemAccess.mockReturnValue(true);
   });
 
@@ -80,5 +94,43 @@ describe('StorageSettingsSection', () => {
     mockSupportsFileSystemAccess.mockReturnValue(false);
     renderWith({ autoSaveEnabled: true });
     expect(screen.getByText('Not supported by this browser. Use Save manually.')).toBeInTheDocument();
+  });
+
+  it('shows the output folder in use and changes it when the path is committed', () => {
+    renderWith({});
+
+    const input = screen.getByLabelText('Output folder');
+    expect(input).toHaveValue('/home/ana/GenSynth');
+    expect(screen.queryByRole('button', { name: /Default/ })).not.toBeInTheDocument();
+
+    fireEvent.change(input, { target: { value: '  /home/ana/results ' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(actions.setOutputFolder).toHaveBeenCalledWith('/home/ana/results');
+  });
+
+  it('does not send the folder again when it did not change', () => {
+    renderWith({});
+
+    fireEvent.blur(screen.getByLabelText('Output folder'));
+    expect(actions.setOutputFolder).not.toHaveBeenCalled();
+  });
+
+  it('goes back to the default folder', () => {
+    renderWith({ outputFolder: { path: '/home/ana/results', defaultPath: '/home/ana/GenSynth', custom: true } });
+
+    fireEvent.click(screen.getByRole('button', { name: /Default/ }));
+    expect(actions.setOutputFolder).toHaveBeenCalledWith(null);
+  });
+
+  it('picks the folder with Browse in the desktop app only', async () => {
+    renderWith({});
+    expect(screen.queryByRole('button', { name: /Browse/ })).not.toBeInTheDocument();
+
+    cleanup();
+    mockPickDirectory.mockResolvedValue({ status: 'success', path: '/home/ana/picked' });
+    renderWith({ connectionMode: 'jcef' });
+    fireEvent.click(screen.getByRole('button', { name: /Browse/ }));
+
+    await waitFor(() => expect(actions.setOutputFolder).toHaveBeenCalledWith('/home/ana/picked'));
   });
 });

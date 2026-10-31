@@ -18,6 +18,7 @@ import com.gensynth.core.api.IFlowMessageHandler;
 import com.gensynth.core.api.IGroupDispatcher;
 import com.gensynth.core.api.ITickListener;
 import com.gensynth.core.model.OutputMode;
+import com.gensynth.core.model.SequentialOrder;
 import com.gensynth.core.ws.dispatch.FlowMessagePublisher;
 import com.gensynth.core.ws.dispatch.ParallelGroupDispatcher;
 import com.gensynth.core.ws.dispatch.SequentialGroupDispatcher;
@@ -31,6 +32,14 @@ import com.gensynth.core.flow.variables.DependencyResolver;
 import com.gensynth.core.flow.variables.CyclicDependencyException;
 import com.gensynth.core.flow.variables.InvalidVariableConfigException;
 
+import static com.gensynth.core.ws.BridgeProtocol.FLOW_ID;
+import static com.gensynth.core.ws.BridgeProtocol.GROUP_ID;
+import static com.gensynth.core.ws.BridgeProtocol.GROUP_NOT_FOUND;
+import static com.gensynth.core.ws.BridgeProtocol.INVALID_PAYLOAD;
+import static com.gensynth.core.ws.BridgeProtocol.NOT_FOUND;
+import static com.gensynth.core.ws.BridgeProtocol.RUNNING;
+import static com.gensynth.core.ws.BridgeProtocol.SOURCE_FLOWS;
+
 /**
  * Handles logic for CRUD and execution of simulation Flows.
  *
@@ -40,8 +49,19 @@ import com.gensynth.core.flow.variables.InvalidVariableConfigException;
  * group's output mode.
  */
 public class FlowCommandHandler implements CommandHandler, ITickListener {
+
+    private static final String CREATE_FLOW = "CREATE_FLOW";
+    private static final String TECHNOLOGY = "technology";
+    private static final String TOPIC = "topic";
+    private static final String INTERVAL = "interval";
+    private static final String BURST = "burst";
+    private static final String EVERY_TICKS = "everyTicks";
+    private static final String TEMPLATE = "template";
+    private static final String FORMAT = "format";
+    private static final String CONNECTOR_CONFIG = "connectorConfig";
+    private static final String DISCONNECTED = "disconnected";
+    private static final String FLOW_NOT_FOUND = "Flow not found: ";
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
-    private static final String INVALID_PAYLOAD = "INVALID_PAYLOAD";
     private final BridgeContext ctx;
     private final IFlowMessageHandler messageHandler;
 
@@ -61,9 +81,9 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
 
     public void handleCreateFlow(WebSocket conn, JsonNode payload, String commandId) {
         UiBridgeWebSocketServer server = ctx.getServer();
-        String groupId = server.requireTextField(conn, commandId, payload, "groupId", "INVALID_PAYLOAD", "CREATE_FLOW");
-        String name = server.requireTextField(conn, commandId, payload, "name", "INVALID_PAYLOAD", "CREATE_FLOW");
-        String technology = server.requireTextField(conn, commandId, payload, "technology", "INVALID_PAYLOAD", "CREATE_FLOW");
+        String groupId = server.requireTextField(conn, commandId, payload, GROUP_ID, INVALID_PAYLOAD, CREATE_FLOW);
+        String name = server.requireTextField(conn, commandId, payload, "name", INVALID_PAYLOAD, CREATE_FLOW);
+        String technology = server.requireTextField(conn, commandId, payload, TECHNOLOGY, INVALID_PAYLOAD, CREATE_FLOW);
         if (groupId == null || name == null || technology == null) {
             return;
         }
@@ -75,14 +95,14 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
         boolean autoRename = payload.path("autoRename").asBoolean(false);
 
         if (ctx.getConnectorCatalogService().findLatestConnector(technology).isEmpty()) {
-            server.sendError(conn, commandId, clientRequestId, "INVALID_PAYLOAD", "Connector not found for technology: " + technology, Map.of("technology", technology));
+            server.sendError(conn, commandId, clientRequestId, INVALID_PAYLOAD, "Connector not found for technology: " + technology, Map.of(TECHNOLOGY, technology));
             return;
         }
 
         synchronized (ctx.getStateLock()) {
             GroupRuntime group = ctx.getGroupsById().get(groupId);
             if (group == null) {
-                server.sendError(conn, commandId, clientRequestId, "NOT_FOUND", "Group not found: " + groupId, Map.of("groupId", groupId));
+                server.sendError(conn, commandId, clientRequestId, NOT_FOUND, GROUP_NOT_FOUND + groupId, Map.of(GROUP_ID, groupId));
                 return;
             }
 
@@ -97,30 +117,30 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
                 name = UniqueNames.makeUnique(name, takenNames);
             }
 
-            String flowId = payload.path("flowId").asText("");
+            String flowId = payload.path(FLOW_ID).asText("");
             if (flowId.isBlank()) {
                 flowId = UUID.randomUUID().toString();
             }
 
             if (findFlowById(group, flowId) != null) {
-                server.sendError(conn, commandId, clientRequestId, "INVALID_PAYLOAD", "Flow already exists: " + flowId, Map.of("flowId", flowId));
+                server.sendError(conn, commandId, clientRequestId, INVALID_PAYLOAD, "Flow already exists: " + flowId, Map.of(FLOW_ID, flowId));
                 return;
             }
 
-            String topic = payload.path("topic").asText("gensynth.data");
+            String topic = payload.path(TOPIC).asText("gensynth.data");
             int port = payload.path("port").asInt(5672);
-            int interval = Math.max(50, payload.path("interval").asInt(1000));
-            int burst = Math.max(1, payload.path("burst").asInt(1));
-            int everyTicks = Math.max(1, payload.path("everyTicks").asInt(1));
-            String template = payload.path("template").asText("{\"eventId\":\"{{uuid}}\",\"timestamp\":\"{{ts}}\",\"source\":\"gen-synth\",\"value\":{{n}}}");
-            String format = payload.path("format").asText(technology.equalsIgnoreCase("file") ? "plain" : "json");
-            Map<String, Object> connectorConfig = parseConnectorConfig(payload.path("connectorConfig"));
+            int interval = Math.max(50, payload.path(INTERVAL).asInt(1000));
+            int burst = Math.max(1, payload.path(BURST).asInt(1));
+            int everyTicks = Math.max(1, payload.path(EVERY_TICKS).asInt(1));
+            String template = payload.path(TEMPLATE).asText("{\"eventId\":\"{{uuid}}\",\"timestamp\":\"{{ts}}\",\"source\":\"gen-synth\",\"value\":{{n}}}");
+            String format = payload.path(FORMAT).asText(technology.equalsIgnoreCase("file") ? "plain" : "json");
+            Map<String, Object> connectorConfig = parseConnectorConfig(payload.path(CONNECTOR_CONFIG));
 
             group.flows.add(new FlowRuntime(
                 flowId,
                 name,
                 technology,
-                "disconnected",
+                DISCONNECTED,
                 0,
                 0,
                 false,
@@ -148,14 +168,14 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
             }
         }
 
-        server.logToBackend("info", "FLOWS", "Created flow '" + name + "'", commandId);
+        server.logToBackend("info", SOURCE_FLOWS, "Created flow '" + name + "'", commandId);
         server.broadcastGroupsUpdate();
     }
 
     public void handleDeleteFlow(WebSocket conn, JsonNode payload, String commandId) {
         UiBridgeWebSocketServer server = ctx.getServer();
-        String groupId = server.requireTextField(conn, commandId, payload, "groupId", "INVALID_PAYLOAD", "DELETE_FLOW");
-        String flowId = server.requireTextField(conn, commandId, payload, "flowId", "INVALID_PAYLOAD", "DELETE_FLOW");
+        String groupId = server.requireTextField(conn, commandId, payload, GROUP_ID, INVALID_PAYLOAD, "DELETE_FLOW");
+        String flowId = server.requireTextField(conn, commandId, payload, FLOW_ID, INVALID_PAYLOAD, "DELETE_FLOW");
         if (groupId == null || flowId == null) {
             return;
         }
@@ -163,19 +183,19 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
         synchronized (ctx.getStateLock()) {
             GroupRuntime group = ctx.getGroupsById().get(groupId);
             if (group == null) {
-                server.sendError(conn, commandId, "NOT_FOUND", "Group not found: " + groupId, Map.of("groupId", groupId));
+                server.sendError(conn, commandId, NOT_FOUND, GROUP_NOT_FOUND + groupId, Map.of(GROUP_ID, groupId));
                 return;
             }
 
             FlowRuntime flow = findFlowById(group, flowId);
             if (flow == null) {
-                server.sendError(conn, commandId, "NOT_FOUND", "Flow not found: " + flowId, Map.of("flowId", flowId));
+                server.sendError(conn, commandId, NOT_FOUND, FLOW_NOT_FOUND + flowId, Map.of(FLOW_ID, flowId));
                 return;
             }
 
             closeSession(flowId);
 
-            server.logToBackend("info", "FLOWS", "Deleted flow '" + flow.name + "'", commandId);
+            server.logToBackend("info", SOURCE_FLOWS, "Deleted flow '" + flow.name + "'", commandId);
             group.flows.remove(flow);
             server.persistState();
         }
@@ -186,8 +206,8 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
 
     public void handleUpdateFlowConfig(WebSocket conn, JsonNode payload, String commandId) {
         UiBridgeWebSocketServer server = ctx.getServer();
-        String groupId = server.requireTextField(conn, commandId, payload, "groupId", "INVALID_PAYLOAD", "UPDATE_FLOW_CONFIG");
-        String flowId = server.requireTextField(conn, commandId, payload, "flowId", "INVALID_PAYLOAD", "UPDATE_FLOW_CONFIG");
+        String groupId = server.requireTextField(conn, commandId, payload, GROUP_ID, INVALID_PAYLOAD, "UPDATE_FLOW_CONFIG");
+        String flowId = server.requireTextField(conn, commandId, payload, FLOW_ID, INVALID_PAYLOAD, "UPDATE_FLOW_CONFIG");
         if (groupId == null || flowId == null) {
             return;
         }
@@ -196,13 +216,13 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
         synchronized (ctx.getStateLock()) {
             GroupRuntime group = ctx.getGroupsById().get(groupId);
             if (group == null) {
-                server.sendError(conn, commandId, "NOT_FOUND", "Group not found: " + groupId, Map.of("groupId", groupId));
+                server.sendError(conn, commandId, NOT_FOUND, GROUP_NOT_FOUND + groupId, Map.of(GROUP_ID, groupId));
                 return;
             }
 
             FlowRuntime flow = findFlowById(group, flowId);
             if (flow == null) {
-                server.sendError(conn, commandId, "NOT_FOUND", "Flow not found: " + flowId, Map.of("flowId", flowId));
+                server.sendError(conn, commandId, NOT_FOUND, FLOW_NOT_FOUND + flowId, Map.of(FLOW_ID, flowId));
                 return;
             }
 
@@ -211,7 +231,7 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
             if (payload.hasNonNull("name")) {
                 String newName = payload.path("name").asText(flow.name).trim();
                 if (newName.isEmpty()) {
-                    server.sendError(conn, commandId, INVALID_PAYLOAD, "Flow name cannot be empty", Map.of("flowId", flowId));
+                    server.sendError(conn, commandId, INVALID_PAYLOAD, "Flow name cannot be empty", Map.of(FLOW_ID, flowId));
                     return;
                 }
                 if (UniqueNames.isTaken(group.flowNames(flowId), newName)) {
@@ -220,10 +240,10 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
                 }
                 flow.name = newName;
             }
-            if (payload.hasNonNull("technology")) {
-                String technology = payload.path("technology").asText(flow.technology);
+            if (payload.hasNonNull(TECHNOLOGY)) {
+                String technology = payload.path(TECHNOLOGY).asText(flow.technology);
                 if (ctx.getConnectorCatalogService().findLatestConnector(technology).isEmpty()) {
-                    server.sendError(conn, commandId, "INVALID_PAYLOAD", "Connector not found for technology: " + technology, Map.of("technology", technology));
+                    server.sendError(conn, commandId, INVALID_PAYLOAD, "Connector not found for technology: " + technology, Map.of(TECHNOLOGY, technology));
                     return;
                 }
                 flow.technology = technology;
@@ -234,27 +254,27 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
             if (payload.hasNonNull("port")) {
                 flow.port = payload.path("port").asInt(flow.port);
             }
-            if (payload.hasNonNull("topic")) {
-                flow.topic = payload.path("topic").asText(flow.topic);
+            if (payload.hasNonNull(TOPIC)) {
+                flow.topic = payload.path(TOPIC).asText(flow.topic);
             }
-            if (payload.hasNonNull("interval")) {
-                flow.interval = Math.max(50, payload.path("interval").asInt(flow.interval));
+            if (payload.hasNonNull(INTERVAL)) {
+                flow.interval = Math.max(50, payload.path(INTERVAL).asInt(flow.interval));
             }
-            if (payload.hasNonNull("burst")) {
-                flow.burst = Math.max(1, payload.path("burst").asInt(flow.burst));
+            if (payload.hasNonNull(BURST)) {
+                flow.burst = Math.max(1, payload.path(BURST).asInt(flow.burst));
             }
-            if (payload.hasNonNull("everyTicks")) {
-                flow.everyTicks.set(Math.max(1, payload.path("everyTicks").asInt(flow.everyTicks.get())));
+            if (payload.hasNonNull(EVERY_TICKS)) {
+                flow.everyTicks.set(Math.max(1, payload.path(EVERY_TICKS).asInt(flow.everyTicks.get())));
             }
             applyEventLoss(flow, payload);
-            if (payload.hasNonNull("template")) {
-                flow.template = payload.path("template").asText(flow.template);
+            if (payload.hasNonNull(TEMPLATE)) {
+                flow.template = payload.path(TEMPLATE).asText(flow.template);
             }
-            if (payload.hasNonNull("format")) {
-                flow.format = payload.path("format").asText(flow.format);
+            if (payload.hasNonNull(FORMAT)) {
+                flow.format = payload.path(FORMAT).asText(flow.format);
             }
-            if (payload.hasNonNull("connectorConfig") && payload.get("connectorConfig").isObject()) {
-                flow.connectorConfig = parseConnectorConfig(payload.get("connectorConfig"));
+            if (payload.hasNonNull(CONNECTOR_CONFIG) && payload.get(CONNECTOR_CONFIG).isObject()) {
+                flow.connectorConfig = parseConnectorConfig(payload.get(CONNECTOR_CONFIG));
             }
 
             if (payload.hasNonNull("enabled")) {
@@ -273,14 +293,14 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
         }
 
         server.sendAck(conn, commandId, "flow_updated");
-        server.logToBackend("info", "FLOWS", "Updated config for flow '" + updatedFlowName + "'", commandId);
+        server.logToBackend("info", SOURCE_FLOWS, "Updated config for flow '" + updatedFlowName + "'", commandId);
         server.broadcastGroupsUpdate();
     }
 
     public void handleCloneFlow(WebSocket conn, JsonNode payload, String commandId) {
         UiBridgeWebSocketServer server = ctx.getServer();
-        String groupId = server.requireTextField(conn, commandId, payload, "groupId", "INVALID_PAYLOAD", "CLONE_FLOW");
-        String flowId = server.requireTextField(conn, commandId, payload, "flowId", "INVALID_PAYLOAD", "CLONE_FLOW");
+        String groupId = server.requireTextField(conn, commandId, payload, GROUP_ID, INVALID_PAYLOAD, "CLONE_FLOW");
+        String flowId = server.requireTextField(conn, commandId, payload, FLOW_ID, INVALID_PAYLOAD, "CLONE_FLOW");
         int count = payload.path("count").asInt(1);
         String namingPattern = payload.path("namingPattern").asText("${name} (Clone ${index})");
         if (groupId == null || flowId == null) return;
@@ -288,13 +308,13 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
         synchronized (ctx.getStateLock()) {
             GroupRuntime group = ctx.getGroupsById().get(groupId);
             if (group == null) {
-                server.sendError(conn, commandId, "NOT_FOUND", "Group not found: " + groupId, Map.of("groupId", groupId));
+                server.sendError(conn, commandId, NOT_FOUND, GROUP_NOT_FOUND + groupId, Map.of(GROUP_ID, groupId));
                 return;
             }
 
             FlowRuntime original = findFlowById(group, flowId);
             if (original == null) {
-                server.sendError(conn, commandId, "NOT_FOUND", "Flow not found: " + flowId, Map.of("flowId", flowId));
+                server.sendError(conn, commandId, NOT_FOUND, FLOW_NOT_FOUND + flowId, Map.of(FLOW_ID, flowId));
                 return;
             }
 
@@ -308,7 +328,7 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
                     newFlowId,
                     newName,
                     original.technology,
-                    "disconnected",
+                    DISCONNECTED,
                     0,
                     0,
                     false,
@@ -352,7 +372,7 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
         }
 
         server.sendAck(conn, commandId, "flow_cloned");
-        server.logToBackend("info", "FLOWS", "Cloned flow '" + flowId + "' " + count + " times", commandId);
+        server.logToBackend("info", SOURCE_FLOWS, "Cloned flow '" + flowId + "' " + count + " times", commandId);
         server.broadcastGroupsUpdate();
         server.sendVariablesUpdate();
     }
@@ -366,7 +386,7 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
      * @throws IllegalStateException on cyclic or broken variable references
      */
     public void startGroupInternal(GroupRuntime group) {
-        if ("running".equals(group.status)) {
+        if (RUNNING.equals(group.status)) {
             return;
         }
         boolean resuming = "paused".equals(group.status);
@@ -394,7 +414,7 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
             if (flow.enabled) {
                 openFlowSession(group, flow);
             } else {
-                flow.connectionStatus = "disconnected";
+                flow.connectionStatus = DISCONNECTED;
                 flow.hasError = false;
                 flow.errorMessage = null;
             }
@@ -402,7 +422,7 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
 
         group.dispatcher = createDispatcher(group);
         group.startTick = 0;
-        group.status = "running";
+        group.status = RUNNING;
     }
 
     /**
@@ -528,7 +548,7 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
      * @param flows the flows just unlocked
      */
     public void openSessionsOfUnlockedFlows(GroupRuntime group, Collection<FlowRuntime> flows) {
-        if (!"running".equals(group.status) || group.dispatcher == null) {
+        if (!RUNNING.equals(group.status) || group.dispatcher == null) {
             return;
         }
         boolean opened = false;
@@ -572,14 +592,15 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
      * @return a parallel or sequential dispatcher
      */
     public IGroupDispatcher createDispatcher(GroupRuntime group) {
-        if (OutputMode.fromValue(group.outputMode) == OutputMode.SEQUENTIAL) {
-            return new SequentialGroupDispatcher(group, messageHandler, SequentialGroupDispatcher.DEFAULT_QUEUE_CAPACITY);
-        }
         List<FlowRuntime> sendingFlows = new ArrayList<>();
         for (FlowRuntime flow : group.flows) {
             if (ctx.getConnectorByFlowId().containsKey(flow.id)) {
                 sendingFlows.add(flow);
             }
+        }
+        if (OutputMode.fromValue(group.outputMode) == OutputMode.SEQUENTIAL) {
+            return new SequentialGroupDispatcher(group, sendingFlows, messageHandler,
+                SequentialGroupDispatcher.DEFAULT_QUEUE_CAPACITY, SequentialOrder.fromValue(group.sequentialOrder), new Random());
         }
         return new ParallelGroupDispatcher(group, sendingFlows, messageHandler);
     }
@@ -617,7 +638,7 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
         for (FlowRuntime flow : group.flows) {
             closeSession(flow.id);
 
-            flow.connectionStatus = "disconnected";
+            flow.connectionStatus = DISCONNECTED;
             flow.throughput = 0;
             flow.hasError = false;
             flow.errorMessage = null;
@@ -641,7 +662,7 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
         synchronized (ctx.getStateLock()) {
             // Snapshot under the lock; generating and publishing happen outside it
             for (GroupRuntime group : ctx.getGroupsById().values()) {
-                if (!"running".equals(group.status) || group.dispatcher == null) {
+                if (!RUNNING.equals(group.status) || group.dispatcher == null) {
                     continue;
                 }
                 if (group.startTick == 0) {
@@ -727,7 +748,7 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
 
     private void sendDuplicateFlowName(WebSocket conn, String commandId, String clientRequestId, String name, String groupId) {
         ctx.getServer().sendError(conn, commandId, clientRequestId, INVALID_PAYLOAD, duplicateFlowNameMessage(name),
-            Map.of("name", name, "groupId", groupId, "reason", "DUPLICATE_FLOW_NAME"));
+            Map.of("name", name, GROUP_ID, groupId, "reason", "DUPLICATE_FLOW_NAME"));
     }
 
     public FlowRuntime findFlowById(GroupRuntime group, String flowId) {
@@ -748,7 +769,7 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
 
     public boolean hasAnyRunningGroup() {
         for (GroupRuntime group : ctx.getGroupsById().values()) {
-            if ("running".equals(group.status)) {
+            if (RUNNING.equals(group.status)) {
                 return true;
             }
         }

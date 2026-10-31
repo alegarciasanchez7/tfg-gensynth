@@ -11,7 +11,7 @@ a **connector**: GenSynth writes to files out of the box, and connector plugins 
 technologies. Use it whenever you need realistic, repeatable data to develop, test or demonstrate a
 system that consumes events.
 
-This guide covers GenSynth **0.5.1**. For a quick overview, see the [README](README.md).
+This guide covers GenSynth **0.5.2**. For a quick overview, see the [README](README.md).
 
 ## Contents
 
@@ -75,22 +75,43 @@ Everything GenSynth needs is included: you do not need to install Java.
 > - **First start:** GenSynth downloads its embedded browser (about 150 MB), so it needs an
 >   internet connection. A window shows the progress; it only happens once.
 
-To update, install the new version over the old one: your plugins and settings are kept.
+### Updating
+
+From version 0.5.2, GenSynth checks for new versions when it starts (it needs internet; offline,
+nothing happens). When there is one, a notice shows what is new and lets **you** choose:
+
+- **Update now**: GenSynth asks for confirmation (save your project first), downloads the installer
+  of your system, checks that it is complete and has not been modified (SHA-256), and installs it.
+  The download can be cancelled.
+  - **Windows**: GenSynth closes and the installer opens; Windows asks for permission as in the
+    first installation. Open GenSynth again when it finishes.
+  - **Linux** (`.deb` / `.rpm`): enter your password when asked; GenSynth restarts by itself.
+  - **macOS**: GenSynth closes and the disk image opens: drag GenSynth to *Applications* again.
+- **Not now**: keep working with the version you have; GenSynth asks again the next time it
+  starts. A small **Update available** button stays next to the version in the top bar.
+- **Skip this version**: GenSynth does not offer that version again (only a newer one).
+
+Nothing is downloaded or installed unless you choose **Update now**. You can also check at any
+time, or turn the check off, in **Settings → About & Updates**. Updating keeps your plugins,
+settings and projects. To update by hand, install the new version over the old one.
+
+Versions before 0.5.2 do not have this feature: install 0.5.2 by hand once.
 
 ### Where GenSynth keeps its files
 
 | What | Installed application | Built from source |
 |---|---|---|
-| Plugins, autosave and embedded browser | Windows: `%LOCALAPPDATA%\GenSynth`<br>Linux: `~/.local/share/gensynth`<br>macOS: `~/Library/Application Support/GenSynth` | `core/` |
-| Generated files (`OUTPUT_FILES_<date>`) | `~/GenSynth` (your user folder) | `core/` |
+| Plugins, autosave, embedded browser and downloaded updates | Windows: `%LOCALAPPDATA%\GenSynth`<br>Linux: `~/.local/share/gensynth`<br>macOS: `~/Library/Application Support/GenSynth` | `core/` |
+| Generated files (`OUTPUT_FILES_<date>`) | `~/GenSynth` in your user folder (on Windows, `C:\Users\<you>\GenSynth`) | `core/` |
 
-Uninstalling GenSynth does not delete these folders.
+You can choose another folder for the generated files in **Settings → Save & Storage → Output
+folder** (see [Settings](#settings)). Uninstalling GenSynth does not delete these folders.
 
-### Optional: the RabbitMQ connector
+### Connectors included
 
-GenSynth always includes the **File Output** connector. To publish to RabbitMQ, also download
-`rabbitmq-connector-1.0.0.jar` from the **Assets** of the same release page. You install it from
-inside GenSynth (see [Importing a plugin](#importing-a-plugin)); there is nothing to unpack.
+GenSynth includes two connectors, ready to use after installing: **File Output** and **RabbitMQ**
+(see [Connectors](#connectors)). Other technologies are added with a connector plugin (see
+[Importing a plugin](#importing-a-plugin)).
 
 ---
 
@@ -102,7 +123,7 @@ inside GenSynth (see [Importing a plugin](#importing-a-plugin)); there is nothin
 | **Flow** | One stream of messages: a message format (template), a pace (*Every N ticks*) and a destination (connector). Think of it as one device. |
 | **Variable** | A value generator (number, text, list item, boolean, date/time or position) that you insert in a template with `{{name}}`. |
 | **Template** | The text of each message (JSON, XML, CSV or plain text) with `{{…}}` placeholders. |
-| **Connector** | Where messages go: a file, or a broker added with a plugin (RabbitMQ…). |
+| **Connector** | Where messages go: a file, RabbitMQ, or another destination added with a plugin. |
 | **Tick** | The global clock of the simulation. On every tick, each flow that is due generates one message. |
 
 ---
@@ -152,7 +173,8 @@ It takes about five minutes.
 
 3. **Create the variables of the station.** In the right panel, select the **LOCAL** tab, click
    **+ ADD**, choose the type and fill in the dialog. Set **Target Flow Assignment** to
-   *Station 1*. Create:
+   *Station 1* and click **Create Variable**: the editor of the new variable opens in the centre,
+   ready to configure (to come back to it later, click the variable in the right panel). Create:
 
    | Name | Type | Configuration (Visual Editor) |
    |---|---|---|
@@ -161,18 +183,26 @@ It takes about five minutes.
    | `condition` | List | Strategy **Weighted Random**, literal items `Sunny` (weight 5), `Cloudy` (3), `Rain` (1) |
    | `readingTime` | Temporal | **Advance Mode** = **Simulated Step**, **Start Date (ISO)** `2026-01-01T00:00:00Z`, **Step Duration (ms)** `60000`, **Format Preset** `UNIX_TIMESTAMP` |
 
-4. **Write the message format.** Select the flow and type this in **Message Format** (type `{{`
-   to get suggestions):
+4. **Write the message format.** Select *Station 1* in the left panel and write this in
+   **Message Format** (you can also paste it as is):
 
    ```json
    {
      "station": "{{flow.name}}",
-     "time": {{readingTime}},
-     "temperature": {{temperature}},
-     "humidity": {{humidity}},
-     "condition": "{{condition}}"
+     "time": {{local.readingTime}},
+     "temperature": {{local.temperature}},
+     "humidity": {{local.humidity}},
+     "condition": "{{local.condition}}"
    }
    ```
+
+   To insert a variable without typing its name, type `{{`: a list of your variables opens under
+   the cursor. Keep typing to filter it (`temp`), move with the arrow keys and press `Enter` (or
+   `Tab`, or click). GenSynth writes the whole placeholder, closing braces included, with the
+   scope in front (`local.`): `{{local.temperature}}` and `{{temperature}}` give the same value
+   here (see [Scopes](#scopes)). Pick the entry without a dot: `readingTime.hour` and the like are
+   [sub-properties](#writing-the-template). The ↗ button of a variable in the right panel inserts
+   it at the cursor too.
 
    `{{flow.name}}` is replaced by the name of the flow, so every station sends its own ID.
    Text values go between quotes; numbers and booleans do not.
@@ -192,9 +222,15 @@ It takes about five minutes.
    message of a flow, or **Logs** to see every flow (filter with **only data**).
 
 8. **Stop and find the files.** Click **STOP**. The messages are in
-   `~/GenSynth/OUTPUT_FILES_<date>/Weather_network/Station_1.txt` (one file per station).
+   `~/GenSynth/OUTPUT_FILES_<date>/Weather_network/Station_1.txt` (one file per station); on
+   Windows, `~` is your user folder, `C:\Users\<you>`. The **Logs** show the exact folder when you
+   click START (*Output folder of this session: …*). To write the files somewhere else, change
+   **Settings → Save & Storage → Output folder**.
 
-9. **Save the project.** Click **Save as** and choose a name such as `weather.gsynth`.
+9. **Save the project.** Click **Save as** and choose a name such as `weather.gsynth`, in a folder
+   of yours such as *Documents*. Not in the folder where GenSynth is installed
+   (`C:\Program Files\GenSynth` on Windows): it is read-only, and GenSynth asks for another
+   folder.
 
 ### Sending to RabbitMQ
 
@@ -204,11 +240,10 @@ It takes about five minutes.
    docker run -d --name rabbitmq -p 5672:5672 -p 15672:15672 rabbitmq:3-management
    ```
 
-2. **Install the plugin.** Click **+** (Import Plugin) in the top bar, drop
-   `rabbitmq-connector-1.0.0.jar`, wait for the validation and click **Import Validated Plugin →
-   INSTALL & RESTART**. GenSynth restarts (see [Importing a plugin](#importing-a-plugin)).
-3. **Point the flows to RabbitMQ.** In each flow, change **Connector** to **RabbitMQ** and fill in
-   the fields. For a local broker only three fields need a value:
+2. **Point the flows to RabbitMQ.** The RabbitMQ connector is included in GenSynth: there is
+   nothing to install. Select *Station 1* in the left panel. In the flow settings, in
+   the centre of the window (above **Message Format**), change **Connector** to **RabbitMQ** and
+   fill in the fields. For a local broker only three fields need a value:
 
    | Field | Value |
    |---|---|
@@ -219,10 +254,10 @@ It takes about five minutes.
    Setting **Queue** makes GenSynth create a durable queue bound to the exchange, so messages are
    kept until your consumer reads them. Tip: configure *Station 1* first and then clone it; clones
    copy the connector settings.
-4. **Start** and open the management UI at <http://localhost:15672> (user `guest`, password
+3. **Start** and open the management UI at <http://localhost:15672> (user `guest`, password
    `guest`). In **Queues → weather-readings → Get messages** you can see the JSON of each reading.
 
-All the RabbitMQ fields are described in [RabbitMQ connector](#rabbitmq-connector).
+All the RabbitMQ fields are described in [RabbitMQ connector](#rabbitmq-connector-built-in).
 
 ### Consuming the events
 
@@ -255,8 +290,9 @@ Click a group to open its workspace:
 | **THROUGHPUT** / **FLOWS** / **ERRORS** | Messages per second of the whole group, number of flows, and flows currently in error. |
 | **Group Name** | Name of the group. It is also the sub-folder used by File Output. |
 | **Output Mode** | **Parallel** (default) or **Sequential**, see below. Applies the next time the group starts. |
+| **Sequential Order** | Only for sequential groups: **Flow order**, **Random** or **First generated**, see below. Applies the next time the group starts. |
 | **Description** | Free text for your own notes. |
-| **Flows in this group** | Click a flow to open it. |
+| **Flows in this group** | Click a flow to open it. The number on the left is its position; the ↑ / ↓ arrows move it. The order is also the order of the flows in the left panel and, with **Flow order**, the order in which a sequential group sends. It applies at once, even while the group runs. |
 | **Discard** / **Delete** | Revert the unsaved changes of the group / delete it with all its flows. |
 
 ### Output modes
@@ -264,7 +300,15 @@ Click a group to open its workspace:
 | Mode | Behaviour | When to use it |
 |---|---|---|
 | **Parallel** | Each flow has its own sender thread and sends as soon as it generates its message. If a flow is still sending when its next tick arrives, that tick is skipped for that flow (the log warns *"Sending is slower than the tick rate"*). | Independent devices; maximum throughput. |
-| **Sequential** | The messages of all flows go into one queue in generation order (tick order, then flow order) and a single sender publishes them one after another. If the queue (10 000 messages) is full, the whole tick is skipped for the group. | When the arrival order at the broker must match the generation order, e.g. to test rules that depend on event order across devices. |
+| **Sequential** | The messages of all flows go into one queue and a single sender publishes them one after another, in tick order and, inside a tick, in the group's **Sequential Order**. If the queue (10 000 messages) is full, the whole tick is skipped for the group. | When the arrival order at the broker matters, e.g. to test rules that depend on event order across devices. |
+
+**Sequential Order** decides the order of the messages of the same tick:
+
+| Order | Messages of a tick are sent… | Use it to test… |
+|---|---|---|
+| **Flow order** (default) | In the order of the flow list, which you set with the ↑ / ↓ arrows. Always the same order. | A fixed, reproducible sequence (e.g. sensor A always before sensor B). |
+| **Random** | In a new random order on every tick. | Rules that must not depend on which device reports first. |
+| **First generated** | As soon as each one is ready: the flows generate at the same time and the fastest one is sent first. A flow still generating when its next tick arrives skips that tick. | Arrival order driven by generation time, like real devices. `{{n}}` may then arrive out of order. |
 
 ### Group menu (⋮)
 
@@ -535,12 +579,13 @@ counts as a **fail**.
 
 ### File Output (built in)
 
-GenSynth includes one connector, always available, that writes the messages of each flow to a file:
+GenSynth includes two connectors, always available: this one, which writes the messages of each flow
+to a file, and [RabbitMQ](#rabbitmq-connector-built-in).
 
 | Field | What it does | Default |
 |---|---|---|
 | **File format** | *JSON array*, *Text* (one message per line), *XML dataset* or *CSV* (one message per line). | JSON array |
-| **Output directory** | Optional. When empty, files go to the folder of the current session, `OUTPUT_FILES_<date>/` (see [Where GenSynth keeps its files](#where-gensynth-keeps-its-files)). A sub-folder with the group name is always added. | Session folder |
+| **Output directory** | Optional. When empty, files go to the folder of the current session, `OUTPUT_FILES_<date>/`, inside the **Output folder** of [Settings](#settings) (see [Where GenSynth keeps its files](#where-gensynth-keeps-its-files)). A sub-folder with the group name is always added. | Session folder |
 | **File name** | Optional. When empty, the flow name is used. The extension is added automatically. | Flow name |
 
 For example, with the Text format a flow *Sensor 1* in group *Plant A* writes to
@@ -580,7 +625,7 @@ Click **Connectors (N)** in the top bar to open the catalog. For each loaded con
 
 ![Plugin import](docs-assets/user-guide/11-plugin-import.png)
 
-Any destination other than a file is added with a **connector plugin**: a single `.jar` file that
+Any destination other than a file or RabbitMQ is added with a **connector plugin**: a single `.jar` file that
 teaches GenSynth to send messages to a technology such as a message broker (AMQP, MQTT, Kafka…),
 a TCP/UDP socket or an HTTP endpoint. Plugins are distributed separately from GenSynth, and anyone
 can implement one by following the [Plugin Developer Guide](plugin-api/PLUGIN_DEVELOPER_GUIDE.md).
@@ -592,12 +637,14 @@ can implement one by following the [Plugin Developer Guide](plugin-api/PLUGIN_DE
 4. Click **Import Validated Plugin** and confirm with **INSTALL & RESTART**. GenSynth restarts
    (running flows stop) and the new connector appears in the connector list of every flow.
 
-### RabbitMQ connector
+### RabbitMQ connector (built in)
 
 ![RabbitMQ fields](docs-assets/user-guide/12-rabbitmq-fields.png)
 
-The RabbitMQ plugin publishes each message to an exchange and waits for the broker's
-confirmation before counting it as sent.
+The RabbitMQ connector is included in GenSynth (since 0.5.2; before, it was a separate plugin). It
+publishes each message to an exchange and waits for the broker's confirmation before counting it
+as sent. Its source code is in [`connectors/rabbitmq`](connectors/rabbitmq), a complete example of
+a connector plugin.
 
 | Field | What it does | Default |
 |---|---|---|
@@ -658,12 +705,17 @@ this device* or *Saved with the project*.
 | **Appearance** (device) | **Dark mode** | Light or dark theme. | Light |
 | **Save & Storage** (device) | **Auto-save** | Saves the open project file automatically while there are changes. It starts working once the project has been saved to a file. | Off |
 | | **Interval (seconds)** | Time between automatic saves. | 30 (5–3600) |
+| | **Output folder** | Where every **START** creates its `OUTPUT_FILES_<date>` folder. Type a full path or click **Browse**; **Default** goes back to the default folder. It must be a folder you can write in; the change applies from the next START. The **Output directory** of a File Output flow overrides it. | `~/GenSynth` |
 | **Simulation** (project) | **Tick mode** | **Fixed period** or **As Fast As You Can**. | Fixed period |
 | | Period value and unit | Length of a tick. | 1 Seconds |
+| **About & Updates** (device) | **Check now** | Checks whether a newer version exists; if it does, offers **Update now** and **Release notes** (see [Updating](#updating)). Only in the installed desktop app. | — |
+| | **Check for updates at startup** | Shows a notice when a new version is published. It never installs by itself. | On |
 
 ![Save and storage settings](docs-assets/user-guide/30-settings-storage.png)
 
 ![Simulation settings](docs-assets/user-guide/31-settings-simulation.png)
+
+![About and updates settings](docs-assets/user-guide/42-settings-updates.png)
 
 ---
 
@@ -691,7 +743,8 @@ Variables generate the values of your messages. GenSynth has six types:
 
 ### Creating a variable
 
-In the right panel, choose the scope tab, click **+ ADD** and pick the type.
+In the right panel, choose the scope tab, click **+ ADD** and pick the type. After **Create
+Variable**, the editor of the new variable opens in the centre of the window.
 
 ![Create variable dialog](docs-assets/user-guide/13-create-variable-dialog.png)
 
@@ -1495,15 +1548,15 @@ Clone the whole group to replicate a site with all its devices.
 
 ## Feedback
 
-The **Feedback** button in the top bar opens a short anonymous form, in Spanish, in your web
+The **Feedback** button in the top bar opens a short form, in Spanish, in your web
 browser. Its first question asks what you want to do:
 
-- **Report a bug** right away: what happened and how to repeat it. To add a screenshot, upload it
-  to Google Drive or Imgur and paste the link (shared so that anyone with the link can see it);
-  the form asks for no account, so it stays anonymous.
+- **Report a bug** right away: what happened and how to repeat it. You can attach up to 5
+  screenshots.
 - **Give your opinion** of the tool after using it for a while.
 
-It only takes a couple of minutes, and it helps to improve the tool.
+The form collects your email address, used only to contact you if a bug you reported needs
+more detail. It only takes a couple of minutes, and it helps to improve the tool.
 
 ---
 
@@ -1553,5 +1606,7 @@ It only takes a couple of minutes, and it helps to improve the tool.
 | Values look wrong (all devices share a sequence, values jump, a placeholder stays as `{{…}}`) | Check the **scope** of the variable (per-device values must be LOCAL), the name in the template (a typo leaves the placeholder unchanged) and the Preview of the flow. |
 | A variable sends a value that does not match its pattern | Check its **Rules** tab: while a rule matches, the override configuration is used instead. |
 | The JSON received is invalid | Text values need quotes (`"{{name}}"`); numbers with prefix, suffix or padding are text too. |
+| Saving says *You do not have permission to write in …* | The folder is read-only for your user, like the installation folder (`C:\Program Files\GenSynth`). Save the project in a folder of yours, such as *Documents*. Spaces in the path are not a problem. |
+| I cannot find the generated files | The **Logs** show the folder of each session when you click START. By default it is `GenSynth` in your user folder; change it in **Settings → Save & Storage → Output folder**. |
 
 Problems when building from source are covered in [CONTRIBUTING.md](CONTRIBUTING.md#troubleshooting).

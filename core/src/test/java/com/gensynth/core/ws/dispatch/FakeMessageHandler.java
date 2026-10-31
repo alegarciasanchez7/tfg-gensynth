@@ -20,18 +20,33 @@ import java.util.concurrent.atomic.AtomicInteger;
 class FakeMessageHandler implements IFlowMessageHandler {
 
     final List<String> published = new CopyOnWriteArrayList<>();
+    /** Payload of every publish call as soon as it starts, before waiting on a blocked flow. */
+    final List<String> publishStarted = new CopyOnWriteArrayList<>();
     final List<String> publishThreads = new CopyOnWriteArrayList<>();
     /** Group tick received by every publish call, in call order. */
     final List<Long> publishedTicks = new CopyOnWriteArrayList<>();
     final Map<String, AtomicInteger> generatedByFlow = new ConcurrentHashMap<>();
     final Map<String, AtomicInteger> skippedByFlow = new ConcurrentHashMap<>();
     final Map<String, CountDownLatch> blockedFlows = new ConcurrentHashMap<>();
+    /** Flows whose message generation waits for the latch (to finish generations in a chosen order). */
+    final Map<String, CountDownLatch> blockedGenerations = new ConcurrentHashMap<>();
+    /** Thread of every generate call, in call order. */
+    final List<String> generateThreads = new CopyOnWriteArrayList<>();
     /** Flows whose message generation fails (generate returns null, like a broken template). */
     final Set<String> failingFlows = ConcurrentHashMap.newKeySet();
     volatile boolean failNextPublish;
 
     @Override
     public String generate(GroupRuntime group, FlowRuntime flow) {
+        generateThreads.add(Thread.currentThread().getName());
+        CountDownLatch latch = blockedGenerations.get(flow.id);
+        if (latch != null) {
+            try {
+                latch.await(5, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
         if (failingFlows.contains(flow.id)) {
             return null;
         }
@@ -42,6 +57,7 @@ class FakeMessageHandler implements IFlowMessageHandler {
 
     @Override
     public void publish(GroupRuntime group, FlowRuntime flow, String payload, long groupTick) {
+        publishStarted.add(payload);
         CountDownLatch latch = blockedFlows.get(flow.id);
         if (latch != null) {
             try {

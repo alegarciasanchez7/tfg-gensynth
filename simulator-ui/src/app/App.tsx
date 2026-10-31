@@ -17,6 +17,10 @@ import { useDocumentTheme } from './context/hooks/useDocumentTheme';
 import { resolveDiscardTarget, useKeyboardShortcuts } from './context/hooks/useKeyboardShortcuts';
 import { ConfirmDeleteDialog } from './components/common/ConfirmDeleteDialog';
 import { reportUiErrorToCore } from './core/uiErrorReporter';
+import { UpdateAvailableDialog } from './components/dialogs/UpdateAvailableDialog';
+import { UpdateProgressDialog } from './components/dialogs/UpdateProgressDialog';
+import { useUpdateCheck } from './context/hooks/useUpdateCheck';
+import { openExternalUrl } from './core/jcef';
 
 /** Project switch waiting for the user to confirm closing the current configuration. */
 interface PendingProjectAction {
@@ -46,6 +50,9 @@ export default function App() {
     connectorHealthSummary,
     isRestarting,
   } = state;
+
+  // At most one silent check per session; the user decides whether to install
+  useUpdateCheck(state, actions.checkForUpdates);
 
   useEffect(() => {
     const handleError = (event: ErrorEvent) => {
@@ -167,6 +174,24 @@ export default function App() {
     >
       <RestartOverlay isVisible={isRestarting} />
 
+      <UpdateAvailableDialog
+        update={state.availableUpdate}
+        isOpen={state.updateDialogOpen}
+        onUpdateNow={(version) => { void actions.installUpdate(version); }}
+        onNotNow={() => actions.setUpdateDialogOpen(false)}
+        onSkipVersion={(version) => {
+          actions.skipUpdateVersion(version);
+          toast.info(`GenSynth ${version} skipped. You can still update from Settings.`);
+        }}
+        onOpenReleaseNotes={(url) => { void openExternalUrl(url); }}
+      />
+
+      <UpdateProgressDialog
+        status={state.updateStatus}
+        onCancel={() => { void actions.cancelUpdate(); }}
+        onClose={actions.clearUpdateStatus}
+      />
+
       <CloseConfigurationDialog
         isOpen={Boolean(pendingAction)}
         reason={pendingAction?.reason ?? 'new'}
@@ -189,6 +214,12 @@ export default function App() {
         latestConnectors={latestConnectors}
         connectorHealthSummary={connectorHealthSummary}
         variables={variables}
+        availableUpdateVersion={
+          state.availableUpdate && state.availableUpdate.latestVersion !== state.skippedUpdateVersion
+            ? state.availableUpdate.latestVersion
+            : null
+        }
+        onShowUpdate={() => actions.setUpdateDialogOpen(true)}
       />
 
       {/* ── Compact telemetry bar ───────────────────── */}

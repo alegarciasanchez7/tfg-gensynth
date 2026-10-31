@@ -1,6 +1,5 @@
 package com.gensynth.core.ws.handler;
 
-import com.gensynth.core.config.AppPaths;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.gensynth.core.ws.BridgeContext;
 import com.gensynth.core.ws.UiBridgeWebSocketServer;
@@ -17,6 +16,10 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+
+import static com.gensynth.core.ws.BridgeProtocol.COMMAND_ID;
+import static com.gensynth.core.ws.BridgeProtocol.RUNNING;
+import static com.gensynth.core.ws.BridgeProtocol.STATUS;
 
 /**
  * Handles system operation commands (START_SYSTEM, STOP_SYSTEM, SUBSCRIBE_METRICS, UNSUBSCRIBE_METRICS,
@@ -55,7 +58,7 @@ public class SystemCommandHandler implements CommandHandler {
             // start never leaves the ones before it running (and writing files)
             try {
                 for (GroupRuntime group : ctx.getGroupsById().values()) {
-                    if (!"running".equals(group.status)) {
+                    if (!RUNNING.equals(group.status)) {
                         server.flowCommandHandler.validateGroupForStart(group);
                     }
                 }
@@ -66,10 +69,10 @@ public class SystemCommandHandler implements CommandHandler {
 
             ctx.setSystemRunning(true);
             ctx.setSystemStartedAt(System.currentTimeMillis());
-            ctx.setCurrentOutputDir(AppPaths.current().newSessionOutputDir());
+            ctx.startOutputSession();
 
             for (GroupRuntime group : ctx.getGroupsById().values()) {
-                if (!"running".equals(group.status)) {
+                if (!RUNNING.equals(group.status)) {
                     server.flowCommandHandler.startGroupInternal(group);
                 }
             }
@@ -136,8 +139,8 @@ public class SystemCommandHandler implements CommandHandler {
     public void handleGetConnectorCatalog(WebSocket conn, String commandId) {
         UiBridgeWebSocketServer server = ctx.getServer();
         Map<String, Object> response = new LinkedHashMap<>();
-        response.put("commandId", commandId);
-        response.put("status", "ok");
+        response.put(COMMAND_ID, commandId);
+        response.put(STATUS, "ok");
         response.put("catalog", ctx.getConnectorCatalogService().listAvailableConnectors());
         server.sendMessage(conn, "CONNECTION_STATUS", commandId, response);
     }
@@ -157,8 +160,8 @@ public class SystemCommandHandler implements CommandHandler {
         }
 
         Map<String, Object> response = new LinkedHashMap<>();
-        response.put("commandId", commandId);
-        response.put("status", "ok");
+        response.put(COMMAND_ID, commandId);
+        response.put(STATUS, "ok");
         response.put("connector", ctx.getConnectorCatalogService().findLatestConnector(pluginId).orElse(null));
         server.sendMessage(conn, "CONNECTION_STATUS", commandId, response);
     }
@@ -215,7 +218,7 @@ public class SystemCommandHandler implements CommandHandler {
         long now = System.nanoTime();
         synchronized (ctx.getStateLock()) {
             for (GroupRuntime group : ctx.getGroupsById().values()) {
-                boolean running = "running".equals(group.status);
+                boolean running = RUNNING.equals(group.status);
                 for (FlowRuntime flow : group.flows) {
                     flow.meter.rotate();
                     flow.throughput = running
@@ -349,9 +352,9 @@ public class SystemCommandHandler implements CommandHandler {
     public Map<String, Object> buildSystemStatusPayload(String commandId) {
         Map<String, Object> payload = new LinkedHashMap<>();
         if (commandId != null) {
-            payload.put("commandId", commandId);
+            payload.put(COMMAND_ID, commandId);
         }
-        payload.put("status", ctx.isSystemRunning() ? "running" : "stopped");
+        payload.put(STATUS, ctx.isSystemRunning() ? RUNNING : "stopped");
         long uptime = ctx.isSystemRunning() ? Math.max(0, (System.currentTimeMillis() - ctx.getSystemStartedAt()) / 1000) : 0;
         payload.put("uptime", uptime);
         payload.put("totalMessages", ctx.getTotalMessages().get());
@@ -371,7 +374,7 @@ public class SystemCommandHandler implements CommandHandler {
     public Map<String, Object> buildMetricsPayload(String commandId) {
         Map<String, Object> payload = new LinkedHashMap<>();
         if (commandId != null) {
-            payload.put("commandId", commandId);
+            payload.put(COMMAND_ID, commandId);
         }
 
         Runtime runtime = Runtime.getRuntime();

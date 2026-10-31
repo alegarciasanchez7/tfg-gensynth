@@ -4,6 +4,7 @@ import com.gensynth.core.connectors.plugin.PluginInstallerImpl;
 import com.gensynth.core.connectors.runtime.ConnectorCatalogService;
 import com.gensynth.core.persistence.JsonStateRepositoryImpl;
 import com.gensynth.core.persistence.StateRepository;
+import com.gensynth.core.ws.runtime.GroupRuntime;
 import org.junit.Test;
 
 import java.lang.reflect.Field;
@@ -450,6 +451,70 @@ public class UiBridgeWebSocketServerTest {
         server.shutdown();
     }
 
+    // ============ Output folder ============
+
+    private static String outputFolderCommand(String commandId, Path folder) {
+        String path = folder == null ? "null" : "\"" + folder.toString().replace("\\", "\\\\") + "\"";
+        return "{\"type\":\"UPDATE_OUTPUT_FOLDER\",\"commandId\":\"" + commandId + "\",\"protocolVersion\":\"1.0.0\","
+                + "\"payload\":{\"path\":" + path + "}}";
+    }
+
+    @Test
+    public void updateOutputFolderIsSavedReportedAndUsedByTheNextStart() throws Exception {
+        Path tempDir = Files.createTempDirectory("gensynth-ws-test-output-folder-");
+        Path chosen = tempDir.resolve("My results");
+        UiBridgeWebSocketServer server = newServer(tempDir, new JsonStateRepositoryImpl(tempDir.toString()));
+        WebSocket mockConn = mock(WebSocket.class);
+        when(mockConn.isOpen()).thenReturn(true);
+
+        server.onMessage(mockConn, outputFolderCommand("cmd-folder", chosen));
+
+        JsonNode ack = findMessage(sentMessages(mockConn), "CONNECTION_STATUS", "cmd-folder");
+        assertNotNull("UPDATE_OUTPUT_FOLDER should be acknowledged", ack);
+        assertEquals("output_folder_updated", ack.path("payload").path("result").asText());
+        JsonNode folder = ack.path("payload").path("outputFolder");
+        assertEquals(chosen.toAbsolutePath().toString(), folder.path("path").asText());
+        assertTrue(folder.path("custom").asBoolean());
+        assertTrue("A missing folder is created", Files.isDirectory(chosen));
+
+        // A new server on the same state folder (an app restart) keeps the choice
+        server.shutdown();
+        server = newServer(tempDir, new JsonStateRepositoryImpl(tempDir.toString()));
+        server.onMessage(mockConn, "{\"type\":\"GET_INITIAL_STATE\",\"commandId\":\"cmd-init-folder\",\"protocolVersion\":\"1.0.0\"}");
+        JsonNode initial = findMessage(sentMessages(mockConn), "INITIAL_STATE", "cmd-init-folder");
+        assertNotNull(initial);
+        assertEquals(chosen.toAbsolutePath().toString(), initial.path("payload").path("outputFolder").path("path").asText());
+
+        server.onMessage(null, "{\"type\":\"START_SYSTEM\",\"commandId\":\"cmd-start-folder\",\"protocolVersion\":\"1.0.0\",\"payload\":{}}");
+        Path sessionDir = Path.of(server.bridgeContext.getCurrentOutputDir());
+        server.onMessage(null, "{\"type\":\"STOP_SYSTEM\",\"commandId\":\"cmd-stop-folder\",\"protocolVersion\":\"1.0.0\",\"payload\":{}}");
+        assertEquals(chosen.toAbsolutePath(), sessionDir.getParent());
+        assertTrue(sessionDir.getFileName().toString().startsWith("OUTPUT_FILES_"));
+        server.shutdown();
+    }
+
+    @Test
+    public void updateOutputFolderRejectsRelativePathsAndNullRestoresTheDefault() throws Exception {
+        Path tempDir = Files.createTempDirectory("gensynth-ws-test-output-folder-reset-");
+        UiBridgeWebSocketServer server = newServer(tempDir, new JsonStateRepositoryImpl(tempDir.toString()));
+        WebSocket mockConn = mock(WebSocket.class);
+        when(mockConn.isOpen()).thenReturn(true);
+
+        server.onMessage(mockConn, outputFolderCommand("cmd-relative", Path.of("relative", "folder")));
+        server.onMessage(mockConn, outputFolderCommand("cmd-set", tempDir.resolve("results")));
+        server.onMessage(mockConn, outputFolderCommand("cmd-reset", null));
+
+        List<JsonNode> messages = sentMessages(mockConn);
+        JsonNode error = findMessage(messages, "ERROR", "cmd-relative");
+        assertNotNull(error);
+        assertEquals("INVALID_PAYLOAD", error.path("payload").path("code").asText());
+        JsonNode reset = findMessage(messages, "CONNECTION_STATUS", "cmd-reset").path("payload").path("outputFolder");
+        assertFalse(reset.path("custom").asBoolean());
+        assertEquals(reset.path("defaultPath").asText(), reset.path("path").asText());
+        assertTrue(server.devicePreferences.outputFolder().isEmpty());
+        server.shutdown();
+    }
+
     @Test
     public void tickClockRunsOnlyWhileSystemIsRunning() throws Exception {
         Path tempDir = Files.createTempDirectory("gensynth-ws-test-clock-lifecycle-");
@@ -470,9 +535,16 @@ public class UiBridgeWebSocketServerTest {
      * @return { sent messages, ticks }
      */
     private static long[] runEndToEnd(String outputMode, int everyTicks, long minMessages) throws Exception {
+        return runEndToEnd(outputMode, "flow", everyTicks, minMessages);
+    }
+
+    private static long[] runEndToEnd(String outputMode, String sequentialOrder, int everyTicks, long minMessages) throws Exception {
         Path tempDir = Files.createTempDirectory("gensynth-ws-test-e2e-ticks-");
         StateRepository repository = new JsonStateRepositoryImpl(tempDir.toString());
-        repository.saveGroups(List.of(new com.gensynth.core.model.GroupDefinition("g-e2e", "E2E", "", 1, outputMode)));
+        com.gensynth.core.model.GroupDefinition definition =
+                new com.gensynth.core.model.GroupDefinition("g-e2e", "E2E", "", 1, outputMode);
+        definition.setSequentialOrder(sequentialOrder);
+        repository.saveGroups(List.of(definition));
         UiBridgeWebSocketServer server = newServer(tempDir, repository);
         String outputDir = tempDir.resolve("out").toString().replace("\\", "\\\\");
 
@@ -509,6 +581,13 @@ public class UiBridgeWebSocketServerTest {
         assertTrue("expected messages, got " + result[0], result[0] >= 5);
         assertTrue("one message every 2 ticks: " + result[0] + " messages in " + result[1] + " ticks",
                 result[0] <= result[1] / 2 + 1);
+    }
+
+    @Test
+    public void sequentialGeneratedOrderSendsEndToEnd() throws Exception {
+        long[] result = runEndToEnd("sequential", "generated", 1, 10);
+        assertTrue("expected messages, got " + result[0], result[0] >= 10);
+        assertTrue("at most one message per tick", result[0] <= result[1]);
     }
 
     @Test
@@ -563,6 +642,93 @@ public class UiBridgeWebSocketServerTest {
         assertNotNull(error);
         assertEquals("INVALID_PAYLOAD", error.path("payload").path("code").asText());
         assertEquals("sequential", server.groupsById.get("g-mode").outputMode);
+        server.shutdown();
+    }
+
+    // ============ Sequential order and flow order ============
+
+    private static UiBridgeWebSocketServer serverWithThreeFlows(Path tempDir) throws Exception {
+        StateRepository repository = new JsonStateRepositoryImpl(tempDir.toString());
+        repository.saveGroups(List.of(new com.gensynth.core.model.GroupDefinition("g-ord", "Ordered", "", 1, "sequential")));
+        UiBridgeWebSocketServer server = newServer(tempDir, repository);
+        server.onMessage(null, "{\"type\":\"LOAD_STATE\",\"commandId\":\"c1\",\"protocolVersion\":\"1.0.0\",\"payload\":{}}");
+        for (String id : List.of("a", "b", "c")) {
+            server.onMessage(null, "{\"type\":\"CREATE_FLOW\",\"commandId\":\"cf-" + id + "\",\"protocolVersion\":\"1.0.0\","
+                    + "\"payload\":{\"groupId\":\"g-ord\",\"flowId\":\"" + id + "\",\"name\":\"Flow " + id + "\",\"technology\":\"file\"}}");
+        }
+        return server;
+    }
+
+    private static List<String> flowIds(UiBridgeWebSocketServer server, String groupId) {
+        return server.groupsById.get(groupId).flows.stream().map(flow -> flow.id).toList();
+    }
+
+    @Test
+    public void groupConfigReordersFlowsAndSetsTheSequentialOrder() throws Exception {
+        Path tempDir = Files.createTempDirectory("gensynth-ws-test-flow-order-");
+        UiBridgeWebSocketServer server = serverWithThreeFlows(tempDir);
+
+        server.onMessage(null, "{\"type\":\"UPDATE_GROUP_CONFIG\",\"commandId\":\"u1\",\"protocolVersion\":\"1.0.0\","
+                + "\"payload\":{\"groupId\":\"g-ord\",\"sequentialOrder\":\"random\",\"flowIds\":[\"c\",\"a\",\"b\"]}}");
+
+        assertEquals(List.of("c", "a", "b"), flowIds(server, "g-ord"));
+        assertEquals("random", server.groupsById.get("g-ord").sequentialOrder);
+        server.shutdown();
+
+        // Both are saved: a new server on the same state folder loads them back
+        UiBridgeWebSocketServer reloaded = newServer(tempDir, new JsonStateRepositoryImpl(tempDir.toString()));
+        reloaded.onMessage(null, "{\"type\":\"LOAD_STATE\",\"commandId\":\"c2\",\"protocolVersion\":\"1.0.0\",\"payload\":{}}");
+        assertEquals(List.of("c", "a", "b"), flowIds(reloaded, "g-ord"));
+        assertEquals("random", reloaded.groupsById.get("g-ord").sequentialOrder);
+        reloaded.shutdown();
+    }
+
+    @Test
+    public void invalidGroupConfigChangesNothing() throws Exception {
+        Path tempDir = Files.createTempDirectory("gensynth-ws-test-flow-order-invalid-");
+        UiBridgeWebSocketServer server = serverWithThreeFlows(tempDir);
+        WebSocket mockConn = mock(WebSocket.class);
+        when(mockConn.isOpen()).thenReturn(true);
+
+        server.onMessage(mockConn, "{\"type\":\"UPDATE_GROUP_CONFIG\",\"commandId\":\"bad-order\",\"protocolVersion\":\"1.0.0\","
+                + "\"payload\":{\"groupId\":\"g-ord\",\"name\":\"Renamed\",\"sequentialOrder\":\"fifo\",\"flowIds\":[\"c\"]}}");
+        server.onMessage(mockConn, "{\"type\":\"UPDATE_GROUP_CONFIG\",\"commandId\":\"bad-ids\",\"protocolVersion\":\"1.0.0\","
+                + "\"payload\":{\"groupId\":\"g-ord\",\"name\":\"Renamed\",\"flowIds\":\"c,a,b\"}}");
+        server.onMessage(mockConn, "{\"type\":\"UPDATE_GROUP_CONFIG\",\"commandId\":\"bad-mode\",\"protocolVersion\":\"1.0.0\","
+                + "\"payload\":{\"groupId\":\"g-ord\",\"name\":\"Renamed\",\"outputMode\":\"round-robin\"}}");
+
+        List<JsonNode> messages = sentMessages(mockConn);
+        for (String commandId : List.of("bad-order", "bad-ids", "bad-mode")) {
+            JsonNode error = findMessage(messages, "ERROR", commandId);
+            assertNotNull(commandId + " should be rejected", error);
+            assertEquals("INVALID_PAYLOAD", error.path("payload").path("code").asText());
+        }
+        GroupRuntime group = server.groupsById.get("g-ord");
+        assertEquals("A rejected update must not rename the group", "Ordered", group.name);
+        assertEquals("flow", group.sequentialOrder);
+        assertEquals(List.of("a", "b", "c"), flowIds(server, "g-ord"));
+        server.shutdown();
+    }
+
+    @Test
+    public void createAndCloneKeepTheSequentialOrder() throws Exception {
+        Path tempDir = Files.createTempDirectory("gensynth-ws-test-create-order-");
+        UiBridgeWebSocketServer server = newServer(tempDir, new JsonStateRepositoryImpl(tempDir.toString()));
+        WebSocket mockConn = mock(WebSocket.class);
+        when(mockConn.isOpen()).thenReturn(true);
+
+        server.onMessage(mockConn, "{\"type\":\"CREATE_GROUP\",\"commandId\":\"bad\",\"protocolVersion\":\"1.0.0\","
+                + "\"payload\":{\"name\":\"Bad\",\"outputMode\":\"sequential\",\"sequentialOrder\":\"fifo\"}}");
+        server.onMessage(null, "{\"type\":\"CREATE_GROUP\",\"commandId\":\"c1\",\"protocolVersion\":\"1.0.0\","
+                + "\"payload\":{\"groupId\":\"g-gen\",\"name\":\"Gen\",\"outputMode\":\"sequential\",\"sequentialOrder\":\"generated\"}}");
+        server.onMessage(null, "{\"type\":\"CLONE_GROUP\",\"commandId\":\"c2\",\"protocolVersion\":\"1.0.0\","
+                + "\"payload\":{\"groupId\":\"g-gen\",\"count\":1}}");
+
+        assertNotNull(findMessage(sentMessages(mockConn), "ERROR", "bad"));
+        assertEquals(2, server.groupsById.size());
+        for (GroupRuntime group : server.groupsById.values()) {
+            assertEquals("generated", group.sequentialOrder);
+        }
         server.shutdown();
     }
 

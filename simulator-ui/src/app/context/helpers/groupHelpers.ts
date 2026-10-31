@@ -1,7 +1,7 @@
 import type { GroupState, FlowState } from '../../core/types';
 import type { Group, Flow } from '../../types';
 import { formatRate } from '../../core/metricsFormat';
-import { normalizeOutputMode } from '../../core/outputMode';
+import { normalizeOutputMode, normalizeSequentialOrder } from '../../core/outputMode';
 import { normalizeConnectionStatus, normalizeGroupStatus } from '../../core/entityStatus';
 
 /**
@@ -50,6 +50,7 @@ export function mapGroupFromCore(group: GroupState, previousGroup?: Group): Grou
     description: group.description || '',
     threads: group.threads || 1,
     outputMode: normalizeOutputMode(group.outputMode),
+    sequentialOrder: normalizeSequentialOrder(group.sequentialOrder),
     enabled: group.enabled ?? true,
     expanded: previousGroup?.expanded ?? true,
     flows: (group.flows || []).map((flow) =>
@@ -67,4 +68,19 @@ export function mapGroupsFromCore(groups: GroupState[], previousGroups: Group[] 
     const previous = previousGroups.find((existing) => existing.id === group.id);
     return mapGroupFromCore(group, previous);
   });
+}
+
+/**
+ * Reorders flows like the Core: the listed flows go first, in the given order, and the others
+ * keep their relative order after them. Unknown or repeated ids are ignored.
+ */
+export function reorderFlows(flows: Flow[], flowIds: string[]): Flow[] {
+  const byId = new Map(flows.map(flow => [flow.id, flow]));
+  const ordered = new Set<Flow>();
+  for (const id of flowIds) {
+    const flow = byId.get(id);
+    if (flow) ordered.add(flow);
+  }
+  flows.forEach(flow => ordered.add(flow));
+  return [...ordered];
 }

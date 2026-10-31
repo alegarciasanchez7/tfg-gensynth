@@ -48,10 +48,11 @@ public class MainFrame extends JFrame {
         }
     }
     
-    private final CefClient client;
-    private final CefBrowser browser;
+    // Native browser objects: a window is never serialized, so they are not either
+    private final transient CefClient client;
+    private final transient CefBrowser browser;
     private final Component browserUI;
-    private final CefMessageRouter messageRouter;
+    private final transient CefMessageRouter messageRouter;
 
     public MainFrame(String title, String initialUrl, CefApp cefApp) {
         super(title);
@@ -179,7 +180,7 @@ public class MainFrame extends JFrame {
         setLocationRelativeTo(null);
         
         // In Phase 4, we will add a custom icon and title bar styling
-        setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
+        setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
     }
 
     public void showWindow() {

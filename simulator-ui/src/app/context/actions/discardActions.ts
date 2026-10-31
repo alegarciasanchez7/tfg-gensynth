@@ -103,6 +103,7 @@ function groupCommands(savedGroup: Group | undefined, currentGroup: Group): Disc
         description: savedGroup.description,
         threads: savedGroup.threads,
         outputMode: savedGroup.outputMode,
+        sequentialOrder: savedGroup.sequentialOrder,
         enabled: savedGroup.enabled,
       },
     });
@@ -123,6 +124,15 @@ function groupCommands(savedGroup: Group | undefined, currentGroup: Group): Disc
     if (!savedFlowIds.has(currentFlow.id)) {
       commands.push({ type: 'DELETE_FLOW', payload: { groupId: currentGroup.id, flowId: currentFlow.id } });
     }
+  }
+  // Last: restored flows are added at the end, so the saved order is set once every flow exists again
+  const savedOrder = savedGroup.flows.map((flow) => flow.id);
+  const restoredOrder = [
+    ...currentGroup.flows.filter((flow) => savedFlowIds.has(flow.id)).map((flow) => flow.id),
+    ...savedOrder.filter((id) => !currentFlows.has(id)),
+  ];
+  if (!isSame(savedOrder, restoredOrder)) {
+    commands.push({ type: 'UPDATE_GROUP_CONFIG', payload: { groupId: savedGroup.id, flowIds: savedOrder } });
   }
   return commands;
 }
@@ -171,6 +181,7 @@ function restoreGroupCommands(savedGroup: Group): DiscardCommand[] {
         name: savedGroup.name,
         description: savedGroup.description,
         outputMode: savedGroup.outputMode,
+        sequentialOrder: savedGroup.sequentialOrder,
       },
     },
   ];

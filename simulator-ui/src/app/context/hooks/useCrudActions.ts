@@ -1,10 +1,10 @@
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { toast } from 'sonner';
 import { CoreCommands } from '../../core/bridge';
 import type { GroupState, FlowState, VariableState } from '../../core/types';
 import type { Group, Flow, Variable, VariableType, VariableScope } from '../../types';
 import type { AppState, AppAction } from '../reducer';
-import { mapFlowFromCore, mapGroupFromCore } from '../helpers/groupHelpers';
+import { mapFlowFromCore, mapGroupFromCore, reorderFlows } from '../helpers/groupHelpers';
 import * as CRUDActions from '../crudActions';
 import type { CRUDActionContext } from '../crudActions';
 import { normalizeVariableFromCore } from '../variableNormalization';
@@ -40,12 +40,13 @@ export function useCrudActions({
   reportCommandError,
 }: UseCrudActionsProps) {
   
-  const crudContext: CRUDActionContext = {
+  // Stable between renders, so the actions below are only recreated when it really changes
+  const crudContext: CRUDActionContext = useMemo(() => ({
     dispatch,
     reportError: reportCommandError,
     connectionMode: state.connectionMode,
     optimisticManager,
-  };
+  }), [dispatch, reportCommandError, state.connectionMode, optimisticManager]);
 
   const createGroup = useCallback(async (name: string, description?: string) => {
     const optimisticId = generateOptimisticId('group');
@@ -179,6 +180,39 @@ export function useCrudActions({
         );
       } catch (error) {
         reportCommandError('GROUPS', `updateGroupConfig(${groupId})`, error);
+        throw error;
+      }
+    },
+    [crudContext, state.groups, reportCommandError, dispatch, optimisticManager],
+  );
+
+  const reorderGroupFlows = useCallback(
+    async (groupId: string, flowIds: string[]) => {
+      const previousGroup = state.groups.find(g => g.id === groupId);
+      if (!previousGroup) {
+        throw new Error(`Group ${groupId} not found`);
+      }
+      const previousFlows = previousGroup.flows;
+
+      try {
+        await executeOptimisticUpdate(
+          {
+            optimisticManager,
+            commandType: 'UPDATE_GROUP_CONFIG',
+            resourceId: groupId,
+          },
+          {
+            applyOptimistic: () => {
+              dispatch({ type: 'UPDATE_GROUP', payload: { id: groupId, flows: reorderFlows(previousFlows, flowIds) } });
+            },
+            rollback: () => {
+              dispatch({ type: 'UPDATE_GROUP', payload: { id: groupId, flows: previousFlows } });
+            },
+            send: () => CRUDActions.reorderGroupFlows(crudContext, groupId, flowIds),
+          }
+        );
+      } catch (error) {
+        reportCommandError('GROUPS', `reorderGroupFlows(${groupId})`, error);
         throw error;
       }
     },
@@ -594,6 +628,7 @@ export function useCrudActions({
     createGroup,
     deleteGroup,
     updateGroupConfig,
+    reorderGroupFlows,
     createFlow,
     deleteFlow,
     updateFlowConfig,
