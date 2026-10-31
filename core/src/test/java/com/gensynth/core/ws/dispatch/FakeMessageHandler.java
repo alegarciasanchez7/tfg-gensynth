@@ -20,6 +20,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 class FakeMessageHandler implements IFlowMessageHandler {
 
     final List<String> published = new CopyOnWriteArrayList<>();
+    /** Payload of every publish call as soon as it starts, before waiting on a blocked flow. */
+    final List<String> publishStarted = new CopyOnWriteArrayList<>();
     final List<String> publishThreads = new CopyOnWriteArrayList<>();
     /** Group tick received by every publish call, in call order. */
     final List<Long> publishedTicks = new CopyOnWriteArrayList<>();
@@ -55,6 +57,7 @@ class FakeMessageHandler implements IFlowMessageHandler {
 
     @Override
     public void publish(GroupRuntime group, FlowRuntime flow, String payload, long groupTick) {
+        publishStarted.add(payload);
         CountDownLatch latch = blockedFlows.get(flow.id);
         if (latch != null) {
             try {
