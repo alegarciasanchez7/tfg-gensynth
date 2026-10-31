@@ -271,7 +271,7 @@ public class GroupDefinition {
         GroupDefinition group = new GroupDefinition(groupId, name, description, threads, outputMode);
         Object sequentialOrderObj = payload.get("sequentialOrder");
         group.sequentialOrder = SequentialOrder.fromValue(
-            sequentialOrderObj instanceof String ? (String) sequentialOrderObj : null).wireValue();
+            sequentialOrderObj instanceof String text ? text : null).wireValue();
         
         @SuppressWarnings("unchecked")
         java.util.List<Map<String, Object>> flowsPayload = (java.util.List<Map<String, Object>>) payload.get("flows");

@@ -24,7 +24,7 @@ public class PointVariableConfig extends VariableConfiguration {
     private Point3D minPoint;
     private Point3D maxPoint;
 
-    private List<Point3D> path;
+    private final List<Point3D> path;
     private int interpolationSteps;
     /** Kept for compatibility with older configs: the waypoint timing only uses {@link #interpolationSteps}. */
     private double navigationSpeed;
@@ -109,7 +109,7 @@ public class PointVariableConfig extends VariableConfiguration {
     private int graphSequenceIndex = 0;
     private int remainingStopTicks = 0;
     private transient boolean hasPausedAtCurrentNode = false;
-    private List<String> visitedNodeHistory = new ArrayList<>();
+    private final List<String> visitedNodeHistory = new ArrayList<>();
 
     private AltitudeUnit altitudeUnit = AltitudeUnit.METERS;
     private AltitudeReference altitudeReference = AltitudeReference.MSL;

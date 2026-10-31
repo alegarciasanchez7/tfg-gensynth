@@ -21,10 +21,15 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import static com.gensynth.core.ws.BridgeProtocol.SOURCE_SYSTEM;
+
 /**
  * Handles state serialization and persistence commands (GET_INITIAL_STATE, LOAD_STATE, SAVE_STATE, IMPORT_STATE, EXPORT_STATE).
  */
 public class StateCommandHandler implements CommandHandler {
+    private static final String GROUPS = "groups";
+    private static final String SETTINGS = "settings";
+    private static final String FILE_PATH = "filePath";
 
     private static final Logger logger = LoggerFactory.getLogger(StateCommandHandler.class);
 
@@ -65,7 +70,7 @@ public class StateCommandHandler implements CommandHandler {
     public void handleLoadState(WebSocket conn, String commandId) {
         UiBridgeWebSocketServer server = ctx.getServer();
         loadRuntimeState(true);
-        server.logToBackend("info", "SYSTEM", "State loaded from repository", commandId);
+        server.logToBackend("info", SOURCE_SYSTEM, "State loaded from repository", commandId);
         handleGetInitialState(conn, commandId);
     }
 
@@ -78,7 +83,7 @@ public class StateCommandHandler implements CommandHandler {
     public void handleSaveState(WebSocket conn, String commandId) {
         UiBridgeWebSocketServer server = ctx.getServer();
         persistState();
-        server.logToBackend("info", "SYSTEM", "State saved to repository", commandId);
+        server.logToBackend("info", SOURCE_SYSTEM, "State saved to repository", commandId);
         server.sendAck(conn, commandId, "state_saved");
     }
 
@@ -93,7 +98,7 @@ public class StateCommandHandler implements CommandHandler {
      */
     public void handleImportState(WebSocket conn, String commandId, JsonNode payload) {
         UiBridgeWebSocketServer server = ctx.getServer();
-        if (payload == null || !payload.has("groups")) {
+        if (payload == null || !payload.has(GROUPS)) {
             server.sendError(conn, commandId, "INVALID_PAYLOAD", "IMPORT_STATE requires a payload with 'groups' array", Map.of());
             return;
         }
@@ -101,7 +106,7 @@ public class StateCommandHandler implements CommandHandler {
         ObjectMapper objectMapper = ctx.getObjectMapper();
         try {
             List<GroupDefinition> newGroups = new ArrayList<>();
-            JsonNode groupsNode = payload.path("groups");
+            JsonNode groupsNode = payload.path(GROUPS);
             if (groupsNode.isArray()) {
                 for (JsonNode groupNode : groupsNode) {
                     @SuppressWarnings("unchecked")
@@ -125,7 +130,7 @@ public class StateCommandHandler implements CommandHandler {
             }
 
             ProjectSettings settings = ProjectSettings.fromPayload(
-                payload.has("settings") ? objectMapper.convertValue(payload.get("settings"), Map.class) : null
+                payload.has(SETTINGS) ? objectMapper.convertValue(payload.get(SETTINGS), Map.class) : null
             );
 
             synchronized (ctx.getStateLock()) {
@@ -154,11 +159,11 @@ public class StateCommandHandler implements CommandHandler {
             // Echo the source file path (set by the desktop LOAD_STATE dialog) so the UI can track the open file
             String sourceFilePath = payload.path("sourceFilePath").asText(null);
             if (sourceFilePath != null && !sourceFilePath.isBlank()) {
-                server.sendAck(conn, commandId, "state_imported", Map.of("filePath", sourceFilePath));
+                server.sendAck(conn, commandId, "state_imported", Map.of(FILE_PATH, sourceFilePath));
             } else {
                 server.sendAck(conn, commandId, "state_imported");
             }
-            server.logToBackend("info", "SYSTEM", "State imported from UI (" + newGroups.size() + " groups)", commandId);
+            server.logToBackend("info", SOURCE_SYSTEM, "State imported from UI (" + newGroups.size() + " groups)", commandId);
             server.broadcastGroupsUpdate();
             server.broadcastSystemStatus();
             server.sendVariablesUpdate();
@@ -180,7 +185,7 @@ public class StateCommandHandler implements CommandHandler {
      */
     public void handleExportState(WebSocket conn, String commandId, JsonNode payload) {
         UiBridgeWebSocketServer server = ctx.getServer();
-        String filePath = server.requireTextField(conn, commandId, payload, "filePath", "INVALID_PAYLOAD", "EXPORT_STATE");
+        String filePath = server.requireTextField(conn, commandId, payload, FILE_PATH, "INVALID_PAYLOAD", "EXPORT_STATE");
         if (filePath == null) return;
 
         try {
@@ -196,8 +201,8 @@ public class StateCommandHandler implements CommandHandler {
                 ctx.getProjectSettings()
             );
 
-            server.sendAck(conn, commandId, "state_exported", Map.of("filePath", filePath));
-            server.sendLog(conn, "info", "SYSTEM", "State exported to: " + filePath);
+            server.sendAck(conn, commandId, "state_exported", Map.of(FILE_PATH, filePath));
+            server.sendLog(conn, "info", SOURCE_SYSTEM, "State exported to: " + filePath);
         } catch (Exception e) {
             server.sendError(conn, commandId, "EXPORT_FAILED", "Could not save the project. " + e.getMessage(), Map.of("path", filePath));
         }
@@ -308,7 +313,7 @@ public class StateCommandHandler implements CommandHandler {
         }
 
         payload.put("systemStatus", server.systemCommandHandler.buildSystemStatusPayload(null));
-        payload.put("groups", server.toGroupsPayload());
+        payload.put(GROUPS, server.toGroupsPayload());
 
         List<Map<String, Object>> variablesPayload = new ArrayList<>();
         synchronized (ctx.getStateLock()) {
@@ -317,7 +322,7 @@ public class StateCommandHandler implements CommandHandler {
             }
         }
         payload.put("variables", variablesPayload);
-        payload.put("settings", ctx.getProjectSettings().toPayload());
+        payload.put(SETTINGS, ctx.getProjectSettings().toPayload());
         payload.put("outputFolder", ctx.outputFolderPayload());
         payload.put("metrics", server.systemCommandHandler.buildMetricsPayload(null));
         payload.put("connectorCatalog", ctx.getConnectorCatalogService().listAvailableConnectors());

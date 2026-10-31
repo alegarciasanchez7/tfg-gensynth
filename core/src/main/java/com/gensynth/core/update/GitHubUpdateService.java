@@ -29,6 +29,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -41,6 +42,7 @@ import java.util.regex.Pattern;
  * the SHA-256 listed in the release's {@code SHA256SUMS.txt}.
  */
 public class GitHubUpdateService implements IUpdateService {
+    private static final String USER_AGENT = "User-Agent";
 
     private static final Logger logger = LoggerFactory.getLogger(GitHubUpdateService.class);
 
@@ -57,22 +59,35 @@ public class GitHubUpdateService implements IUpdateService {
     private static final long MAX_INSTALLER_BYTES = 1024L * 1024 * 1024;
     private static final long PROGRESS_INTERVAL_NANOS = TimeUnit.MILLISECONDS.toNanos(250);
 
+    /**
+     * Where releases are read from: the "latest release" API and the prefix every installer URL
+     * must start with.
+     *
+     * @param latestReleaseApi URL of the "latest release" API
+     * @param downloadPrefix   prefix every installer URL must start with
+     */
+    public record ReleaseEndpoints(URI latestReleaseApi, String downloadPrefix) {
+        /** The official GenSynth releases on GitHub. */
+        public static final ReleaseEndpoints OFFICIAL = new ReleaseEndpoints(URI.create(LATEST_RELEASE_API), DOWNLOAD_PREFIX);
+    }
+
     private final URI latestReleaseApi;
     private final String downloadPrefix;
     private final String currentVersion;
     private final boolean installed;
     private final Supplier<Optional<InstallerType>> installerTypeSupplier;
-    private final Supplier<Boolean> pkexecAvailable;
+    private final BooleanSupplier pkexecAvailable;
     private final Path downloadDir;
     private final HttpClient http;
     private final ObjectMapper mapper = new ObjectMapper();
-    private volatile Optional<InstallerType> installerType;
+    /** Installer type found on first use (detecting it may run a process); guarded by this. */
+    private InstallerType detectedType;
+    private boolean typeDetected;
 
     /**
      * Creates the service.
      *
-     * @param latestReleaseApi URL of the "latest release" API
-     * @param downloadPrefix   prefix every installer URL must start with
+     * @param endpoints        where releases are read from
      * @param currentVersion   version of the running application, or null if unknown
      * @param installed        true if this is an installed application (not a development build)
      * @param installerType    finds the installer type of this system; called once, when first needed
@@ -80,11 +95,11 @@ public class GitHubUpdateService implements IUpdateService {
      * @param downloadDir      folder for the downloaded installer
      * @param http             HTTP client
      */
-    public GitHubUpdateService(URI latestReleaseApi, String downloadPrefix, String currentVersion, boolean installed,
-                               Supplier<Optional<InstallerType>> installerType, Supplier<Boolean> pkexecAvailable,
+    public GitHubUpdateService(ReleaseEndpoints endpoints, String currentVersion, boolean installed,
+                               Supplier<Optional<InstallerType>> installerType, BooleanSupplier pkexecAvailable,
                                Path downloadDir, HttpClient http) {
-        this.latestReleaseApi = latestReleaseApi;
-        this.downloadPrefix = downloadPrefix;
+        this.latestReleaseApi = endpoints.latestReleaseApi();
+        this.downloadPrefix = endpoints.downloadPrefix();
         this.currentVersion = currentVersion;
         this.installed = installed;
         this.installerTypeSupplier = installerType;
@@ -105,7 +120,7 @@ public class GitHubUpdateService implements IUpdateService {
             // Release assets redirect to githubusercontent; NORMAL never goes from https to http
             .followRedirects(HttpClient.Redirect.NORMAL)
             .build();
-        return new GitHubUpdateService(URI.create(LATEST_RELEASE_API), DOWNLOAD_PREFIX, Versions.current(),
+        return new GitHubUpdateService(ReleaseEndpoints.OFFICIAL, Versions.current(),
             paths.isInstalled(),
             () -> InstallerType.detect(System.getProperty("os.name"), System.getProperty("os.arch"),
                 GitHubUpdateService::exitsWithZero),
@@ -130,7 +145,7 @@ public class GitHubUpdateService implements IUpdateService {
         if (type.isEmpty()) {
             return "Automatic updates are not available for this system. Download new versions from the Releases page.";
         }
-        if ((type.get() == InstallerType.DEB || type.get() == InstallerType.RPM) && !pkexecAvailable.get()) {
+        if ((type.get() == InstallerType.DEB || type.get() == InstallerType.RPM) && !pkexecAvailable.getAsBoolean()) {
             return "Automatic updates need pkexec (polkit). Download new versions from the Releases page.";
         }
         return null;
@@ -141,7 +156,7 @@ public class GitHubUpdateService implements IUpdateService {
         HttpRequest request = HttpRequest.newBuilder(latestReleaseApi)
             .timeout(REQUEST_TIMEOUT)
             .header("Accept", "application/vnd.github+json")
-            .header("User-Agent", "GenSynth/" + (currentVersion == null ? "unknown" : currentVersion))
+            .header(USER_AGENT, userAgent())
             .GET()
             .build();
         HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
@@ -215,7 +230,7 @@ public class GitHubUpdateService implements IUpdateService {
             throws IOException, InterruptedException {
         HttpRequest request = HttpRequest.newBuilder(URI.create(update.assetUrl()))
             .timeout(REQUEST_TIMEOUT)
-            .header("User-Agent", "GenSynth/" + currentVersion)
+            .header(USER_AGENT, userAgent())
             .GET()
             .build();
         HttpResponse<InputStream> response = http.send(request, HttpResponse.BodyHandlers.ofInputStream());
@@ -259,7 +274,7 @@ public class GitHubUpdateService implements IUpdateService {
     private String expectedChecksum(UpdateCheck update) throws IOException, InterruptedException {
         HttpRequest request = HttpRequest.newBuilder(URI.create(update.checksumsUrl()))
             .timeout(REQUEST_TIMEOUT)
-            .header("User-Agent", "GenSynth/" + currentVersion)
+            .header(USER_AGENT, userAgent())
             .GET()
             .build();
         HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
@@ -280,7 +295,9 @@ public class GitHubUpdateService implements IUpdateService {
     public void install(Path installer) throws IOException, InterruptedException {
         InstallerType type = installerType().orElseThrow(() -> new IOException(unsupportedReason()));
         List<String> command = type.installCommand(installer);
-        logger.info("Installing update: {}", String.join(" ", command));
+        if (logger.isInfoEnabled()) {
+            logger.info("Installing update: {}", String.join(" ", command));
+        }
         if (type.closesAppFirst()) {
             RestartUtil.exitAndLaunch(new ProcessBuilder(command));
             return;
@@ -299,13 +316,17 @@ public class GitHubUpdateService implements IUpdateService {
         return installerType().map(InstallerType::closesAppFirst).orElse(false);
     }
 
-    private Optional<InstallerType> installerType() {
-        Optional<InstallerType> type = installerType;
-        if (type == null) {
-            type = installerTypeSupplier.get();
-            installerType = type;
+    private synchronized Optional<InstallerType> installerType() {
+        if (!typeDetected) {
+            detectedType = installerTypeSupplier.get().orElse(null);
+            typeDetected = true;
         }
-        return type;
+        return Optional.ofNullable(detectedType);
+    }
+
+    /** Value of the User-Agent header, which GitHub requires. */
+    private String userAgent() {
+        return "GenSynth/" + (currentVersion == null ? "unknown" : currentVersion);
     }
 
     private void deletePreviousDownloads() throws IOException {

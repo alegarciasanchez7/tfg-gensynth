@@ -28,7 +28,7 @@ public final class Versions {
      */
     public static int compare(String a, String b) {
         int cmp = compareNumbers(a, b);
-        return cmp != 0 ? cmp : a.compareTo(b);
+        return cmp == 0 ? a.compareTo(b) : cmp;
     }
 
     /**

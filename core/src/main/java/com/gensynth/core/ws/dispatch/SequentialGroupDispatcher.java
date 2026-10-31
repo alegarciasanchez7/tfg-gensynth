@@ -155,14 +155,12 @@ public class SequentialGroupDispatcher implements IGroupDispatcher {
         while (!closed) {
             try {
                 PendingMessage message = queue.poll(POLL_TIMEOUT_MS, TimeUnit.MILLISECONDS);
-                if (message == null) {
-                    continue;
+                if (message != null) {
+                    slots.release();
+                    if (!closed) {
+                        handler.publish(group, message.flow(), message.payload(), message.groupTick());
+                    }
                 }
-                slots.release();
-                if (closed) {
-                    continue;
-                }
-                handler.publish(group, message.flow(), message.payload(), message.groupTick());
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 return;

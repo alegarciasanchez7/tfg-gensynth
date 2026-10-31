@@ -54,6 +54,7 @@ import java.util.jar.JarInputStream;
  * exposing internal core architecture to plugin developers.
  */
 public class PluginSandboxValidator {
+    private static final String CONSTRUCTOR = "<init>";
 
     private static final Logger logger = LoggerFactory.getLogger(PluginSandboxValidator.class);
 
@@ -84,10 +85,10 @@ public class PluginSandboxValidator {
             "java/lang/Runtime", Set.of("exec", "halt", "exit"),
             "java/lang/ProcessBuilder", Set.of("start", "startPipeline"),
             "java/lang/System", Set.of("exit"),
-            "java/net/ServerSocket", Set.of("<init>"),
-            "java/net/DatagramSocket", Set.of("<init>"),
-            "java/io/FileOutputStream", Set.of("<init>"),
-            "java/io/RandomAccessFile", Set.of("<init>"),
+            "java/net/ServerSocket", Set.of(CONSTRUCTOR),
+            "java/net/DatagramSocket", Set.of(CONSTRUCTOR),
+            "java/io/FileOutputStream", Set.of(CONSTRUCTOR),
+            "java/io/RandomAccessFile", Set.of(CONSTRUCTOR),
             "java/nio/file/Files", Set.of("write", "delete", "move", "createFile", "createDirectory",
                     "createDirectories", "newOutputStream")
     );
@@ -332,12 +333,9 @@ public class PluginSandboxValidator {
 
             // Same parent-last loader as at runtime, so a plugin whose classes are also on the
             // application classpath (a built-in connector) is inspected from its own JAR
-            URLClassLoader sandboxLoader = new PluginClassLoader(
+            try (URLClassLoader sandboxLoader = new PluginClassLoader(
                     urls.toArray(new URL[0]),
-                    ConnectorPlugin.class.getClassLoader()
-            );
-
-            try {
+                    ConnectorPlugin.class.getClassLoader())) {
                 builder.log(PluginValidationResult.ValidationLevel.INFO, "Inspecting plugin...");
                 LoadedPlugin loaded = loadWithTimeout(sandboxLoader);
                 if (loaded == null) {
@@ -346,8 +344,6 @@ public class PluginSandboxValidator {
                     builder.log(PluginValidationResult.ValidationLevel.INFO, "Found plugin: " + loaded.info().id() + " v" + loaded.info().version());
                 }
                 return loaded;
-            } finally {
-                sandboxLoader.close();
             }
         } catch (TimeoutException e) {
             builder.log(PluginValidationResult.ValidationLevel.ERROR, "Loading timeout: plugin took too long to respond (> " + DESCRIPTOR_LOAD_TIMEOUT_SECONDS + "s)");

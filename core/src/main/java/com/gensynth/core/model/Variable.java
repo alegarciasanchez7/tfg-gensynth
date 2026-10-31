@@ -19,6 +19,8 @@ import java.util.Objects;
  * Variables are persistent and synchronized between UI and Core.
  */
 public class Variable {
+
+    private static final String GLOBAL_SCOPE = "GLOBAL";
     private static final Logger logger = LoggerFactory.getLogger(Variable.class);
     private final String id;
     private final String name;
@@ -29,7 +31,7 @@ public class Variable {
     private final Object defaultValue;
     private final Map<String, Object> config;
     private final Instant createdAt;
-    private Instant updatedAt;
+    private final Instant updatedAt;
 
     /**
      * Constructor for Variable.
@@ -154,7 +156,7 @@ public class Variable {
     public static Variable fromPayload(Map<String, Object> payload) {
         String id = (String) payload.getOrDefault("id", java.util.UUID.randomUUID().toString());
         String name = (String) payload.getOrDefault("name", "Unnamed Variable");
-        String scope = (String) payload.getOrDefault("scope", "GLOBAL");
+        String scope = (String) payload.getOrDefault("scope", GLOBAL_SCOPE);
         String type = (String) payload.getOrDefault("type", "string");
         
         // Robustness: Try different naming conventions for flowId and groupId
@@ -186,13 +188,13 @@ public class Variable {
         if ("local".equalsIgnoreCase(scope) && (flowId == null || flowId.isBlank())) {
             logger.warn("Variable '{}' (id: {}) has LOCAL scope but missing flowId (Payload keys: {}). Downgrading to GLOBAL.", 
                 name, id, payload.keySet());
-            scope = "GLOBAL";
+            scope = GLOBAL_SCOPE;
         }
         // Robustness: If scope is GROUP but groupId is missing, downgrade to GLOBAL
         if ("group".equalsIgnoreCase(scope) && (groupId == null || groupId.isBlank())) {
             logger.warn("Variable '{}' (id: {}) has GROUP scope but missing groupId (Payload keys: {}). Downgrading to GLOBAL.", 
                 name, id, payload.keySet());
-            scope = "GLOBAL";
+            scope = GLOBAL_SCOPE;
         }
 
         return new Variable(id, name, scope.toUpperCase(), type, defaultValue, config, flowId, groupId);

@@ -13,6 +13,7 @@ import java.util.regex.Pattern;
  * Generates random strings with configurable character components.
  */
 public class StringVariableConfig extends VariableConfiguration {
+    private static final String MIXED_CASE = "MIXED";
     
     private static final int CHARACTER_POOL_SIZE = 256;
     
@@ -75,10 +76,10 @@ public class StringVariableConfig extends VariableConfiguration {
         this.template = "";
         this.formattedMaskType = "ALPHANUMERIC";
         this.customMask = "";
-        this.alphanumericCase = "MIXED";
+        this.alphanumericCase = MIXED_CASE;
         this.corruptionEnabled = false;
         this.corruptionProbability = 0.05;
-        this.corruptionMode = "MIXED";
+        this.corruptionMode = MIXED_CASE;
         this.corruptionMagnitude = 1;
         
         buildCharacterSetCache();
@@ -247,8 +248,8 @@ public class StringVariableConfig extends VariableConfiguration {
             return input;
         }
 
-        String mode = corruptionMode != null ? corruptionMode : "MIXED";
-        if ("MIXED".equals(mode)) {
+        String mode = corruptionMode != null ? corruptionMode : MIXED_CASE;
+        if (MIXED_CASE.equals(mode)) {
             String[] modes = {"TRUNCATE", "INJECT_ANOMALOUS", "REPLACE_CHAR", "NULL_BYTE"};
             mode = modes[random.nextInt(modes.length)];
         }
