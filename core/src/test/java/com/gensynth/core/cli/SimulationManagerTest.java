@@ -1,5 +1,6 @@
 package com.gensynth.core.cli;
 
+import com.gensynth.core.config.DevicePreferences;
 import com.gensynth.core.connectors.runtime.ConnectorCatalogService;
 import com.gensynth.core.model.SimulationSnapshot;
 import org.junit.After;
@@ -10,6 +11,8 @@ import org.junit.rules.TemporaryFolder;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Stream;
 
@@ -149,6 +152,45 @@ public class SimulationManagerTest {
         assertEquals(SimulationSnapshot.Status.RUNNING, started.status());
         assertEquals(1, started.connectorErrors().size());
         assertTrue(started.connectorErrors().get(0), started.connectorErrors().get(0).startsWith("Sensors / Temperature: "));
+    }
+
+    @Test
+    public void outputFoldersFollowTheFolderChosenInTheDesktopApplication() throws Exception {
+        Path stateDir = temp.newFolder("state").toPath();
+        Path defaultFolder = temp.newFolder("default").toPath();
+        Path chosen = temp.getRoot().toPath().resolve("chosen");
+        SimulationManager.OutputFolders folders = SimulationManager.preferredOutputFolders(
+            stateDir.resolve(DevicePreferences.FILE_NAME), defaultFolder);
+        List<String> warnings = new ArrayList<>();
+
+        assertEquals(defaultFolder.toAbsolutePath(), Paths.get(folders.newSession(warnings::add)).getParent());
+
+        // Chosen in the desktop application while the command line is open: the next start uses it
+        DevicePreferences.inFolder(stateDir.toString()).setOutputFolder(chosen);
+        assertEquals(chosen.toAbsolutePath(), Paths.get(folders.newSession(warnings::add)).getParent());
+        assertTrue(warnings.isEmpty());
+
+        Path file = Files.writeString(temp.getRoot().toPath().resolve("a-file.txt"), "x");
+        DevicePreferences.inFolder(stateDir.toString()).setOutputFolder(file.resolve("results"));
+        assertEquals(defaultFolder.toAbsolutePath(), Paths.get(folders.newSession(warnings::add)).getParent());
+        assertEquals(1, warnings.size());
+    }
+
+    @Test
+    public void outputWarningsAreReportedWhenTheSimulationStarts() throws Exception {
+        Path base = outputs.resolve("OUTPUT");
+        SimulationManager withWarning = new SimulationManager(new ConnectorCatalogService(), warnings -> {
+            warnings.accept("The chosen folder cannot be written");
+            return base.toString();
+        });
+        try {
+            SimulationSnapshot started = withWarning.start(project("a.gsynth"));
+
+            assertEquals(List.of("The chosen folder cannot be written"), started.warnings());
+            assertEquals(base + "_sim1", started.outputDir());
+        } finally {
+            withWarning.shutdown();
+        }
     }
 
     @Test

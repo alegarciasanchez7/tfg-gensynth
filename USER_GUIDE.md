@@ -1629,7 +1629,10 @@ as the resource bar of the window:
 - Each `start` gets an **id**: 1, 2, 3… in start order. A stopped simulation keeps its id, so
   ids are never reused; they start again from 1 the next time you open `gensynth`.
 - Several projects can run at once, each with its own output folder
-  (`OUTPUT_FILES_<date>_sim<id>`). The same file cannot run twice at the same time.
+  (`OUTPUT_FILES_<date>_sim<id>`), which `start` shows. It is created in the output folder chosen
+  in the application (**Settings → Save & Storage → Output folder**), or in the default one when
+  none was chosen or it cannot be written (`start` then shows a warning). The same file cannot run
+  twice at the same time.
 - If a connector cannot start, `start` shows a warning for that flow and the rest of the project
   keeps running.
 - The command line uses the plugins installed from the application, never changes its autosave

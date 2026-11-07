@@ -178,6 +178,10 @@ public class CliShell {
         out.println(id(started) + theme.paint(" Started", CliTheme.SUCCESS)
             + String.format(" '%s' (%d groups, %d flows)", started.configFile().getFileName(),
                 started.groups(), started.flows()));
+        out.println("    " + theme.paint("Output folder: " + started.outputDir(), CliTheme.MUTED));
+        for (String warning : started.warnings()) {
+            out.println("    " + theme.paint("Warning:", CliTheme.WARNING) + " " + warning);
+        }
         for (String error : started.connectorErrors()) {
             out.println("    " + theme.paint("Warning:", CliTheme.WARNING) + " connector failed in " + error);
         }

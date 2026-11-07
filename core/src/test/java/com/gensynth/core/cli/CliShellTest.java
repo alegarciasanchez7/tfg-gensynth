@@ -28,13 +28,14 @@ public class CliShellTest {
 
     private Path workingDir;
     private Path home;
+    private Path outputs;
     private SimulationManager manager;
 
     @Before
     public void setUp() throws Exception {
         workingDir = temp.newFolder("work").toPath();
         home = temp.newFolder("home").toPath();
-        Path outputs = temp.newFolder("outputs").toPath();
+        outputs = temp.newFolder("outputs").toPath();
         manager = new SimulationManager(new ConnectorCatalogService(), () -> outputs.resolve("OUTPUT").toString());
     }
 
@@ -78,6 +79,7 @@ public class CliShellTest {
 
         assertTrue(output, output.startsWith("GenSynth 9.9.9 command line."));
         assertTrue(output, output.contains("[1] Started 'a.gsynth' (1 groups, 1 flows)"));
+        assertTrue(output, output.contains("Output folder: " + outputs.resolve("OUTPUT") + "_sim1"));
         assertTrue(output, output.contains("[2] Started 'b.gsynth' (1 groups, 1 flows)"));
         assertTrue(output, output.contains("Error: 'a.gsynth' is already running with id 1"));
         assertTrue(output, output.contains("ID   STATUS   UPTIME      MSG/S   MESSAGES  ERRORS  FILE"));

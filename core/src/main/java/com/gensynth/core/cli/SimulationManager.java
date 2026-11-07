@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gensynth.core.api.ISimulationManager;
 import com.gensynth.core.config.AppPaths;
+import com.gensynth.core.config.DevicePreferences;
 import com.gensynth.core.connectors.runtime.ConnectorCatalogService;
 import com.gensynth.core.model.SimulationSnapshot;
 import com.gensynth.core.persistence.ProjectFileFormat;
@@ -15,6 +16,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 /**
@@ -24,18 +26,34 @@ import java.util.function.Supplier;
  */
 public class SimulationManager implements ISimulationManager {
 
+    /**
+     * Opens the output folder of a new simulation.
+     */
+    @FunctionalInterface
+    public interface OutputFolders {
+
+        /**
+         * @param warnings receives what the user should know about the folder (for example, that
+         *                 the chosen one cannot be written and the default one is used instead)
+         * @return base path of the session folder; the simulation id is appended to it
+         */
+        String newSession(Consumer<String> warnings);
+    }
+
     private final ConnectorCatalogService connectorCatalog;
-    private final Supplier<String> outputDirFactory;
+    private final OutputFolders outputFolders;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final Map<Integer, HeadlessSimulation> simulations = new LinkedHashMap<>();
     private int nextId = 1;
 
     /**
-     * Uses the installed connector plugins and the session output folders of {@link AppPaths}.
+     * Uses the installed connector plugins and the output folder chosen in the desktop
+     * application (Settings → Save &amp; Storage), or the default one of {@link AppPaths}.
      */
     public SimulationManager() {
         this(new ConnectorCatalogService(AppPaths.current().pluginsDir(), AppPaths.current().sharedLibsDir()),
-             () -> AppPaths.current().newSessionOutputDir());
+             preferredOutputFolders(AppPaths.current().stateDir().resolve(DevicePreferences.FILE_NAME),
+                 AppPaths.current().outputsHome()));
     }
 
     /**
@@ -44,8 +62,30 @@ public class SimulationManager implements ISimulationManager {
      *                         is appended so two simulations never share a folder
      */
     public SimulationManager(ConnectorCatalogService connectorCatalog, Supplier<String> outputDirFactory) {
+        this(connectorCatalog, warnings -> outputDirFactory.get());
+    }
+
+    /**
+     * @param connectorCatalog connector catalog shared by every simulation (plugins load once)
+     * @param outputFolders    opens the output folder of each new simulation
+     */
+    public SimulationManager(ConnectorCatalogService connectorCatalog, OutputFolders outputFolders) {
         this.connectorCatalog = connectorCatalog;
-        this.outputDirFactory = outputDirFactory;
+        this.outputFolders = outputFolders;
+    }
+
+    /**
+     * Output folders in the folder chosen in the desktop application, as its own sessions do.
+     * The preferences file is read on every start, so a folder changed in the desktop
+     * application applies without reopening the command line.
+     *
+     * @param preferencesFile the preferences file of the desktop application
+     * @param defaultFolder   folder used when none was chosen or the chosen one cannot be written
+     * @return the output folders
+     */
+    static OutputFolders preferredOutputFolders(Path preferencesFile, Path defaultFolder) {
+        return warnings -> AppPaths.newSessionOutputDir(
+            new DevicePreferences(preferencesFile).sessionsFolder(defaultFolder, warnings));
     }
 
     @Override
@@ -60,8 +100,10 @@ public class SimulationManager implements ISimulationManager {
         JsonNode project = readProject(file);
 
         int id = nextId;
+        List<String> warnings = new ArrayList<>();
+        String outputDir = outputFolders.newSession(warnings::add) + "_sim" + id;
         HeadlessSimulation simulation = new HeadlessSimulation(
-            id, file, project, outputDirFactory.get() + "_sim" + id, connectorCatalog);
+            id, file, project, outputDir, warnings, connectorCatalog);
         simulation.start();
         nextId++;
         simulations.put(id, simulation);

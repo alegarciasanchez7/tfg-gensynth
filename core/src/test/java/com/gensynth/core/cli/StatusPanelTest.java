@@ -18,7 +18,7 @@ public class StatusPanelTest {
 
     private static SimulationSnapshot simulation(int id, String file, SimulationSnapshot.Status status, long errors) {
         return new SimulationSnapshot(id, Paths.get("/data", file), "out", status, 1, 2, NOW - 252_000,
-            status == SimulationSnapshot.Status.RUNNING ? 0 : NOW, 34_100, errors, List.of(), 820, 20, 2_150);
+            status == SimulationSnapshot.Status.RUNNING ? 0 : NOW, 34_100, errors, List.of(), List.of(), 820, 20, 2_150);
     }
 
     @Test

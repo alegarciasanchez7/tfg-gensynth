@@ -26,6 +26,7 @@ class HeadlessSimulation {
     private final int flows;
     private final UiBridgeWebSocketServer engine;
 
+    private final List<String> warnings;
     private List<String> connectorErrors = List.of();
     private long startedAt;
     private long stoppedAt;
@@ -36,13 +37,15 @@ class HeadlessSimulation {
      * @param configFile       the project file (already resolved to its real path)
      * @param project          the parsed and validated project document
      * @param outputDir        folder of the session output files
+     * @param warnings         what the user should know about the start (e.g. the output folder used)
      * @param connectorCatalog connector catalog shared by every simulation
      */
-    HeadlessSimulation(int id, Path configFile, JsonNode project, String outputDir,
+    HeadlessSimulation(int id, Path configFile, JsonNode project, String outputDir, List<String> warnings,
                        ConnectorCatalogService connectorCatalog) {
         this.id = id;
         this.configFile = configFile;
         this.outputDir = outputDir;
+        this.warnings = List.copyOf(warnings);
         this.groups = project.path("groups").size();
         int flowCount = 0;
         for (JsonNode group : project.path("groups")) {
@@ -76,6 +79,7 @@ class HeadlessSimulation {
         startedAt = System.currentTimeMillis();
         running = true;
         logger.info("[CLI] Simulation {} started from {} (output: {})", id, configFile, outputDir);
+        warnings.forEach(warning -> logger.warn("[CLI] Simulation {}: {}", id, warning));
     }
 
     /**
@@ -112,6 +116,7 @@ class HeadlessSimulation {
             engine.getTotalMessages(),
             engine.getTotalErrors(),
             connectorErrors,
+            warnings,
             running ? engine.getMessagesPerSecond() : 0,
             running ? engine.getTicksPerSecond() : 0,
             running ? engine.getNetworkUpPerSecond() : 0
