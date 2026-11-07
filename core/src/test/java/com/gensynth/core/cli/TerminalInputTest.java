@@ -4,6 +4,7 @@ import com.gensynth.core.connectors.runtime.ConnectorCatalogService;
 import org.jline.reader.LineReader;
 import org.jline.reader.UserInterruptException;
 import org.jline.terminal.Attributes;
+import org.jline.terminal.Size;
 import org.jline.terminal.Terminal;
 import org.jline.terminal.TerminalBuilder;
 import org.junit.After;
@@ -68,6 +69,8 @@ public class TerminalInputTest {
         terminal = TerminalBuilder.builder()
             .system(false)
             .type("xterm")
+            // A known width: otherwise it depends on the console the tests run in (Windows)
+            .size(new Size(80, 24))
             .streams(new ByteArrayInputStream(keys.getBytes(StandardCharsets.UTF_8)), screen)
             .build();
         return new TerminalInput(terminal, new CliCompleter(manager, workingDir, temp.getRoot().toPath()));
