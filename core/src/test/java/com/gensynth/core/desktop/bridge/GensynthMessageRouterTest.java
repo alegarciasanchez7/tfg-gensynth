@@ -63,4 +63,16 @@ public class GensynthMessageRouterTest {
             Thread.currentThread().interrupt();
         }
     }
+
+    @Test
+    public void commandsAreRoutedByTheirTypeNotByTheirText() {
+        // A folder named after another command must not change what the command is
+        String load = "{\"type\":\"LOAD_STATE\",\"commandId\":\"c1\",\"payload\":{\"filePath\":\"/home/me/SAVE_STATE/a.gsynth\"}}";
+
+        assertEquals("LOAD_STATE", GensynthMessageRouter.parse(load).path("type").asText());
+        assertEquals("/home/me/SAVE_STATE/a.gsynth",
+            GensynthMessageRouter.parse(load).path("payload").path("filePath").asText());
+        assertEquals("", GensynthMessageRouter.parse("{ not json").path("type").asText(""));
+        assertEquals("", GensynthMessageRouter.parse("").path("type").asText(""));
+    }
 }

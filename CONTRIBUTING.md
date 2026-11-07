@@ -16,11 +16,11 @@ the [User Guide](USER_GUIDE.md).
 
 | Folder | Contents |
 |---|---|
-| `core/` | Simulation engine and desktop application (Java 21, Maven). |
+| `core/` | Simulation engine, desktop application and `gensynth` command line (Java 21, Maven). |
 | `simulator-ui/` | User interface (React + TypeScript, Vite, Vitest). |
 | `plugin-api/` | Public API for connector plugins: see the [Plugin Developer Guide](plugin-api/PLUGIN_DEVELOPER_GUIDE.md). |
 | `connectors/rabbitmq/` | RabbitMQ connector, written as a plugin and included in the application (it is on the core's classpath, like File Output). |
-| `packaging/` | Icons, release notes and other resources of the installers. |
+| `packaging/` | Icons, release notes, the command line launcher and other resources of the installers. |
 
 The root `pom.xml` builds the plugin API, the included connectors and the engine. The engine and the interface talk through
 a WebSocket bridge on port **8765**.
@@ -89,6 +89,21 @@ Open two terminals:
 
 The interface talks to the engine on port **8765**, which must be free.
 
+### Command line
+
+The `gensynth` shell (see the [User Guide](USER_GUIDE.md#command-line)) is started from source with
+its own main class. It opens no port, so it can run next to the two modes above:
+
+```bash
+cd core
+java -cp "target/classes:target/dependency/*" com.gensynth.core.cli.CliMain      # Windows: use ; instead of :
+```
+
+Its log goes to `core/logs/cli.log`. The installers ship it as a second jpackage launcher,
+`gensynth-cli` (configured in `packaging/launchers/`); the Linux packages link it as
+`/usr/bin/gensynth` with the scripts in `packaging/linux/`, and the Windows installer adds
+`cli\gensynth.cmd` for the `PATH`.
+
 ## Workflow
 
 - Branches: `feat/*` (or `fix/*`, `docs/*`…) → `dev` (integration) → `main` (releases).
@@ -141,7 +156,7 @@ dry runs: they build the installers as downloadable artifacts of the run and pub
 To build the installer of your own OS locally (it is written to `core/target/installer/dist`):
 
 ```bash
-./mvnw -B -Dinstaller -DskipTests package          # Linux without rpmbuild: add -Dinstaller.skipRpm=true
+./mvnw -B -Dinstaller -DskipTests package          # Linux without rpmbuild: add -Dinstaller.skipRpm=true; without dpkg-deb (Fedora): -Dinstaller.skipDeb=true
 ```
 
 ## Troubleshooting

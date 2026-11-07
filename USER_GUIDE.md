@@ -45,10 +45,11 @@ This guide covers GenSynth **0.5.2**. For a quick overview, see the [README](REA
      [changing the coordinate system](#changing-the-coordinate-system)
 10. [Recipes for typical event patterns](#recipes-for-typical-event-patterns)
 11. [Saving and loading](#saving-and-loading)
-12. [Feedback](#feedback)
-13. [Keyboard shortcuts](#keyboard-shortcuts)
-14. [Limitations](#limitations)
-15. [Troubleshooting](#troubleshooting)
+12. [Command line](#command-line)
+13. [Feedback](#feedback)
+14. [Keyboard shortcuts](#keyboard-shortcuts)
+15. [Limitations](#limitations)
+16. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -1538,11 +1539,137 @@ Clone the whole group to replicate a site with all its devices.
 - Projects are saved as **`.gsynth`** files (**Save** / **Save as**), which contain the groups,
   flows, variables and the tick settings. Open them with **Load**; **New** starts an empty
   project.
+- **Double-click a `.gsynth` file** (or use *Open with → GenSynth*) to open it in GenSynth, ready
+  to edit and save. If GenSynth is already open, the project opens in that window, asking first
+  if there are unsaved changes.
 - A `*` next to the project name (and next to a group, flow or variable) means there are unsaved
   changes; GenSynth asks before closing or opening another project.
 - **Discard** (or `Ctrl + Z`) reverts the selected item to its last saved state.
 - **Auto-save** can be enabled in **Settings → Save & Storage**: it saves the open file every N
   seconds while there are changes.
+
+---
+
+## Command line
+
+The `gensynth` command runs `.gsynth` projects from a terminal, without opening the window. Type
+`gensynth` in any folder to open its shell:
+
+```text
+$ gensynth
+GenSynth 0.6.0 command line. Type 'help' for the list of commands.
+gensynth> see plant.gsynth
+plant.gsynth
++-- Tick: every 250 ms
+`-- Group "Sensors" (parallel, 2 flows)
+    +-- Flow "Temperature" -> File Output 1.0.0, every tick
+    |   +-- temperature (local, numeric, SINUSOIDAL)
+    |   `-- device (global, list, SEQUENTIAL)
+    `-- Flow "Humidity" -> RabbitMQ 1.0.0, every 2 ticks
+        `-- humidity (local, numeric, RANDOM)
+No problems found: it can start.
+gensynth> start plant.gsynth
+[1] Started 'plant.gsynth' (1 groups, 2 flows)
+    Output folder: /home/me/GenSynth/OUTPUT_FILES_2026_11_07_10_30_00_sim1
+gensynth> tick 1 100ms
+[1] Tick set to 100 ms (was 250 ms)
+gensynth> metrics
+1 running | CPU 3.1% | RAM 96 MB | NET 1.2 KB/s | 15 msg/s | 2.4K sent | 0 err  (press any key)
+gensynth> stop 1
+[1] Stopped 'plant.gsynth' after 00:02:41: 2412 messages sent, 0 errors
+gensynth> exit
+Bye.
+```
+
+| Command | What it does |
+|---|---|
+| `start <file.gsynth>` / `start <id>` | Starts every group of the project. Relative paths start at the current folder; `~` is your user folder; quote paths with spaces. With the id of a stopped simulation, starts that file again. |
+| `edit <file.gsynth>` / `edit new` | Opens the project, or a new one, in the GenSynth window to edit it (see below). |
+| `see <file.gsynth>` | Shows what a project contains without running it: the tick, the groups, their flows with the connector (name and version) and the variables each flow sends, as a tree. Below, it lists the problems that would stop it from starting. |
+| `stop <id>` / `stop all` | Stops that simulation, or every running one, and closes its connectors. |
+| `tick <id> [value]` / `tick all [value]` | Without a value, shows the tick of the simulation and the ticks it makes per second. With a value, changes it while it runs, to speed it up or slow it down: `500ms`, `2s`, `1m` (from 1 ms up to 24 hours) or `fast` (as fast as possible). The project file is not changed. |
+| `metrics [id]` / `metrics all` | Shows live figures, refreshed every second: without id, one line with the totals of the running simulations and the CPU and memory of the command line; with an id, that simulation (time, messages per second, sent, errors and tick); with `all`, one line per simulation and the totals below. Press any key to go back to the prompt. |
+| `list` | Shows the simulations of the session with their status, time, messages per second, messages and errors. |
+| `clear` | Clears the screen (also `Ctrl + L`). |
+| `help` | Lists the commands. |
+| `exit` | Stops whatever is still running and closes the shell (also `Ctrl + D`, or `Ctrl + C` on an empty line). |
+
+Press **Tab** to complete what you are typing, as in any terminal:
+
+- `start ` or `see ` + Tab lists the files and folders of the current folder; `start ../` + Tab
+  lists the parent folder and `start documents/` + Tab that folder. Folders end in `/` (`\` on
+  Windows), so the next Tab goes on inside them, and the names with spaces are quoted for you.
+  Hidden files appear once you type the leading dot.
+- On the first word, Tab completes the command (a mistyped one, such as `lsit`, is answered with
+  the closest command); after `stop`, `tick` or `metrics`, it offers the ids with their file
+  names (and `all` where it is accepted); after `start`, also the ids of the stopped simulations;
+  after `tick <id>`, `fast`.
+- The up and down arrows bring back the commands of the session and `Ctrl + C` clears the line
+  you are typing.
+
+**Editing a project from the command line:** `edit plant.gsynth` opens it in the GenSynth window,
+ready to edit; **Save** writes back to the same file. `edit new` opens a new, empty project. If
+the window is already open, the project opens there (asking first if there are unsaved changes);
+otherwise a new window starts. The shell stays available while you edit, and closing it (or
+pressing `Ctrl + C`) does not close the window. After saving, `start <id>` (or `start <file>`)
+runs the changes. On a computer without a graphical display, such as a server reached over SSH,
+`edit` explains that the window cannot open there.
+
+**When a project cannot start**, `start` lists every reason found, one per line, with the group
+(and flow) it belongs to: variables that refer to each other in a cycle (through formulas,
+templates or conditional rules), references to variables that do not exist, invalid variable
+configurations, or `.itemN` used on a list that is not a Fixed Subset. For example:
+
+```text
+gensynth> start plant.gsynth
+Error: 'plant.gsynth' cannot start:
+  - Group "Sensors": Variables refer to each other in a cycle: a -> b -> a (through formulas, templates or conditional rules)
+  - Group "Alarms": Invalid configuration for variable 'threshold': Numeric range is invalid: min must be <= max
+```
+
+Connector problems do not stop the start, as in the window: those flows just do not send, and
+`start` shows a warning for each one (connector not installed, invalid settings, or a failed
+connection such as a broker that is not running, with the name and version of the connector).
+A file that is not valid JSON is reported with the line and column where it breaks.
+
+- Each project file gets an **id** the first time it starts: 1, 2, 3... in start order. It keeps
+  it for the whole session: starting it again after `stop` (with `start <file>` or `start <id>`)
+  reuses its id, as a new run with its time and counters back at zero. Ids start again from 1
+  the next time you open `gensynth`.
+- Several projects can run at once, each with its own output folder
+  (`OUTPUT_FILES_<date>_sim<id>`), which `start` shows. It is created in the output folder chosen
+  in the application (**Settings → Save & Storage → Output folder**), or in the default one when
+  none was chosen or it cannot be written (`start` then shows a warning). The same file cannot run
+  twice at the same time.
+- The command line works in any terminal, including the text console of a server: it prints only
+  plain characters and uses the 8 standard colors, which turn off on terminals without colors.
+  Set the `NO_COLOR` environment variable to turn them off yourself (Tab still works). With the
+  input redirected from a file or a pipe, the shell prints plain text and `metrics` prints its
+  line once.
+- The command line uses the plugins installed from the application, never changes its autosave
+  and opens no network port, so it can run while the window is open.
+- Its log goes to `logs/cli.log` inside the data folder (see
+  [Where GenSynth keeps its files](#where-gensynth-keeps-its-files)). Each session is added at
+  the end of the file and starts with a `command line started` line, so the errors of a past
+  session can still be checked.
+
+### Making `gensynth` available in the terminal
+
+- **Linux (`.deb` / `.rpm`):** nothing to do; the installer adds `/usr/bin/gensynth`.
+- **Windows:** add the `cli` folder of the installation to your `PATH` once, in PowerShell
+  (change the path if you installed GenSynth elsewhere), then open a new terminal:
+
+  ```powershell
+  [Environment]::SetEnvironmentVariable("Path", [Environment]::GetEnvironmentVariable("Path", "User") + ";C:\Program Files\GenSynth\cli", "User")
+  ```
+
+- **macOS:** open GenSynth once from *Applications* (see the first start note above), then link
+  the command in Terminal:
+
+  ```bash
+  sudo mkdir -p /usr/local/bin
+  sudo ln -sf /Applications/GenSynth.app/Contents/MacOS/gensynth-cli /usr/local/bin/gensynth
+  ```
 
 ---
 
@@ -1608,5 +1735,6 @@ more detail. It only takes a couple of minutes, and it helps to improve the tool
 | The JSON received is invalid | Text values need quotes (`"{{name}}"`); numbers with prefix, suffix or padding are text too. |
 | Saving says *You do not have permission to write in …* | The folder is read-only for your user, like the installation folder (`C:\Program Files\GenSynth`). Save the project in a folder of yours, such as *Documents*. Spaces in the path are not a problem. |
 | I cannot find the generated files | The **Logs** show the folder of each session when you click START. By default it is `GenSynth` in your user folder; change it in **Settings → Save & Storage → Output folder**. |
+| The terminal says `gensynth` is not found | On Windows and macOS, follow [Making `gensynth` available in the terminal](#making-gensynth-available-in-the-terminal) and open a new terminal. |
 
 Problems when building from source are covered in [CONTRIBUTING.md](CONTRIBUTING.md#troubleshooting).

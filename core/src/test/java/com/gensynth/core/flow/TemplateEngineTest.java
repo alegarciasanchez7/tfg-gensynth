@@ -58,6 +58,31 @@ public class TemplateEngineTest {
     }
 
     @Test
+    public void findReferencedVariablesListsEachVariableOnceInOrderOfUse() {
+        variables.put("v1", new Variable("v1", "temp", "LOCAL", "numeric", 0, Map.of(), "flow-1", null));
+        variables.put("v2", new Variable("v2", "temp", "GLOBAL", "numeric", 0, Map.of(), null, null));
+        variables.put("v3", new Variable("v3", "site", "GROUP", "list", "", Map.of(), null, "group-1"));
+        variables.put("v4", new Variable("v4", "other", "LOCAL", "numeric", 0, Map.of(), "flow-2", null));
+        String template = "{{uuid}} {{ts}} {{n}} {{flow.name}} {{site.item1.value}} {{temp.round}} "
+            + "{{global.temp}} {{temp}} {{group.site}} {{other}} {{missing}}";
+
+        List<TemplateEngine.VariableReference> references =
+            engine.findReferencedVariables(template, variables, "flow-1", "group-1");
+
+        // Built-ins are not variables; "temp" is the LOCAL one unless the scope says otherwise;
+        // "other" belongs to another flow, so like "missing" it is not reachable
+        assertEquals(List.of("site", "temp", "temp", "other", "missing"),
+            references.stream().map(TemplateEngine.VariableReference::name).toList());
+        assertEquals("v3", references.get(0).variable().getId());
+        assertEquals("v1", references.get(1).variable().getId());
+        assertEquals("v2", references.get(2).variable().getId());
+        assertEquals("global", references.get(2).scope());
+        assertNull(references.get(3).variable());
+        assertNull(references.get(4).variable());
+        assertTrue(engine.findReferencedVariables(null, variables, "flow-1", "group-1").isEmpty());
+    }
+
+    @Test
     public void testScopingEnforcement() {
         Variable groupVar = new Variable("v2", "shared", "GROUP", "numeric", 10.0, Map.of("min", 10.0, "max", 10.0), null, "group-A");
         variables.put("v2", groupVar);

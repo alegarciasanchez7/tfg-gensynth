@@ -20,12 +20,15 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <benchmark.mainClass>com.gensynth.core.flow.variables.config.VariableConfigBenchmark</benchmark.mainClass>
         <jacoco.version>0.8.15</jacoco.version>
+        <jline.version>3.30.17</jline.version>
         <!-- Installers (-Dinstaller): built with jpackage on the OS they target -->
         <installer.dir>${project.build.directory}/installer</installer.dir>
         <installer.input>${installer.dir}/input</installer.input>
         <installer.packaging>${project.basedir}/../packaging</installer.packaging>
         <!-- Skips the .rpm on Linux machines without rpmbuild (-Dinstaller.skipRpm=true) -->
         <installer.skipRpm>false</installer.skipRpm>
+        <!-- Skips the .deb on Linux machines without dpkg-deb, such as Fedora (-Dinstaller.skipDeb=true) -->
+        <installer.skipDeb>false</installer.skipDeb>
         <!-- jpackage rejects macOS versions that start with 0, so the app bundle declares this one
              while GenSynth is 0.x. From 1.0 on, set it back to ${project.version} -->
         <installer.macAppVersion>1.0.0</installer.macAppVersion>
@@ -159,6 +162,19 @@
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-simple</artifactId>
             <version>1.7.36</version>
+        </dependency>
+
+        <!-- Line editing of the command line: Tab completion and history (see TerminalInput) -->
+        <dependency>
+            <groupId>org.jline</groupId>
+            <artifactId>jline-reader</artifactId>
+            <version>${jline.version}</version>
+        </dependency>
+        <!-- Native terminal access (bundles the libraries for Windows, macOS and Linux) -->
+        <dependency>
+            <groupId>org.jline</groupId>
+            <artifactId>jline-terminal-jni</artifactId>
+            <version>${jline.version}</version>
         </dependency>
 
         <!-- Data Faker -->
@@ -406,6 +422,17 @@
                         <javaOptions>
                             <option>-Dgensynth.appdir=$APPDIR</option>
                         </javaOptions>
+                        <!-- Second launcher: the "gensynth" command line (headless shell, see CliMain) -->
+                        <launchers>
+                            <launcher>
+                                <name>gensynth-cli</name>
+                                <file>${installer.packaging}/launchers/gensynth-cli.properties</file>
+                            </launcher>
+                        </launchers>
+                        <!-- Double clicking a .gsynth file opens it in the application -->
+                        <fileAssociations>
+                            <fileAssociation>${installer.packaging}/associations/gsynth.properties</fileAssociation>
+                        </fileAssociations>
                     </configuration>
                 </plugin>
             </plugins>
@@ -434,7 +461,7 @@
           Installers: ./mvnw -B -Dinstaller -DskipTests package (from the root, on the target OS).
           This profile gathers the application files in target/installer/input; the installer-<os>
           profile of the running OS turns them into an installer in target/installer/dist.
-          A future CLI launcher only needs a <launchers> entry in the jpackage configuration.
+          Besides the GenSynth launcher, every installer ships the gensynth-cli launcher (command line).
         -->
         <profile>
             <id>installer</id>
@@ -509,6 +536,10 @@
                                     <winDirChooser>true</winDirChooser>
                                     <!-- Fixed forever: lets a newer version replace the installed one -->
                                     <winUpgradeUuid>5c2b9d1e-7f4a-4c3e-9b8d-2e6f1a0c4d73</winUpgradeUuid>
+                                    <!-- cli\gensynth.cmd: the folder users add to PATH to type "gensynth" -->
+                                    <appContentPaths combine.children="append">
+                                        <appContentPath>${installer.packaging}/windows/cli</appContentPath>
+                                    </appContentPaths>
                                 </configuration>
                             </execution>
                         </executions>
@@ -534,6 +565,8 @@
                             <linuxShortcut>true</linuxShortcut>
                             <linuxMenuGroup>Development</linuxMenuGroup>
                             <linuxAppCategory>devel</linuxAppCategory>
+                            <!-- jpackage templates (postinst, prerm, gensynth.spec) that link /usr/bin/gensynth -->
+                            <resourceDir>${installer.packaging}/linux</resourceDir>
                         </configuration>
                         <executions>
                             <execution>
@@ -542,6 +575,7 @@
                                 <goals><goal>jpackage</goal></goals>
                                 <configuration>
                                     <type>DEB</type>
+                                    <skip>${installer.skipDeb}</skip>
                                 </configuration>
                             </execution>
                             <execution>

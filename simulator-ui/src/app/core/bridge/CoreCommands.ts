@@ -7,7 +7,9 @@ export const CoreCommands = {
   startSystem: () => bridge.send('START_SYSTEM'),
   stopSystem: () => bridge.send('STOP_SYSTEM'),
   getInitialState: () => bridge.send('GET_INITIAL_STATE'),
-  loadState: () => bridge.send<'LOAD_STATE', StateFileResponsePayload>('LOAD_STATE'),
+  /** Opens the file dialog; with a path (desktop mode), loads that file without it. */
+  loadState: (filePath?: string) =>
+    bridge.send<'LOAD_STATE', StateFileResponsePayload>('LOAD_STATE', filePath ? { filePath } : undefined),
   saveState: () => bridge.send<'SAVE_STATE', StateFileResponsePayload>('SAVE_STATE'),
 
   // Groups

@@ -9,13 +9,22 @@ import org.java_websocket.WebSocket;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.gensynth.core.connectors.runtime.ConnectorDescriptor;
+import com.gensynth.core.flow.variables.CyclicDependencyException;
+import com.gensynth.core.flow.variables.InvalidVariableConfigException;
+import com.gensynth.core.model.StartProblem;
 import com.gensynth.core.model.TickSettings;
+import com.gensynth.core.monitoring.ResourceUsage;
+import com.gensynth.plugin.api.ConnectorConfig;
+import com.gensynth.plugin.api.ConnectorConfigException;
 import com.gensynth.core.ws.runtime.ThroughputMeter;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.function.Supplier;
 
 import static com.gensynth.core.ws.BridgeProtocol.COMMAND_ID;
 import static com.gensynth.core.ws.BridgeProtocol.RUNNING;
@@ -53,29 +62,11 @@ public class SystemCommandHandler implements CommandHandler {
      */
     public void handleStartSystem(WebSocket conn, String commandId) {
         UiBridgeWebSocketServer server = ctx.getServer();
-        synchronized (ctx.getStateLock()) {
-            // All or nothing: check every group before starting any, so a group that cannot
-            // start never leaves the ones before it running (and writing files)
-            try {
-                for (GroupRuntime group : ctx.getGroupsById().values()) {
-                    if (!RUNNING.equals(group.status)) {
-                        server.flowCommandHandler.validateGroupForStart(group);
-                    }
-                }
-            } catch (IllegalStateException ex) {
-                FlowCommandHandler.sendStartError(server, conn, commandId, ex);
-                return;
-            }
-
-            ctx.setSystemRunning(true);
-            ctx.setSystemStartedAt(System.currentTimeMillis());
-            ctx.startOutputSession();
-
-            for (GroupRuntime group : ctx.getGroupsById().values()) {
-                if (!RUNNING.equals(group.status)) {
-                    server.flowCommandHandler.startGroupInternal(group);
-                }
-            }
+        try {
+            startSystemInternal(ctx::startOutputSession);
+        } catch (IllegalStateException ex) {
+            FlowCommandHandler.sendStartError(server, conn, commandId, ex);
+            return;
         }
         server.sendAck(conn, commandId, "system_started");
         broadcastSystemStatus();
@@ -92,17 +83,140 @@ public class SystemCommandHandler implements CommandHandler {
      */
     public void handleStopSystem(WebSocket conn, String commandId) {
         UiBridgeWebSocketServer server = ctx.getServer();
+        stopSystemInternal();
+        server.sendAck(conn, commandId, "system_stopped");
+        broadcastGroupsUpdate();
+        broadcastSystemStatus();
+        broadcastFlowsMetrics();
+        server.sendLog(conn, "info", "SYSTEM", "System stopped");
+    }
+
+    /**
+     * Starts the tick clock and every group that is not running. Shared by START_SYSTEM and the
+     * headless command line.
+     * <p>
+     * All or nothing: every group is checked before any starts, so a group that cannot start
+     * never leaves the ones before it running (and writing files).
+     *
+     * @param outputSession opens the session output folder and returns its path; called only
+     *                      once every group is valid (the connectors that write files create it)
+     * @throws IllegalStateException if a group cannot start (cyclic or broken variable
+     *                               references, invalid configuration); nothing is started then
+     */
+    public void startSystemInternal(Supplier<String> outputSession) {
+        UiBridgeWebSocketServer server = ctx.getServer();
+        synchronized (ctx.getStateLock()) {
+            for (GroupRuntime group : ctx.getGroupsById().values()) {
+                if (!RUNNING.equals(group.status)) {
+                    server.flowCommandHandler.validateGroupForStart(group);
+                }
+            }
+
+            ctx.setSystemRunning(true);
+            ctx.setSystemStartedAt(System.currentTimeMillis());
+            ctx.setCurrentOutputDir(outputSession.get());
+
+            for (GroupRuntime group : ctx.getGroupsById().values()) {
+                if (!RUNNING.equals(group.status)) {
+                    server.flowCommandHandler.startGroupInternal(group);
+                }
+            }
+        }
+    }
+
+    /**
+     * Finds what would stop the loaded project from starting, or would leave a flow without
+     * sending, without starting anything or opening any connection: the checks of
+     * {@link FlowCommandHandler#validateGroupForStart} on every group, plus whether the connector
+     * of every enabled flow is installed and its settings are valid. Used by the command line
+     * to explain a failed start and to describe a project before running it.
+     * <p>
+     * The variable checks stop at the first problem of each group. A problem repeated in
+     * several groups (a global variable) is reported once, with no group.
+     *
+     * @return the problems found, empty when the project can start
+     */
+    public List<StartProblem> checkProject() {
+        UiBridgeWebSocketServer server = ctx.getServer();
+        List<StartProblem> problems = new ArrayList<>();
+        synchronized (ctx.getStateLock()) {
+            for (GroupRuntime group : ctx.getGroupsById().values()) {
+                try {
+                    server.flowCommandHandler.validateGroupForStart(group);
+                } catch (RuntimeException e) {
+                    addOnce(problems, toProblem(group.name, e));
+                }
+                for (FlowRuntime flow : group.flows) {
+                    if (flow.enabled) {
+                        checkConnector(group, flow).ifPresent(problems::add);
+                    }
+                }
+            }
+        }
+        return problems;
+    }
+
+    private Optional<StartProblem> checkConnector(GroupRuntime group, FlowRuntime flow) {
+        Optional<ConnectorDescriptor> descriptor = ctx.getConnectorCatalogService().findLatestConnector(flow.technology);
+        if (descriptor.isEmpty()) {
+            return Optional.of(new StartProblem(StartProblem.Kind.CONNECTOR_NOT_INSTALLED, group.name, flow.name,
+                "Connector '" + flow.technology + "' is not installed", null));
+        }
+        try {
+            ConnectorConfig.resolve(descriptor.get().fieldDefinitions(), flow.connectorConfig);
+            return Optional.empty();
+        } catch (ConnectorConfigException e) {
+            return Optional.of(new StartProblem(StartProblem.Kind.INVALID_CONNECTOR_CONFIG, group.name, flow.name,
+                "Invalid " + descriptor.get().getDisplayName() + " settings: " + String.join("; ", e.getErrors()), null));
+        }
+    }
+
+    /**
+     * Turns a failure of {@link FlowCommandHandler#validateGroupForStart} into a problem.
+     */
+    private static StartProblem toProblem(String group, RuntimeException e) {
+        Throwable cause = e.getCause();
+        if (cause instanceof CyclicDependencyException cycle) {
+            return new StartProblem(StartProblem.Kind.CYCLE, group, null,
+                "Variables refer to each other in a cycle: " + String.join(" -> ", cycle.getCycle())
+                    + " (through formulas, templates or conditional rules)", cycle.getCycle());
+        }
+        if (cause instanceof InvalidVariableConfigException) {
+            return new StartProblem(StartProblem.Kind.INVALID_VARIABLE, group, null, e.getMessage(), null);
+        }
+        if (e instanceof IllegalStateException && cause instanceof IllegalArgumentException reference) {
+            return new StartProblem(StartProblem.Kind.BROKEN_REFERENCE, group, null, reference.getMessage(), null);
+        }
+        String message = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+        StartProblem.Kind kind = message.startsWith("Invalid item reference")
+            ? StartProblem.Kind.INVALID_ITEM_REFERENCE : StartProblem.Kind.OTHER;
+        return new StartProblem(kind, group, null, message, null);
+    }
+
+    /** Adds the problem, or, when another group already has it, reports it once without group. */
+    private static void addOnce(List<StartProblem> problems, StartProblem problem) {
+        for (int i = 0; i < problems.size(); i++) {
+            StartProblem seen = problems.get(i);
+            if (seen.kind() == problem.kind() && seen.message().equals(problem.message())) {
+                problems.set(i, new StartProblem(seen.kind(), null, null, seen.message(), seen.cycle()));
+                return;
+            }
+        }
+        problems.add(problem);
+    }
+
+    /**
+     * Stops every group (closing their connectors) and the tick clock. Shared by STOP_SYSTEM
+     * and the headless command line.
+     */
+    public void stopSystemInternal() {
+        UiBridgeWebSocketServer server = ctx.getServer();
         synchronized (ctx.getStateLock()) {
             for (GroupRuntime group : ctx.getGroupsById().values()) {
                 server.flowCommandHandler.stopGroupInternal(group);
             }
             ctx.setSystemRunning(false);
         }
-        server.sendAck(conn, commandId, "system_stopped");
-        broadcastGroupsUpdate();
-        broadcastSystemStatus();
-        broadcastFlowsMetrics();
-        server.sendLog(conn, "info", "SYSTEM", "System stopped");
     }
 
     /**
@@ -377,28 +491,12 @@ public class SystemCommandHandler implements CommandHandler {
             payload.put(COMMAND_ID, commandId);
         }
 
-        Runtime runtime = Runtime.getRuntime();
-        long usedMemory = runtime.totalMemory() - runtime.freeMemory();
-
-        double cpuLoad = 0.0;
-        try {
-            java.lang.management.OperatingSystemMXBean osBean = java.lang.management.ManagementFactory.getOperatingSystemMXBean();
-            if (osBean instanceof com.sun.management.OperatingSystemMXBean) {
-                com.sun.management.OperatingSystemMXBean sunOsBean = (com.sun.management.OperatingSystemMXBean) osBean;
-                cpuLoad = sunOsBean.getProcessCpuLoad();
-                if (cpuLoad < 0.0) {
-                    cpuLoad = 0.0;
-                }
-            }
-        } catch (Exception ignored) {
-            // Fallback to 0 if not available
-        }
-
-        payload.put("cpu", cpuLoad * 100.0);
-        payload.put("memory", bytesToMb(usedMemory));
-        payload.put("heap", bytesToMb(runtime.totalMemory()));
-        payload.put("maxHeap", bytesToMb(runtime.maxMemory()));
-        payload.put("threads", Thread.activeCount());
+        ResourceUsage usage = ResourceUsage.sample();
+        payload.put("cpu", usage.cpuPercent());
+        payload.put("memory", usage.usedMemoryMb());
+        payload.put("heap", usage.heapMb());
+        payload.put("maxHeap", usage.maxHeapMb());
+        payload.put("threads", usage.threads());
         payload.put("messagesPerSecond", ctx.getMessagesPerSecond());
         payload.put("totalMessages", ctx.getTotalMessages().get());
         payload.put("networkUp", ctx.getNetworkUpPerSecond());
@@ -412,7 +510,4 @@ public class SystemCommandHandler implements CommandHandler {
         return payload;
     }
 
-    private int bytesToMb(long bytes) {
-        return (int) Math.max(1L, bytes / (1024 * 1024));
-    }
 }

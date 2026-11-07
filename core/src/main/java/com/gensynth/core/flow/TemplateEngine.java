@@ -5,7 +5,10 @@ import com.gensynth.core.flow.variables.config.TemporalVariableConfig;
 import com.gensynth.core.model.Variable;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -497,6 +500,65 @@ public class TemplateEngine {
         }
 
         return targetObj != null ? targetObj.toString() : "";
+    }
+
+    /**
+     * A variable used by a template.
+     *
+     * @param name     name (or id) written in the placeholder
+     * @param scope    scope written in the placeholder ({@code local}, {@code group} or
+     *                 {@code global}), or null when none was written
+     * @param variable the variable the flow reaches with it, or null when there is none (the
+     *                 placeholder is then sent unchanged)
+     */
+    public record VariableReference(String name, String scope, Variable variable) {
+    }
+
+    /**
+     * Lists the variables a template uses, in order of first use and without repetitions, as
+     * {@link #evaluate} resolves them: {@code {{scope.name...}}} only in that scope,
+     * {@code {{name...}}} in the closest scope (LOCAL, then GROUP, then GLOBAL). Item and property
+     * access ({@code .item1}, {@code .round}) count as a use of the variable; the built-ins
+     * ({@code uuid}, {@code ts}, {@code n}, {@code flow.name}) are not variables. Nothing is
+     * generated.
+     *
+     * @param template  the flow template
+     * @param variables all variables, by id
+     * @param flowId    the flow of the template
+     * @param groupId   the group of that flow
+     * @return the references found
+     */
+    public List<VariableReference> findReferencedVariables(String template, Map<String, Variable> variables,
+                                                           String flowId, String groupId) {
+        List<VariableReference> references = new ArrayList<>();
+        if (template == null || template.isEmpty()) {
+            return references;
+        }
+        Set<String> seen = new HashSet<>();
+        Matcher matcher = VARIABLE_PATTERN.matcher(template);
+        while (matcher.find()) {
+            String spec = matcher.group(1).trim();
+            if (spec.isEmpty() || spec.equals("uuid") || spec.equals("ts") || spec.equals("n")
+                || spec.equals(FLOW_NAME_PLACEHOLDER)) {
+                continue;
+            }
+            String[] parts = spec.split("\\.");
+            String scope = null;
+            String name = parts[0].trim();
+            if (Set.of("local", "group", "global").contains(name.toLowerCase(Locale.ROOT))) {
+                if (parts.length < 2 || parts[1].isBlank()) {
+                    continue;
+                }
+                scope = name.toLowerCase(Locale.ROOT);
+                name = parts[1].trim();
+            }
+            Variable variable = findAccessibleVariable(variables, name, scope, flowId, groupId);
+            String key = variable != null ? "id:" + variable.getId() : "name:" + scope + "." + name;
+            if (seen.add(key)) {
+                references.add(new VariableReference(name, scope, variable));
+            }
+        }
+        return references;
     }
 
     /**

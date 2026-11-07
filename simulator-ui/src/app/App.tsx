@@ -21,12 +21,15 @@ import { UpdateAvailableDialog } from './components/dialogs/UpdateAvailableDialo
 import { UpdateProgressDialog } from './components/dialogs/UpdateProgressDialog';
 import { useUpdateCheck } from './context/hooks/useUpdateCheck';
 import { openExternalUrl } from './core/jcef';
+import { bridge } from './core/bridge';
 
 /** Project switch waiting for the user to confirm closing the current configuration. */
 interface PendingProjectAction {
   reason: CloseConfigurationReason;
   /** File already picked for 'load' (browser mode). Desktop mode picks it after confirming. */
   file?: PickedProjectFile | null;
+  /** Desktop mode: file to load without the dialog (sent by the command line or a double click). */
+  filePath?: string;
 }
 
 export default function App() {
@@ -114,9 +117,26 @@ export default function App() {
     if (action.reason === 'new') {
       await actions.newProjectState();
     } else {
-      await actions.loadProjectState(action.file);
+      await actions.loadProjectState(action.file, action.filePath);
     }
   };
+
+  // A project sent from outside (`edit` in the command line, a double click on a .gsynth) goes
+  // through the same steps as Load and New, asking first when there are unsaved changes
+  const isDirtyRef = useRef(isDirty);
+  useEffect(() => {
+    isDirtyRef.current = isDirty;
+  }, [isDirty]);
+  const loadProjectState = actions.loadProjectState;
+  useEffect(() => bridge.on('open-project-requested', ({ filePath }) => {
+    if (!filePath) {
+      setPendingAction({ reason: 'new' });
+    } else if (isDirtyRef.current) {
+      setPendingAction({ reason: 'load', filePath });
+    } else {
+      void loadProjectState(undefined, filePath);
+    }
+  }), [loadProjectState]);
 
   // Usar templates del estado directamente
   const mergedTemplates = formatTemplates;

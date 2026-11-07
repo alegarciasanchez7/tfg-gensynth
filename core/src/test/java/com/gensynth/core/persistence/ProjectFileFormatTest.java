@@ -114,8 +114,11 @@ public class ProjectFileFormatTest {
         assertThrows(IllegalArgumentException.class, () -> ProjectFileFormat.read(jsonFile, mapper));
 
         Path brokenFile = dir.resolve("broken.gsynth");
-        Files.writeString(brokenFile, "{ not json");
-        assertThrows(IllegalArgumentException.class, () -> ProjectFileFormat.read(brokenFile, mapper));
+        Files.writeString(brokenFile, "{\n  \"format\": \"gensynth-project\",\n  not json\n}");
+        IllegalArgumentException invalid = assertThrows(IllegalArgumentException.class,
+            () -> ProjectFileFormat.read(brokenFile, mapper));
+        // Says where the JSON breaks
+        assertTrue(invalid.getMessage(), invalid.getMessage().contains("invalid JSON content at line 3, column"));
 
         Path foreignFile = dir.resolve("foreign.gsynth");
         Files.writeString(foreignFile, "{\"groups\":[],\"variables\":[]}");

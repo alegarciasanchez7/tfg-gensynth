@@ -13,6 +13,8 @@ import com.gensynth.core.connectors.plugin.PluginInstallerImpl;
 import com.gensynth.core.connectors.runtime.ConnectorCatalogService;
 import com.gensynth.plugin.api.ConnectorSession;
 import com.gensynth.core.model.Variable;
+import com.gensynth.core.model.StartProblem;
+import com.gensynth.core.model.TickSettings;
 import com.gensynth.core.flow.TemplateEngine;
 import com.gensynth.core.persistence.JsonStateRepositoryImpl;
 import com.gensynth.core.persistence.StateRepository;
@@ -40,6 +42,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -96,7 +99,8 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         "UPDATE_OUTPUT_FOLDER",
         "CHECK_FOR_UPDATES",
         "INSTALL_UPDATE",
-        "CANCEL_UPDATE"
+        "CANCEL_UPDATE",
+        "REQUEST_OPEN_PROJECT"
     );
 
     private final ObjectMapper objectMapper = createConfiguredMapper();
@@ -143,7 +147,14 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
 
     final TemplateEngine templateEngine = new TemplateEngine();
     String currentOutputDir = null;
-    WebSocket desktopSocket = null;
+    /** Volatile: set on the browser thread, read when a project arrives from outside (WebSocket, macOS). */
+    volatile WebSocket desktopSocket = null;
+    /** Project file the desktop window opens once its UI connects (from --open or a double click). */
+    private final AtomicReference<String> pendingOpenProject = new AtomicReference<>();
+    /** Makes "keep the file until the UI connects" and "the UI connected" happen one after the other. */
+    private final Object openProjectLock = new Object();
+    /** Brings the desktop window to the front; null when there is no window (browser mode, CLI). */
+    private volatile Runnable windowActivator;
     final BridgeContext bridgeContext = new BridgeContext(this);
     public final FlowCommandHandler flowCommandHandler = new FlowCommandHandler(bridgeContext);
     public final GroupCommandHandler groupCommandHandler = new GroupCommandHandler(bridgeContext, flowCommandHandler);
@@ -159,6 +170,87 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
     
     public WebSocket getDesktopSocket() {
         return desktopSocket;
+    }
+
+    /**
+     * Marks this engine as the one of a desktop window and sets how to bring that window to the
+     * front, so projects can be opened in it (see {@link #requestOpenProject}).
+     *
+     * @param windowActivator brings the window to the front
+     */
+    public void setWindowActivator(Runnable windowActivator) {
+        this.windowActivator = windowActivator;
+    }
+
+    /**
+     * @return whether a desktop window belongs to this engine (its UI may not have connected yet)
+     */
+    public boolean hasWindow() {
+        return windowActivator != null;
+    }
+
+    /**
+     * Sets the project file the desktop window opens once its UI connects.
+     *
+     * @param filePath absolute path of the {@code .gsynth} file
+     */
+    public void setPendingOpenProject(String filePath) {
+        pendingOpenProject.set(filePath);
+    }
+
+    /**
+     * @return the project file waiting for the desktop UI, now taken (null if none)
+     */
+    public String takePendingOpenProject() {
+        return pendingOpenProject.getAndSet(null);
+    }
+
+    /**
+     * Asks the desktop window to open a project file, or a new project: the window comes to the
+     * front and its UI goes through the same steps as Load or New, asking first when there are
+     * unsaved changes. If its UI has not connected yet, the file waits until it does.
+     *
+     * @param filePath absolute path of the {@code .gsynth} file, or null for a new project
+     */
+    public void requestOpenProject(String filePath) {
+        Runnable activator = windowActivator;
+        if (activator != null) {
+            activator.run();
+        }
+        synchronized (openProjectLock) {
+            WebSocket desktop = desktopSocket;
+            if (desktop == null) {
+                // A new window starts with an empty project: only a file has to wait
+                if (filePath != null) {
+                    pendingOpenProject.set(filePath);
+                }
+                return;
+            }
+            sendOpenProjectRequested(desktop, filePath);
+        }
+    }
+
+    /**
+     * Sends the desktop UI the project that was waiting for it (see {@link #requestOpenProject}).
+     * Called once the UI has its initial state.
+     *
+     * @param desktop the desktop UI connection
+     */
+    public void deliverPendingOpenProject(WebSocket desktop) {
+        synchronized (openProjectLock) {
+            String pending = pendingOpenProject.getAndSet(null);
+            if (pending != null) {
+                sendOpenProjectRequested(desktop, pending);
+            }
+        }
+    }
+
+    private void sendOpenProjectRequested(WebSocket desktop, String filePath) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        if (filePath != null) {
+            payload.put("filePath", filePath);
+        }
+        sendMessage(desktop, "OPEN_PROJECT_REQUESTED", null, payload);
     }
 
     public UiBridgeWebSocketServer(String host, int port) {
@@ -249,9 +341,103 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
 
     @Override
     public void onStart() {
+        startBackgroundTasks();
+        setConnectionLostTimeout(30);
+    }
+
+    /**
+     * Schedules the periodic metrics tick (throughput rates) and groups heartbeat. Called once
+     * when the network server starts, or directly by a headless engine that never opens a port.
+     */
+    public void startBackgroundTasks() {
         scheduler.scheduleAtFixedRate(systemCommandHandler::emitMetricsTick, 1, 1, TimeUnit.SECONDS);
         scheduler.scheduleAtFixedRate(systemCommandHandler::emitGroupsHeartbeat, 1, 2, TimeUnit.SECONDS);
-        setConnectionLostTimeout(30);
+    }
+
+    /**
+     * Creates an engine for the headless command line: it is never started as a network server
+     * (no port is opened), so several engines can run side by side in one process and next to
+     * the desktop application.
+     *
+     * @param connectorCatalogService the connector catalog, shared by every headless engine
+     * @param stateRepository         where imported state is persisted (a no-op repository keeps
+     *                                the desktop autosave untouched)
+     * @return a new engine; call {@link #startBackgroundTasks()} once to enable the rate metrics
+     */
+    public static UiBridgeWebSocketServer createHeadless(ConnectorCatalogService connectorCatalogService,
+                                                         StateRepository stateRepository) {
+        return new UiBridgeWebSocketServer(
+            new InetSocketAddress("localhost", 0),
+            connectorCatalogService,
+            stateRepository,
+            new PluginInstallerImpl(AppPaths.current().pluginsDir(), AppPaths.current().sharedLibsDir()));
+    }
+
+    /**
+     * @return the number of messages sent since the engine was created
+     */
+    public long getTotalMessages() {
+        return totalMessages.get();
+    }
+
+    /**
+     * @return the number of errors (failed sends, connector errors...) since the engine was created
+     */
+    public long getTotalErrors() {
+        return totalErrors.get();
+    }
+
+    /**
+     * @return messages sent during the last second (updated by the background tasks)
+     */
+    public double getMessagesPerSecond() {
+        return bridgeContext.getMessagesPerSecond();
+    }
+
+    /**
+     * @return ticks of the clock during the last second (updated by the background tasks)
+     */
+    public double getTicksPerSecond() {
+        return bridgeContext.getTicksPerSecond();
+    }
+
+    /**
+     * @return the tick settings of the clock now in use
+     */
+    public TickSettings getTickSettings() {
+        return bridgeContext.getProjectSettings().getTick();
+    }
+
+    /**
+     * @return bytes sent during the last second (updated by the background tasks)
+     */
+    public double getNetworkUpPerSecond() {
+        return bridgeContext.getNetworkUpPerSecond();
+    }
+
+    /**
+     * Lists the flows whose connector failed to start, naming the connector and its version
+     * when it is installed.
+     *
+     * @return one {@link StartProblem.Kind#CONNECTOR_FAILED} problem per flow in error, empty when
+     *         every connector is up
+     */
+    public List<StartProblem> getConnectorErrors() {
+        synchronized (stateLock) {
+            List<StartProblem> errors = new ArrayList<>();
+            for (GroupRuntime group : groupsById.values()) {
+                for (FlowRuntime flow : group.flows) {
+                    if (flow.hasError) {
+                        String connector = connectorCatalogService.findLatestConnector(flow.technology)
+                            .map(d -> d.getDisplayName() + " " + d.getPluginVersion() + ": ")
+                            .orElse("");
+                        errors.add(new StartProblem(StartProblem.Kind.CONNECTOR_FAILED, group.name, flow.name,
+                            connector + flow.errorMessage, null));
+                    }
+                }
+            }
+            return errors;
+        }
     }
 
     public void shutdown() {
@@ -344,6 +530,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             switch (type) {
                 case "GET_INITIAL_STATE" -> stateCommandHandler.handleGetInitialState(conn, commandId);
                 case "LOAD_STATE" -> stateCommandHandler.handleLoadState(conn, commandId);
+                case "REQUEST_OPEN_PROJECT" -> stateCommandHandler.handleRequestOpenProject(conn, commandId, payload);
                 case "SAVE_STATE" -> stateCommandHandler.handleSaveState(conn, commandId);
                 case "SUBSCRIBE_METRICS" -> systemCommandHandler.handleSubscribeMetrics(conn, commandId);
                 case "UNSUBSCRIBE_METRICS" -> systemCommandHandler.handleUnsubscribeMetrics(conn, commandId);

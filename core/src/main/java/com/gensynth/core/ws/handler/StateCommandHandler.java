@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gensynth.core.model.GroupDefinition;
 import com.gensynth.core.model.ProjectSettings;
 import com.gensynth.core.model.Variable;
+import com.gensynth.core.persistence.ProjectFileFormat;
 import com.gensynth.core.util.UniqueNames;
 import com.gensynth.core.ws.BridgeContext;
 import com.gensynth.core.ws.UiBridgeWebSocketServer;
@@ -59,6 +60,47 @@ public class StateCommandHandler implements CommandHandler {
         UiBridgeWebSocketServer server = ctx.getServer();
         server.sendMessage(conn, "INITIAL_STATE", commandId, buildInitialStatePayload(commandId));
         server.systemCommandHandler.sendFlowsMetrics(conn);
+        // A window opened with a project (--open, double click) loads it once its UI is ready
+        if (conn != null && conn == server.getDesktopSocket()) {
+            server.deliverPendingOpenProject(conn);
+        }
+    }
+
+    /**
+     * Handles the REQUEST_OPEN_PROJECT command, sent by the command line ({@code edit}) or by a
+     * second launch of the application (double click on a project file): the desktop window
+     * opens the project, or a new one, through the same steps as Load or New.
+     *
+     * @param conn      the connection that asked
+     * @param commandId the command identifier
+     * @param payload   {@code { "filePath": "<absolute path>" }}; without it, a new project
+     */
+    public void handleRequestOpenProject(WebSocket conn, String commandId, JsonNode payload) {
+        UiBridgeWebSocketServer server = ctx.getServer();
+        String filePath = payload == null ? null : payload.path(FILE_PATH).asText(null);
+        if (filePath != null && filePath.isBlank()) {
+            filePath = null;
+        }
+        if (filePath != null) {
+            try {
+                // Checked here so the one asking learns at once that the file cannot be opened
+                ProjectFileFormat.read(Path.of(filePath), ctx.getObjectMapper());
+            } catch (IllegalArgumentException e) {
+                server.sendError(conn, commandId, "INVALID_PROJECT_FILE", e.getMessage(), Map.of(FILE_PATH, filePath));
+                return;
+            } catch (java.io.IOException e) {
+                server.sendError(conn, commandId, "LOAD_FAILED", "Cannot read " + filePath + ": " + e.getMessage(),
+                    Map.of(FILE_PATH, filePath));
+                return;
+            }
+        }
+        if (!server.hasWindow()) {
+            server.sendError(conn, commandId, "NO_DESKTOP_WINDOW",
+                "GenSynth is running without its window (browser mode): open the project from the browser", Map.of());
+            return;
+        }
+        server.requestOpenProject(filePath);
+        server.sendAck(conn, commandId, "open_project_requested");
     }
 
     /**
@@ -103,58 +145,8 @@ public class StateCommandHandler implements CommandHandler {
             return;
         }
 
-        ObjectMapper objectMapper = ctx.getObjectMapper();
         try {
-            List<GroupDefinition> newGroups = new ArrayList<>();
-            JsonNode groupsNode = payload.path(GROUPS);
-            if (groupsNode.isArray()) {
-                for (JsonNode groupNode : groupsNode) {
-                    @SuppressWarnings("unchecked")
-                    Map<String, Object> groupMap = objectMapper.convertValue(groupNode, Map.class);
-                    newGroups.add(GroupDefinition.fromPayload(groupMap));
-                }
-            }
-
-            List<Variable> newVariables = new ArrayList<>();
-            JsonNode variablesNode = payload.path("variables");
-            if (variablesNode.isArray()) {
-                for (JsonNode varNode : variablesNode) {
-                    @SuppressWarnings("unchecked")
-                    Map<String, Object> varMap = objectMapper.convertValue(varNode, Map.class);
-                    Variable variable = Variable.fromPayload(varMap);
-                    if (variable.getScope().equals("LOCAL")) {
-                        logger.info("Importing LOCAL variable '{}' for flow '{}'", variable.getName(), variable.getFlowId());
-                    }
-                    newVariables.add(variable);
-                }
-            }
-
-            ProjectSettings settings = ProjectSettings.fromPayload(
-                payload.has(SETTINGS) ? objectMapper.convertValue(payload.get(SETTINGS), Map.class) : null
-            );
-
-            synchronized (ctx.getStateLock()) {
-                // Stop everything before clearing
-                for (GroupRuntime group : ctx.getGroupsById().values()) {
-                    server.flowCommandHandler.stopGroupInternal(group);
-                }
-
-                ctx.getGroupsById().clear();
-                ctx.getVariablesById().clear();
-                ctx.getConnectorByFlowId().clear();
-
-                for (GroupDefinition def : newGroups) {
-                    ctx.getGroupsById().put(def.getGroupId(), GroupRuntime.fromDefinition(def));
-                }
-                for (Variable var : newVariables) {
-                    ctx.getVariablesById().put(var.getId(), var);
-                }
-                logDuplicateNames(ctx.getGroupsById().values());
-
-                ctx.setSystemRunning(false);
-                ctx.applyProjectSettings(settings);
-                persistState();
-            }
+            int importedGroups = importProject(payload, true);
 
             // Echo the source file path (set by the desktop LOAD_STATE dialog) so the UI can track the open file
             String sourceFilePath = payload.path("sourceFilePath").asText(null);
@@ -163,7 +155,7 @@ public class StateCommandHandler implements CommandHandler {
             } else {
                 server.sendAck(conn, commandId, "state_imported");
             }
-            server.logToBackend("info", SOURCE_SYSTEM, "State imported from UI (" + newGroups.size() + " groups)", commandId);
+            server.logToBackend("info", SOURCE_SYSTEM, "State imported from UI (" + importedGroups + " groups)", commandId);
             server.broadcastGroupsUpdate();
             server.broadcastSystemStatus();
             server.sendVariablesUpdate();
@@ -174,6 +166,78 @@ public class StateCommandHandler implements CommandHandler {
             logger.error("Failed to import state", e);
             server.sendError(conn, commandId, "INTERNAL_ERROR", "Failed to parse imported state: " + e.getMessage(), Map.of());
         }
+    }
+
+    /**
+     * Replaces the runtime state with a complete project: stops every running group, then loads
+     * the groups, variables and settings of the payload. Used by IMPORT_STATE and by the
+     * headless command line, which does not persist the imported project.
+     *
+     * @param payload the project state ({@code groups}, {@code variables} and optional {@code settings})
+     * @param persist true to save the imported state to the state repository (autosave)
+     * @return the number of imported groups
+     * @throws IllegalArgumentException if the payload has no {@code groups} or cannot be parsed
+     */
+    public int importProject(JsonNode payload, boolean persist) {
+        if (payload == null || !payload.has(GROUPS)) {
+            throw new IllegalArgumentException("The project requires a 'groups' array");
+        }
+        UiBridgeWebSocketServer server = ctx.getServer();
+        ObjectMapper objectMapper = ctx.getObjectMapper();
+
+        List<GroupDefinition> newGroups = new ArrayList<>();
+        JsonNode groupsNode = payload.path(GROUPS);
+        if (groupsNode.isArray()) {
+            for (JsonNode groupNode : groupsNode) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> groupMap = objectMapper.convertValue(groupNode, Map.class);
+                newGroups.add(GroupDefinition.fromPayload(groupMap));
+            }
+        }
+
+        List<Variable> newVariables = new ArrayList<>();
+        JsonNode variablesNode = payload.path("variables");
+        if (variablesNode.isArray()) {
+            for (JsonNode varNode : variablesNode) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> varMap = objectMapper.convertValue(varNode, Map.class);
+                Variable variable = Variable.fromPayload(varMap);
+                if (variable.getScope().equals("LOCAL")) {
+                    logger.info("Importing LOCAL variable '{}' for flow '{}'", variable.getName(), variable.getFlowId());
+                }
+                newVariables.add(variable);
+            }
+        }
+
+        ProjectSettings settings = ProjectSettings.fromPayload(
+            payload.has(SETTINGS) ? objectMapper.convertValue(payload.get(SETTINGS), Map.class) : null
+        );
+
+        synchronized (ctx.getStateLock()) {
+            // Stop everything before clearing
+            for (GroupRuntime group : ctx.getGroupsById().values()) {
+                server.flowCommandHandler.stopGroupInternal(group);
+            }
+
+            ctx.getGroupsById().clear();
+            ctx.getVariablesById().clear();
+            ctx.getConnectorByFlowId().clear();
+
+            for (GroupDefinition def : newGroups) {
+                ctx.getGroupsById().put(def.getGroupId(), GroupRuntime.fromDefinition(def));
+            }
+            for (Variable var : newVariables) {
+                ctx.getVariablesById().put(var.getId(), var);
+            }
+            logDuplicateNames(ctx.getGroupsById().values());
+
+            ctx.setSystemRunning(false);
+            ctx.applyProjectSettings(settings);
+            if (persist) {
+                persistState();
+            }
+        }
+        return newGroups.size();
     }
 
     /**
