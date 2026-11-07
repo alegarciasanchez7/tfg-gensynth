@@ -61,26 +61,24 @@ public class GensynthMessageRouter extends CefMessageRouterHandlerAdapter {
 
             // Intercept SAVE_STATE to show a file dialog in desktop mode
             if ("SAVE_STATE".equals(type)) {
-                runFileDialog(request, callback, () -> {
+                String commandId = commandId(command);
+                runFileDialog(commandId, callback, () -> {
                     java.util.Optional<java.io.File> selected = DesktopFileChooser.saveFile(parentFrame,
                             "Save Gen-Synth Configuration", PROJECT_FILE_FILTER, new java.io.File(DEFAULT_PROJECT_FILE_NAME));
 
                     if (selected.isPresent()) {
                         String path = ProjectFileFormat.ensureExtension(selected.get().getAbsolutePath());
 
-                        // Extract original commandId if present to keep UI synchronized
-                        String originalCommandId = extractCommandId(request);
 
                         // Construct the EXPORT_STATE command with mandatory protocolVersion and payload
                         // object
                         String exportCommand = String.format(
                                 "{\"type\":\"EXPORT_STATE\",\"commandId\":\"%s\",\"protocolVersion\":\"1.0.0\",\"payload\":{\"filePath\":\"%s\"}}",
-                                originalCommandId, path.replace("\\", "\\\\"));
+                                commandId, path.replace("\\", "\\\\"));
 
                         server.handleDesktopCommand(exportCommand, callback, browser);
                     } else {
                         // Notify the UI that the operation was cancelled using a proper CoreMessage
-                        String commandId = extractCommandId(request);
                         String cancelResponse = String.format(
                                 "{\"type\":\"SAVE_STATE\",\"commandId\":\"%s\",\"protocolVersion\":\"1.0.0\",\"payload\":{\"status\":\"cancelled\"}}",
                                 commandId);
@@ -98,8 +96,8 @@ public class GensynthMessageRouter extends CefMessageRouterHandlerAdapter {
 
             // Intercept PICK_DIRECTORY to show a folder picker
             if ("PICK_DIRECTORY".equals(type)) {
-                String commandId = extractCommandId(request);
-                runFileDialog(request, callback, () -> {
+                String commandId = commandId(command);
+                runFileDialog(commandId, callback, () -> {
                     java.util.Optional<java.io.File> selected =
                             DesktopFileChooser.chooseDirectory(parentFrame, "Select Output Directory");
 
@@ -133,14 +131,14 @@ public class GensynthMessageRouter extends CefMessageRouterHandlerAdapter {
             // Intercept LOAD_STATE to show a file dialog in desktop mode; with a file path (a project
             // sent by the command line or opened with a double click) that file is loaded directly
             if ("LOAD_STATE".equals(type)) {
-                String commandId = extractCommandId(request);
+                String commandId = commandId(command);
                 String filePath = command.path("payload").path("filePath").asText("");
                 if (!filePath.isBlank()) {
-                    runFileDialog(request, callback,
+                    runFileDialog(commandId, callback,
                             () -> loadProject(new java.io.File(filePath), commandId, server, callback, browser));
                     return true;
                 }
-                runFileDialog(request, callback, () -> {
+                runFileDialog(commandId, callback, () -> {
                     java.util.Optional<java.io.File> selected =
                             DesktopFileChooser.openFile(parentFrame, "Load Gen-Synth Project", PROJECT_FILE_FILTER);
 
@@ -220,13 +218,13 @@ public class GensynthMessageRouter extends CefMessageRouterHandlerAdapter {
      * a dialog is open (for example the same command sent again) is rejected instead of opening a
      * second dialog over the first one, which would save or load twice.
      *
-     * @param request  the command received from the UI
-     * @param callback the query callback, failed with 409 when a dialog is already open
+     * @param commandId the identifier of the command received from the UI
+     * @param callback  the query callback, failed with 409 when a dialog is already open
      * @param dialog   shows the dialog and answers the UI
      */
-    void runFileDialog(String request, CefQueryCallback callback, Runnable dialog) {
+    void runFileDialog(String commandId, CefQueryCallback callback, Runnable dialog) {
         if (!fileDialogOpen.compareAndSet(false, true)) {
-            logger.warn("[BRIDGE] Ignoring command {}: a file dialog is already open", extractCommandId(request));
+            logger.warn("[BRIDGE] Ignoring command {}: a file dialog is already open", commandId);
             callback.failure(409, "A file dialog is already open");
             return;
         }
@@ -239,14 +237,12 @@ public class GensynthMessageRouter extends CefMessageRouterHandlerAdapter {
         });
     }
 
-    private String extractCommandId(String request) {
-        if (request.contains("\"commandId\":\"")) {
-            int start = request.indexOf("\"commandId\":\"") + 13;
-            int end = request.indexOf("\"", start);
-            if (start > 12 && end > start) {
-                return request.substring(start, end);
-            }
-        }
-        return "unknown_" + System.currentTimeMillis();
+    /**
+     * @param command the command received from the UI
+     * @return its identifier, or a made-up one when it has none
+     */
+    private static String commandId(com.fasterxml.jackson.databind.JsonNode command) {
+        String commandId = command.path("commandId").asText("");
+        return commandId.isEmpty() ? "unknown_" + System.currentTimeMillis() : commandId;
     }
 }

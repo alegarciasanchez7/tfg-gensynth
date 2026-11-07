@@ -1,6 +1,7 @@
 package com.gensynth.core.cli;
 
 import com.gensynth.core.api.IDesktopLauncher;
+import com.gensynth.core.api.IOpenWindowClient;
 import com.gensynth.core.config.AppConfig;
 import com.gensynth.core.config.AppPaths;
 import com.gensynth.core.ws.OpenProjectClient;
@@ -20,8 +21,9 @@ import java.util.function.BooleanSupplier;
 /**
  * Opens projects in the desktop application for the {@code edit} command: first in the window
  * that is already open (REQUEST_OPEN_PROJECT, see {@link OpenProjectClient}), otherwise in a new
- * one started as a separate process. The new window outlives the command line: it is detached
- * from the terminal, so {@code Ctrl + C} or closing the terminal does not close it.
+ * one started as a separate process. The new window outlives the command line: it starts out of
+ * its terminal, so {@code Ctrl + C} or closing the terminal does not close it (see
+ * {@link #command}).
  */
 public class DesktopLauncher implements IDesktopLauncher {
 
@@ -38,9 +40,10 @@ public class DesktopLauncher implements IDesktopLauncher {
 
     private static final long ANSWER_TIMEOUT_MILLIS = 2000;
     private static final String MAIN_CLASS = "com.gensynth.core.App";
+    /** Where Linux distributions install setsid (util-linux). */
+    private static final List<String> SETSID_PATHS = List.of("/usr/bin/setsid", "/bin/setsid");
 
-    private final String host;
-    private final int port;
+    private final IOpenWindowClient openWindow;
     private final BooleanSupplier headless;
     private final ProcessStarter starter;
 
@@ -49,19 +52,17 @@ public class DesktopLauncher implements IDesktopLauncher {
      * installation (or from the source build in development).
      */
     public DesktopLauncher() {
-        this(new AppConfig().getWebsocketHost(), new AppConfig().getWebsocketPort(),
-            GraphicsEnvironment::isHeadless, DesktopLauncher::startDetached);
+        this(new OpenProjectClient(new AppConfig().getWebsocketHost(), new AppConfig().getWebsocketPort(),
+            ANSWER_TIMEOUT_MILLIS), GraphicsEnvironment::isHeadless, DesktopLauncher::startDetached);
     }
 
     /**
-     * @param host     host of an open desktop application
-     * @param port     port of an open desktop application
-     * @param headless tells whether there is no graphical display to open a window on
-     * @param starter  starts a new desktop application
+     * @param openWindow asks an open desktop application to open the project
+     * @param headless   tells whether there is no graphical display to open a window on
+     * @param starter    starts a new desktop application
      */
-    DesktopLauncher(String host, int port, BooleanSupplier headless, ProcessStarter starter) {
-        this.host = host;
-        this.port = port;
+    DesktopLauncher(IOpenWindowClient openWindow, BooleanSupplier headless, ProcessStarter starter) {
+        this.openWindow = openWindow;
         this.headless = headless;
         this.starter = starter;
     }
@@ -69,7 +70,7 @@ public class DesktopLauncher implements IDesktopLauncher {
     @Override
     public Result open(Path projectFile) {
         String filePath = projectFile == null ? null : projectFile.toAbsolutePath().normalize().toString();
-        if (OpenProjectClient.send(host, port, filePath, ANSWER_TIMEOUT_MILLIS) == OpenProjectClient.Outcome.SENT) {
+        if (openWindow.requestOpen(filePath) == IOpenWindowClient.Outcome.SENT) {
             return Result.OPENED_IN_WINDOW;
         }
         if (headless.getAsBoolean()) {
@@ -79,15 +80,17 @@ public class DesktopLauncher implements IDesktopLauncher {
         String cliLauncher = System.getProperty(AppPaths.LAUNCHER_PROPERTY);
         String osName = System.getProperty("os.name", "");
         if (cliLauncher != null) {
-            // Checked here: on Linux and macOS it starts in the background, where a missing
-            // launcher would fail without a word
+            // Checked here: on Linux and macOS it starts on its own, where a missing launcher
+            // would fail without a word
             Path desktopLauncher = desktopLauncher(cliLauncher, osName);
             if (!Files.isRegularFile(desktopLauncher)) {
                 throw new IllegalStateException("Cannot find the GenSynth application at " + desktopLauncher);
             }
         }
+        String setsid = SETSID_PATHS.stream().filter(path -> Files.isExecutable(Paths.get(path))).findFirst().orElse(null);
         List<String> command = command(cliLauncher, osName, System.getProperty("java.home"),
-            ManagementFactory.getRuntimeMXBean().getInputArguments(), System.getProperty("java.class.path"), filePath);
+            ManagementFactory.getRuntimeMXBean().getInputArguments(), System.getProperty("java.class.path"),
+            setsid, filePath);
         try {
             starter.start(command);
         } catch (IOException e) {
@@ -97,7 +100,17 @@ public class DesktopLauncher implements IDesktopLauncher {
     }
 
     /**
-     * Builds the command that starts the desktop application.
+     * Builds the command that starts the desktop application, out of the terminal of the
+     * command line: {@code Ctrl + C} or closing the terminal reach every process started from it,
+     * the embedded browser's helper processes included, which would break the window.
+     * <ul>
+     *   <li>Windows: the launcher has no console (javaw from the source build), so it never gets
+     *       the console's {@code Ctrl + C}.</li>
+     *   <li>Linux: in a session of its own with {@code setsid}.</li>
+     *   <li>macOS installation: {@code open -a}, which starts it like the Finder does.</li>
+     *   <li>Otherwise (macOS from the source build, or no {@code setsid}): in the background with
+     *       {@code nohup}, which keeps at least the JVM alive.</li>
+     * </ul>
      *
      * @param cliLauncher path of the command line launcher of an installation
      *                    ({@code jpackage.app-path}), or null when running from the source build
@@ -105,19 +118,36 @@ public class DesktopLauncher implements IDesktopLauncher {
      * @param javaHome    Java of this process, used from the source build
      * @param jvmArgs     options of this JVM, kept from the source build (e.g. {@code gensynth.home})
      * @param classPath   class path of this process, used from the source build
+     * @param setsid      path of {@code setsid}, or null when it is not installed
      * @param openFile    absolute path of the project file, or null for a new project
      * @return the command
      */
     static List<String> command(String cliLauncher, String osName, String javaHome, List<String> jvmArgs,
-                                String classPath, String openFile) {
-        boolean windows = osName.toLowerCase(Locale.ROOT).startsWith("windows");
+                                String classPath, String setsid, String openFile) {
+        String os = osName.toLowerCase(Locale.ROOT);
+        boolean windows = os.startsWith("windows");
+        List<String> args = new ArrayList<>();
+        // It needs --desktop explicitly: any argument replaces the launcher's default ones
+        args.add("--desktop");
+        if (openFile != null) {
+            args.add("--open");
+            args.add(openFile);
+        }
+
+        if (cliLauncher != null && os.startsWith("mac")) {
+            // .../GenSynth.app/Contents/MacOS/GenSynth
+            Path bundle = desktopLauncher(cliLauncher, osName).getParent().getParent().getParent();
+            if (bundle != null && bundle.toString().endsWith(".app")) {
+                List<String> command = new ArrayList<>(List.of("/usr/bin/open", "-n", "-a", bundle.toString(), "--args"));
+                command.addAll(args);
+                return command;
+            }
+        }
+
         List<String> app = new ArrayList<>();
         if (cliLauncher != null) {
-            // It needs --desktop explicitly: any argument replaces the launcher's default ones
             app.add(desktopLauncher(cliLauncher, osName).toString());
         } else {
-            // From the source build: javaw on Windows has no console, so Ctrl + C in the command
-            // line does not reach the window
             app.add(Paths.get(javaHome, "bin", windows ? "javaw" : "java").toString());
             for (String arg : jvmArgs) {
                 // A debugger port would clash with the one of this process
@@ -129,17 +159,16 @@ public class DesktopLauncher implements IDesktopLauncher {
             app.add(classPath);
             app.add(MAIN_CLASS);
         }
-        app.add("--desktop");
-        if (openFile != null) {
-            app.add("--open");
-            app.add(openFile);
-        }
+        app.addAll(args);
         if (windows) {
             return app;
         }
-        // Detached from the terminal: in the background (Ctrl + C is ignored) and with nohup
-        // (closing the terminal is ignored), like any desktop application started from a shell
-        List<String> detached = new ArrayList<>(List.of("/bin/sh", "-c", "nohup \"$@\" >/dev/null 2>&1 &", "gensynth"));
+        List<String> detached = new ArrayList<>();
+        if (os.startsWith("linux") && setsid != null) {
+            detached.add(setsid);
+        } else {
+            detached.addAll(List.of("/bin/sh", "-c", "nohup \"$@\" >/dev/null 2>&1 &", "gensynth"));
+        }
         detached.addAll(app);
         return detached;
     }

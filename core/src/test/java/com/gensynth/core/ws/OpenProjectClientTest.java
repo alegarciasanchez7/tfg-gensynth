@@ -1,5 +1,6 @@
 package com.gensynth.core.ws;
 
+import com.gensynth.core.api.IOpenWindowClient;
 import com.gensynth.core.connectors.plugin.PluginInstallerImpl;
 import com.gensynth.core.connectors.runtime.ConnectorCatalogService;
 import com.gensynth.core.persistence.JsonStateRepositoryImpl;
@@ -56,8 +57,15 @@ public class OpenProjectClientTest {
         server.shutdown();
     }
 
-    private OpenProjectClient.Outcome send(String filePath) {
-        return OpenProjectClient.send("127.0.0.1", server.getPort(), filePath, 3000);
+    private IOpenWindowClient.Outcome send(String filePath) {
+        return new OpenProjectClient("127.0.0.1", server.getPort(), 3000).requestOpen(filePath);
+    }
+
+    /** The OPEN_PROJECT_REQUESTED messages the window received. */
+    private static java.util.List<String> openRequests(DesktopBridgeSocket window) {
+        ArgumentCaptor<String> sent = ArgumentCaptor.forClass(String.class);
+        verify(window, atLeast(0)).send(sent.capture());
+        return sent.getAllValues().stream().filter(m -> m.contains("\"type\":\"OPEN_PROJECT_REQUESTED\"")).toList();
     }
 
     @Test
@@ -68,14 +76,11 @@ public class OpenProjectClientTest {
         when(window.isOpen()).thenReturn(true);
         server.desktopSocket = window;
 
-        assertEquals(OpenProjectClient.Outcome.SENT, send(project.toString()));
+        assertEquals(IOpenWindowClient.Outcome.SENT, send(project.toString()));
 
-        ArgumentCaptor<String> pushed = ArgumentCaptor.forClass(String.class);
-        verify(window).push(pushed.capture());
-        assertTrue(pushed.getValue(), pushed.getValue().contains("\"type\":\"OPEN_PROJECT_REQUESTED\""));
-        assertTrue(pushed.getValue(), pushed.getValue().contains("plant.gsynth"));
-        // Pushed, never sent as the answer of a UI command
-        verify(window, never()).send(anyString());
+        java.util.List<String> requests = openRequests(window);
+        assertEquals(1, requests.size());
+        assertTrue(requests.get(0), requests.get(0).contains("plant.gsynth"));
         assertEquals(1, raised.get());
     }
 
@@ -86,18 +91,18 @@ public class OpenProjectClientTest {
         when(window.isOpen()).thenReturn(true);
         server.desktopSocket = window;
 
-        assertEquals(OpenProjectClient.Outcome.SENT, send(null));
+        assertEquals(IOpenWindowClient.Outcome.SENT, send(null));
 
-        ArgumentCaptor<String> pushed = ArgumentCaptor.forClass(String.class);
-        verify(window).push(pushed.capture());
-        assertTrue(pushed.getValue(), pushed.getValue().contains("\"payload\":{}"));
+        java.util.List<String> requests = openRequests(window);
+        assertEquals(1, requests.size());
+        assertTrue(requests.get(0), requests.get(0).contains("\"payload\":{}"));
     }
 
     @Test
     public void aWindowWhoseUiIsStillLoadingGetsTheProjectLater() {
         server.setWindowActivator(() -> { });
 
-        assertEquals(OpenProjectClient.Outcome.SENT, send(project.toString()));
+        assertEquals(IOpenWindowClient.Outcome.SENT, send(project.toString()));
 
         assertEquals(project.toString(), server.takePendingOpenProject());
     }
@@ -131,7 +136,7 @@ public class OpenProjectClientTest {
             freePort = socket.getLocalPort();
         }
 
-        assertEquals(OpenProjectClient.Outcome.NOT_RUNNING,
-            OpenProjectClient.send("127.0.0.1", freePort, project.toString(), 2000));
+        assertEquals(IOpenWindowClient.Outcome.NOT_RUNNING,
+            new OpenProjectClient("127.0.0.1", freePort, 2000).requestOpen(project.toString()));
     }
 }

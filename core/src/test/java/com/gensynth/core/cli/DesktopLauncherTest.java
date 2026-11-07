@@ -1,13 +1,13 @@
 package com.gensynth.core.cli;
 
 import com.gensynth.core.api.IDesktopLauncher;
-import org.junit.Before;
+import com.gensynth.core.api.IOpenWindowClient;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
 import java.io.IOException;
-import java.net.ServerSocket;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -17,30 +17,41 @@ import static org.junit.Assert.*;
 
 public class DesktopLauncherTest {
 
+    private static final List<String> NOHUP = List.of("/bin/sh", "-c", "nohup \"$@\" >/dev/null 2>&1 &", "gensynth");
+
     @Rule
     public TemporaryFolder temp = new TemporaryFolder();
 
-    /** A port nothing listens on: no desktop application is open. */
-    private int freePort;
+    @Test
+    public void linuxStartsTheDesktopLauncherInASessionOfItsOwn() {
+        Path cli = Paths.get("opt", "gensynth", "bin", "gensynth-cli").toAbsolutePath();
+        String gui = cli.resolveSibling("GenSynth").toString();
 
-    @Before
-    public void findFreePort() throws IOException {
-        try (ServerSocket socket = new ServerSocket(0)) {
-            freePort = socket.getLocalPort();
-        }
+        assertEquals(List.of("/usr/bin/setsid", gui, "--desktop", "--open", "/p/a.gsynth"),
+            DesktopLauncher.command(cli.toString(), "Linux", "/jdk", List.of(), "cp", "/usr/bin/setsid", "/p/a.gsynth"));
+
+        // Without setsid, at least in the background with nohup
+        List<String> fallback = new ArrayList<>(NOHUP);
+        fallback.addAll(List.of(gui, "--desktop"));
+        assertEquals(fallback, DesktopLauncher.command(cli.toString(), "Linux", "/jdk", List.of(), "cp", null, null));
     }
 
     @Test
-    public void installedLaunchesTheDesktopLauncherNextToTheCommandLineOne() {
-        Path cli = Paths.get("opt", "gensynth", "bin", "gensynth-cli").toAbsolutePath();
+    public void macOsStartsTheApplicationLikeTheFinder() {
+        Path cli = Paths.get("Applications", "GenSynth.app", "Contents", "MacOS", "gensynth-cli").toAbsolutePath();
+        String bundle = cli.getParent().getParent().getParent().toString();
 
-        List<String> linux = DesktopLauncher.command(cli.toString(), "Linux", "/jdk", List.of("-Xmx1g"), "cp", "/p/a.gsynth");
-        // Detached from the terminal, so Ctrl + C and closing it do not close the window
-        assertEquals(List.of("/bin/sh", "-c", "nohup \"$@\" >/dev/null 2>&1 &", "gensynth",
-            cli.resolveSibling("GenSynth").toString(), "--desktop", "--open", "/p/a.gsynth"), linux);
+        assertEquals(List.of("/usr/bin/open", "-n", "-a", bundle, "--args", "--desktop", "--open", "/p/a.gsynth"),
+            DesktopLauncher.command(cli.toString(), "Mac OS X", "/jdk", List.of(), "cp", null, "/p/a.gsynth"));
+    }
 
-        List<String> windows = DesktopLauncher.command(cli.toString(), "Windows 11", "/jdk", List.of(), "cp", null);
-        assertEquals(List.of(cli.resolveSibling("GenSynth.exe").toString(), "--desktop"), windows);
+    @Test
+    public void windowsStartsTheDesktopLauncherDirectly() {
+        // It has no console: the console's Ctrl + C never reaches it
+        Path cli = Paths.get("GenSynth", "gensynth-cli.exe").toAbsolutePath();
+
+        assertEquals(List.of(cli.resolveSibling("GenSynth.exe").toString(), "--desktop"),
+            DesktopLauncher.command(cli.toString(), "Windows 11", "/jdk", List.of(), "cp", null, null));
     }
 
     @Test
@@ -48,25 +59,28 @@ public class DesktopLauncherTest {
         String javaHome = Paths.get("jdk").toAbsolutePath().toString();
         List<String> jvmArgs = List.of("-Dgensynth.home=/core", "-agentlib:jdwp=transport=dt_socket,address=5005", "-Xmx512m");
 
-        List<String> linux = DesktopLauncher.command(null, "Linux", javaHome, jvmArgs, "classes:libs", null);
-        assertEquals(List.of("/bin/sh", "-c", "nohup \"$@\" >/dev/null 2>&1 &", "gensynth",
-            Paths.get(javaHome, "bin", "java").toString(), "-Dgensynth.home=/core", "-Xmx512m",
-            "-cp", "classes:libs", "com.gensynth.core.App", "--desktop"), linux);
+        assertEquals(List.of("/usr/bin/setsid", Paths.get(javaHome, "bin", "java").toString(), "-Dgensynth.home=/core",
+                "-Xmx512m", "-cp", "classes:libs", "com.gensynth.core.App", "--desktop"),
+            DesktopLauncher.command(null, "Linux", javaHome, jvmArgs, "classes:libs", "/usr/bin/setsid", null));
+
+        // macOS from the source build has no bundle to open: in the background with nohup
+        List<String> mac = DesktopLauncher.command(null, "Mac OS X", javaHome, List.of(), "classes:libs", null, null);
+        assertEquals(NOHUP, mac.subList(0, NOHUP.size()));
 
         // javaw has no console: Ctrl + C in the command line does not reach the window
-        List<String> windows = DesktopLauncher.command(null, "Windows 10", javaHome, List.of(), "classes;libs", "C:\\p\\a.gsynth");
         assertEquals(List.of(Paths.get(javaHome, "bin", "javaw").toString(), "-cp", "classes;libs",
-            "com.gensynth.core.App", "--desktop", "--open", "C:\\p\\a.gsynth"), windows);
+                "com.gensynth.core.App", "--desktop", "--open", "C:\\p\\a.gsynth"),
+            DesktopLauncher.command(null, "Windows 10", javaHome, List.of(), "classes;libs", null, "C:\\p\\a.gsynth"));
     }
 
     @Test
     public void theDesktopLauncherIsFoundThroughALink() throws Exception {
         // On Linux the command line is reached through /usr/bin/gensynth, a link
         Path bin = temp.newFolder("opt", "gensynth", "bin").toPath();
-        Path cli = java.nio.file.Files.createFile(bin.resolve("gensynth-cli"));
+        Path cli = Files.createFile(bin.resolve("gensynth-cli"));
         Path link = temp.newFolder("usr", "bin").toPath().resolve("gensynth");
         try {
-            java.nio.file.Files.createSymbolicLink(link, cli);
+            Files.createSymbolicLink(link, cli);
         } catch (IOException | UnsupportedOperationException e) {
             // Creating links needs special rights on Windows, where there is no such link anyway
             org.junit.Assume.assumeNoException(e);
@@ -76,9 +90,25 @@ public class DesktopLauncherTest {
     }
 
     @Test
+    public void anOpenWindowGetsTheProjectAndNothingIsStarted() throws Exception {
+        List<String> requested = new ArrayList<>();
+        List<List<String>> started = new ArrayList<>();
+        DesktopLauncher launcher = new DesktopLauncher(file -> {
+            requested.add(file);
+            return IOpenWindowClient.Outcome.SENT;
+        }, () -> false, started::add);
+        Path project = temp.newFile("plant.gsynth").toPath();
+
+        assertEquals(IDesktopLauncher.Result.OPENED_IN_WINDOW, launcher.open(project));
+
+        assertEquals(List.of(project.toAbsolutePath().toString()), requested);
+        assertTrue(started.isEmpty());
+    }
+
+    @Test
     public void withoutAnOpenWindowANewOneIsStarted() throws Exception {
         List<List<String>> started = new ArrayList<>();
-        DesktopLauncher launcher = new DesktopLauncher("127.0.0.1", freePort, () -> false, started::add);
+        DesktopLauncher launcher = new DesktopLauncher(file -> IOpenWindowClient.Outcome.NOT_RUNNING, () -> false, started::add);
         Path project = temp.newFile("plant.gsynth").toPath();
 
         assertEquals(IDesktopLauncher.Result.LAUNCHED, launcher.open(project));
@@ -93,9 +123,22 @@ public class DesktopLauncherTest {
     }
 
     @Test
+    public void aRejectionOfTheOpenWindowIsReported() {
+        List<List<String>> started = new ArrayList<>();
+        DesktopLauncher launcher = new DesktopLauncher(file -> {
+            throw new IllegalStateException("The open GenSynth window is an older version: close it and try again");
+        }, () -> false, started::add);
+
+        IllegalStateException error = assertThrows(IllegalStateException.class, () -> launcher.open(null));
+
+        assertTrue(error.getMessage(), error.getMessage().contains("older version"));
+        assertTrue(started.isEmpty());
+    }
+
+    @Test
     public void withoutADisplayNothingIsStarted() {
         List<List<String>> started = new ArrayList<>();
-        DesktopLauncher launcher = new DesktopLauncher("127.0.0.1", freePort, () -> true, started::add);
+        DesktopLauncher launcher = new DesktopLauncher(file -> IOpenWindowClient.Outcome.NOT_RUNNING, () -> true, started::add);
 
         IllegalStateException error = assertThrows(IllegalStateException.class, () -> launcher.open(null));
 
@@ -105,7 +148,7 @@ public class DesktopLauncherTest {
 
     @Test
     public void aFailedStartIsReported() {
-        DesktopLauncher launcher = new DesktopLauncher("127.0.0.1", freePort, () -> false, command -> {
+        DesktopLauncher launcher = new DesktopLauncher(file -> IOpenWindowClient.Outcome.NOT_RUNNING, () -> false, command -> {
             throw new IOException("No such file");
         });
 

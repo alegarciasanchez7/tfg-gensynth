@@ -798,17 +798,30 @@ public class UiBridgeWebSocketServerTest {
 
         // Another client asking first does not take it
         server.onMessage(browser, String.format(getInitialState, "b1"));
-        verify(window, never()).push(anyString());
+        verify(window, never()).send(anyString());
 
         server.onMessage(window, String.format(getInitialState, "w1"));
         server.onMessage(window, String.format(getInitialState, "w2"));
 
-        ArgumentCaptor<String> pushed = ArgumentCaptor.forClass(String.class);
-        verify(window, times(1)).push(pushed.capture());
-        assertTrue(pushed.getValue(), pushed.getValue().contains("OPEN_PROJECT_REQUESTED"));
-        assertTrue(pushed.getValue(), pushed.getValue().contains("plant.gsynth"));
+        ArgumentCaptor<String> sent = ArgumentCaptor.forClass(String.class);
+        verify(window, atLeastOnce()).send(sent.capture());
+        List<String> requests = sent.getAllValues().stream().filter(m -> m.contains("OPEN_PROJECT_REQUESTED")).toList();
+        assertEquals("only once", 1, requests.size());
+        assertTrue(requests.get(0), requests.get(0).contains("plant.gsynth"));
+        // Right after the window's first INITIAL_STATE
+        int initialState = indexOf(sent.getAllValues(), "\"type\":\"INITIAL_STATE\"");
+        assertTrue(initialState >= 0 && sent.getAllValues().indexOf(requests.get(0)) > initialState);
         assertNull(server.takePendingOpenProject());
         server.shutdown();
+    }
+
+    private static int indexOf(List<String> messages, String text) {
+        for (int i = 0; i < messages.size(); i++) {
+            if (messages.get(i).contains(text)) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     // ============ Sequential order and flow order ============

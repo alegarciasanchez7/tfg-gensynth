@@ -348,6 +348,8 @@ public class CliShellTest {
             return answer[0];
         };
 
+        // A folder named "new" does not turn "edit new" into a path
+        java.nio.file.Files.createDirectories(workingDir.resolve("new"));
         String output = runWithDesktop("edit a.gsynth\nedit new\nedit\nedit missing.gsynth\nedit broken.gsynth\n", desktop);
 
         assertTrue(output, output.contains("Opening 'a.gsynth' in GenSynth..."));
@@ -360,8 +362,10 @@ public class CliShellTest {
         assertEquals(java.util.Arrays.asList(workingDir.resolve("a.gsynth"), null), opened);
 
         answer[0] = IDesktopLauncher.Result.OPENED_IN_WINDOW;
-        output = runWithDesktop("start a.gsynth\nedit a.gsynth\nexit\n", desktop);
+        output = runWithDesktop("start a.gsynth\nedit a.gsynth\nstop 1\nedit a.gsynth\nexit\n", desktop);
         assertTrue(output, output.contains("Sent 'a.gsynth' to the open GenSynth window."));
+        // A running file must stop before it starts again
+        assertTrue(output, output.contains("    Save it there, then 'stop 1' and 'start 1' run the changes."));
         assertTrue(output, output.contains("    Save it there, then 'start 1' runs the changes."));
         assertTrue(project.toFile().exists());
     }

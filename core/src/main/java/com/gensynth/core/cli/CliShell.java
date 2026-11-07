@@ -1,6 +1,5 @@
 package com.gensynth.core.cli;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gensynth.core.api.IDesktopLauncher;
 import com.gensynth.core.api.ISimulationManager;
 import com.gensynth.core.model.ProjectReport;
@@ -8,7 +7,6 @@ import com.gensynth.core.model.SimulationSnapshot;
 import com.gensynth.core.model.StartProblem;
 import com.gensynth.core.model.TickSettings;
 import com.gensynth.core.monitoring.ResourceUsage;
-import com.gensynth.core.persistence.ProjectFileFormat;
 import org.jline.utils.AttributedStyle;
 
 import java.io.BufferedReader;
@@ -255,41 +253,35 @@ public class CliShell {
             throw new IllegalStateException("The desktop application is not available here");
         }
         String target = args.get(0);
-        Path file = resolvePath(target, workingDir, userHome);
-        if ("new".equalsIgnoreCase(target) && !Files.exists(file)) {
-            file = null;
-        } else {
-            checkProjectFile(file);
+        Path file = null;
+        // "new" is always the keyword: a project file must end in .gsynth
+        if (!"new".equalsIgnoreCase(target)) {
+            file = resolvePath(target, workingDir, userHome);
+            // Same checks and messages as start, before anything opens
+            SimulationManager.readProjectFile(file);
         }
         String name = file == null ? "a new project" : "'" + file.getFileName() + "'";
         IDesktopLauncher.Result result = desktop.open(file);
         out.println(result == IDesktopLauncher.Result.OPENED_IN_WINDOW
             ? "Sent " + name + " to the open GenSynth window."
             : "Opening " + name + " in GenSynth...");
-        Integer id = file == null ? null : idOf(file);
-        out.println(id != null
-            ? "    Save it there, then 'start " + id + "' runs the changes."
-            : "    Save it there, then 'start <file.gsynth>' runs it.");
-    }
-
-    /** Fails with the reason when the file is not a project that can be opened. */
-    private static void checkProjectFile(Path file) {
-        if (!Files.isRegularFile(file)) {
-            throw new IllegalArgumentException("File not found: " + file);
-        }
-        try {
-            ProjectFileFormat.read(file, new ObjectMapper());
-        } catch (IOException e) {
-            throw new IllegalArgumentException("Cannot read " + file + ": " + e.getMessage(), e);
+        SimulationSnapshot simulation = file == null ? null : simulationOf(file);
+        if (simulation == null) {
+            out.println("    Save it there, then 'start <file.gsynth>' runs it.");
+        } else if (simulation.status() == SimulationSnapshot.Status.RUNNING) {
+            // A running file cannot start again until it stops
+            out.println("    Save it there, then 'stop " + simulation.id() + "' and 'start " + simulation.id()
+                + "' run the changes.");
+        } else {
+            out.println("    Save it there, then 'start " + simulation.id() + "' runs the changes.");
         }
     }
 
-    /** The id the file has in this session, or null if it never ran. */
-    private Integer idOf(Path file) {
+    /** The simulation of the file in this session, or null if it never ran. */
+    private SimulationSnapshot simulationOf(Path file) {
         try {
             Path real = file.toRealPath();
-            return manager.list().stream().filter(s -> s.configFile().equals(real))
-                .map(SimulationSnapshot::id).findFirst().orElse(null);
+            return manager.list().stream().filter(s -> s.configFile().equals(real)).findFirst().orElse(null);
         } catch (IOException e) {
             return null;
         }

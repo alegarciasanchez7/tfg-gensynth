@@ -62,10 +62,7 @@ public class StateCommandHandler implements CommandHandler {
         server.systemCommandHandler.sendFlowsMetrics(conn);
         // A window opened with a project (--open, double click) loads it once its UI is ready
         if (conn != null && conn == server.getDesktopSocket()) {
-            String pending = server.takePendingOpenProject();
-            if (pending != null) {
-                server.requestOpenProject(pending);
-            }
+            server.deliverPendingOpenProject(conn);
         }
     }
 

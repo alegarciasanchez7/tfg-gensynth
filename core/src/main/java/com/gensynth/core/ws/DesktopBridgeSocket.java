@@ -36,30 +36,8 @@ public class DesktopBridgeSocket implements WebSocket {
     @Override
     public void send(String text) {
         logger.debug("[DESKTOP-SOCKET] Sending message (length: {})", text.length());
-        push(text);
-
-        // Fulfill the JCEF query callback (can only be done once per query)
-        CefQueryCallback callback = this.jcefCallback;
-        if (callback != null) {
-            try {
-                callback.success(text);
-                // We clear it so subsequent broadcasts to this "socket" don't try to use the same query callback
-                // but still send via executeJavaScript (push)
-                this.jcefCallback = null;
-            } catch (Exception ignored) {
-                this.jcefCallback = null;
-            }
-        }
-    }
-
-    /**
-     * Pushes a message to the UI without answering the query in progress. Used for messages that
-     * are not the response of a UI command (e.g. a project to open sent by the command line),
-     * which would otherwise resolve the promise of whatever command the UI is waiting for.
-     *
-     * @param text the message
-     */
-    public void push(String text) {
+        
+        // Push message to UI via JavaScript function
         if (browser != null) {
             String escaped = text.replace("\\", "\\\\")
                                 .replace("'", "\\'")
@@ -74,6 +52,19 @@ public class DesktopBridgeSocket implements WebSocket {
                     logger.error("[DESKTOP-SOCKET] Failed to execute JavaScript", e);
                 }
             });
+        }
+
+        // Fulfill the JCEF query callback (can only be done once per query)
+        CefQueryCallback callback = this.jcefCallback;
+        if (callback != null) {
+            try {
+                callback.success(text);
+                // We clear it so subsequent broadcasts to this "socket" don't try to use the same query callback
+                // but still send via executeJavaScript (push)
+                this.jcefCallback = null;
+            } catch (Exception ignored) {
+                this.jcefCallback = null;
+            }
         }
     }
 

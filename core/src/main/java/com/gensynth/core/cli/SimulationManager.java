@@ -46,7 +46,7 @@ public class SimulationManager implements ISimulationManager {
 
     private final ConnectorCatalogService connectorCatalog;
     private final OutputFolders outputFolders;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private final Map<Integer, HeadlessSimulation> simulations = new LinkedHashMap<>();
     private int nextId = 1;
 
@@ -189,6 +189,17 @@ public class SimulationManager implements ISimulationManager {
         stopAll();
     }
 
+    /**
+     * Reads a project file, with the same checks and messages as {@link #start}.
+     *
+     * @param configFile the {@code .gsynth} project file
+     * @return the parsed and validated project
+     * @throws IllegalArgumentException if the file does not exist or is not a valid project
+     */
+    static JsonNode readProjectFile(Path configFile) {
+        return readProject(resolveProjectFile(configFile));
+    }
+
     private static Path resolveProjectFile(Path configFile) {
         if (!Files.isRegularFile(configFile)) {
             throw new IllegalArgumentException("File not found: " + configFile);
@@ -200,9 +211,9 @@ public class SimulationManager implements ISimulationManager {
         }
     }
 
-    private JsonNode readProject(Path file) {
+    private static JsonNode readProject(Path file) {
         try {
-            return ProjectFileFormat.read(file, objectMapper);
+            return ProjectFileFormat.read(file, OBJECT_MAPPER);
         } catch (IOException e) {
             throw new IllegalArgumentException("Cannot read " + file + ": " + e.getMessage(), e);
         }

@@ -48,6 +48,16 @@ public class AppTest {
     }
 
     @Test
+    public void anyOtherFileAlsoMeansTheDesktopWindow() {
+        // "Open with GenSynth" on a file that is not a project: the window reports it, instead of
+        // an engine without window holding the port
+        App.StartupArgs startup = App.parseArgs(new String[]{"notes.json"});
+
+        assertTrue(startup.desktop());
+        assertEquals(Paths.get("notes.json").toAbsolutePath().normalize().toString(), startup.openFile());
+    }
+
+    @Test
     public void otherArgumentsAreKeptForARestart() {
         App.StartupArgs startup = App.parseArgs(new String[]{"-psn_0_123", "--desktop", "--open"});
 

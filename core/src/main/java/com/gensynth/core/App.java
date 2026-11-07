@@ -1,8 +1,8 @@
 package com.gensynth.core;
 
+import com.gensynth.core.api.IOpenWindowClient;
 import com.gensynth.core.config.AppConfig;
 import com.gensynth.core.config.AppPaths;
-import com.gensynth.core.persistence.ProjectFileFormat;
 import com.gensynth.core.ws.OpenProjectClient;
 import com.gensynth.core.ws.UiBridgeWebSocketServer;
 import com.gensynth.core.desktop.DesktopFileChooser;
@@ -202,8 +202,10 @@ public class App {
     /**
      * Reads the startup arguments: {@code --desktop}, and the project file to open as
      * {@code --open <file>} (the {@code edit} command of the command line) or alone (what Windows
-     * and Linux pass on a double click). The launchers replace their default {@code --desktop}
-     * when they receive an argument, so a project file means the desktop window too.
+     * and Linux pass on a double click or "Open with"). The launchers replace their default
+     * {@code --desktop} when they receive an argument, so a file means the desktop window too,
+     * whatever its name: one that is not a project is reported by the window, instead of
+     * starting an engine without window.
      *
      * @param args the command line arguments
      * @return what to do
@@ -218,7 +220,7 @@ public class App {
                 desktop = true;
             } else if ("--open".equals(arg) && i + 1 < args.length) {
                 openFile = args[++i];
-            } else if (!arg.startsWith("-") && ProjectFileFormat.hasExtension(arg)) {
+            } else if (!arg.startsWith("-")) {
                 openFile = arg;
             } else {
                 restartArgs.add(arg);
@@ -294,9 +296,9 @@ public class App {
     private static boolean handOverToOpenWindow(String openFile) {
         AppConfig config = new AppConfig();
         try {
-            OpenProjectClient.Outcome outcome = OpenProjectClient.send(
-                config.getWebsocketHost(), config.getWebsocketPort(), openFile, 2000);
-            return outcome == OpenProjectClient.Outcome.SENT;
+            IOpenWindowClient.Outcome outcome = new OpenProjectClient(
+                config.getWebsocketHost(), config.getWebsocketPort(), 2000).requestOpen(openFile);
+            return outcome == IOpenWindowClient.Outcome.SENT;
         } catch (IllegalStateException e) {
             logger.warn("[DESKTOP] The open window could not open {}: {}", openFile, e.getMessage());
             if (!java.awt.GraphicsEnvironment.isHeadless()) {
@@ -317,8 +319,8 @@ public class App {
                 || !java.awt.Desktop.getDesktop().isSupported(java.awt.Desktop.Action.APP_OPEN_FILE)) {
             return;
         }
+        // Any file, as on the other systems: one that is not a project is reported by the window
         java.awt.Desktop.getDesktop().setOpenFileHandler(event -> event.getFiles().stream()
-            .filter(file -> ProjectFileFormat.hasExtension(file.getName()))
             .findFirst()
             .ifPresent(file -> server.requestOpenProject(file.getAbsolutePath())));
     }

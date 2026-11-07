@@ -147,9 +147,12 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
 
     final TemplateEngine templateEngine = new TemplateEngine();
     String currentOutputDir = null;
-    WebSocket desktopSocket = null;
+    /** Volatile: set on the browser thread, read when a project arrives from outside (WebSocket, macOS). */
+    volatile WebSocket desktopSocket = null;
     /** Project file the desktop window opens once its UI connects (from --open or a double click). */
     private final AtomicReference<String> pendingOpenProject = new AtomicReference<>();
+    /** Makes "keep the file until the UI connects" and "the UI connected" happen one after the other. */
+    private final Object openProjectLock = new Object();
     /** Brings the desktop window to the front; null when there is no window (browser mode, CLI). */
     private volatile Runnable windowActivator;
     final BridgeContext bridgeContext = new BridgeContext(this);
@@ -214,25 +217,40 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         if (activator != null) {
             activator.run();
         }
-        WebSocket desktop = desktopSocket;
-        if (desktop == null) {
-            // A new window starts with an empty project: only a file has to wait
-            if (filePath != null) {
-                pendingOpenProject.set(filePath);
+        synchronized (openProjectLock) {
+            WebSocket desktop = desktopSocket;
+            if (desktop == null) {
+                // A new window starts with an empty project: only a file has to wait
+                if (filePath != null) {
+                    pendingOpenProject.set(filePath);
+                }
+                return;
             }
-            return;
+            sendOpenProjectRequested(desktop, filePath);
         }
+    }
+
+    /**
+     * Sends the desktop UI the project that was waiting for it (see {@link #requestOpenProject}).
+     * Called once the UI has its initial state.
+     *
+     * @param desktop the desktop UI connection
+     */
+    public void deliverPendingOpenProject(WebSocket desktop) {
+        synchronized (openProjectLock) {
+            String pending = pendingOpenProject.getAndSet(null);
+            if (pending != null) {
+                sendOpenProjectRequested(desktop, pending);
+            }
+        }
+    }
+
+    private void sendOpenProjectRequested(WebSocket desktop, String filePath) {
         Map<String, Object> payload = new LinkedHashMap<>();
         if (filePath != null) {
             payload.put("filePath", filePath);
         }
-        String message = envelope("OPEN_PROJECT_REQUESTED", null, payload);
-        if (desktop instanceof DesktopBridgeSocket bridge) {
-            // Not the answer of a UI command: must not resolve the one the UI may be waiting for
-            bridge.push(message);
-        } else if (desktop.isOpen()) {
-            desktop.send(message);
-        }
+        sendMessage(desktop, "OPEN_PROJECT_REQUESTED", null, payload);
     }
 
     public UiBridgeWebSocketServer(String host, int port) {
@@ -835,16 +853,6 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             return;
         }
 
-        String message = envelope(type, commandId, payload);
-        if (message != null) {
-            conn.send(message);
-        }
-    }
-
-    /**
-     * @return the message as sent to the UI, or null if it cannot be serialized
-     */
-    private String envelope(String type, String commandId, Object payload) {
         try {
             Map<String, Object> envelope = new LinkedHashMap<>();
             envelope.put("type", type);
@@ -854,11 +862,10 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                 envelope.put(COMMAND_ID, commandId);
             }
             envelope.put("payload", payload);
-            return objectMapper.writeValueAsString(envelope);
+            conn.send(objectMapper.writeValueAsString(envelope));
         } catch (Exception ex) {
             totalErrors.incrementAndGet();
             logger.error("Failed to send message: {}", ex.getMessage());
-            return null;
         }
     }
 }
