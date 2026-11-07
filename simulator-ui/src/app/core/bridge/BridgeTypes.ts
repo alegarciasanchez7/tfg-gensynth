@@ -15,6 +15,7 @@ import type {
   RestartRequiredPayload,
   RollbackReportPayload,
   InitialStatePayload,
+  UpdateStatusPayload,
 } from '../types';
 import type { ProjectSettings } from '../../types';
 
@@ -61,6 +62,21 @@ export const SUPPORTED_COMMANDS = new Set<UICommandType>([
   'PAUSE_GROUP',
   'UI_LOG',
   'UPDATE_SETTINGS',
+  'UPDATE_OUTPUT_FOLDER',
+  'CHECK_FOR_UPDATES',
+  'INSTALL_UPDATE',
+  'CANCEL_UPDATE',
+]);
+
+/**
+ * Commands answered only when the user closes a native file or folder dialog (desktop app).
+ * They never time out and are never sent again: the user may take as long as needed, and a
+ * second send would open a second dialog over the first one. A lost connection still rejects them.
+ */
+export const USER_DIALOG_COMMANDS: ReadonlySet<UICommandType> = new Set<UICommandType>([
+  'LOAD_STATE',
+  'SAVE_STATE',
+  'PICK_DIRECTORY',
 ]);
 
 export interface EventMap {
@@ -82,5 +98,6 @@ export interface EventMap {
   'restart-required': RestartRequiredPayload;
   'rollback-report': RollbackReportPayload;
   'settings-update': ProjectSettings;
+  'update-status': UpdateStatusPayload;
   'NATIVE_FILE_DROPPED': { filename: string; base64: string };
 }

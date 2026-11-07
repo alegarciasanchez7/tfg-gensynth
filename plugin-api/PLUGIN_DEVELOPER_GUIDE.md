@@ -17,6 +17,9 @@ A plugin only has to do two things:
 Everything else (scheduling, threads, retries of the simulation, metrics, UI, persistence) is
 done by GenSynth.
 
+For a complete, real plugin, see the RabbitMQ connector in [`connectors/rabbitmq`](../connectors/rabbitmq):
+it is written exactly like an external plugin and is included in GenSynth.
+
 ---
 
 ## 1. Quick start

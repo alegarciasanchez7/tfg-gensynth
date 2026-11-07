@@ -85,37 +85,49 @@ public class RestartUtil {
                 builder = new ProcessBuilder(winCommand);
             }
             
-            // 1. Release WebSocket server and port 8765
-            if (com.gensynth.core.App.getWsServer() != null) {
-                try {
-                    com.gensynth.core.App.getWsServer().shutdown();
-                } catch (Exception ignored) {}
-            }
+            exitAndLaunch(builder);
 
-            // 2. Mark restarting flag and close desktop frame
-            com.gensynth.core.desktop.MainFrame.setRestarting(true);
-            com.gensynth.core.desktop.MainFrame.closeActiveFrame();
-
-            // 3. Dispose native JCEF/Chromium resources in parent process
-            com.gensynth.core.desktop.NativeLoader.dispose();
-
-            // Give the OS 1 second to clean up socket bindings and C++ process handles
-            try {
-                Thread.sleep(1000);
-            } catch (InterruptedException e) {
-                // Restart anyway, but keep the interrupt status for the caller
-                Thread.currentThread().interrupt();
-            }
-
-            Process child = builder.start();
-            logger.info("New process started (PID {}). Terminating parent process...", child.pid());
-            
-            System.exit(0);
-            
         } catch (IOException e) {
             logger.error("Failed to self-restart Gen-Synth Core: {}", e.getMessage(), e);
             // If restart fails, at least we exit so the user knows something happened
             System.exit(1);
         }
+    }
+
+    /**
+     * Closes this instance (WebSocket server, window and embedded browser), starts the given
+     * command and exits. The command starts after the resources are released, so it can bind
+     * the same port or replace files the running application had open (e.g. an installer).
+     *
+     * @param command the command to start once this instance has released its resources
+     * @throws IOException if the command cannot be started; this instance is already closed then
+     */
+    public static void exitAndLaunch(ProcessBuilder command) throws IOException {
+        // 1. Release WebSocket server and port 8765
+        if (com.gensynth.core.App.getWsServer() != null) {
+            try {
+                com.gensynth.core.App.getWsServer().shutdown();
+            } catch (Exception ignored) {}
+        }
+
+        // 2. Mark restarting flag and close desktop frame
+        com.gensynth.core.desktop.MainFrame.setRestarting(true);
+        com.gensynth.core.desktop.MainFrame.closeActiveFrame();
+
+        // 3. Dispose native JCEF/Chromium resources in parent process
+        com.gensynth.core.desktop.NativeLoader.dispose();
+
+        // Give the OS 1 second to clean up socket bindings and C++ process handles
+        try {
+            Thread.sleep(1000);
+        } catch (InterruptedException e) {
+            // Continue anyway, but keep the interrupt status for the caller
+            Thread.currentThread().interrupt();
+        }
+
+        Process child = command.start();
+        logger.info("New process started (PID {}). Terminating parent process...", child.pid());
+
+        System.exit(0);
     }
 }

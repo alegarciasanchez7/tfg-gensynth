@@ -46,6 +46,10 @@ public class TemporalVariableConfig extends VariableConfiguration {
     private long rangeEndMillis;
 
     // Advanced Formatting
+    /** Output format name for ISO-8601 UTC text (e.g. 2025-06-01T08:00:00Z), offered by the UI presets. */
+    private static final String ISO_INSTANT = "ISO_INSTANT";
+    /** Instant of the last generated value. */
+    private volatile Instant lastInstant;
     private String dateFormat; // "yyyy-MM-dd'T'HH:mm:ss.SSSXXX", "UNIX_TIMESTAMP", or null (returns Instant)
     private String timeZone;   // e.g. "UTC", "Europe/Madrid"
     private String temporalType; // "DATE", "TIMESTAMP", "TIME"
@@ -230,7 +234,8 @@ public class TemporalVariableConfig extends VariableConfiguration {
     @Override
     public java.util.List<String> validate() {
         java.util.List<String> errors = new java.util.ArrayList<>();
-        if (dateFormat != null && !dateFormat.trim().isEmpty() && !"UNIX_TIMESTAMP".equalsIgnoreCase(dateFormat)) {
+        if (dateFormat != null && !dateFormat.trim().isEmpty() && !"UNIX_TIMESTAMP".equalsIgnoreCase(dateFormat)
+                && !ISO_INSTANT.equalsIgnoreCase(dateFormat)) {
             try {
                 DateTimeFormatter.ofPattern(dateFormat);
             } catch (IllegalArgumentException e) {
@@ -263,7 +268,6 @@ public class TemporalVariableConfig extends VariableConfiguration {
             }
         }
 
-        long currentSeq = sequenceIndex;
         Instant generatedInstant = computeBaseInstant();
 
         // Apply Clock Drift / Skew if enabled
@@ -280,7 +284,8 @@ public class TemporalVariableConfig extends VariableConfiguration {
                     driftOffsetMs = maxDriftMs;
                     break;
                 case PROGRESSIVE_DRIFT:
-                    driftOffsetMs = Math.round(currentSeq * driftRateMsPerTick);
+                    // Grows with the generated values in every time mode (the first value has no drift)
+                    driftOffsetMs = Math.round((tickCounter - 1) * driftRateMsPerTick);
                     break;
             }
             generatedInstant = generatedInstant.plusMillis(driftOffsetMs);
@@ -349,19 +354,52 @@ public class TemporalVariableConfig extends VariableConfiguration {
         return Instant.ofEpochMilli(rangeStartMillis + offset);
     }
 
+    /**
+     * Instant of the last value, whatever its output format, so template sub-properties
+     * ({@code .timestamp}, {@code .hour}...) never depend on parsing the formatted text.
+     *
+     * @return the last generated instant, or {@code null} before the first value
+     */
+    public Instant getLastInstant() {
+        return lastInstant;
+    }
+
+    /**
+     * Resolves the zone a temporal variable is formatted and read in: its Time Zone, or the
+     * computer's zone ({@link ZoneId#systemDefault()}) when it is empty or not a valid zone id.
+     * Both the formatted value and its sub-properties ({@code .hour}, {@code .timezone}...) use
+     * this zone, so they always agree.
+     *
+     * @param timeZone the configured Time Zone (may be {@code null} or blank)
+     * @return the zone to use, never {@code null}
+     */
+    public static ZoneId resolveZone(String timeZone) {
+        if (timeZone != null && !timeZone.trim().isEmpty()) {
+            try {
+                return ZoneId.of(timeZone.trim());
+            } catch (java.time.DateTimeException e) {
+                // Invalid ids are rejected by validate(); fall back to the computer's zone
+            }
+        }
+        return ZoneId.systemDefault();
+    }
+
     private Object formatOutput(Instant instant) {
+        lastInstant = instant;
         if (dateFormat == null || dateFormat.trim().isEmpty()) {
             return instant;
         }
         if ("UNIX_TIMESTAMP".equalsIgnoreCase(dateFormat)) {
             return instant.toEpochMilli();
         }
+        if (ISO_INSTANT.equalsIgnoreCase(dateFormat)) {
+            return DateTimeFormatter.ISO_INSTANT.format(instant);
+        }
 
         if (formatter == null) {
-            ZoneId zone = (timeZone != null && !timeZone.trim().isEmpty()) 
-                ? ZoneId.of(timeZone) 
-                : ZoneId.systemDefault();
-            formatter = DateTimeFormatter.ofPattern(dateFormat).withZone(zone);
+            // English month and day names, like the .monthText / .dayOfWeek sub-properties,
+            // so the output does not depend on the computer's language
+            formatter = DateTimeFormatter.ofPattern(dateFormat, java.util.Locale.ENGLISH).withZone(resolveZone(timeZone));
         }
         return formatter.format(instant);
     }
@@ -373,6 +411,7 @@ public class TemporalVariableConfig extends VariableConfiguration {
         isAnomalous = false;
         anomalyStartTick = 0;
         cachedWhenTicks = -1;
+        lastInstant = null;
     }
 
     @Override

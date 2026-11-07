@@ -49,6 +49,12 @@ export default defineConfig([
       'react-hooks/use-memo': 'warn',
       'react-hooks/purity': 'warn',
       'react-hooks/immutability': 'warn',
+      // The desktop app serves the UI from http://gensynth.local (not a secure context), where it is undefined
+      'no-restricted-properties': ['error', {
+        object: 'crypto',
+        property: 'randomUUID',
+        message: 'Not available in the desktop app (insecure context). Use randomUUID from core/randomId.',
+      }],
     },
   },
 ])

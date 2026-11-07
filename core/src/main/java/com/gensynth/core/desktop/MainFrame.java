@@ -14,6 +14,7 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Main window of the Gen-Synth Desktop application.
@@ -21,7 +22,7 @@ import java.awt.event.WindowEvent;
  */
 public class MainFrame extends JFrame {
     private static final Logger logger = LoggerFactory.getLogger(MainFrame.class);
-    private static volatile MainFrame activeFrame;
+    private static final AtomicReference<MainFrame> activeFrame = new AtomicReference<>();
     private static volatile boolean restarting = false;
 
     public static void setRestarting(boolean value) {
@@ -32,26 +33,30 @@ public class MainFrame extends JFrame {
         return restarting;
     }
 
+    /**
+     * Closes the browser and disposes the frame that is currently open, if any.
+     */
     public static void closeActiveFrame() {
-        if (activeFrame != null) {
+        MainFrame frame = activeFrame.getAndSet(null);
+        if (frame != null) {
             try {
-                if (activeFrame.browser != null) {
-                    activeFrame.browser.close(true);
+                if (frame.browser != null) {
+                    frame.browser.close(true);
                 }
-                activeFrame.dispose();
+                frame.dispose();
             } catch (Exception ignored) {}
-            activeFrame = null;
         }
     }
     
-    private final CefClient client;
-    private final CefBrowser browser;
+    // Native browser objects: a window is never serialized, so they are not either
+    private final transient CefClient client;
+    private final transient CefBrowser browser;
     private final Component browserUI;
-    private final CefMessageRouter messageRouter;
+    private final transient CefMessageRouter messageRouter;
 
     public MainFrame(String title, String initialUrl, CefApp cefApp) {
         super(title);
-        activeFrame = this;
+        activeFrame.set(this);
 
         logger.info("Creating MainFrame for URL: {}", initialUrl);
 
@@ -175,7 +180,7 @@ public class MainFrame extends JFrame {
         setLocationRelativeTo(null);
         
         // In Phase 4, we will add a custom icon and title bar styling
-        setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
+        setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
     }
 
     public void showWindow() {

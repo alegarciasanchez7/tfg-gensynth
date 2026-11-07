@@ -11,12 +11,15 @@ import {
 } from '../../../../types';
 import { Input } from '../../../ui/input';
 import { Label } from '../../../ui/label';
+import { CustomDropdown } from '../../../ui/custom-dropdown';
 
 import { Info, Route, ArrowRight, X, Trash2 } from 'lucide-react';
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '../../../ui/tooltip';
 
 import { ListReferenceSelector } from './ListReferenceSelector';
 import { GraphRouteCanvas } from './GraphRouteCanvas';
+import { WaypointEditor } from './WaypointEditor';
+import { coordinateSystemSwitch } from '../../../../core/pointDefaults';
 
 interface PointConfigPanelProps {
   config: PointVariableConfig;
@@ -26,81 +29,11 @@ interface PointConfigPanelProps {
   variableScope?: VariableScope;
 }
 
-interface CustomDropdownProps {
-  id?: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: Array<{ value: string; label: string }>;
-}
-
-const CustomDropdown: React.FC<CustomDropdownProps> = ({ id, value, onChange, options }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const containerRef = React.useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  const selectedOption = options.find((opt) => opt.value === value) || options[0];
-
-  return (
-    <div ref={containerRef} className={`relative w-full ${isOpen ? 'z-[9999]' : ''}`}>
-      <button
-        id={id}
-        type="button"
-        onClick={() => setIsOpen(!isOpen)}
-        className="flex h-8 w-full items-center justify-between rounded-md border border-input bg-input-background dark:bg-input/30 px-3 py-1 text-xs text-[var(--c-tx2)] outline-none hover:bg-[var(--c-bg5)] transition-colors cursor-pointer"
-      >
-        <span>{selectedOption.label}</span>
-        <svg
-          className={`size-3.5 opacity-60 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
-          xmlns="http://www.w3.org/2000/svg"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          strokeWidth="2"
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-        </svg>
-      </button>
-
-      {isOpen && (
-        <div className="absolute left-0 right-0 mt-1 z-[9999] bg-[var(--c-bg2)] border border-[var(--c-br1)] rounded shadow-2xl max-h-[200px] overflow-y-auto">
-          <div className="p-1 space-y-0.5">
-            {options.map((opt) => (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => {
-                  onChange(opt.value);
-                  setIsOpen(false);
-                }}
-                className={`w-full text-left px-2.5 py-1.5 rounded text-xs transition-colors flex items-center justify-between cursor-pointer ${
-                  opt.value === value
-                    ? 'bg-violet-500/20 text-violet-400 font-semibold'
-                    : 'hover:bg-[var(--c-bg5)] text-[var(--c-tx2)]'
-                }`}
-              >
-                <span>{opt.label}</span>
-                {opt.value === value && (
-                  <svg className="size-3.5 text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                  </svg>
-                )}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
+/** Patterns that show extra settings below the Movement Pattern selector. */
+const PATTERNS_WITH_SETTINGS = new Set([
+  'GRAPH_ROUTE', 'FIXED_POINT', 'RANDOM_WALK', 'CONTINUOUS_MOVEMENT', 'CIRCULAR_ORBIT',
+  'WAYPOINT_NAVIGATION', 'PATH_INTERPOLATOR',
+]);
 
 export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onChange, flowId, groupId, variableScope }) => {
   const coordSystem: CoordinateSystem = config.coordinateSystem ?? 'CARTESIAN_3D';
@@ -115,6 +48,13 @@ export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onCh
   const [angularSpeedStr, setAngularSpeedStr] = useState(String(config.angularSpeed ?? 0.1));
   const [spiralRateStr, setSpiralRateStr] = useState(String(config.spiralRate ?? 0.0));
   const [jitterRadiusStr, setJitterRadiusStr] = useState(String(config.jitterRadius ?? 0.0));
+
+  // Follow values changed from outside these inputs (e.g. a coordinate system switch rescales them),
+  // keeping what the user is typing when it already means that value ("0." while typing "0.5")
+  const follow = (value: number) => (prev: string) => (Number.parseFloat(prev) === value ? prev : String(value));
+  useEffect(() => { setStepDistanceStr(follow(config.maxStepDistance ?? 0.1)); }, [config.maxStepDistance]);
+  useEffect(() => { setOrbitRadiusStr(follow(config.orbitRadius ?? 10.0)); }, [config.orbitRadius]);
+  useEffect(() => { setJitterRadiusStr(follow(config.jitterRadius ?? 0.0)); }, [config.jitterRadius]);
 
   const isGeospatial = coordSystem === 'GEOSPATIAL';
   const is2D = coordSystem === 'CARTESIAN_2D';
@@ -159,14 +99,10 @@ export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onCh
               id="point-coord-system"
               value={coordSystem}
               onChange={(val) => {
-                if (val !== coordSystem) {
-                  onChange({
-                    coordinateSystem: val as CoordinateSystem,
-                    graphNodes: [],
-                    graphEdges: [],
-                    graphSequence: [],
-                  });
-                }
+                const { updates, confirmMessage } = coordinateSystemSwitch(config, val as CoordinateSystem);
+                if (Object.keys(updates).length === 0) return;
+                if (confirmMessage && !window.confirm(confirmMessage)) return;
+                onChange(updates);
               }}
               options={[
                 { value: 'CARTESIAN_2D', label: '2D Cartesian (X, Y)' },
@@ -266,7 +202,7 @@ export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onCh
             <CustomDropdown
               id="point-pattern"
               value={pattern}
-              onChange={(val) => onChange({ pattern: val as any })}
+              onChange={(val) => onChange({ pattern: val })}
               options={[
                 { value: 'FIXED_POINT', label: 'Fixed Point (Constant)' },
                 { value: 'RANDOM_POINT', label: 'Random Point (Within bounds)' },
@@ -280,7 +216,8 @@ export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onCh
             />
         </div>
 
-        {/* 3. Conditional Pattern Settings */}
+        {/* 3. Conditional Pattern Settings (Random Point has none: no empty box) */}
+        {PATTERNS_WITH_SETTINGS.has(pattern) && (
         <div className="rounded border border-[var(--c-br1)] bg-[var(--c-bg2)] p-3 space-y-3 relative z-0">
           {pattern === 'GRAPH_ROUTE' && (
             <div className="space-y-4">
@@ -338,7 +275,7 @@ export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onCh
                     type="number"
                     min={1}
                     value={config.graphInterpolationSteps ?? 1}
-                    onChange={(e) => onChange({ graphInterpolationSteps: parseInt(e.target.value) || 1 })}
+                    onChange={(e) => onChange({ graphInterpolationSteps: Number.parseInt(e.target.value) || 1 })}
                     className="h-8 text-xs font-mono"
                   />
                 </div>
@@ -368,8 +305,8 @@ export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onCh
                     max="1"
                     value={config.graphStopProbability ?? 0.0}
                     onChange={(e) => {
-                      const parsed = parseFloat(e.target.value.replace(',', '.'));
-                      onChange({ graphStopProbability: isNaN(parsed) ? 0.0 : parsed });
+                      const parsed = Number.parseFloat(e.target.value.replace(',', '.'));
+                      onChange({ graphStopProbability: Number.isNaN(parsed) ? 0.0 : parsed });
                     }}
                     className="h-8 text-xs font-mono"
                   />
@@ -397,7 +334,7 @@ export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onCh
                     type="number"
                     min={0}
                     value={config.graphStopTicks ?? 0}
-                    onChange={(e) => onChange({ graphStopTicks: parseInt(e.target.value) || 0 })}
+                    onChange={(e) => onChange({ graphStopTicks: Number.parseInt(e.target.value) || 0 })}
                     className="h-8 text-xs font-mono"
                   />
                 </div>
@@ -472,7 +409,7 @@ export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onCh
                             onChange={(e) => onChange({ graphLoopSequence: e.target.checked })}
                             className="rounded border-[var(--c-br1)] bg-[var(--c-bg2)] text-cyan-500 focus:ring-0 h-3 w-3"
                           />
-                          Loop Sequence
+                          <span>Loop Sequence</span>
                         </label>
                         {sequence.length > 0 && (
                           <button
@@ -578,7 +515,7 @@ export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onCh
                   step="0.0001"
                   value={config.fixedPoint?.x ?? 0}
                   onChange={(e) => {
-                    const val = parseFloat(e.target.value) || 0;
+                    const val = Number.parseFloat(e.target.value) || 0;
                     onChange({ fixedPoint: { ...config.fixedPoint, x: val } });
                   }}
                   className="h-8 text-xs font-mono"
@@ -592,7 +529,7 @@ export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onCh
                   step="0.0001"
                   value={config.fixedPoint?.y ?? 0}
                   onChange={(e) => {
-                    const val = parseFloat(e.target.value) || 0;
+                    const val = Number.parseFloat(e.target.value) || 0;
                     onChange({ fixedPoint: { ...config.fixedPoint, y: val } });
                   }}
                   className="h-8 text-xs font-mono"
@@ -607,7 +544,7 @@ export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onCh
                     step="0.0001"
                     value={config.fixedPoint?.z ?? 0}
                     onChange={(e) => {
-                      const val = parseFloat(e.target.value) || 0;
+                      const val = Number.parseFloat(e.target.value) || 0;
                       onChange({ fixedPoint: { ...config.fixedPoint, z: val } });
                     }}
                     className="h-8 text-xs font-mono"
@@ -646,8 +583,8 @@ export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onCh
                   value={stepDistanceStr}
                   onChange={(e) => {
                     setStepDistanceStr(e.target.value);
-                    const val = parseFloat(e.target.value);
-                    if (!isNaN(val)) onChange({ maxStepDistance: val });
+                    const val = Number.parseFloat(e.target.value);
+                    if (!Number.isNaN(val)) onChange({ maxStepDistance: val });
                   }}
                   className="h-8 text-xs font-mono"
                 />
@@ -677,8 +614,8 @@ export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onCh
                   value={inertiaStr}
                   onChange={(e) => {
                     setInertiaStr(e.target.value);
-                    const val = parseFloat(e.target.value);
-                    if (!isNaN(val)) onChange({ inertia: Math.max(0, Math.min(1, val)) });
+                    const val = Number.parseFloat(e.target.value);
+                    if (!Number.isNaN(val)) onChange({ inertia: Math.max(0, Math.min(1, val)) });
                   }}
                   className="h-8 text-xs font-mono"
                 />
@@ -697,8 +634,8 @@ export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onCh
                     value={orbitRadiusStr}
                     onChange={(e) => {
                       setOrbitRadiusStr(e.target.value);
-                      const val = parseFloat(e.target.value);
-                      if (!isNaN(val)) onChange({ orbitRadius: val });
+                      const val = Number.parseFloat(e.target.value);
+                      if (!Number.isNaN(val)) onChange({ orbitRadius: val });
                     }}
                     className="h-8 text-xs font-mono"
                   />
@@ -712,8 +649,8 @@ export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onCh
                     value={angularSpeedStr}
                     onChange={(e) => {
                       setAngularSpeedStr(e.target.value);
-                      const val = parseFloat(e.target.value);
-                      if (!isNaN(val)) onChange({ angularSpeed: val });
+                      const val = Number.parseFloat(e.target.value);
+                      if (!Number.isNaN(val)) onChange({ angularSpeed: val });
                     }}
                     className="h-8 text-xs font-mono"
                   />
@@ -727,8 +664,8 @@ export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onCh
                     value={spiralRateStr}
                     onChange={(e) => {
                       setSpiralRateStr(e.target.value);
-                      const val = parseFloat(e.target.value);
-                      if (!isNaN(val)) onChange({ spiralRate: val });
+                      const val = Number.parseFloat(e.target.value);
+                      if (!Number.isNaN(val)) onChange({ spiralRate: val });
                     }}
                     className="h-8 text-xs font-mono"
                   />
@@ -738,20 +675,10 @@ export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onCh
           )}
 
           {(pattern === 'WAYPOINT_NAVIGATION' || pattern === 'PATH_INTERPOLATOR') && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label className="text-[10px] uppercase text-[var(--c-tx4)]">Interpolation Steps per Segment</Label>
-                <Input
-                  type="number"
-                  min={1}
-                  value={config.interpolationSteps ?? 1}
-                  onChange={(e) => onChange({ interpolationSteps: parseInt(e.target.value) || 1 })}
-                  className="h-7 w-20 text-xs font-mono"
-                />
-              </div>
-            </div>
+            <WaypointEditor config={config} onChange={onChange} />
           )}
         </div>
+        )}
 
         {/* 4. GPS Noise / Position Jitter */}
         <div className="rounded border border-[var(--c-br1)] bg-[var(--c-bg2)] p-3 space-y-2">
@@ -792,8 +719,8 @@ export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onCh
                 value={jitterRadiusStr}
                 onChange={(e) => {
                   setJitterRadiusStr(e.target.value);
-                  const val = parseFloat(e.target.value);
-                  if (!isNaN(val)) onChange({ jitterRadius: val });
+                  const val = Number.parseFloat(e.target.value);
+                  if (!Number.isNaN(val)) onChange({ jitterRadius: val });
                 }}
                 className="h-8 text-xs font-mono"
               />

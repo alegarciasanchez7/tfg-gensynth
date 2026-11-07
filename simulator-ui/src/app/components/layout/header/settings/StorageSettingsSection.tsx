@@ -1,22 +1,51 @@
 import { useEffect, useState } from 'react';
-import { Save, Timer } from 'lucide-react';
+import { FolderOpen, FolderOutput, RotateCcw, Save, Timer } from 'lucide-react';
 import { useApp } from '../../../../context';
 import { AUTO_SAVE_MAX_SECONDS, AUTO_SAVE_MIN_SECONDS, clampAutoSaveInterval } from '../../../../context/reducer';
 import { supportsFileSystemAccess } from '../../../../core/fileStorage';
+import { CoreCommands } from '../../../../core/bridge';
+import { Button } from '../../../ui/button';
 import { Switch } from '../../../ui/switch';
 import { Input } from '../../../ui/input';
 import { SettingRow } from './SettingRow';
 
 /**
- * Save & storage settings: auto-save switch and interval. Stored on this device.
+ * Save & storage settings: auto-save switch and interval, and the folder of the generated files.
+ * Stored on this device.
  */
 export function StorageSettingsSection() {
   const { state, actions } = useApp();
   const [intervalDraft, setIntervalDraft] = useState(String(state.autoSaveIntervalSeconds));
+  const outputFolder = state.outputFolder;
+  // Text being typed in the folder field; null while not editing, so the field shows the folder in use
+  const [folderDraft, setFolderDraft] = useState<string | null>(null);
 
   useEffect(() => {
     setIntervalDraft(String(state.autoSaveIntervalSeconds));
   }, [state.autoSaveIntervalSeconds]);
+
+  const changeOutputFolder = async (path: string | null) => {
+    try {
+      await actions.setOutputFolder(path);
+    } catch {
+      // The action already reported the error; the field shows the folder in use again
+    }
+  };
+
+  const commitFolder = () => {
+    if (folderDraft === null) return;
+    const next = folderDraft.trim();
+    setFolderDraft(null);
+    if (next === (outputFolder?.path ?? '')) return;
+    void changeOutputFolder(next === '' ? null : next);
+  };
+
+  const browseFolder = async () => {
+    const response = (await CoreCommands.pickDirectory()) as { status?: string; path?: string } | undefined;
+    if (response?.status === 'success' && response.path) {
+      await changeOutputFolder(response.path);
+    }
+  };
 
   const commitInterval = () => {
     const seconds = Number(intervalDraft);
@@ -87,6 +116,40 @@ export function StorageSettingsSection() {
       {autoSaveHint && (
         <span className="text-[10px] text-amber-400 px-1">{autoSaveHint}</span>
       )}
+
+      <SettingRow
+        icon={<FolderOutput size={12} className="text-cyan-400" />}
+        title="Output folder"
+        description="Each START creates an OUTPUT_FILES_<date> folder here. A flow's Output directory overrides it."
+        htmlFor="settings-output-folder"
+      >
+        <div className="flex gap-1.5">
+          {isDesktop && (
+            <Button type="button" variant="outline" size="sm" onClick={() => void browseFolder()}
+              className="h-7 px-2 text-[11px]">
+              <FolderOpen size={12} /> Browse
+            </Button>
+          )}
+          {outputFolder?.custom && (
+            <Button type="button" variant="outline" size="sm" onClick={() => void changeOutputFolder(null)}
+              title={`Back to ${outputFolder.defaultPath}`} className="h-7 px-2 text-[11px]">
+              <RotateCcw size={12} /> Default
+            </Button>
+          )}
+        </div>
+      </SettingRow>
+      <Input
+        id="settings-output-folder"
+        aria-label="Output folder"
+        value={folderDraft ?? outputFolder?.path ?? ''}
+        placeholder={outputFolder?.defaultPath ?? 'Default folder'}
+        title={outputFolder?.path}
+        onChange={(e) => setFolderDraft(e.target.value)}
+        onBlur={commitFolder}
+        onKeyDown={(e) => { if (e.key === 'Enter') commitFolder(); }}
+        className="h-7 px-2 text-[11px] md:text-[11px] bg-[var(--c-bg4)] border-[var(--c-br1)] text-[var(--c-tx1)]"
+        style={{ fontFamily: 'JetBrains Mono, monospace' }}
+      />
     </div>
   );
 }

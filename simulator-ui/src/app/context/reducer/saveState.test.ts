@@ -14,6 +14,7 @@ const fileGroup: Group = {
   description: '',
   threads: 1,
   outputMode: 'parallel',
+  sequentialOrder: 'flow' as const,
   expanded: false,
   enabled: true,
   flows: [
@@ -42,6 +43,7 @@ const fileGroup: Group = {
 const coreGroup: Group = {
   ...fileGroup,
   outputMode: 'parallel',
+  sequentialOrder: 'flow' as const,
   expanded: true,
   flows: [
     {

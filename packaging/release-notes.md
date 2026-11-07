@@ -1,3 +1,18 @@
+## What's new in 0.5.2
+
+- **Update from the app:** GenSynth checks for new versions when it starts and lets you choose: **Update now** (it downloads the installer of your system, checks it with SHA-256 and installs it), **Not now** (keep the installed version) or **Skip this version**. Nothing is installed unless you ask; you can also check, or turn the check off, in *Settings → About & Updates*. Versions before 0.5.2 do not have it, so install this version by hand once.
+- **RabbitMQ included:** the RabbitMQ connector now comes with GenSynth, so there is no plugin to download or import. If you imported `rabbitmq-connector-1.0.0.jar` in 0.5.1, there is nothing to do: GenSynth uses the included one and ignores the old copy.
+- **Order of a sequential group:** choose how the messages of the same tick are ordered: **Flow order** (set it with the new ↑ / ↓ arrows of the flow list), **Random** (a new order every tick) or **First generated** (each message is sent as soon as it is ready).
+
+Fixes for the first reviews of the [user guide](https://github.com/alegarciasanchez7/tfg-gensynth/blob/main/USER_GUIDE.md) walkthrough:
+
+- **Output folder** in *Settings → Save & Storage*: choose where each START creates its `OUTPUT_FILES_<date>` folder (by default `GenSynth` in your user folder). It is kept on this computer, not in the project file, and the **Output directory** of a File Output flow still overrides it. The Logs show the folder of each session when you press START.
+- **New variables open their editor** right after **Create Variable**, so you can configure them at once.
+- **Saving where you cannot write** (for example in `C:\Program Files\GenSynth`, the installation folder) now says that the folder is not writable and asks for another one, right in the save dialog, instead of *"Failed to export state"*.
+- The **Feedback** button tooltip no longer says the form is anonymous: it asks for your email to follow up on bugs.
+- A group update that is rejected (for example an unknown output mode) no longer applies the other changes sent with it, such as a new name.
+- **Security:** GenSynth only accepts connections from its own interface. Before, a web page open in your browser while GenSynth was running could send it commands.
+
 ## Download and install
 
 | Your system | Download |
@@ -20,3 +35,5 @@ No Java installation is needed: everything GenSynth needs is included.
 **Command line:** type `gensynth` in a terminal to start and stop `.gsynth` projects without the window, with Tab completion of commands and paths, colors and a live panel with the metrics of each run. The Linux packages set it up automatically; on Windows and macOS it needs a one-time step described in the [User Guide](https://github.com/alegarciasanchez7/tfg-gensynth/blob/main/USER_GUIDE.md#command-line).
 
 `SHA256SUMS.txt` lists the checksum of every file.
+
+

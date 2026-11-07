@@ -15,6 +15,27 @@ export function validateCommand<T extends UICommandType>(
   const everyTicks = readField('everyTicks');
   const invalidEveryTicks = everyTicks !== undefined && !(Number.isInteger(everyTicks) && (everyTicks as number) >= 1);
 
+  // Event loss fields (optional): a percentage in [0, 100] and two tick counts >= 0
+  const validateEventLoss = (): Error | null => {
+    const lossPercent = readField('lossPercent');
+    if (lossPercent !== undefined
+      && !(typeof lossPercent === 'number' && Number.isFinite(lossPercent) && lossPercent >= 0 && lossPercent <= 100)) {
+      return new Error('lossPercent must be a number between 0 and 100');
+    }
+    for (const field of ['outageEveryTicks', 'outageDurationTicks']) {
+      const value = readField(field);
+      if (value !== undefined && !(Number.isInteger(value) && (value as number) >= 0)) {
+        return new Error(`${field} must be an integer >= 0`);
+      }
+    }
+    return null;
+  };
+
+  // Sequential order (optional): one of the values the Core accepts
+  const sequentialOrder = readField('sequentialOrder');
+  const invalidSequentialOrder = sequentialOrder !== undefined
+    && !(sequentialOrder === 'flow' || sequentialOrder === 'random' || sequentialOrder === 'generated');
+
   const requireStringField = (field: string, message: string) => {
     const value = readField(field);
     return typeof value === 'string' && value.trim().length > 0 ? null : new Error(message);
@@ -46,19 +67,34 @@ export function validateCommand<T extends UICommandType>(
         ? null
         : new Error('El comando DELETE_FLOW requiere flowId y groupId');
     case 'CREATE_GROUP':
+      if (invalidSequentialOrder) return new Error("sequentialOrder must be 'flow', 'random' or 'generated'");
       return requireStringField('name', 'El comando CREATE_GROUP requiere name');
     case 'CREATE_FLOW':
       if (invalidEveryTicks) return new Error('everyTicks must be an integer >= 1');
+      {
+        const eventLossError = validateEventLoss();
+        if (eventLossError) return eventLossError;
+      }
       return isObjectPayload
         && typeof readField('groupId') === 'string'
         && typeof readField('name') === 'string'
         && typeof readField('technology') === 'string'
         ? null
         : new Error('El comando CREATE_FLOW requiere groupId, name y technology');
-    case 'UPDATE_GROUP_CONFIG':
+    case 'UPDATE_GROUP_CONFIG': {
+      if (invalidSequentialOrder) return new Error("sequentialOrder must be 'flow', 'random' or 'generated'");
+      const flowIds = readField('flowIds');
+      if (flowIds !== undefined && !(Array.isArray(flowIds) && flowIds.every(id => typeof id === 'string'))) {
+        return new Error('flowIds must be a list of flow ids');
+      }
       return requireStringField('groupId', 'El comando UPDATE_GROUP_CONFIG requiere groupId');
+    }
     case 'UPDATE_FLOW_CONFIG':
       if (invalidEveryTicks) return new Error('everyTicks must be an integer >= 1');
+      {
+        const eventLossError = validateEventLoss();
+        if (eventLossError) return eventLossError;
+      }
       return isObjectPayload
         && typeof readField('flowId') === 'string'
         && typeof readField('groupId') === 'string'
@@ -116,6 +152,17 @@ export function validateCommand<T extends UICommandType>(
         ? null
         : new Error('El comando UPDATE_SETTINGS requiere tick con mode, value y unit');
     }
+    case 'UPDATE_OUTPUT_FOLDER': {
+      const path = readField('path');
+      return isObjectPayload && (typeof path === 'string' || path === null)
+        ? null
+        : new Error('El comando UPDATE_OUTPUT_FOLDER requiere path (texto o null)');
+    }
+    case 'CHECK_FOR_UPDATES':
+    case 'CANCEL_UPDATE':
+      return null;
+    case 'INSTALL_UPDATE':
+      return requireStringField('version', 'El comando INSTALL_UPDATE requiere version');
     case 'PICK_DIRECTORY':
     case 'EXPORT_STATE':
       return null;

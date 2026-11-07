@@ -17,7 +17,8 @@ export interface ConditionalRule {
   overrides: Record<string, any>;
 }
 
-export type ListReferenceSelectionMode = 'RANDOM_ITEM' | 'FIXED_ITEM' | 'SUBSET_SPECIFIC' | 'SUBSET_RANDOM';
+/** How a variable that is not a List takes its value from a list (a List cannot inherit from another list). */
+export type ListReferenceSelectionMode = 'RANDOM_ITEM' | 'FIXED_ITEM' | 'INHERITED_GENERATION';
 
 export interface BaseVariableConfig {
   pattern?: string;
@@ -25,8 +26,6 @@ export interface BaseVariableConfig {
   sourceListVariableId?: string;
   sourceListSelectionMode?: ListReferenceSelectionMode;
   selectedListItemId?: string;
-  selectedListItemIds?: string[];
-  randomSubsetCount?: number;
   [key: string]: any;
 }
 
@@ -221,7 +220,6 @@ export interface PointVariableConfig extends BaseVariableConfig {
   inertia?: number;
   waypoints?: Point3DCoord[];
   interpolationSteps?: number;
-  navigationSpeed?: number;
   loopPath?: boolean;
   orbitCenter?: Point3DCoord;
   orbitRadius?: number;
@@ -275,6 +273,12 @@ export interface Flow {
   burst: number;
   /** Number of global ticks between two messages of this flow (integer >= 1). */
   everyTicks: number;
+  /** Event loss: percentage (0-100) of generated messages dropped at random. Missing = 0. */
+  lossPercent?: number;
+  /** Event loss: length in ticks of the outage cycle (integer >= 0, 0 = no outages). Missing = 0. */
+  outageEveryTicks?: number;
+  /** Event loss: ticks lost at the end of every outage cycle (integer >= 0, 0 = no outages). Missing = 0. */
+  outageDurationTicks?: number;
   topic: string;
   host: string;
   port: number;
@@ -303,8 +307,37 @@ export interface ProjectSettings {
   tick: TickSettings;
 }
 
+/**
+ * Folder where each START creates its OUTPUT_FILES_<date> session folder. A preference of this
+ * computer, not saved with the project. Mirrors BridgeContext#outputFolderPayload in the Core.
+ */
+export interface OutputFolderInfo {
+  /** Folder in use: the chosen one, or the default one. */
+  path: string;
+  /** Default folder (~/GenSynth when installed). */
+  defaultPath: string;
+  /** Whether the user chose the folder. */
+  custom: boolean;
+}
+
+/** A newer release the user may install. Mirrors UpdateCheck in the Core. */
+export interface UpdateInfo {
+  currentVersion: string;
+  latestVersion: string;
+  /** Release page, to read the notes. */
+  releaseUrl: string;
+  /** Size of the installer, in bytes. */
+  assetSize: number;
+}
+
 /** How the flows of a group send: one FIFO queue + one sender, or one thread per flow. Mirrors OutputMode in the Core. */
 export type OutputMode = 'parallel' | 'sequential';
+
+/**
+ * Order of the messages due on the same tick in a sequential group: the flow list order, a
+ * random order every tick, or the order in which generation ends. Mirrors SequentialOrder in the Core.
+ */
+export type SequentialOrder = 'flow' | 'random' | 'generated';
 
 export interface Group {
   id: string;
@@ -316,6 +349,8 @@ export interface Group {
   /** @deprecated Legacy; ignored by the engine. */
   threads: number;
   outputMode: OutputMode;
+  /** Used by sequential groups only; kept when the group is parallel. */
+  sequentialOrder: SequentialOrder;
   flows: Flow[];
   expanded: boolean;
   enabled: boolean;

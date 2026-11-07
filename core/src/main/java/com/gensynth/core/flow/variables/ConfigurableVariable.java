@@ -9,6 +9,9 @@ import com.gensynth.core.api.IVariable;
 public class ConfigurableVariable implements IVariable {
     private final VariableConfiguration configuration;
     private Object currentValue;
+    /** Generators of the rules that override with a full config, created on first use. */
+    private final java.util.Map<java.util.Map<String, Object>, ConfigurableVariable> overrideGenerators =
+            new java.util.IdentityHashMap<>();
 
     public ConfigurableVariable(VariableConfiguration config) {
         if (config == null) {
@@ -22,7 +25,10 @@ public class ConfigurableVariable implements IVariable {
     public Object getValue() {
         if (configuration.hasActiveOverride) {
             configuration.incrementTick(); // Maintain tick counter progression
-            currentValue = configuration.activeOverrideValue;
+            java.util.Map<String, Object> overrideConfig = configuration.getActiveOverrideConfig();
+            currentValue = overrideConfig != null
+                ? overrideGenerator(overrideConfig).getValue()
+                : configuration.activeOverrideValue;
             org.slf4j.LoggerFactory.getLogger(ConfigurableVariable.class)
                 .debug("[VARIABLE OVERRIDE VALUE] Variable '{}' evaluated to override value: '{}'",
                     configuration.getIdentifier(), currentValue);
@@ -30,6 +36,14 @@ public class ConfigurableVariable implements IVariable {
             currentValue = configuration.generateNextValue();
         }
         return currentValue;
+    }
+
+    private ConfigurableVariable overrideGenerator(java.util.Map<String, Object> overrideConfig) {
+        ConfigurableVariable generator = overrideGenerators.computeIfAbsent(overrideConfig, cfg ->
+            VariableFactory.createFromConfig(VariableFactory.createFromMap(
+                configuration.getIdentifier() + "#rule", configuration.getType().name(), cfg)));
+        generator.setContext(configuration.currentContext);
+        return generator;
     }
 
     @Override

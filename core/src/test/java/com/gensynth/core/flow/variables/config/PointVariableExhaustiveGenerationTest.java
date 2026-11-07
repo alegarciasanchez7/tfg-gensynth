@@ -88,6 +88,17 @@ public class PointVariableExhaustiveGenerationTest {
     }
 
     @Test
+    public void dmsSecondsCarryIntoTheNextMinuteAndDegree() {
+        // 10.1 * 60 is not exact: the seconds used to come out as 60.00
+        assertEquals("10° 6' 0.00\" N", PointVariableConfig.convertToDMS(10.1, true));
+        assertEquals("46° 0' 0.00\" E", PointVariableConfig.convertToDMS(45.999999999, false));
+        assertEquals("36° 59' 59.96\" N", PointVariableConfig.convertToDMS(36.99999, true));
+        assertEquals("36° 32' 15.97\" N", PointVariableConfig.convertToDMS(36.53777, true));
+        assertEquals("6° 12' 5.83\" W", PointVariableConfig.convertToDMS(-6.20162, false));
+        assertEquals("0° 30' 0.00\" S", PointVariableConfig.convertToDMS(-0.5, true));
+    }
+
+    @Test
     public void testMovementPatternRandomWalkWithInertia() {
         config.pattern(GenerationPattern.RANDOM_WALK)
               .coordinateSystem(CoordinateSystem.CARTESIAN_3D)
@@ -152,10 +163,95 @@ public class PointVariableExhaustiveGenerationTest {
         @SuppressWarnings("unchecked")
         Map<String, Object> p3 = (Map<String, Object>) config.generateNextValue();
 
+        // Two ticks per segment: the midpoint, then the next waypoint (each waypoint once)
         assertEquals(0.0, (Double) p1.get("x"), 1e-6);
-        assertEquals(10.0, (Double) p2.get("x"), 1e-6);
+        assertEquals(5.0, (Double) p2.get("x"), 1e-6);
         assertEquals(10.0, (Double) p3.get("x"), 1e-6);
         assertEquals(0.0, (Double) p3.get("y"), 1e-6);
+    }
+
+    @Test
+    public void testCircularOrbitWithoutCentreTurnsAroundTheRegionCentre() {
+        // Min X = 0 used to make the engine take the default (0,0) as an explicit centre
+        config.pattern(GenerationPattern.CIRCULAR_ORBIT)
+              .coordinateSystem(CoordinateSystem.CARTESIAN_2D)
+              .range(0.0, 100.0, 0.0, 100.0, 0.0, 0.0)
+              .orbitRadius(20.0)
+              .angularSpeed(0.3);
+
+        assertNull(config.getOrbitCenter());
+        for (int i = 0; i < 40; i++) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> p = (Map<String, Object>) config.generateNextValue();
+            double d = Math.hypot((Double) p.get("x") - 50.0, (Double) p.get("y") - 50.0);
+            assertEquals("Orbit point at distance r from (50,50)", 20.0, d, 1e-6);
+        }
+    }
+
+    @Test
+    public void testRandomWalkWithoutFixedPointDoesNotStartAtTheOrigin() {
+        int atOrigin = 0;
+        for (int run = 0; run < 20; run++) {
+            PointVariableConfig walk = new PointVariableConfig()
+                    .pattern(GenerationPattern.RANDOM_WALK)
+                    .coordinateSystem(CoordinateSystem.CARTESIAN_2D)
+                    .range(0.0, 100.0, 0.0, 100.0, 0.0, 0.0);
+            @SuppressWarnings("unchecked")
+            Map<String, Object> first = (Map<String, Object>) walk.generateNextValue();
+            if ((Double) first.get("x") == 0.0 && (Double) first.get("y") == 0.0) {
+                atOrigin++;
+            }
+        }
+        assertEquals("No run may start at the default (0,0)", 0, atOrigin);
+    }
+
+    @Test
+    public void testRandomWalkStartsAtAFixedPointInsideTheRegion() {
+        config.pattern(GenerationPattern.RANDOM_WALK)
+              .coordinateSystem(CoordinateSystem.CARTESIAN_2D)
+              .range(0.0, 100.0, 0.0, 100.0, 0.0, 0.0)
+              .fixedPoint(0.0, 0.0, 0.0);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> first = (Map<String, Object>) config.generateNextValue();
+        assertEquals(0.0, (Double) first.get("x"), 1e-9);
+        assertEquals(0.0, (Double) first.get("y"), 1e-9);
+    }
+
+    @Test
+    public void testRandomWalkIgnoresAFixedPointOutsideThePolygon() {
+        config.pattern(GenerationPattern.RANDOM_WALK)
+              .coordinateSystem(CoordinateSystem.CARTESIAN_2D)
+              .range(0.0, 100.0, 0.0, 100.0, 0.0, 0.0)
+              .addBoundaryPolygonPoint(50.0, 0.0, 0.0)
+              .addBoundaryPolygonPoint(100.0, 50.0, 0.0)
+              .addBoundaryPolygonPoint(50.0, 100.0, 0.0)
+              .addBoundaryPolygonPoint(0.0, 50.0, 0.0)
+              .fixedPoint(5.0, 5.0, 0.0); // a corner outside the diamond
+
+        for (int run = 0; run < 10; run++) {
+            config.reset();
+            @SuppressWarnings("unchecked")
+            Map<String, Object> first = (Map<String, Object>) config.generateNextValue();
+            assertTrue("Start must be inside the polygon",
+                    config.isPointInsidePolygon((Double) first.get("x"), (Double) first.get("y")));
+        }
+    }
+
+    @Test
+    public void testGeoFixedAltitudeUsesTheAltitudeRangeNotTheFixedPoint() {
+        // The Fixed Altitude field writes minAlt = maxAlt; a leftover fixed point must not win
+        config.coordinateSystem(CoordinateSystem.GEOSPATIAL)
+              .pattern(GenerationPattern.RANDOM_POINT)
+              .range(36.0, 43.0, -9.0, 3.0, 120.0, 120.0)
+              .altitudePattern(PointVariableConfig.AltitudePattern.FIXED_ALTITUDE)
+              .fixedPoint(40.0, 0.0, 50.0);
+
+        for (int i = 0; i < 10; i++) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> pt = (Map<String, Object>) config.generateNextValue();
+            assertEquals(120.0, (Double) pt.get("altitude"), 1e-9);
+        }
     }
 
     @Test

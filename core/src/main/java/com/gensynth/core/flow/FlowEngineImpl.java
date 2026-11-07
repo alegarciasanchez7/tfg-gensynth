@@ -30,6 +30,7 @@ import com.gensynth.core.flow.variables.VariableConfiguration;
  *        └── Humidity Variable
  */
 public class FlowEngineImpl implements IFlowEngine, ILifecycleListener {
+    private static final String GROUP_NOT_RUNNING = "Group %s is not running";
 
     private static final Logger logger = Logger.getLogger(FlowEngineImpl.class.getName());
 
@@ -307,7 +308,7 @@ public class FlowEngineImpl implements IFlowEngine, ILifecycleListener {
     public void stopGroup(String groupId) {
         GroupContext context = activeGroups.get(groupId);
         if (context == null) {
-            throw new IllegalStateException(String.format("Group %s is not running", groupId));
+            throw new IllegalStateException(String.format(GROUP_NOT_RUNNING, groupId));
         }
 
         context.stop();
@@ -328,7 +329,7 @@ public class FlowEngineImpl implements IFlowEngine, ILifecycleListener {
     public void pauseGroup(String groupId) {
         GroupContext context = activeGroups.get(groupId);
         if (context == null) {
-            throw new IllegalStateException(String.format("Group %s is not running", groupId));
+            throw new IllegalStateException(String.format(GROUP_NOT_RUNNING, groupId));
         }
 
         context.pause();
@@ -341,7 +342,7 @@ public class FlowEngineImpl implements IFlowEngine, ILifecycleListener {
     public void resumeGroup(String groupId) {
         GroupContext context = activeGroups.get(groupId);
         if (context == null) {
-            throw new IllegalStateException(String.format("Group %s is not running", groupId));
+            throw new IllegalStateException(String.format(GROUP_NOT_RUNNING, groupId));
         }
 
         context.resume();

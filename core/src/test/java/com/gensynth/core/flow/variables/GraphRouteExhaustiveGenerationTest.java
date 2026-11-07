@@ -127,5 +127,39 @@ public class GraphRouteExhaustiveGenerationTest {
         assertTrue((Boolean) m2.get("isPaused"));
         assertTrue((Boolean) m3.get("isPaused"));
     }
+    @Test
+    public void testSequenceWithRepeatedNodeLoops() {
+        config.graphNavigationMode(GraphNavigationMode.SEQUENCE);
+        config.graphSequence(Arrays.asList("n1", "n2", "n1", "n3"));
+        config.graphLoopSequence(true);
+        config.graphInterpolationSteps(1);
+        config.graphStopProbability(0.0);
+
+        List<Object> visited = new ArrayList<>();
+        for (int i = 0; i < 9; i++) {
+            visited.add(((Map<?, ?>) config.generateNextValue()).get("nodeId"));
+        }
+        assertEquals(Arrays.asList("n1", "n2", "n1", "n3", "n1", "n2", "n1", "n3", "n1"), visited);
+
+        // reset() restarts the sequence from its first position
+        config.reset();
+        assertEquals("n1", ((Map<?, ?>) config.generateNextValue()).get("nodeId"));
+        assertEquals("n2", ((Map<?, ?>) config.generateNextValue()).get("nodeId"));
+    }
+
+    @Test
+    public void testSequenceWithRepeatedNodeStopsOnLastWithoutLoop() {
+        config.graphNavigationMode(GraphNavigationMode.SEQUENCE);
+        config.graphSequence(Arrays.asList("n1", "n2", "n1", "n3"));
+        config.graphLoopSequence(false);
+        config.graphInterpolationSteps(1);
+        config.graphStopProbability(0.0);
+
+        List<Object> visited = new ArrayList<>();
+        for (int i = 0; i < 8; i++) {
+            visited.add(((Map<?, ?>) config.generateNextValue()).get("nodeId"));
+        }
+        assertEquals(Arrays.asList("n1", "n2", "n1", "n3", "n3", "n3", "n3", "n3"), visited);
+    }
 }
 

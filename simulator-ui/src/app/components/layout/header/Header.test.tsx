@@ -18,15 +18,25 @@ vi.mock('./ConnectorCatalogDialog', () => ({
     </div>
   ),
 }));
+const feedbackAvailable = vi.fn(() => true);
+vi.mock('../../../core/feedback', () => ({
+  FEEDBACK_FORM_URL: 'https://forms.gle/example',
+  isFeedbackAvailable: () => feedbackAvailable(),
+}));
+const openExternalUrl = vi.fn((_url: string) => Promise.resolve());
+vi.mock('../../../core/jcef', () => ({ openExternalUrl: (url: string) => openExternalUrl(url) }));
+
 vi.mock('./PluginImportPanel', () => ({
   PluginImportPanel: () => <div data-testid="plugin-import-panel" />,
 }));
 
 import { Header } from './Header';
 
-function renderHeader(currentFileName: string | null) {
+function renderHeader(currentFileName: string | null, update: { version: string | null; onShow?: () => void } = { version: null }) {
   return render(
     <Header
+      availableUpdateVersion={update.version}
+      onShowUpdate={update.onShow}
       systemStatus="stopped"
       onStatusToggle={vi.fn()}
       onNewProject={vi.fn()}
@@ -44,6 +54,18 @@ function renderHeader(currentFileName: string | null) {
 
 describe('Header', () => {
   afterEach(() => cleanup());
+
+  it('shows a button for an available update that only reopens its dialog', () => {
+    const onShow = vi.fn();
+    renderHeader(null, { version: '0.5.3', onShow });
+
+    fireEvent.click(screen.getByRole('button', { name: /Update available/ }));
+    expect(onShow).toHaveBeenCalled();
+    cleanup();
+
+    renderHeader(null);
+    expect(screen.queryByRole('button', { name: /Update available/ })).not.toBeInTheDocument();
+  });
 
   it('shows the file name without the project extension and keeps the full name as tooltip', () => {
     const longName = 'a_very_long_project_configuration_file_name.gsynth';
@@ -89,5 +111,17 @@ describe('Header', () => {
   it('shows the application version', () => {
     renderHeader(null);
     expect(screen.getByText(`GenSynth ${APP_VERSION}`)).toBeInTheDocument();
+  });
+
+  it('opens the feedback form in the browser from its button', () => {
+    renderHeader(null);
+    fireEvent.click(screen.getByRole('button', { name: /Feedback/ }));
+    expect(openExternalUrl).toHaveBeenCalledWith('https://forms.gle/example');
+  });
+
+  it('hides the feedback button when the forms are not configured', () => {
+    feedbackAvailable.mockReturnValueOnce(false);
+    renderHeader(null);
+    expect(screen.queryByRole('button', { name: /Feedback/ })).toBeNull();
   });
 });

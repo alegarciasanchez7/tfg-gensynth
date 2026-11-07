@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { PointVariableConfig, BoundaryBehavior, CoordinateSystem, Point3DCoord, Shape3DType, type BoundaryObstacle } from '../../../../types';
+import { defaultBoundsFor, type FullPoint } from '../../../../core/pointDefaults';
 import { Input } from '../../../ui/input';
 import { Label } from '../../../ui/label';
 import { Button } from '../../../ui/button';
@@ -8,7 +9,7 @@ import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '../../
 import { Canvas2DBoundaryEditor } from './Canvas2DBoundaryEditor';
 import { Isometric3DBoundaryEditor } from './Isometric3DBoundaryEditor';
 import { GeospatialMapBoundaryEditor } from './GeospatialMapBoundaryEditor';
-import { BoundaryExpandModal, useBoundaryModalContext } from './BoundaryExpandModal';
+import { BoundaryExpandModal } from './BoundaryExpandModal';
 import { BoundaryObstaclesEditor } from './BoundaryObstaclesEditor';
 
 interface SpatialBoundariesTabProps {
@@ -16,78 +17,75 @@ interface SpatialBoundariesTabProps {
   onChange: (newConfig: Partial<PointVariableConfig>) => void;
 }
 
-// Modal View Component that adapts dynamically based on isFullScreen context
+/** Partial update of the region; omitted fields keep their current value. */
+interface BoundsUpdate {
+  minX?: number;
+  maxX?: number;
+  minY?: number;
+  maxY?: number;
+  minZ?: number;
+  maxZ?: number;
+  altitudeUnit?: PointVariableConfig['altitudeUnit'];
+  altitudeReference?: PointVariableConfig['altitudeReference'];
+  altitudePattern?: PointVariableConfig['altitudePattern'];
+  /** An explicit `undefined` clears it (the geospatial editor sends it when the field is emptied). */
+  initialAltitude?: number;
+  maxVerticalStep?: number;
+  altitudeOscillationSpeed?: number;
+  polygon?: Point3DCoord[];
+  obstacles?: BoundaryObstacle[];
+  shape3DType?: Shape3DType;
+  shape3DWidth?: number;
+  shape3DLength?: number;
+  shape3DHeight?: number;
+  shape3DRadius?: number;
+}
+
+/** Keys of the Min/Max numeric inputs, which keep their typed text until committed. */
+type BoundFieldKey = 'minX' | 'maxX' | 'minY' | 'maxY' | 'minZ' | 'maxZ';
+
+/** 2D editor of the fullscreen view: canvas filling the space and the obstacles side panel. */
 const Modal2DVisualEditor: React.FC<{
-  minPoint: Point3DCoord;
-  maxPoint: Point3DCoord;
+  minPoint: FullPoint;
+  maxPoint: FullPoint;
   polygon: Point3DCoord[];
   config: PointVariableConfig;
-  updateBounds: (b: any) => void;
-  onChange: (b: any) => void;
+  updateBounds: (b: BoundsUpdate) => void;
+  onChange: (newConfig: Partial<PointVariableConfig>) => void;
 }> = ({ minPoint, maxPoint, polygon, config, updateBounds, onChange }) => {
-  const { isFullScreen } = useBoundaryModalContext();
   const [selectedObstacleId, setSelectedObstacleId] = useState<string | null>(null);
 
-  if (isFullScreen) {
-    return (
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch flex-1 min-h-0 h-full w-full">
-        <div className="lg:col-span-7 xl:col-span-8 flex flex-col h-full min-h-0">
-          <Canvas2DBoundaryEditor
-            minX={minPoint.x ?? 0}
-            maxX={maxPoint.x ?? 100}
-            minY={minPoint.y ?? 0}
-            maxY={maxPoint.y ?? 100}
-            polygon={polygon}
-            obstacles={config.obstacles || []}
-            selectedObstacleId={selectedObstacleId}
-            onSelectObstacle={setSelectedObstacleId}
-            fillContainer={true}
-            showToolbar={true}
-            onChange={(b) => updateBounds({ minX: b.minX, maxX: b.maxX, minY: b.minY, maxY: b.maxY, polygon: b.polygon, obstacles: b.obstacles })}
-          />
-        </div>
-        <div className="lg:col-span-5 xl:col-span-4 flex flex-col h-full min-h-0 bg-[var(--c-bg4)] p-4 rounded-xl border border-[var(--c-br1)] overflow-y-auto space-y-4">
-          <h3 className="text-xs font-semibold uppercase text-violet-600 dark:text-violet-300 tracking-wider shrink-0">
-            2D Barriers & Obstacles Management
-          </h3>
-          <div className="flex-1 min-h-0">
-            <BoundaryObstaclesEditor
-              obstacles={config.obstacles || []}
-              selectedObstacleId={selectedObstacleId}
-              onSelectObstacle={setSelectedObstacleId}
-              onChange={(newObs) => onChange({ obstacles: newObs })}
-            />
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Standard Windowed High-Precision Editor Modal
   return (
-    <div className="space-y-4">
-      <Canvas2DBoundaryEditor
-        minX={minPoint.x ?? 0}
-        maxX={maxPoint.x ?? 100}
-        minY={minPoint.y ?? 0}
-        maxY={maxPoint.y ?? 100}
-        polygon={polygon}
-        obstacles={config.obstacles || []}
-        selectedObstacleId={selectedObstacleId}
-        onSelectObstacle={setSelectedObstacleId}
-        width={850}
-        height={420}
-        fillContainer={false}
-        showToolbar={true}
-        onChange={(b) => updateBounds({ minX: b.minX, maxX: b.maxX, minY: b.minY, maxY: b.maxY, polygon: b.polygon, obstacles: b.obstacles })}
-      />
-      <div className="bg-[var(--c-bg4)] p-4 rounded-xl border border-[var(--c-br1)]">
-        <BoundaryObstaclesEditor
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch flex-1 min-h-0 h-full w-full">
+      <div className="lg:col-span-7 xl:col-span-8 flex flex-col h-full min-h-0">
+        <Canvas2DBoundaryEditor
+          minX={minPoint.x}
+          maxX={maxPoint.x}
+          minY={minPoint.y}
+          maxY={maxPoint.y}
+          polygon={polygon}
           obstacles={config.obstacles || []}
           selectedObstacleId={selectedObstacleId}
           onSelectObstacle={setSelectedObstacleId}
-          onChange={(newObs) => onChange({ obstacles: newObs })}
+          fillContainer={true}
+          showToolbar={true}
+          onChange={(b) => updateBounds({ minX: b.minX, maxX: b.maxX, minY: b.minY, maxY: b.maxY, polygon: b.polygon, obstacles: b.obstacles })}
         />
+      </div>
+      <div className="lg:col-span-5 xl:col-span-4 flex flex-col h-full min-h-0 bg-[var(--c-bg4)] p-4 rounded-xl border border-[var(--c-br1)] overflow-y-auto space-y-4">
+        <h3 className="text-xs font-semibold uppercase text-violet-600 dark:text-violet-300 tracking-wider shrink-0">
+          2D Barriers & Obstacles Management
+        </h3>
+        <div className="flex-1 min-h-0">
+          <BoundaryObstaclesEditor
+            obstacles={config.obstacles || []}
+            minPoint={minPoint}
+            maxPoint={maxPoint}
+            selectedObstacleId={selectedObstacleId}
+            onSelectObstacle={setSelectedObstacleId}
+            onChange={(newObs) => onChange({ obstacles: newObs })}
+          />
+        </div>
       </div>
     </div>
   );
@@ -97,20 +95,25 @@ export const SpatialBoundariesTab: React.FC<SpatialBoundariesTabProps> = ({ conf
   const coordSystem: CoordinateSystem = config.coordinateSystem ?? 'CARTESIAN_3D';
   const boundaryBehavior: BoundaryBehavior = config.boundaryBehavior ?? 'CLAMP';
 
-  const minPoint = config.minPoint ?? { x: 0, y: 0, z: 0 };
-  const maxPoint = config.maxPoint ?? { x: 100, y: 100, z: 100 };
+  // Missing coordinates fall back to the default region of the coordinate system (as in the Core)
+  const defaults = defaultBoundsFor(config.coordinateSystem);
+  const minPoint: FullPoint = {
+    x: config.minPoint?.x ?? defaults.minPoint.x,
+    y: config.minPoint?.y ?? defaults.minPoint.y,
+    z: config.minPoint?.z ?? defaults.minPoint.z,
+  };
+  const maxPoint: FullPoint = {
+    x: config.maxPoint?.x ?? defaults.maxPoint.x,
+    y: config.maxPoint?.y ?? defaults.maxPoint.y,
+    z: config.maxPoint?.z ?? defaults.maxPoint.z,
+  };
   const polygon = config.boundaryPolygon ?? [];
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [tabSelectedObsId, setTabSelectedObsId] = useState<string | null>(null);
 
-  // Local state strings for precise numeric typing
-  const [minXStr, setMinXStr] = useState(String(minPoint.x ?? 0));
-  const [maxXStr, setMaxXStr] = useState(String(maxPoint.x ?? 100));
-  const [minYStr, setMinYStr] = useState(String(minPoint.y ?? 0));
-  const [maxYStr, setMaxYStr] = useState(String(maxPoint.y ?? 100));
-  const [minZStr, setMinZStr] = useState(String(minPoint.z ?? 0));
-  const [maxZStr, setMaxZStr] = useState(String(maxPoint.z ?? 100));
+  // Text being typed in the Min/Max inputs; a field without a draft shows the current value
+  const [boundDrafts, setBoundDrafts] = useState<Partial<Record<BoundFieldKey, string>>>({});
 
   const is2D = coordSystem === 'CARTESIAN_2D';
   const isGeo = coordSystem === 'GEOSPATIAL';
@@ -119,45 +122,16 @@ export const SpatialBoundariesTab: React.FC<SpatialBoundariesTabProps> = ({ conf
   const labelY = isGeo ? 'Longitude' : 'Y';
   const labelZ = isGeo ? 'Altitude' : 'Z';
 
-  useEffect(() => {
-    if (minPoint.x !== undefined) setMinXStr(String(minPoint.x));
-    if (maxPoint.x !== undefined) setMaxXStr(String(maxPoint.x));
-    if (minPoint.y !== undefined) setMinYStr(String(minPoint.y));
-    if (maxPoint.y !== undefined) setMaxYStr(String(maxPoint.y));
-    if (minPoint.z !== undefined) setMinZStr(String(minPoint.z));
-    if (maxPoint.z !== undefined) setMaxZStr(String(maxPoint.z));
-  }, [minPoint.x, maxPoint.x, minPoint.y, maxPoint.y, minPoint.z, maxPoint.z]);
-
-  const updateBounds = (updates: {
-    minX?: number;
-    maxX?: number;
-    minY?: number;
-    maxY?: number;
-    minZ?: number;
-    maxZ?: number;
-    altitudeUnit?: any;
-    altitudeReference?: any;
-    altitudePattern?: any;
-    initialAltitude?: number;
-    maxVerticalStep?: number;
-    altitudeOscillationSpeed?: number;
-    polygon?: Point3DCoord[];
-    obstacles?: BoundaryObstacle[];
-    shape3DType?: Shape3DType;
-    shape3DWidth?: number;
-    shape3DLength?: number;
-    shape3DHeight?: number;
-    shape3DRadius?: number;
-  }) => {
+  const updateBounds = (updates: BoundsUpdate) => {
     const newMin = {
-      x: updates.minX ?? minPoint.x ?? 0,
-      y: updates.minY ?? minPoint.y ?? 0,
-      z: updates.minZ ?? minPoint.z ?? 0,
+      x: updates.minX ?? minPoint.x,
+      y: updates.minY ?? minPoint.y,
+      z: updates.minZ ?? minPoint.z,
     };
     const newMax = {
-      x: updates.maxX ?? maxPoint.x ?? 100,
-      y: updates.maxY ?? maxPoint.y ?? 100,
-      z: updates.maxZ ?? maxPoint.z ?? 100,
+      x: updates.maxX ?? maxPoint.x,
+      y: updates.maxY ?? maxPoint.y,
+      z: updates.maxZ ?? maxPoint.z,
     };
     onChange({
       minPoint: newMin,
@@ -165,7 +139,7 @@ export const SpatialBoundariesTab: React.FC<SpatialBoundariesTabProps> = ({ conf
       altitudeUnit: updates.altitudeUnit ?? config.altitudeUnit,
       altitudeReference: updates.altitudeReference ?? config.altitudeReference,
       altitudePattern: updates.altitudePattern ?? config.altitudePattern,
-      initialAltitude: updates.initialAltitude ?? config.initialAltitude,
+      initialAltitude: 'initialAltitude' in updates ? updates.initialAltitude : config.initialAltitude,
       maxVerticalStep: updates.maxVerticalStep ?? config.maxVerticalStep,
       altitudeOscillationSpeed: updates.altitudeOscillationSpeed ?? config.altitudeOscillationSpeed,
       boundaryPolygon: updates.polygon ?? polygon,
@@ -178,11 +152,63 @@ export const SpatialBoundariesTab: React.FC<SpatialBoundariesTabProps> = ({ conf
     });
   };
 
-  const renderVisualEditor = (modalMode = false) => {
-    const canvasW = modalMode ? 820 : 360;
-    const canvasH = modalMode ? 520 : (isGeo ? 180 : 200);
+  const boundValue = (key: BoundFieldKey): number => {
+    const axis = key.slice(3).toLowerCase() as 'x' | 'y' | 'z';
+    return key.startsWith('min') ? minPoint[axis] : maxPoint[axis];
+  };
 
-    if (modalMode && is2D) {
+  /**
+   * Commits a Min/Max input: a non-finite value reverts the text, and a min above its max
+   * swaps the pair (the Core rejects inverted bounds).
+   */
+  const commitBound = (key: BoundFieldKey) => {
+    const raw = boundDrafts[key];
+    setBoundDrafts(({ [key]: _committed, ...rest }) => rest);
+    if (raw === undefined || raw.trim() === '') return;
+    const axis = key.slice(3) as 'X' | 'Y' | 'Z';
+    let value = Number(raw);
+    if (!Number.isFinite(value)) return;
+    // Geospatial: x is latitude (±90°) and y is longitude (±180°)
+    if (coordSystem === 'GEOSPATIAL' && axis !== 'Z') {
+      const limit = axis === 'X' ? 90 : 180;
+      value = Math.max(-limit, Math.min(limit, value));
+    }
+    if (value === boundValue(key)) return;
+
+    const other = boundValue(key.startsWith('min') ? `max${axis}` : `min${axis}`);
+    updateBounds({ [`min${axis}`]: Math.min(value, other), [`max${axis}`]: Math.max(value, other) });
+  };
+
+  const renderBoundInput = (key: BoundFieldKey, label: string) => {
+    const id = `bound-${key.slice(0, 3)}-${key.slice(3).toLowerCase()}`;
+    return (
+      <div className="space-y-1">
+        <Label htmlFor={id} className="text-[9px] text-[var(--c-tx4)]">{label}</Label>
+        <Input
+          id={id}
+          type="text"
+          inputMode="decimal"
+          value={boundDrafts[key] ?? String(boundValue(key))}
+          onChange={(e) => {
+            const text = e.target.value;
+            setBoundDrafts((prev) => ({ ...prev, [key]: text }));
+          }}
+          onBlur={() => commitBound(key)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commitBound(key);
+          }}
+          className="h-8 text-xs font-mono"
+        />
+      </div>
+    );
+  };
+
+  /** Visual editor of the tab, or of the fullscreen view when `fullscreen` is set. */
+  const renderVisualEditor = (fullscreen = false) => {
+    const canvasW = 360;
+    const canvasH = isGeo ? 180 : 200;
+
+    if (fullscreen && is2D) {
       return (
         <Modal2DVisualEditor
           minPoint={minPoint}
@@ -199,10 +225,10 @@ export const SpatialBoundariesTab: React.FC<SpatialBoundariesTabProps> = ({ conf
       <>
         {is2D && (
           <Canvas2DBoundaryEditor
-            minX={minPoint.x ?? 0}
-            maxX={maxPoint.x ?? 100}
-            minY={minPoint.y ?? 0}
-            maxY={maxPoint.y ?? 100}
+            minX={minPoint.x}
+            maxX={maxPoint.x}
+            minY={minPoint.y}
+            maxY={maxPoint.y}
             polygon={polygon}
             obstacles={config.obstacles || []}
             selectedObstacleId={tabSelectedObsId}
@@ -217,12 +243,12 @@ export const SpatialBoundariesTab: React.FC<SpatialBoundariesTabProps> = ({ conf
 
         {coordSystem === 'CARTESIAN_3D' && (
           <Isometric3DBoundaryEditor
-            minX={minPoint.x ?? 0}
-            maxX={maxPoint.x ?? 100}
-            minY={minPoint.y ?? 0}
-            maxY={maxPoint.y ?? 100}
-            minZ={minPoint.z ?? 0}
-            maxZ={maxPoint.z ?? 100}
+            minX={minPoint.x}
+            maxX={maxPoint.x}
+            minY={minPoint.y}
+            maxY={maxPoint.y}
+            minZ={minPoint.z}
+            maxZ={maxPoint.z}
             polygon={polygon}
             shape3DType={config.shape3DType ?? 'cube'}
             shape3DWidth={config.shape3DWidth}
@@ -231,8 +257,13 @@ export const SpatialBoundariesTab: React.FC<SpatialBoundariesTabProps> = ({ conf
             shape3DRadius={config.shape3DRadius ?? 50}
             width={canvasW}
             height={canvasH}
+            fillContainer={fullscreen}
             onChange={(b) =>
               updateBounds({
+                minX: b.minX,
+                maxX: b.maxX,
+                minY: b.minY,
+                maxY: b.maxY,
                 minZ: b.minZ,
                 maxZ: b.maxZ,
                 polygon: b.polygon,
@@ -248,12 +279,12 @@ export const SpatialBoundariesTab: React.FC<SpatialBoundariesTabProps> = ({ conf
 
         {isGeo && (
           <GeospatialMapBoundaryEditor
-            minLat={minPoint.x ?? 0}
-            maxLat={maxPoint.x ?? 90}
-            minLon={minPoint.y ?? -180}
-            maxLon={maxPoint.y ?? 180}
-            minAlt={minPoint.z ?? 0}
-            maxAlt={maxPoint.z ?? 100}
+            minLat={minPoint.x}
+            maxLat={maxPoint.x}
+            minLon={minPoint.y}
+            maxLon={maxPoint.y}
+            minAlt={minPoint.z}
+            maxAlt={maxPoint.z}
             altitudeUnit={config.altitudeUnit ?? 'METERS'}
             altitudeReference={config.altitudeReference ?? 'MSL'}
             altitudePattern={config.altitudePattern ?? 'FOLLOW_XY'}
@@ -308,16 +339,25 @@ export const SpatialBoundariesTab: React.FC<SpatialBoundariesTabProps> = ({ conf
               </TooltipContent>
             </Tooltip>
           </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => setIsModalOpen(true)}
-            className="h-7 text-xs gap-1.5 border-violet-500/40 text-violet-400 hover:bg-violet-500/10 cursor-pointer"
-          >
-            <Maximize2 size={12} />
-            <span>Expand View / High-Precision Editor</span>
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsModalOpen(true)}
+                  className="h-7 px-2 text-xs gap-1"
+                >
+                  <Maximize2 size={12} />
+                  <span>Fullscreen</span>
+                </Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent className="text-[11px]">
+              Open the boundary editor in fullscreen (Esc to exit)
+            </TooltipContent>
+          </Tooltip>
         </div>
 
         {/* 2. Boundary Behavior Quick Selector */}
@@ -369,7 +409,7 @@ export const SpatialBoundariesTab: React.FC<SpatialBoundariesTabProps> = ({ conf
             renderVisualEditor(false)
           ) : (
             <div className="py-8 text-center text-xs text-[var(--c-tx4)] italic">
-              Visual editor expanded in modal window...
+              Editing in fullscreen…
             </div>
           )}
         </div>
@@ -377,6 +417,8 @@ export const SpatialBoundariesTab: React.FC<SpatialBoundariesTabProps> = ({ conf
         {/* 3b. 2D Wall Barriers & Forbidden Interior Obstacle Zones */}
         {is2D && (
           <BoundaryObstaclesEditor
+          minPoint={minPoint}
+          maxPoint={maxPoint}
             obstacles={config.obstacles || []}
             selectedObstacleId={tabSelectedObsId}
             onSelectObstacle={setTabSelectedObsId}
@@ -408,97 +450,19 @@ export const SpatialBoundariesTab: React.FC<SpatialBoundariesTabProps> = ({ conf
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <Label htmlFor="bound-min-x" className="text-[9px] text-[var(--c-tx4)]">Min {labelX}</Label>
-              <Input
-                id="bound-min-x"
-                type="text"
-                value={minXStr}
-                onChange={(e) => {
-                  setMinXStr(e.target.value);
-                  const val = parseFloat(e.target.value);
-                  if (!isNaN(val)) updateBounds({ minX: val });
-                }}
-                className="h-8 text-xs font-mono"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="bound-max-x" className="text-[9px] text-[var(--c-tx4)]">Max {labelX}</Label>
-              <Input
-                id="bound-max-x"
-                type="text"
-                value={maxXStr}
-                onChange={(e) => {
-                  setMaxXStr(e.target.value);
-                  const val = parseFloat(e.target.value);
-                  if (!isNaN(val)) updateBounds({ maxX: val });
-                }}
-                className="h-8 text-xs font-mono"
-              />
-            </div>
+            {renderBoundInput('minX', `Min ${labelX}`)}
+            {renderBoundInput('maxX', `Max ${labelX}`)}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <Label htmlFor="bound-min-y" className="text-[9px] text-[var(--c-tx4)]">Min {labelY}</Label>
-              <Input
-                id="bound-min-y"
-                type="text"
-                value={minYStr}
-                onChange={(e) => {
-                  setMinYStr(e.target.value);
-                  const val = parseFloat(e.target.value);
-                  if (!isNaN(val)) updateBounds({ minY: val });
-                }}
-                className="h-8 text-xs font-mono"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="bound-max-y" className="text-[9px] text-[var(--c-tx4)]">Max {labelY}</Label>
-              <Input
-                id="bound-max-y"
-                type="text"
-                value={maxYStr}
-                onChange={(e) => {
-                  setMaxYStr(e.target.value);
-                  const val = parseFloat(e.target.value);
-                  if (!isNaN(val)) updateBounds({ maxY: val });
-                }}
-                className="h-8 text-xs font-mono"
-              />
-            </div>
+            {renderBoundInput('minY', `Min ${labelY}`)}
+            {renderBoundInput('maxY', `Max ${labelY}`)}
           </div>
 
           {!is2D && (
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label htmlFor="bound-min-z" className="text-[9px] text-[var(--c-tx4)]">Min {labelZ}</Label>
-                <Input
-                  id="bound-min-z"
-                  type="text"
-                  value={minZStr}
-                  onChange={(e) => {
-                    setMinZStr(e.target.value);
-                    const val = parseFloat(e.target.value);
-                    if (!isNaN(val)) updateBounds({ minZ: val });
-                  }}
-                  className="h-8 text-xs font-mono"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="bound-max-z" className="text-[9px] text-[var(--c-tx4)]">Max {labelZ}</Label>
-                <Input
-                  id="bound-max-z"
-                  type="text"
-                  value={maxZStr}
-                  onChange={(e) => {
-                    setMaxZStr(e.target.value);
-                    const val = parseFloat(e.target.value);
-                    if (!isNaN(val)) updateBounds({ maxZ: val });
-                  }}
-                  className="h-8 text-xs font-mono"
-                />
-              </div>
+              {renderBoundInput('minZ', `Min ${labelZ}`)}
+              {renderBoundInput('maxZ', `Max ${labelZ}`)}
             </div>
           )}
         </div>
@@ -535,7 +499,7 @@ export const SpatialBoundariesTab: React.FC<SpatialBoundariesTabProps> = ({ conf
                   <span className="text-[10px] font-semibold text-violet-600 dark:text-violet-300 w-16">Vertex {i + 1}:</span>
                   <div className="flex gap-3 text-[11px]">
                     <span>{labelX}: <strong className="text-[var(--c-tx1)]">{pt.x ?? 0}</strong></span>
-                    <span>{labelY}: <strong className="text-[var(--c-tx1)]">{pt.y ?? pt.x ?? 0}</strong></span>
+                    <span>{labelY}: <strong className="text-[var(--c-tx1)]">{pt.y ?? 0}</strong></span>
                     {!is2D && <span>{labelZ}: <strong className="text-[var(--c-tx1)]">{pt.z ?? 0}</strong></span>}
                   </div>
                 </div>
@@ -544,7 +508,7 @@ export const SpatialBoundariesTab: React.FC<SpatialBoundariesTabProps> = ({ conf
           </div>
         )}
 
-        {/* 6. Expand View Modal */}
+        {/* 6. Fullscreen Editor */}
         <BoundaryExpandModal
           isOpen={isModalOpen}
           onClose={() => setIsModalOpen(false)}

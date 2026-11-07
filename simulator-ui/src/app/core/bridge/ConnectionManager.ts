@@ -36,7 +36,7 @@ export class ConnectionManager {
     const mode = this.detectMode();
 
     if (mode === 'jcef') {
-      await this.connectJCEF();
+      this.connectJCEF();
     } else {
       await this.connectWebSocket();
     }
@@ -97,7 +97,7 @@ export class ConnectionManager {
     });
   }
 
-  private async connectJCEF(): Promise<void> {
+  private connectJCEF(): void {
     const jcef = (window as JCEFWindow).javaBridge;
 
     if (!jcef) {

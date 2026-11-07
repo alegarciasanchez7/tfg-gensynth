@@ -14,10 +14,13 @@ public interface IGroupDispatcher {
      * Handles one global tick for the flows of the group that are due on it.
      * Called only from the clock thread; it must never block on network I/O.
      *
-     * @param dueFlows flows that must send a message on this tick, in group order
-     * @return true if at least one message was generated
+     * @param dueFlows  flows that must send a message on this tick, in group order
+     * @param groupTick simulation ticks since the group started (0 = its first tick); passed on
+     *                  to {@link IFlowMessageHandler#publish} so event loss is decided per tick
+     * @return true if at least one message was generated (messages later dropped by event loss
+     *         count as generated)
      */
-    boolean dispatch(List<FlowRuntime> dueFlows);
+    boolean dispatch(List<FlowRuntime> dueFlows, long groupTick);
 
     /**
      * Stops accepting work and drops pending messages. Non-blocking: a publish already in

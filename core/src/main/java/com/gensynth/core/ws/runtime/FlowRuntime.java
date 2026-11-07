@@ -4,6 +4,7 @@ import com.gensynth.core.model.FlowDefinition;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -30,7 +31,13 @@ public class FlowRuntime {
     /** Legacy number of messages per send; ignored by the engine (one message per send). */
     public int burst;
     /** Number of global ticks between two messages of this flow (at least 1). */
-    public volatile int everyTicks = 1;
+    public final AtomicInteger everyTicks = new AtomicInteger(1);
+    /** Percentage (0-100) of generated messages dropped at random instead of sent. */
+    public volatile double lossPercent;
+    /** Length in ticks of the periodic outage cycle (0 = no outages). */
+    public final AtomicInteger outageEveryTicks = new AtomicInteger();
+    /** Ticks at the end of every outage cycle in which every message is dropped (0 = no outages). */
+    public final AtomicInteger outageDurationTicks = new AtomicInteger();
     public String topic;
     public String host;
     public int port;
@@ -44,6 +51,8 @@ public class FlowRuntime {
     public final AtomicLong sent = new AtomicLong();
     /** Messages that could not be sent since the group was started (generation or publish error). */
     public final AtomicLong failed = new AtomicLong();
+    /** Messages generated but deliberately not sent (event loss) since the group was started. */
+    public final AtomicLong dropped = new AtomicLong();
     /** Send rate meter of this flow. */
     public final ThroughputMeter meter = new ThroughputMeter();
 
@@ -105,8 +114,52 @@ public class FlowRuntime {
         Map<String, Object> config = definition.getConnectorConfig();
 
         FlowRuntime runtime = new FlowRuntime(id, name, technology, status, throughput, latency, hasError, errorMessage, interval, burst, topic, host, port, template, format, enabled, config);
-        runtime.everyTicks = definition.getEveryTicks();
+        runtime.everyTicks.set(definition.getEveryTicks());
+        runtime.lossPercent = definition.getLossPercent();
+        runtime.outageEveryTicks.set(definition.getOutageEveryTicks());
+        runtime.outageDurationTicks.set(definition.getOutageDurationTicks());
         return runtime;
+    }
+
+    /**
+     * Copies the send settings ({@code everyTicks} and the event loss fields) from another flow,
+     * e.g. when cloning.
+     *
+     * @param source flow whose settings are copied
+     */
+    public void copySendSettingsFrom(FlowRuntime source) {
+        this.everyTicks.set(source.everyTicks.get());
+        this.lossPercent = source.lossPercent;
+        this.outageEveryTicks.set(source.outageEveryTicks.get());
+        this.outageDurationTicks.set(source.outageDurationTicks.get());
+    }
+
+    /**
+     * Whether the flow is inside a periodic outage on the given group tick. The outage covers the
+     * last {@code d = min(outageDurationTicks, outageEveryTicks)} ticks of every
+     * {@code outageEveryTicks}-tick period; either value at 0 disables outages.
+     *
+     * @param groupTick simulation ticks since the group started (0 = first tick of the group)
+     * @return true if every message of this tick is lost
+     */
+    public boolean isInOutage(long groupTick) {
+        long period = outageEveryTicks.get();
+        long duration = Math.min(outageDurationTicks.get(), period);
+        if (period <= 0 || duration <= 0) {
+            return false;
+        }
+        return Math.floorMod(groupTick, period) >= period - duration;
+    }
+
+    /**
+     * Whether a generated message must be dropped instead of sent.
+     *
+     * @param groupTick simulation ticks since the group started
+     * @param roll      random value in [0, 100)
+     * @return true if the tick is in an outage or the roll falls below {@link #lossPercent}
+     */
+    public boolean shouldDrop(long groupTick, double roll) {
+        return isInOutage(groupTick) || roll < lossPercent;
     }
 
     /**
@@ -118,7 +171,7 @@ public class FlowRuntime {
      * @return true if the flow is due on this tick
      */
     public boolean isDueOn(long tickNumber, long startTick) {
-        return Math.floorMod(tickNumber - startTick, (long) Math.max(1, everyTicks)) == 0;
+        return Math.floorMod(tickNumber - startTick, (long) Math.max(1, everyTicks.get())) == 0;
     }
 
     /**
@@ -138,6 +191,7 @@ public class FlowRuntime {
         generated.set(0);
         sent.set(0);
         failed.set(0);
+        dropped.set(0);
         meter.reset();
         throughput = 0;
     }
@@ -159,7 +213,10 @@ public class FlowRuntime {
             connectorConfig
         );
         def.setEnabled(enabled);
-        def.setEveryTicks(everyTicks);
+        def.setEveryTicks(everyTicks.get());
+        def.setLossPercent(lossPercent);
+        def.setOutageEveryTicks(outageEveryTicks.get());
+        def.setOutageDurationTicks(outageDurationTicks.get());
         return def;
     }
 
@@ -177,7 +234,10 @@ public class FlowRuntime {
         }
         payload.put("interval", interval);
         payload.put("burst", burst);
-        payload.put("everyTicks", everyTicks);
+        payload.put("everyTicks", everyTicks.get());
+        payload.put("lossPercent", lossPercent);
+        payload.put("outageEveryTicks", outageEveryTicks.get());
+        payload.put("outageDurationTicks", outageDurationTicks.get());
         payload.put("topic", topic);
         payload.put("host", host);
         payload.put("port", port);

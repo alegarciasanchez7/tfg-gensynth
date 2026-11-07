@@ -52,14 +52,16 @@ export const SequentialGraphEditor: React.FC<SequentialGraphEditorProps> = ({
     const range = max - min;
     const mid = min + range / 2;
 
+    // The cycle plays every point (maxTicks + 1 values), so periodic shapes span maxTicks + 1 steps
+    const period = maxTicks + 1;
     for (let i = 0; i <= maxTicks; i++) {
       let y = mid;
       if (type === 'sine') {
-        y = mid + (range / 2) * Math.sin((i / maxTicks) * Math.PI * 2);
+        y = mid + (range / 2) * Math.sin((i / period) * Math.PI * 2);
       } else if (type === 'ramp') {
         y = min + range * (i / maxTicks);
       } else if (type === 'triangle') {
-        const factor = i / maxTicks;
+        const factor = i / period;
         y = min + range * (factor < 0.5 ? factor * 2 : (1 - factor) * 2);
       } else if (type === 'constant') {
         y = mid;
@@ -210,7 +212,7 @@ export const SequentialGraphEditor: React.FC<SequentialGraphEditorProps> = ({
           <input
             type="number"
             value={maxTicks}
-            onChange={(e) => handleTicksChange(parseInt(e.target.value) || 10)}
+            onChange={(e) => handleTicksChange(Number.parseInt(e.target.value) || 10)}
             className="w-12 rounded border border-[var(--c-br1)] bg-[var(--c-bg3)] px-1 py-0.5 text-center text-xs text-[var(--c-tx1)]"
             min={2}
             max={50}
@@ -221,6 +223,7 @@ export const SequentialGraphEditor: React.FC<SequentialGraphEditorProps> = ({
       <div className="relative rounded border border-[var(--c-br1)] bg-[var(--c-bg3)] p-2">
         <svg
           ref={svgRef}
+          aria-label="Sequence graph"
           viewBox="0 0 400 150"
           className="w-full select-none overflow-visible"
           onPointerMove={handlePointerMove}

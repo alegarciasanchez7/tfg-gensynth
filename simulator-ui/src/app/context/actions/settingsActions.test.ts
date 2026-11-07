@@ -1,16 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { AppAction } from '../reducer';
-import type { ProjectSettings, TickSettings } from '../../types';
+import type { OutputFolderInfo, ProjectSettings, TickSettings } from '../../types';
 import { DEFAULT_PROJECT_SETTINGS } from '../../core/tickSettings';
 
 const updateSettings = vi.fn();
+const updateOutputFolder = vi.fn();
 
 vi.mock('../../core/bridge', () => ({
-  CoreCommands: { updateSettings: (...args: unknown[]) => updateSettings(...args) },
+  CoreCommands: {
+    updateSettings: (...args: unknown[]) => updateSettings(...args),
+    updateOutputFolder: (...args: unknown[]) => updateOutputFolder(...args),
+  },
 }));
 vi.mock('sonner', () => ({ toast: { error: vi.fn() } }));
 
-const { updateTickSettings } = await import('./settingsActions');
+const { updateTickSettings, setOutputFolder } = await import('./settingsActions');
 
 const fastTick: TickSettings = { mode: 'FIXED_RATE', value: 100, unit: 'MILLISECONDS' };
 
@@ -70,5 +74,55 @@ describe('updateTickSettings', () => {
 
     expect(dispatched).toHaveLength(0);
     expect(updateSettings).not.toHaveBeenCalled();
+  });
+});
+
+describe('setOutputFolder', () => {
+  const defaultFolder: OutputFolderInfo = { path: '/home/ana/GenSynth', defaultPath: '/home/ana/GenSynth', custom: false };
+
+  function setupFolder(connectionMode = 'websocket') {
+    const dispatched: AppAction[] = [];
+    const reportCommandError = vi.fn();
+    const action = setOutputFolder({
+      dispatch: (a) => dispatched.push(a),
+      getConnectionMode: () => connectionMode,
+      getOutputFolder: () => defaultFolder,
+      reportCommandError,
+    });
+    return { action, dispatched, reportCommandError };
+  }
+
+  beforeEach(() => {
+    updateOutputFolder.mockReset();
+  });
+
+  it('stores the folder the Core accepted', async () => {
+    const accepted: OutputFolderInfo = { path: '/home/ana/results', defaultPath: '/home/ana/GenSynth', custom: true };
+    updateOutputFolder.mockResolvedValue({ status: 'ok', outputFolder: accepted });
+    const { action, dispatched } = setupFolder();
+
+    await action(' /home/ana/results ');
+
+    expect(updateOutputFolder).toHaveBeenCalledWith('/home/ana/results');
+    expect(dispatched).toEqual([{ type: 'SET_OUTPUT_FOLDER', payload: accepted }]);
+  });
+
+  it('keeps the current folder and reports the error when the Core rejects it', async () => {
+    updateOutputFolder.mockRejectedValue(new Error('You do not have permission to write in /opt'));
+    const { action, dispatched, reportCommandError } = setupFolder();
+
+    await expect(action('/opt')).rejects.toThrow('permission');
+
+    expect(dispatched).toEqual([]);
+    expect(reportCommandError).toHaveBeenCalledWith('SETTINGS', expect.stringContaining('setOutputFolder'), expect.any(Error));
+  });
+
+  it('only updates the local state in mock mode, and an empty path means the default folder', async () => {
+    const { action, dispatched } = setupFolder('mock');
+
+    await action('');
+
+    expect(updateOutputFolder).not.toHaveBeenCalled();
+    expect(dispatched).toEqual([{ type: 'SET_OUTPUT_FOLDER', payload: defaultFolder }]);
   });
 });

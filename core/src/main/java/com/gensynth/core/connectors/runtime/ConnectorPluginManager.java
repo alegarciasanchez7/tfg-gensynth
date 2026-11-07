@@ -1,5 +1,6 @@
 package com.gensynth.core.connectors.runtime;
 
+import com.gensynth.core.util.Versions;
 import com.gensynth.plugin.api.ConnectorField;
 import com.gensynth.plugin.api.ConnectorInfo;
 import com.gensynth.plugin.api.ConnectorPlugin;
@@ -251,26 +252,6 @@ public class ConnectorPluginManager {
     }
 
     static int compareVersions(String a, String b) {
-        String[] left = a.split("\\.");
-        String[] right = b.split("\\.");
-        int length = Math.max(left.length, right.length);
-        for (int i = 0; i < length; i++) {
-            int cmp = Integer.compare(parseVersionPart(left, i), parseVersionPart(right, i));
-            if (cmp != 0) {
-                return cmp;
-            }
-        }
-        return a.compareTo(b);
-    }
-
-    private static int parseVersionPart(String[] parts, int index) {
-        if (index >= parts.length) {
-            return 0;
-        }
-        try {
-            return Integer.parseInt(parts[index]);
-        } catch (NumberFormatException ignored) {
-            return 0;
-        }
+        return Versions.compare(a, b);
     }
 }

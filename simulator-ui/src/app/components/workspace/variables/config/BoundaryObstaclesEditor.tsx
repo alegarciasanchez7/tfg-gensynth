@@ -4,9 +4,14 @@ import { Plus, Trash2, ShieldAlert, Eye, EyeOff, Layers } from 'lucide-react';
 import { Button } from '../../../ui/button';
 import { Input } from '../../../ui/input';
 import { Label } from '../../../ui/label';
+import { centerOf } from '../../../../core/pointDefaults';
+import { randomUUID } from '../../../../core/randomId';
 
 interface BoundaryObstaclesEditorProps {
   obstacles: BoundaryObstacle[];
+  /** Region bounds: new obstacles are placed at its centre and sized relative to it. */
+  minPoint?: Point3DCoord;
+  maxPoint?: Point3DCoord;
   selectedObstacleId?: string | null;
   onSelectObstacle?: (id: string | null) => void;
   onChange: (newObstacles: BoundaryObstacle[]) => void;
@@ -14,6 +19,8 @@ interface BoundaryObstaclesEditorProps {
 
 export const BoundaryObstaclesEditor: React.FC<BoundaryObstaclesEditorProps> = ({
   obstacles = [],
+  minPoint = { x: -50, y: -50 },
+  maxPoint = { x: 50, y: 50 },
   selectedObstacleId,
   onSelectObstacle,
   onChange,
@@ -23,21 +30,26 @@ export const BoundaryObstaclesEditor: React.FC<BoundaryObstaclesEditorProps> = (
 
   const handleAddObstacle = () => {
     const name = newObstacleName.trim() || (newObstacleType === 'WALL_SEGMENT' ? 'Wall Barrier' : 'Forbidden Zone');
+    // Centred on the region: a wall 40% of its width, a zone 30% of its size
+    const { x: cx, y: cy } = centerOf(minPoint, maxPoint);
+    const spanX = Math.abs((maxPoint.x ?? 0) - (minPoint.x ?? 0)) || 100;
+    const spanY = Math.abs((maxPoint.y ?? 0) - (minPoint.y ?? 0)) || 100;
+    const round = (v: number) => Math.round(v * 1000) / 1000;
     const defaultPoints: Point3DCoord[] =
       newObstacleType === 'WALL_SEGMENT'
         ? [
-            { x: -20, y: 0, z: 0 },
-            { x: 20, y: 0, z: 0 },
+            { x: round(cx - spanX * 0.2), y: round(cy), z: 0 },
+            { x: round(cx + spanX * 0.2), y: round(cy), z: 0 },
           ]
         : [
-            { x: -15, y: -15, z: 0 },
-            { x: 15, y: -15, z: 0 },
-            { x: 15, y: 15, z: 0 },
-            { x: -15, y: 15, z: 0 },
+            { x: round(cx - spanX * 0.15), y: round(cy - spanY * 0.15), z: 0 },
+            { x: round(cx + spanX * 0.15), y: round(cy - spanY * 0.15), z: 0 },
+            { x: round(cx + spanX * 0.15), y: round(cy + spanY * 0.15), z: 0 },
+            { x: round(cx - spanX * 0.15), y: round(cy + spanY * 0.15), z: 0 },
           ];
 
     const newObs: BoundaryObstacle = {
-      id: `obs_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      id: `obs_${randomUUID()}`,
       name,
       type: newObstacleType,
       points: defaultPoints,
@@ -87,9 +99,10 @@ export const BoundaryObstaclesEditor: React.FC<BoundaryObstaclesEditorProps> = (
           />
         </div>
 
-        <div className="w-[140px] space-y-1">
-          <Label className="text-[10px] text-[var(--c-tx4)]">Type</Label>
+        <div className="w-60 space-y-1">
+          <Label htmlFor="obs-type-select" className="text-[10px] text-[var(--c-tx4)]">Type</Label>
           <select
+            id="obs-type-select"
             value={newObstacleType}
             onChange={(e) => setNewObstacleType(e.target.value as ObstacleType)}
             className="w-full h-7 rounded border border-[var(--c-br1)] bg-[var(--c-bg4)] text-xs text-[var(--c-tx1)] px-2 font-mono"
@@ -122,8 +135,7 @@ export const BoundaryObstaclesEditor: React.FC<BoundaryObstaclesEditorProps> = (
             return (
               <div
                 key={obs.id}
-                onClick={() => onSelectObstacle?.(isSelected ? null : obs.id)}
-                className={`flex items-center justify-between p-2 rounded border cursor-pointer transition-all ${
+                className={`flex items-center justify-between rounded border transition-all ${
                   isSelected
                     ? 'border-amber-400 bg-amber-500/15 ring-1 ring-amber-400/40 text-amber-700 dark:text-amber-200 shadow-sm'
                     : obs.enabled
@@ -131,9 +143,14 @@ export const BoundaryObstaclesEditor: React.FC<BoundaryObstaclesEditorProps> = (
                     : 'border-[var(--c-br1)] bg-[var(--c-bg2)] text-[var(--c-tx4)] opacity-60'
                 }`}
               >
-                <div className="flex items-center gap-2 text-xs">
+                <button
+                  type="button"
+                  aria-pressed={isSelected}
+                  onClick={() => onSelectObstacle?.(isSelected ? null : obs.id)}
+                  className="flex flex-1 min-w-0 items-center gap-2 p-2 text-xs text-left cursor-pointer"
+                >
                   <Layers size={13} className={isSelected ? 'text-amber-600 dark:text-amber-300' : (obs.type === 'WALL_SEGMENT' ? 'text-red-400' : 'text-amber-400')} />
-                  <div>
+                  <span>
                     <span className="font-semibold">{obs.name || 'Obstacle'}</span>
                     <span className="text-[10px] font-mono text-[var(--c-tx4)] ml-2">
                       [{obs.type === 'WALL_SEGMENT' ? 'Wall Line' : 'Forbidden Zone'}, {obs.points.length} Pts]
@@ -143,10 +160,10 @@ export const BoundaryObstaclesEditor: React.FC<BoundaryObstaclesEditorProps> = (
                         Selected
                       </span>
                     )}
-                  </div>
-                </div>
+                  </span>
+                </button>
 
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1 pr-2">
                   <button
                     type="button"
                     onClick={(e) => handleToggleEnabled(obs.id, e)}

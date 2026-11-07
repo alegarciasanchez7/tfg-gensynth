@@ -14,10 +14,20 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
+import static com.gensynth.core.ws.BridgeProtocol.COMMAND_ID;
+import static com.gensynth.core.ws.BridgeProtocol.ERROR;
+import static com.gensynth.core.ws.BridgeProtocol.INVALID_PAYLOAD;
+import static com.gensynth.core.ws.BridgeProtocol.MESSAGE;
+import static com.gensynth.core.ws.BridgeProtocol.SOURCE_PLUGINS;
+import static com.gensynth.core.ws.BridgeProtocol.STATUS;
+
 /**
  * Handles plugin management commands (VALIDATE_PLUGIN, INSTALL_PLUGIN, UNINSTALL_PLUGIN).
  */
 public class PluginCommandHandler implements CommandHandler {
+    private static final String VALIDATE_PLUGIN = "VALIDATE_PLUGIN";
+    private static final String PLUGIN_VERSION = "pluginVersion";
+    private static final String INSTALL_PLUGIN = "INSTALL_PLUGIN";
 
     private static final Logger logger = LoggerFactory.getLogger(PluginCommandHandler.class);
     
@@ -49,9 +59,9 @@ public class PluginCommandHandler implements CommandHandler {
      */
     public void handleValidatePlugin(WebSocket conn, JsonNode payload, String commandId) {
         UiBridgeWebSocketServer server = ctx.getServer();
-        String jarBase64 = server.requireTextField(conn, commandId, payload, "jarBase64", "INVALID_PAYLOAD", "VALIDATE_PLUGIN");
-        String pluginName = server.requireTextField(conn, commandId, payload, "pluginName", "INVALID_PAYLOAD", "VALIDATE_PLUGIN");
-        String pluginVersion = server.requireTextField(conn, commandId, payload, "pluginVersion", "INVALID_PAYLOAD", "VALIDATE_PLUGIN");
+        String jarBase64 = server.requireTextField(conn, commandId, payload, "jarBase64", INVALID_PAYLOAD, VALIDATE_PLUGIN);
+        String pluginName = server.requireTextField(conn, commandId, payload, "pluginName", INVALID_PAYLOAD, VALIDATE_PLUGIN);
+        String pluginVersion = server.requireTextField(conn, commandId, payload, PLUGIN_VERSION, INVALID_PAYLOAD, VALIDATE_PLUGIN);
         if (jarBase64 == null || pluginName == null || pluginVersion == null) {
             return;
         }
@@ -60,19 +70,19 @@ public class PluginCommandHandler implements CommandHandler {
         try {
             jarBytes = Base64.getDecoder().decode(jarBase64);
         } catch (IllegalArgumentException e) {
-            server.sendError(conn, commandId, "INVALID_PAYLOAD", "Invalid Base64 encoding for JAR data", Map.of());
+            server.sendError(conn, commandId, INVALID_PAYLOAD, "Invalid Base64 encoding for JAR data", Map.of());
             return;
         }
 
         PluginValidationResult result = ctx.getPluginInstaller().validate(jarBytes, pluginName, pluginVersion);
 
         Map<String, Object> response = new LinkedHashMap<>();
-        response.put("commandId", commandId);
-        response.put("status", "ok");
+        response.put(COMMAND_ID, commandId);
+        response.put(STATUS, "ok");
         response.put("valid", result.isValid());
         response.put("pluginId", result.getPluginId());
         response.put("displayName", result.getDisplayName());
-        response.put("pluginVersion", result.getPluginVersion());
+        response.put(PLUGIN_VERSION, result.getPluginVersion());
         response.put("apiVersion", result.getApiVersion());
         response.put("description", result.getDescription());
         response.put("fieldCount", result.getFieldCount());
@@ -83,7 +93,7 @@ public class PluginCommandHandler implements CommandHandler {
 
         server.sendMessage(conn, "PLUGIN_VALIDATION_RESULT", commandId, response);
 
-        server.logToBackend(result.isValid() ? "info" : "warn", "PLUGINS",
+        server.logToBackend(result.isValid() ? "info" : "warn", SOURCE_PLUGINS,
                 "Plugin validation " + (result.isValid() ? "passed" : "failed") + " for '" + pluginName + "'", commandId);
     }
 
@@ -96,9 +106,9 @@ public class PluginCommandHandler implements CommandHandler {
      */
     public void handleInstallPlugin(WebSocket conn, JsonNode payload, String commandId) {
         UiBridgeWebSocketServer server = ctx.getServer();
-        String jarBase64 = server.requireTextField(conn, commandId, payload, "jarBase64", "INVALID_PAYLOAD", "INSTALL_PLUGIN");
-        String pluginName = server.requireTextField(conn, commandId, payload, "pluginName", "INVALID_PAYLOAD", "INSTALL_PLUGIN");
-        String pluginVersion = server.requireTextField(conn, commandId, payload, "pluginVersion", "INVALID_PAYLOAD", "INSTALL_PLUGIN");
+        String jarBase64 = server.requireTextField(conn, commandId, payload, "jarBase64", INVALID_PAYLOAD, INSTALL_PLUGIN);
+        String pluginName = server.requireTextField(conn, commandId, payload, "pluginName", INVALID_PAYLOAD, INSTALL_PLUGIN);
+        String pluginVersion = server.requireTextField(conn, commandId, payload, PLUGIN_VERSION, INVALID_PAYLOAD, INSTALL_PLUGIN);
         if (jarBase64 == null || pluginName == null || pluginVersion == null) {
             return;
         }
@@ -107,22 +117,22 @@ public class PluginCommandHandler implements CommandHandler {
         try {
             jarBytes = Base64.getDecoder().decode(jarBase64);
         } catch (IllegalArgumentException e) {
-            server.sendError(conn, commandId, "INVALID_PAYLOAD", "Invalid Base64 encoding for JAR data", Map.of());
+            server.sendError(conn, commandId, INVALID_PAYLOAD, "Invalid Base64 encoding for JAR data", Map.of());
             return;
         }
 
         PluginInstallResult result = ctx.getPluginInstaller().install(jarBytes, pluginName, pluginVersion);
 
         Map<String, Object> response = new LinkedHashMap<>();
-        response.put("commandId", commandId);
-        response.put("status", result.isSuccess() ? "ok" : "error");
+        response.put(COMMAND_ID, commandId);
+        response.put(STATUS, result.isSuccess() ? "ok" : ERROR);
         response.put("success", result.isSuccess());
-        response.put("message", result.getMessage());
+        response.put(MESSAGE, result.getMessage());
         response.put("restartRequired", result.isRestartRequired());
         server.sendMessage(conn, "PLUGIN_INSTALL_RESULT", commandId, response);
 
         if (result.isSuccess()) {
-            server.logToBackend("info", "PLUGINS", "Plugin '" + pluginName + "' installed. Restarting...", commandId);
+            server.logToBackend("info", SOURCE_PLUGINS, "Plugin '" + pluginName + "' installed. Restarting...", commandId);
 
             // Persist state before restart
             server.persistState();
@@ -133,7 +143,7 @@ public class PluginCommandHandler implements CommandHandler {
             // Schedule JVM exit (the process wrapper/script will restart)
             scheduleRestart();
         } else {
-            server.logToBackend("error", "PLUGINS", "Plugin install failed: " + result.getMessage(), commandId);
+            server.logToBackend(ERROR, SOURCE_PLUGINS, "Plugin install failed: " + result.getMessage(), commandId);
         }
     }
 
@@ -146,8 +156,8 @@ public class PluginCommandHandler implements CommandHandler {
      */
     public void handleUninstallPlugin(WebSocket conn, JsonNode payload, String commandId) {
         UiBridgeWebSocketServer server = ctx.getServer();
-        String pluginId = server.requireTextField(conn, commandId, payload, "pluginId", "INVALID_PAYLOAD", "UNINSTALL_PLUGIN");
-        String pluginVersion = server.requireTextField(conn, commandId, payload, "pluginVersion", "INVALID_PAYLOAD", "UNINSTALL_PLUGIN");
+        String pluginId = server.requireTextField(conn, commandId, payload, "pluginId", INVALID_PAYLOAD, "UNINSTALL_PLUGIN");
+        String pluginVersion = server.requireTextField(conn, commandId, payload, PLUGIN_VERSION, INVALID_PAYLOAD, "UNINSTALL_PLUGIN");
         if (pluginId == null || pluginVersion == null) {
             return;
         }
@@ -155,22 +165,22 @@ public class PluginCommandHandler implements CommandHandler {
         PluginInstallResult result = ctx.getPluginInstaller().uninstall(pluginId, pluginVersion);
 
         Map<String, Object> response = new LinkedHashMap<>();
-        response.put("commandId", commandId);
-        response.put("status", result.isSuccess() ? "ok" : "error");
+        response.put(COMMAND_ID, commandId);
+        response.put(STATUS, result.isSuccess() ? "ok" : ERROR);
         response.put("success", result.isSuccess());
-        response.put("message", result.getMessage());
+        response.put(MESSAGE, result.getMessage());
         response.put("restartRequired", result.isRestartRequired());
         server.sendMessage(conn, "PLUGIN_INSTALL_RESULT", commandId, response);
 
         if (result.isSuccess()) {
-            server.logToBackend("info", "PLUGINS", "Plugin '" + pluginId + "' uninstalled. Restarting...", commandId);
+            server.logToBackend("info", SOURCE_PLUGINS, "Plugin '" + pluginId + "' uninstalled. Restarting...", commandId);
 
             server.persistState();
             broadcastRestartRequired();
 
             scheduleRestart();
         } else {
-            server.logToBackend("error", "PLUGINS", "Plugin uninstall failed: " + result.getMessage(), commandId);
+            server.logToBackend(ERROR, SOURCE_PLUGINS, "Plugin uninstall failed: " + result.getMessage(), commandId);
         }
     }
 
@@ -180,7 +190,7 @@ public class PluginCommandHandler implements CommandHandler {
     public void broadcastRestartRequired() {
         UiBridgeWebSocketServer server = ctx.getServer();
         Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("message", "Application is restarting to apply plugin changes...");
+        payload.put(MESSAGE, "Application is restarting to apply plugin changes...");
         payload.put("delaySeconds", 3);
 
         for (WebSocket conn : server.getConnections()) {

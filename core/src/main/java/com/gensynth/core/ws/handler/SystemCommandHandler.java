@@ -1,6 +1,5 @@
 package com.gensynth.core.ws.handler;
 
-import com.gensynth.core.config.AppPaths;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.gensynth.core.ws.BridgeContext;
 import com.gensynth.core.ws.UiBridgeWebSocketServer;
@@ -18,6 +17,11 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
+
+import static com.gensynth.core.ws.BridgeProtocol.COMMAND_ID;
+import static com.gensynth.core.ws.BridgeProtocol.RUNNING;
+import static com.gensynth.core.ws.BridgeProtocol.STATUS;
 
 /**
  * Handles system operation commands (START_SYSTEM, STOP_SYSTEM, SUBSCRIBE_METRICS, UNSUBSCRIBE_METRICS,
@@ -51,7 +55,12 @@ public class SystemCommandHandler implements CommandHandler {
      */
     public void handleStartSystem(WebSocket conn, String commandId) {
         UiBridgeWebSocketServer server = ctx.getServer();
-        startSystemInternal(AppPaths.current().newSessionOutputDir());
+        try {
+            startSystemInternal(ctx::startOutputSession);
+        } catch (IllegalStateException ex) {
+            FlowCommandHandler.sendStartError(server, conn, commandId, ex);
+            return;
+        }
         server.sendAck(conn, commandId, "system_started");
         broadcastSystemStatus();
         broadcastGroupsUpdate();
@@ -76,21 +85,32 @@ public class SystemCommandHandler implements CommandHandler {
     }
 
     /**
-     * Starts the tick clock and every group that is not running, writing the session output
-     * files to the given folder. Shared by START_SYSTEM and the headless command line.
+     * Starts the tick clock and every group that is not running. Shared by START_SYSTEM and the
+     * headless command line.
+     * <p>
+     * All or nothing: every group is checked before any starts, so a group that cannot start
+     * never leaves the ones before it running (and writing files).
      *
-     * @param outputDir folder of the session output files (created by the connectors that use it)
-     * @throws IllegalStateException if a group has cyclic or broken variable references
+     * @param outputSession opens the session output folder and returns its path; called only
+     *                      once every group is valid (the connectors that write files create it)
+     * @throws IllegalStateException if a group cannot start (cyclic or broken variable
+     *                               references, invalid configuration); nothing is started then
      */
-    public void startSystemInternal(String outputDir) {
+    public void startSystemInternal(Supplier<String> outputSession) {
         UiBridgeWebSocketServer server = ctx.getServer();
         synchronized (ctx.getStateLock()) {
+            for (GroupRuntime group : ctx.getGroupsById().values()) {
+                if (!RUNNING.equals(group.status)) {
+                    server.flowCommandHandler.validateGroupForStart(group);
+                }
+            }
+
             ctx.setSystemRunning(true);
             ctx.setSystemStartedAt(System.currentTimeMillis());
-            ctx.setCurrentOutputDir(outputDir);
+            ctx.setCurrentOutputDir(outputSession.get());
 
             for (GroupRuntime group : ctx.getGroupsById().values()) {
-                if (!"running".equals(group.status)) {
+                if (!RUNNING.equals(group.status)) {
                     server.flowCommandHandler.startGroupInternal(group);
                 }
             }
@@ -145,8 +165,8 @@ public class SystemCommandHandler implements CommandHandler {
     public void handleGetConnectorCatalog(WebSocket conn, String commandId) {
         UiBridgeWebSocketServer server = ctx.getServer();
         Map<String, Object> response = new LinkedHashMap<>();
-        response.put("commandId", commandId);
-        response.put("status", "ok");
+        response.put(COMMAND_ID, commandId);
+        response.put(STATUS, "ok");
         response.put("catalog", ctx.getConnectorCatalogService().listAvailableConnectors());
         server.sendMessage(conn, "CONNECTION_STATUS", commandId, response);
     }
@@ -166,8 +186,8 @@ public class SystemCommandHandler implements CommandHandler {
         }
 
         Map<String, Object> response = new LinkedHashMap<>();
-        response.put("commandId", commandId);
-        response.put("status", "ok");
+        response.put(COMMAND_ID, commandId);
+        response.put(STATUS, "ok");
         response.put("connector", ctx.getConnectorCatalogService().findLatestConnector(pluginId).orElse(null));
         server.sendMessage(conn, "CONNECTION_STATUS", commandId, response);
     }
@@ -224,13 +244,13 @@ public class SystemCommandHandler implements CommandHandler {
         long now = System.nanoTime();
         synchronized (ctx.getStateLock()) {
             for (GroupRuntime group : ctx.getGroupsById().values()) {
-                boolean running = "running".equals(group.status);
+                boolean running = RUNNING.equals(group.status);
                 for (FlowRuntime flow : group.flows) {
                     flow.meter.rotate();
                     flow.throughput = running
                         ? flow.meter.rate(
-                            ThroughputMeter.windowFor(tick, flow.everyTicks),
-                            ThroughputMeter.periodSeconds(tick, flow.everyTicks),
+                            ThroughputMeter.windowFor(tick, flow.everyTicks.get()),
+                            ThroughputMeter.periodSeconds(tick, flow.everyTicks.get()),
                             now)
                         : 0.0;
                 }
@@ -240,8 +260,10 @@ public class SystemCommandHandler implements CommandHandler {
 
     /**
      * Builds the FLOWS_METRICS payload: live counters and send rate of every flow.
+     * {@code dropped} counts the messages generated but discarded on purpose by the flow's
+     * event loss, so {@code generated - sent - failed - dropped} are still pending.
      *
-     * @return payload {@code { flows: [{ flowId, groupId, throughput, generated, sent, failed, latency, errorRate, connectionStatus, lastError? }] }}
+     * @return payload {@code { flows: [{ flowId, groupId, throughput, generated, sent, failed, dropped, latency, errorRate, connectionStatus, lastError? }] }}
      */
     public Map<String, Object> buildFlowsMetricsPayload() {
         List<Map<String, Object>> flows = new ArrayList<>();
@@ -255,6 +277,7 @@ public class SystemCommandHandler implements CommandHandler {
                     entry.put("generated", flow.generated.get());
                     entry.put("sent", flow.sent.get());
                     entry.put("failed", flow.failed.get());
+                    entry.put("dropped", flow.dropped.get());
                     entry.put("latency", flow.latency);
                     entry.put("errorRate", flow.hasError ? 1.0 : 0.0);
                     entry.put("connectionStatus", flow.connectionStatus);
@@ -355,9 +378,9 @@ public class SystemCommandHandler implements CommandHandler {
     public Map<String, Object> buildSystemStatusPayload(String commandId) {
         Map<String, Object> payload = new LinkedHashMap<>();
         if (commandId != null) {
-            payload.put("commandId", commandId);
+            payload.put(COMMAND_ID, commandId);
         }
-        payload.put("status", ctx.isSystemRunning() ? "running" : "stopped");
+        payload.put(STATUS, ctx.isSystemRunning() ? RUNNING : "stopped");
         long uptime = ctx.isSystemRunning() ? Math.max(0, (System.currentTimeMillis() - ctx.getSystemStartedAt()) / 1000) : 0;
         payload.put("uptime", uptime);
         payload.put("totalMessages", ctx.getTotalMessages().get());
@@ -367,6 +390,9 @@ public class SystemCommandHandler implements CommandHandler {
 
     /**
      * Builds a payload map representing the current system performance metrics.
+     * {@code memory} is the heap in use (MB), {@code heap} the heap the JVM has reserved now
+     * and {@code maxHeap} the most it may reserve (the JVM limit, by default a quarter of the
+     * computer's RAM).
      *
      * @param commandId the command identifier (can be null)
      * @return the metrics payload map
@@ -374,13 +400,14 @@ public class SystemCommandHandler implements CommandHandler {
     public Map<String, Object> buildMetricsPayload(String commandId) {
         Map<String, Object> payload = new LinkedHashMap<>();
         if (commandId != null) {
-            payload.put("commandId", commandId);
+            payload.put(COMMAND_ID, commandId);
         }
 
         ResourceUsage usage = ResourceUsage.sample();
         payload.put("cpu", usage.cpuPercent());
         payload.put("memory", usage.usedMemoryMb());
         payload.put("heap", usage.heapMb());
+        payload.put("maxHeap", usage.maxHeapMb());
         payload.put("threads", usage.threads());
         payload.put("messagesPerSecond", ctx.getMessagesPerSecond());
         payload.put("totalMessages", ctx.getTotalMessages().get());

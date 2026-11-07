@@ -122,6 +122,39 @@ public class PluginSandboxValidatorTest {
     }
 
     @Test
+    public void aCopyOfABuiltInConnectorIsRejected() throws Exception {
+        byte[] rabbitMq = builtInRabbitMqJar();
+
+        PluginValidationResult asBuiltIn = new PluginSandboxValidator(Set.of(), Set.of("rabbitmq@1.0.0"), null)
+                .validate(rabbitMq, "rabbitmq", "1.0.0");
+        assertFalse(asBuiltIn.isValid());
+        assertTrue(asBuiltIn.getErrors().toString(), asBuiltIn.getErrors().get(0).contains("already included in GenSynth"));
+
+        // Another version of a built-in connector may still be imported (e.g. a newer one)
+        PluginValidationResult otherVersion = new PluginSandboxValidator(Set.of(), Set.of("rabbitmq@0.9.0"), null)
+                .validate(rabbitMq, "rabbitmq", "1.0.0");
+        assertTrue(otherVersion.getErrors().toString(), otherVersion.isValid());
+    }
+
+    /** Bytes of the RabbitMQ connector included in GenSynth (a JAR, or its classes folder zipped). */
+    private static byte[] builtInRabbitMqJar() throws Exception {
+        Class<?> plugin = Class.forName("com.gensynth.plugins.rabbitmq.RabbitMqConnectorPlugin");
+        Path location = Path.of(plugin.getProtectionDomain().getCodeSource().getLocation().toURI());
+        if (Files.isRegularFile(location)) {
+            return Files.readAllBytes(location);
+        }
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        try (JarOutputStream jar = new JarOutputStream(bytes); var files = Files.walk(location)) {
+            for (Path file : (Iterable<Path>) files.filter(Files::isRegularFile)::iterator) {
+                jar.putNextEntry(new JarEntry(location.relativize(file).toString().replace('\\', '/')));
+                jar.write(Files.readAllBytes(file));
+                jar.closeEntry();
+            }
+        }
+        return bytes.toByteArray();
+    }
+
+    @Test
     public void testLegacyApiPluginIsRejectedWithAClearMessage() throws IOException {
         byte[] jar = createJarWithServiceFile("META-INF/services/com.gensynth.core.connectors.spi.ConnectorPluginProvider");
         PluginValidationResult.Builder builder = new PluginValidationResult.Builder();

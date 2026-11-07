@@ -50,7 +50,8 @@ export function Workspace({
       return (
         <div className="flex-1 flex flex-col overflow-hidden bg-[var(--c-bg3)]">
           {breadcrumb}
-          <VariableEditorWorkspace variable={variable} onBack={onClearVariableSelection} />
+          {/* Keyed by variable so editor state (warnings, drafts, fullscreen) never carries over */}
+          <VariableEditorWorkspace key={variable.id} variable={variable} onBack={onClearVariableSelection} />
         </div>
       );
     }

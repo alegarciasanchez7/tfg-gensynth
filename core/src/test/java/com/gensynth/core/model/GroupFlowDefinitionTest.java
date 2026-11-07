@@ -27,6 +27,36 @@ public class GroupFlowDefinitionTest {
     }
 
     @Test
+    public void sequentialOrderIsStrictForCommandsAndLenientForFiles() {
+        assertTrue(SequentialOrder.isValid("flow"));
+        assertTrue(SequentialOrder.isValid(" Random "));
+        assertTrue(SequentialOrder.isValid("GENERATED"));
+        assertFalse(SequentialOrder.isValid("fifo"));
+        assertFalse(SequentialOrder.isValid(null));
+
+        assertEquals(SequentialOrder.GENERATED, SequentialOrder.fromValue("generated"));
+        assertEquals(SequentialOrder.FLOW, SequentialOrder.fromValue("fifo"));
+        assertEquals(SequentialOrder.FLOW, SequentialOrder.fromValue(null));
+    }
+
+    @Test
+    public void sequentialOrderIsSavedAndOldProjectsLoadWithFlowOrder() {
+        GroupDefinition group = new GroupDefinition("g1", "Group", "", 1, "sequential");
+        group.setSequentialOrder("random");
+
+        GroupDefinition loaded = GroupDefinition.fromPayload(new HashMap<>(group.toPayload()));
+        assertEquals("random", loaded.getSequentialOrder());
+
+        Map<String, Object> old = new HashMap<>();
+        old.put("id", "g2");
+        old.put("name", "Old");
+        old.put("outputMode", "sequential");
+        assertEquals("flow", GroupDefinition.fromPayload(old).getSequentialOrder());
+        old.put("sequentialOrder", "unknown");
+        assertEquals("flow", GroupDefinition.fromPayload(old).getSequentialOrder());
+    }
+
+    @Test
     public void groupWithoutLegacyFieldsLoadsWithDefaults() {
         Map<String, Object> payload = new HashMap<>();
         payload.put("id", "g1");
@@ -72,5 +102,49 @@ public class GroupFlowDefinitionTest {
 
         payload.put("everyTicks", 0);
         assertEquals("values below 1 are clamped", 1, FlowDefinition.fromPayload(payload).getEveryTicks());
+    }
+
+    @Test
+    public void eventLossSurvivesARoundTrip() {
+        FlowDefinition flow = new FlowDefinition("f", "g", "Flow", "file", "localhost", 0, "t",
+            1000, 1, "{}", "json", "file", Map.of());
+        flow.setLossPercent(7.5);
+        flow.setOutageEveryTicks(20);
+        flow.setOutageDurationTicks(3);
+
+        FlowDefinition loaded = FlowDefinition.fromPayload(flow.toPayload());
+
+        assertEquals(7.5, loaded.getLossPercent(), 0.0);
+        assertEquals(20, loaded.getOutageEveryTicks());
+        assertEquals(3, loaded.getOutageDurationTicks());
+    }
+
+    @Test
+    public void legacyFlowWithoutEventLossLoadsWithItOff() {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("id", "f");
+        payload.put("groupId", "g");
+
+        FlowDefinition flow = FlowDefinition.fromPayload(payload);
+
+        assertEquals(0.0, flow.getLossPercent(), 0.0);
+        assertEquals(0, flow.getOutageEveryTicks());
+        assertEquals(0, flow.getOutageDurationTicks());
+    }
+
+    @Test
+    public void outOfRangeEventLossValuesAreClamped() {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("id", "f");
+        payload.put("groupId", "g");
+        payload.put("lossPercent", 150);
+        payload.put("outageEveryTicks", -4);
+        payload.put("outageDurationTicks", -1);
+
+        FlowDefinition flow = FlowDefinition.fromPayload(payload);
+
+        assertEquals(100.0, flow.getLossPercent(), 0.0);
+        assertEquals(0, flow.getOutageEveryTicks());
+        assertEquals(0, flow.getOutageDurationTicks());
     }
 }

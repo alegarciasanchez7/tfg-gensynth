@@ -39,7 +39,7 @@ export function VariableListItem({
   const { state } = useApp();
   const isDirty = state?.dirtyItems?.variableIds?.has(variable.id) ?? false;
   const tc = typeConfig[variable.type] || typeConfig.string;
-  const sc = scopeColors[variable.scope];
+  const sc = scopeColors[variable.scope] ?? scopeColors.global;
   const Icon = tc.icon;
   const description = variable.description ?? '';
 

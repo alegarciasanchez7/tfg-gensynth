@@ -32,7 +32,7 @@ public class App {
         return originalArgs;
     }
 
-    private AppConfig config;
+    private final AppConfig config;
     private UiBridgeWebSocketServer webSocketServer;
     private final CountDownLatch shutdownLatch;
 
@@ -54,7 +54,12 @@ public class App {
         logger.info("Data folder: {} | Output folder: {}", paths.dataHome(), paths.outputsHome());
         logger.info("WebSocket Server: {}:{}", config.getWebsocketHost(), config.getWebsocketPort());
         webSocketServer = new UiBridgeWebSocketServer(config.getWebsocketHost(), config.getWebsocketPort());
-        wsServer = webSocketServer; // Store reference for desktop mode
+        publishWsServer(webSocketServer);
+    }
+
+    /** Keeps the server reachable from the desktop code through {@link #getWsServer()}. */
+    private static void publishWsServer(UiBridgeWebSocketServer server) {
+        wsServer = server;
     }
 
     private void checkAndPerformRollback() {
@@ -96,7 +101,6 @@ public class App {
                 boolean deleted = false;
                 for (int i = 1; i <= 5; i++) {
                     try {
-                        System.gc(); // Help Windows release file locks
                         Files.delete(jarPath);
                         logger.info(">> Successfully removed problematic JAR: {}", jarPath.getFileName());
                         deleted = true;

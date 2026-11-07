@@ -1,5 +1,6 @@
 package com.gensynth.core.ws;
 
+import com.gensynth.core.api.IGroupDispatcher;
 import com.gensynth.core.connectors.plugin.PluginInstallerImpl;
 import com.gensynth.core.connectors.runtime.ConnectorCatalogService;
 import com.gensynth.plugin.api.ConnectorSession;
@@ -72,6 +73,27 @@ public class TickDispatchTest {
         server.shutdown();
     }
 
+    /**
+     * Runs a tick of the single-flow group. The worker clears its busy flag just after its
+     * send, so a due tick may find it still busy and skip it: retry until it is handed over.
+     */
+    private void tick(long tickNumber) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + TIMEOUT_MS;
+        while (!server.flowCommandHandler.onTick(tickNumber) && flow.isDueOn(tickNumber, group.startTick)) {
+            assertTrue("tick " + tickNumber + " not dispatched", System.currentTimeMillis() < deadline);
+            Thread.sleep(5);
+        }
+    }
+
+    /** Hands one message of a flow to its worker, retrying while the worker finishes the previous one. */
+    private void dispatchWhenIdle(FlowRuntime target, long groupTick) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + TIMEOUT_MS;
+        while (!group.dispatcher.dispatch(List.of(target), groupTick)) {
+            assertTrue(target.id + " not dispatched", System.currentTimeMillis() < deadline);
+            Thread.sleep(5);
+        }
+    }
+
     private void awaitSent(FlowRuntime target, long expected) throws InterruptedException {
         long deadline = System.currentTimeMillis() + TIMEOUT_MS;
         while (target.sent.get() < expected && System.currentTimeMillis() < deadline) {
@@ -82,10 +104,9 @@ public class TickDispatchTest {
 
     @Test
     public void runningGroupSendsOneMessagePerTick() throws Exception {
-        assertTrue(server.flowCommandHandler.onTick(1));
+        tick(1);
         awaitSent(flow, 1);
-        Thread.sleep(20); // the worker clears its busy flag right after recording the send
-        assertTrue(server.flowCommandHandler.onTick(2));
+        tick(2);
         awaitSent(flow, 2);
 
         verify(connector, times(2)).send(any(byte[].class), anyMap());
@@ -96,10 +117,9 @@ public class TickDispatchTest {
 
     @Test
     public void everyTicksSendsOnlyOnDueTicks() throws Exception {
-        flow.everyTicks = 3;
+        flow.everyTicks.set(3);
         for (long tick = 1; tick <= 7; tick++) {
-            server.flowCommandHandler.onTick(tick);
-            Thread.sleep(20); // let the worker finish so no tick is skipped as busy
+            tick(tick);
         }
         // Due on ticks 1, 4 and 7 (counted from the group's first tick)
         awaitSent(flow, 3);
@@ -107,7 +127,7 @@ public class TickDispatchTest {
 
     @Test
     public void groupStartedLateStillSendsOnItsFirstTick() throws Exception {
-        flow.everyTicks = 5;
+        flow.everyTicks.set(5);
         assertTrue(server.flowCommandHandler.onTick(42));
         awaitSent(flow, 1);
         assertEquals(42, group.startTick);
@@ -143,9 +163,10 @@ public class TickDispatchTest {
         group.dispatcher.shutdown();
         group.dispatcher = server.flowCommandHandler.createDispatcher(group);
 
-        for (long tick = 1; tick <= 5; tick++) {
-            server.flowCommandHandler.onTick(tick);
-            Thread.sleep(20);
+        // Through the dispatcher, so a retry for a busy flow does not send twice for the other one
+        for (long tick = 0; tick < 5; tick++) {
+            dispatchWhenIdle(flow, tick);
+            dispatchWhenIdle(other, tick);
         }
         awaitSent(flow, 5);
         awaitSent(other, 5);
@@ -161,6 +182,18 @@ public class TickDispatchTest {
             }
         }
         assertEquals("{{n}} must be unique across flows", 10, payloads.size());
+    }
+
+    @Test
+    public void flowNameBuiltInSendsTheNameOfEachFlow() throws Exception {
+        flow.template = "{\"id\":\"{{flow.name}}\"}";
+
+        assertTrue(server.flowCommandHandler.onTick(1));
+        awaitSent(flow, 1);
+
+        ArgumentCaptor<byte[]> payload = ArgumentCaptor.forClass(byte[].class);
+        verify(connector).send(payload.capture(), anyMap());
+        assertEquals("{\"id\":\"Flow f1\"}", new String(payload.getValue(), StandardCharsets.UTF_8));
     }
 
     @Test
@@ -208,12 +241,14 @@ public class TickDispatchTest {
     public void countersResetOnStartButNotOnResume() throws Exception {
         flow.sent.set(7);
         flow.generated.set(9);
+        flow.dropped.set(2);
 
         group.status = "paused";
         synchronized (server.stateLock) {
             server.flowCommandHandler.startGroupInternal(group);
         }
         assertEquals("resume keeps counters", 7, flow.sent.get());
+        assertEquals("resume keeps the dropped counter", 2, flow.dropped.get());
 
         synchronized (server.stateLock) {
             server.flowCommandHandler.stopGroupInternal(group);
@@ -221,6 +256,7 @@ public class TickDispatchTest {
         }
         assertEquals("start from stopped resets counters", 0, flow.sent.get());
         assertEquals(0, flow.generated.get());
+        assertEquals(0, flow.dropped.get());
     }
 
     @Test
@@ -231,6 +267,92 @@ public class TickDispatchTest {
         assertEquals("paused", group.status);
         assertNull(group.dispatcher);
         assertFalse(server.flowCommandHandler.onTick(1));
+    }
+
+    private void awaitDropped(FlowRuntime target, long expected) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + TIMEOUT_MS;
+        while (target.dropped.get() < expected && System.currentTimeMillis() < deadline) {
+            Thread.sleep(5);
+        }
+        assertEquals(expected, target.dropped.get());
+    }
+
+    @Test
+    public void fullLossGeneratesButNeverSends() throws Exception {
+        flow.lossPercent = 100;
+
+        assertTrue("a dropped message still counts as generated", server.flowCommandHandler.onTick(1));
+        awaitDropped(flow, 1);
+
+        assertEquals(1, flow.generated.get());
+        assertEquals(0, flow.sent.get());
+        assertEquals(0, flow.failed.get());
+        verify(connector, never()).send(any(byte[].class), anyMap());
+        assertEquals(1L, flowEntry(server.systemCommandHandler.buildFlowsMetricsPayload()).get("dropped"));
+    }
+
+    @Test
+    public void outageDropsTheLastTicksOfEveryPeriod() throws Exception {
+        flow.outageEveryTicks.set(4);
+        flow.outageDurationTicks.set(2);
+        for (long tick = 1; tick <= 8; tick++) {
+            tick(tick);
+        }
+        // Group ticks 0-7: 2, 3, 6 and 7 are in the outage
+        awaitSent(flow, 4);
+        awaitDropped(flow, 4);
+        assertEquals(8, flow.generated.get());
+        verify(connector, times(4)).send(any(byte[].class), anyMap());
+    }
+
+    @Test
+    public void updateFlowConfigAppliesEventLossLive() throws Exception {
+        server.onMessage(null, "{\"type\":\"UPDATE_FLOW_CONFIG\",\"commandId\":\"u1\",\"protocolVersion\":\"1.0.0\","
+            + "\"payload\":{\"groupId\":\"g1\",\"flowId\":\"f1\",\"lossPercent\":100,"
+            + "\"outageEveryTicks\":6,\"outageDurationTicks\":2}}");
+
+        assertEquals(100.0, flow.lossPercent, 0.0);
+        assertEquals(6, flow.outageEveryTicks.get());
+        assertEquals(2, flow.outageDurationTicks.get());
+        assertNotNull("the group keeps running with its dispatcher", group.dispatcher);
+
+        server.flowCommandHandler.onTick(1);
+        awaitDropped(flow, 1);
+        verify(connector, never()).send(any(byte[].class), anyMap());
+
+        // Out-of-range values are clamped
+        server.onMessage(null, "{\"type\":\"UPDATE_FLOW_CONFIG\",\"commandId\":\"u2\",\"protocolVersion\":\"1.0.0\","
+            + "\"payload\":{\"groupId\":\"g1\",\"flowId\":\"f1\",\"lossPercent\":-5,\"outageEveryTicks\":-1}}");
+        assertEquals(0.0, flow.lossPercent, 0.0);
+        assertEquals(0, flow.outageEveryTicks.get());
+        assertEquals("missing fields are kept", 2, flow.outageDurationTicks.get());
+    }
+
+    @Test
+    public void clonesKeepTheEventLossSettings() throws Exception {
+        flow.everyTicks.set(2);
+        flow.lossPercent = 30;
+        flow.outageEveryTicks.set(10);
+        flow.outageDurationTicks.set(3);
+
+        server.onMessage(null, "{\"type\":\"CLONE_FLOW\",\"commandId\":\"c1\",\"protocolVersion\":\"1.0.0\","
+            + "\"payload\":{\"groupId\":\"g1\",\"flowId\":\"f1\",\"count\":1}}");
+        assertEquals(2, group.flows.size());
+        assertSameSendSettings(group.flows.get(1));
+
+        server.onMessage(null, "{\"type\":\"CLONE_GROUP\",\"commandId\":\"c2\",\"protocolVersion\":\"1.0.0\","
+            + "\"payload\":{\"groupId\":\"g1\",\"count\":1}}");
+        GroupRuntime groupClone = server.groupsById.values().stream()
+            .filter(candidate -> !candidate.id.equals("g1")).findFirst().orElseThrow();
+        assertEquals(2, groupClone.flows.size());
+        groupClone.flows.forEach(TickDispatchTest::assertSameSendSettings);
+    }
+
+    private static void assertSameSendSettings(FlowRuntime clone) {
+        assertEquals(2, clone.everyTicks.get());
+        assertEquals(30.0, clone.lossPercent, 0.0);
+        assertEquals(10, clone.outageEveryTicks.get());
+        assertEquals(3, clone.outageDurationTicks.get());
     }
 
     @SuppressWarnings("unchecked")
@@ -254,5 +376,36 @@ public class TickDispatchTest {
         assertEquals("error", flow.connectionStatus);
         assertTrue(flow.errorMessage, flow.errorMessage.startsWith("Invalid connector configuration: File format must be one of"));
         assertFalse(server.connectorByFlowId.containsKey(flow.id));
+    }
+
+    @Test
+    public void reorderingARunningGroupChangesTheOrderOfTheNextTick() throws Exception {
+        GroupRuntime sequential = new GroupRuntime("g2", "Ordered", "running", "", 1, "sequential", true);
+        for (String id : List.of("a", "b", "c")) {
+            FlowRuntime orderedFlow = newFlow(id, "topic", "{}");
+            sequential.flows.add(orderedFlow);
+            server.connectorByFlowId.put(id, mock(ConnectorSession.class));
+        }
+        List<List<String>> dueOrders = new java.util.concurrent.CopyOnWriteArrayList<>();
+        sequential.dispatcher = new IGroupDispatcher() {
+            @Override
+            public boolean dispatch(List<FlowRuntime> dueFlows, long groupTick) {
+                dueOrders.add(dueFlows.stream().map(f -> f.id).toList());
+                return true;
+            }
+
+            @Override
+            public void shutdown() {
+                // Records only: there are no threads to stop
+            }
+        };
+        server.groupsById.put(sequential.id, sequential);
+
+        server.flowCommandHandler.onTick(1);
+        server.onMessage(null, "{\"type\":\"UPDATE_GROUP_CONFIG\",\"commandId\":\"reorder\",\"protocolVersion\":\"1.0.0\","
+            + "\"payload\":{\"groupId\":\"g2\",\"flowIds\":[\"c\",\"a\",\"b\"]}}");
+        server.flowCommandHandler.onTick(2);
+
+        assertEquals(List.of(List.of("a", "b", "c"), List.of("c", "a", "b")), dueOrders);
     }
 }

@@ -14,7 +14,8 @@ public class BooleanVariableConfig extends VariableConfiguration {
     
     // Constants
     private static final int DEFAULT_TICKS = 1;
-    private static final boolean DEFAULT_START_VALUE = true;
+    // OFF, as the UI shows a Boolean without an Initial State
+    private static final boolean DEFAULT_START_VALUE = false;
     private static final double DEFAULT_PROBABILITY = 0.5;
     private static final double DEFAULT_P_TRUE_TO_TRUE = 0.8;
     private static final double DEFAULT_P_FALSE_TO_TRUE = 0.2;

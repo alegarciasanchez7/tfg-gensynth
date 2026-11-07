@@ -16,6 +16,7 @@ import java.util.Objects;
  * - Generation parameters (one message every {@code everyTicks} global ticks;
  *   interval and burst are legacy and ignored by the engine)
  * - Template for payload generation
+ * - Event loss (a random loss percentage and periodic outages; 0 = off)
  * - Connector-specific configuration
  *
  * FlowDefinition captures the persistent configuration, while runtime state
@@ -32,6 +33,9 @@ public class FlowDefinition {
     private int interval;
     private int burst;
     private int everyTicks = 1;
+    private double lossPercent;
+    private int outageEveryTicks;
+    private int outageDurationTicks;
     private String template;
     private String format; // "json", "xml", "csv", "plain"
     private boolean enabled;
@@ -137,6 +141,27 @@ public class FlowDefinition {
         return everyTicks;
     }
 
+    /**
+     * @return percentage (0-100) of generated messages that are dropped at random instead of sent
+     */
+    public double getLossPercent() {
+        return lossPercent;
+    }
+
+    /**
+     * @return length in ticks of the periodic outage cycle (0 = no outages)
+     */
+    public int getOutageEveryTicks() {
+        return outageEveryTicks;
+    }
+
+    /**
+     * @return number of ticks at the end of every outage cycle in which every message is dropped
+     */
+    public int getOutageDurationTicks() {
+        return outageDurationTicks;
+    }
+
     public String getTemplate() {
         return template;
     }
@@ -214,6 +239,49 @@ public class FlowDefinition {
         this.updatedAt = Instant.now();
     }
 
+    /**
+     * Sets the percentage of generated messages that are dropped at random.
+     *
+     * @param lossPercent percentage; clamped to [0, 100], NaN becomes 0
+     */
+    public void setLossPercent(double lossPercent) {
+        this.lossPercent = clampPercent(lossPercent);
+        this.updatedAt = Instant.now();
+    }
+
+    /**
+     * Sets the length of the periodic outage cycle.
+     *
+     * @param outageEveryTicks cycle length in ticks; 0 disables outages, negative values become 0
+     */
+    public void setOutageEveryTicks(int outageEveryTicks) {
+        this.outageEveryTicks = Math.max(0, outageEveryTicks);
+        this.updatedAt = Instant.now();
+    }
+
+    /**
+     * Sets how many ticks at the end of every outage cycle drop all messages.
+     *
+     * @param outageDurationTicks outage length in ticks; 0 disables outages, negative values become 0
+     */
+    public void setOutageDurationTicks(int outageDurationTicks) {
+        this.outageDurationTicks = Math.max(0, outageDurationTicks);
+        this.updatedAt = Instant.now();
+    }
+
+    /**
+     * Clamps a loss percentage to [0, 100].
+     *
+     * @param value raw percentage
+     * @return the clamped value, or 0 when the value is NaN
+     */
+    public static double clampPercent(double value) {
+        if (Double.isNaN(value)) {
+            return 0;
+        }
+        return Math.min(100, Math.max(0, value));
+    }
+
     public void setTemplate(String template) {
         this.template = Objects.requireNonNull(template, "template cannot be null");
         this.updatedAt = Instant.now();
@@ -263,6 +331,9 @@ public class FlowDefinition {
         payload.put("interval", interval);
         payload.put("burst", burst);
         payload.put("everyTicks", everyTicks);
+        payload.put("lossPercent", lossPercent);
+        payload.put("outageEveryTicks", outageEveryTicks);
+        payload.put("outageDurationTicks", outageDurationTicks);
         payload.put("template", template);
         payload.put("format", format);
         payload.put("enabled", enabled);
@@ -313,6 +384,14 @@ public class FlowDefinition {
 
         Object everyTicksObj = payload.get("everyTicks");
         flow.setEveryTicks(everyTicksObj instanceof Number ? ((Number) everyTicksObj).intValue() : 1);
+
+        // Event loss fields are optional: older project files load with event loss off
+        Object lossObj = payload.get("lossPercent");
+        flow.setLossPercent(lossObj instanceof Number ? ((Number) lossObj).doubleValue() : 0);
+        Object outageEveryObj = payload.get("outageEveryTicks");
+        flow.setOutageEveryTicks(outageEveryObj instanceof Number ? ((Number) outageEveryObj).intValue() : 0);
+        Object outageDurationObj = payload.get("outageDurationTicks");
+        flow.setOutageDurationTicks(outageDurationObj instanceof Number ? ((Number) outageDurationObj).intValue() : 0);
         
         return flow;
     }
@@ -330,6 +409,9 @@ public class FlowDefinition {
             ", interval=" + interval +
             ", burst=" + burst +
             ", everyTicks=" + everyTicks +
+            ", lossPercent=" + lossPercent +
+            ", outageEveryTicks=" + outageEveryTicks +
+            ", outageDurationTicks=" + outageDurationTicks +
             ", createdAt=" + createdAt +
             ", updatedAt=" + updatedAt +
             '}';

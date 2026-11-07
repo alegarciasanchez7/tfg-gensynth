@@ -3,6 +3,7 @@ package com.gensynth.core.flow;
 import com.gensynth.core.api.IVariable;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Represents a single Flow with multiple variables.
@@ -75,7 +76,8 @@ public class Flow {
         return Optional.ofNullable(variables.get(variableId));
     }
 
-    private volatile List<IVariable> sortedVariablesCache = null;
+    /** Variables in dependency order, cached until the number of variables changes. */
+    private final AtomicReference<List<IVariable>> sortedVariablesCache = new AtomicReference<>();
 
     /**
      * Generate data events from all variables.
@@ -129,8 +131,9 @@ public class Flow {
     }
 
     private List<IVariable> getTopologicalSortedVariables() {
-        if (sortedVariablesCache != null && sortedVariablesCache.size() == variables.size()) {
-            return sortedVariablesCache;
+        List<IVariable> cached = sortedVariablesCache.get();
+        if (cached != null && cached.size() == variables.size()) {
+            return cached;
         }
 
         List<IVariable> sorted = new ArrayList<>();
@@ -143,7 +146,7 @@ public class Flow {
             }
         }
 
-        sortedVariablesCache = sorted;
+        sortedVariablesCache.set(sorted);
         return sorted;
     }
 

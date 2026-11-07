@@ -65,7 +65,7 @@ class HeadlessSimulation {
      */
     void start() {
         try {
-            engine.systemCommandHandler.startSystemInternal(outputDir);
+            engine.systemCommandHandler.startSystemInternal(() -> outputDir);
         } catch (RuntimeException e) {
             engine.shutdown();
             throw new IllegalStateException(e.getMessage(), e);

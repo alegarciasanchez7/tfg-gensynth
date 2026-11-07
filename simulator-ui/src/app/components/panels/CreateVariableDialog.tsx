@@ -10,9 +10,11 @@ import {
 import { Input } from '../ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Button } from '../ui/button';
-import { CalendarClock, Binary, ListChecks, ALargeSmall, MapPin, ToggleLeft, AlertTriangle } from 'lucide-react';
+import { CalendarClock, Binary, ListChecks, ALargeSmall, MapPin, ToggleLeft, AlertTriangle, type LucideIcon } from 'lucide-react';
 import type { Group, Variable, VariableScope, VariableType } from '../../types';
 import { useVariableValidation, type ValidationErrors } from '../../context/hooks/useVariableValidation';
+import { findVariableNameConflict } from '../../core/variableNames';
+import { defaultConfigTextForType } from '../workspace/variables/config/defaultConfigs';
 
 interface CreateVariableDialogProps {
   open: boolean;
@@ -33,7 +35,7 @@ interface CreateVariableDialogProps {
   variablesList?: Variable[]; // passed down from RightPanel
 }
 
-const varTypes: Array<{ type: VariableType; label: string; icon: any }> = [
+const varTypes: Array<{ type: VariableType; label: string; icon: LucideIcon }> = [
   { type: 'numeric', label: 'Numeric', icon: Binary },
   { type: 'string', label: 'String', icon: ALargeSmall },
   { type: 'list', label: 'List', icon: ListChecks },
@@ -49,24 +51,6 @@ const scopeLabels: Record<VariableScope, string> = {
   group: 'GROUP',
   global: 'GLOBAL',
 };
-
-function defaultConfigTextForType(type: VariableType): string {
-  switch (type) {
-    case 'numeric':
-      return JSON.stringify({ min: 0, max: 100, precision: 'DOUBLE', distribution: 'UNIFORM' }, null, 2);
-    case 'list':
-      return JSON.stringify({ items: [] }, null, 2);
-    case 'boolean':
-      return JSON.stringify({ currentValue: false }, null, 2);
-    case 'temporal':
-      return JSON.stringify({ temporalType: 'TIMESTAMP', dateFormat: "yyyy-MM-dd'T'HH:mm:ss.SSSZ" }, null, 2);
-    case 'point':
-      return JSON.stringify({ maxStepDistance: 10.0 }, null, 2);
-    case 'string':
-    default:
-      return JSON.stringify({ fixedLength: 8 }, null, 2);
-  }
-}
 
 export function CreateVariableDialog({
   open,
@@ -85,6 +69,8 @@ export function CreateVariableDialog({
     try {
       const parsedConfig = JSON.parse(state.configText);
       const errors = validateConfig(state.type, parsedConfig, variablesList);
+      const nameConflict = findVariableNameConflict(variablesList, state);
+      if (nameConflict) errors.name = nameConflict;
       
       let cycle: string[] | null = null;
       if (state.type === 'numeric' && parsedConfig.formula) {
@@ -95,7 +81,7 @@ export function CreateVariableDialog({
     } catch {
       return { errors: {}, cycle: null, jsonError: 'Invalid JSON structure' };
     }
-  }, [state.configText, state.type, state.name, variablesList]);
+  }, [state.configText, state.type, state.name, state.scope, state.flowId, state.groupId, variablesList]);
   const { jsonError } = validationResult;
 
   const hasValidationError = Object.keys(validationResult.errors).length > 0 || jsonError !== null || validationResult.cycle !== null;
@@ -231,14 +217,14 @@ export function CreateVariableDialog({
             <div className="p-3 rounded border border-cyan-500/20 bg-cyan-500/5 animate-in fade-in slide-in-from-top-2 duration-300">
               {state.scope === 'local' && (
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-[9px] uppercase tracking-widest text-cyan-500/70 font-bold" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+                  <label htmlFor="var-flow" className="text-[9px] uppercase tracking-widest text-cyan-500/70 font-bold" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
                     Target Flow Assignment
                   </label>
                   <Select
                     value={state.flowId}
                     onValueChange={(value) => onStateChange({ flowId: value })}
                   >
-                    <SelectTrigger className="bg-[var(--c-bg4)] border-[var(--c-br2)] h-8 text-xs">
+                    <SelectTrigger id="var-flow" className="bg-[var(--c-bg4)] border-[var(--c-br2)] h-8 text-xs">
                       <SelectValue placeholder="Select flow" />
                     </SelectTrigger>
                     <SelectContent className="bg-[var(--c-bg2)] border-[var(--c-br1)]">
@@ -254,14 +240,14 @@ export function CreateVariableDialog({
 
               {state.scope === 'group' && (
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-[9px] uppercase tracking-widest text-cyan-500/70 font-bold" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+                  <label htmlFor="var-group" className="text-[9px] uppercase tracking-widest text-cyan-500/70 font-bold" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
                     Target Group Assignment
                   </label>
                   <Select
                     value={state.groupId}
                     onValueChange={(value) => onStateChange({ groupId: value })}
                   >
-                    <SelectTrigger className="bg-[var(--c-bg4)] border-[var(--c-br2)] h-8 text-xs">
+                    <SelectTrigger id="var-group" className="bg-[var(--c-bg4)] border-[var(--c-br2)] h-8 text-xs">
                       <SelectValue placeholder="Select group" />
                     </SelectTrigger>
                     <SelectContent className="bg-[var(--c-bg2)] border-[var(--c-br1)]">

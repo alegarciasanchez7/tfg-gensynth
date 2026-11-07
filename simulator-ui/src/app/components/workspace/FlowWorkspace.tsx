@@ -10,8 +10,12 @@ import { useApp } from '../../context';
 import { TemplateEditor } from './flows/TemplateEditor';
 import { TechnicalConfigPanel, compareVersions } from './flows/TechnicalConfigPanel';
 import { FormatConverterModal } from './flows/FormatConverterModal';
+import { resolveTemplateFormat, type TemplateFormat } from './flows/templateFormat';
+import { findFlowNameConflict } from '../../core/flowNames';
 import type { ConnectorPluginDescriptor } from '../../core/types';
 import { formatRate } from '../../core/metricsFormat';
+import { commandErrorMessage } from '../../core/errorMessage';
+import { normalizeConnectionStatus } from '../../core/entityStatus';
 
 const connCfg: Record<ConnectionStatus, { color: string; bg: string; dot: string; label: string }> = {
   connected:    { color: 'text-emerald-500', bg: 'bg-emerald-500/10 border-emerald-500/40', dot: 'bg-emerald-400', label: 'CONNECTED' },
@@ -33,8 +37,7 @@ interface FlowWorkspaceProps {
 }
 
 export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowWorkspaceProps) {
-  const conn = connCfg[flow.connectionStatus];
-  const [formatMode, setFormatMode] = useState<'json' | 'xml' | 'csv' | 'plain'>(flow.format || (flow.technology === 'file' ? 'plain' : 'json'));
+  const conn = connCfg[normalizeConnectionStatus(flow.connectionStatus)];
   const [activeTab, setActiveTab] = useState<'technical' | 'format'>('technical');
   const { state, actions } = useApp();
   const isDirty = state?.dirtyItems?.flowIds?.has(flow.id) ?? false;
@@ -84,17 +87,35 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
   ) ?? null;
 
   const currentTemplate = template ?? flow.template ?? '';
+  // The label follows the stored format when the template fits it, otherwise the template content
+  // (new File Output flows are stored as "plain" even when their template is JSON)
+  const formatMode = useMemo(() => resolveTemplateFormat(flow.format, currentTemplate), [flow.format, currentTemplate]);
   const [draftName, setDraftName] = useState(flow.name);
   const [draftEveryTicks, setDraftEveryTicks] = useState(String(flow.everyTicks));
   const [isDeletingFlow, setIsDeletingFlow] = useState(false);
   const [isConverterOpen, setIsConverterOpen] = useState(false);
-  const [selectedTargetFormat, setSelectedTargetFormat] = useState<'json' | 'xml' | 'csv' | 'plain'>('xml');
+  const [selectedTargetFormat, setSelectedTargetFormat] = useState<TemplateFormat>('xml');
 
   useEffect(() => {
     setDraftName(flow.name);
     setDraftEveryTicks(String(flow.everyTicks));
-    setFormatMode(flow.format || (flow.technology === 'file' ? 'plain' : 'json'));
-  }, [flow.name, flow.everyTicks, flow.format, flow.technology, flow.id]);
+  }, [flow.name, flow.everyTicks, flow.id]);
+
+  // Like an invalid "every N ticks", an empty or duplicate name stays local (with a warning) and is
+  // restored on blur: two flows of a group with the same name would write the same output file
+  const nameError = draftName.trim()
+    ? findFlowNameConflict(group.flows, draftName, flow.id)
+    : 'The flow name cannot be empty';
+
+  const handleNameChange = (value: string) => {
+    setDraftName(value);
+    // The Core stores names trimmed: sending the trimmed name keeps a space being typed in the draft
+    const name = value.trim();
+    const valid = name !== '' && findFlowNameConflict(group.flows, name, flow.id) === null;
+    if (valid && name !== flow.name) {
+      handleUpdateConfig({ name });
+    }
+  };
 
   const handleEveryTicksChange = (value: string) => {
     setDraftEveryTicks(value);
@@ -106,10 +127,15 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
   };
 
   const handleUpdateConfig = (updates: Partial<Omit<Flow, 'id'>>) => {
-    actions.updateFlowConfig(group.id, flow.id, updates);
+    // The action rolls the change back and logs it; show the Core's reason (e.g. a duplicate name)
+    actions.updateFlowConfig(group.id, flow.id, updates)?.catch((error: unknown) => {
+      toast.error(commandErrorMessage(error, 'Unable to update the flow'), { id: `flow-config-error-${flow.id}` });
+    });
   };
 
-  const handleFormatBadgeClick = (mode: 'json' | 'xml' | 'csv' | 'plain') => {
+  const handleFormatBadgeClick = (mode: TemplateFormat) => {
+    // The active format has nothing to convert
+    if (mode === formatMode) return;
     setSelectedTargetFormat(mode);
     setIsConverterOpen(true);
   };
@@ -155,7 +181,7 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
       actions.selectGroup(group.id);
       toast.success(`Flow "${flow.name}" deleted`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to delete flow';
+      const message = commandErrorMessage(error, 'Unable to delete flow');
       toast.error(message);
     } finally {
       setIsDeletingFlow(false);
@@ -236,7 +262,9 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
           flow={flow}
           activeTab={activeTab}
           draftName={draftName}
-          setDraftName={(val) => { setDraftName(val); handleUpdateConfig({ name: val }); }}
+          setDraftName={handleNameChange}
+          nameError={nameError}
+          onNameBlur={() => setDraftName(flow.name)}
           draftEveryTicks={draftEveryTicks}
           setDraftEveryTicks={handleEveryTicksChange}
           onEveryTicksBlur={() => setDraftEveryTicks(String(flow.everyTicks))}
@@ -250,6 +278,7 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
           onConnectorChange={handleConnectorChange}
           onConnectorVersionChange={handleConnectorVersionChange}
           onConnectorConfigChange={handleConnectorConfigChange}
+          onEventLossChange={handleUpdateConfig}
         />
 
         {/* RIGHT: Format editor */}
@@ -330,10 +359,10 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowW
         currentFormat={formatMode}
         initialTargetFormat={selectedTargetFormat}
         onApplyConversion={(convertedContent, newFormat) => {
-          setFormatMode(newFormat);
+          const labelOnly = convertedContent === currentTemplate;
           onTemplateChange(convertedContent);
           handleUpdateConfig({ template: convertedContent, format: newFormat });
-          toast.success(`Converted format to ${newFormat.toUpperCase()}`);
+          toast.success(labelOnly ? `Format set to ${newFormat.toUpperCase()}` : `Converted format to ${newFormat.toUpperCase()}`);
         }}
       />
     </div>

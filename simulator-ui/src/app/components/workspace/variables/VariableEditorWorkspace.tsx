@@ -63,6 +63,7 @@ export function VariableEditorWorkspace({ variable, onBack }: VariableEditorWork
         />
         <VariableEditorConfigCard
           typeLabel={variable.type}
+          variableId={variable.id}
           theme={typeTheme}
           draft={draft}
           setDraft={setDraft}

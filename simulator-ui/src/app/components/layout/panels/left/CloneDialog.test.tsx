@@ -32,6 +32,18 @@ describe('CloneDialog', () => {
     expect(defaultProps.onConfirm).toHaveBeenCalledWith(5, '${name} (Clone ${index})');
   });
 
+  it('previews the final names of clones that collide with existing names', () => {
+    render(<CloneDialog {...defaultProps} itemName="Sensor" existingNames={['Sensor', 'sensor (2)']} />);
+    fireEvent.change(screen.getByDisplayValue('1'), { target: { value: '2' } });
+    fireEvent.change(screen.getByLabelText('Naming Pattern'), { target: { value: '${name}' } });
+
+    expect(screen.getByText('Sensor (3)')).toBeInTheDocument();
+    expect(screen.getByText('Sensor (4)')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('2 names are already used');
+    // Renaming is done by the Core: cloning stays allowed
+    expect(screen.getByRole('button', { name: /Create 2 Clones/ })).toBeEnabled();
+  });
+
   it('disables the clone button for invalid counts', () => {
     render(<CloneDialog {...defaultProps} />);
     const input = screen.getByDisplayValue('1');

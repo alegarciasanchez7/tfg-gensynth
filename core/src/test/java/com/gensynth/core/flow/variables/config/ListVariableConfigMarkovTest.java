@@ -45,6 +45,44 @@ public class ListVariableConfigMarkovTest {
     }
 
     @Test
+    public void markovStartsOnTheFirstItemOfTheChosenOrder() {
+        ListVariableConfig config = cycleABC().transitionMatrix(cycleMatrix());
+        config.setItemOrder(List.of("c", "a", "b"));
+
+        assertEquals(List.of("C", "A", "B", "C"), next(config, 4));
+    }
+
+    @Test
+    public void markovStateWithoutARowMovesToAnyItem() {
+        ListVariableConfig config = cycleABC();
+
+        assertTrue(config.validate().isEmpty());
+        assertEquals(Set.of("A", "B", "C"), new HashSet<>(next(config, 200)));
+    }
+
+    private static ListVariableConfig cycleABC() {
+        return VariableFactory.createList("list")
+                .selectionStrategy(ListVariableConfig.SelectionStrategy.MARKOV_CHAIN)
+                .items(List.of(
+                        new ListVariableConfig.ListItem("a", "A", 1.0),
+                        new ListVariableConfig.ListItem("b", "B", 1.0),
+                        new ListVariableConfig.ListItem("c", "C", 1.0)));
+    }
+
+    /** A → B → C → A. */
+    private static Map<String, Map<String, Double>> cycleMatrix() {
+        return Map.of("a", Map.of("b", 1.0), "b", Map.of("c", 1.0), "c", Map.of("a", 1.0));
+    }
+
+    private static List<Object> next(ListVariableConfig config, int count) {
+        List<Object> values = new ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            values.add(config.generateNextValue());
+        }
+        return values;
+    }
+
+    @Test
     public void testShuffleModeNoImmediateDuplicates() {
         ListVariableConfig.ListItem item1 = new ListVariableConfig.ListItem("1", "ONE", 1.0);
         ListVariableConfig.ListItem item2 = new ListVariableConfig.ListItem("2", "TWO", 1.0);

@@ -32,11 +32,21 @@ public class ParallelGroupDispatcherTest {
     public void eachFlowSendsOnItsOwnThread() throws Exception {
         dispatcher = new ParallelGroupDispatcher(group, List.of(a, b), handler);
 
-        assertTrue(dispatcher.dispatch(List.of(a, b)));
+        assertTrue(dispatcher.dispatch(List.of(a, b), 0L));
 
         await("both flows should publish", () -> handler.published.size() == 2);
         assertEquals(2, new HashSet<>(handler.publishThreads).size());
         assertTrue(handler.publishThreads.stream().allMatch(name -> name.startsWith("gensynth-G-")));
+    }
+
+    @Test
+    public void publishReceivesTheDispatchedGroupTick() throws Exception {
+        dispatcher = new ParallelGroupDispatcher(group, List.of(a), handler);
+
+        assertTrue(dispatcher.dispatch(List.of(a), 7L));
+
+        await("the flow should publish", () -> handler.published.size() == 1);
+        assertEquals(List.of(7L), handler.publishedTicks);
     }
 
     @Test
@@ -46,7 +56,7 @@ public class ParallelGroupDispatcherTest {
         dispatcher = new ParallelGroupDispatcher(group, List.of(a, b), handler);
 
         for (int tick = 0; tick < 5; tick++) {
-            dispatcher.dispatch(List.of(a, b));
+            dispatcher.dispatch(List.of(a, b), 0L);
             int expected = tick + 1;
             await("B keeps sending while A is blocked", () -> b.sent.get() == expected);
             Thread.sleep(20); // the worker clears its busy flag right after recording the send
@@ -59,14 +69,14 @@ public class ParallelGroupDispatcherTest {
         release.countDown();
         await("A finishes its message", () -> a.sent.get() == 1);
         Thread.sleep(20);
-        dispatcher.dispatch(List.of(a));
+        dispatcher.dispatch(List.of(a), 0L);
         await("A accepts ticks again", () -> a.sent.get() == 2);
     }
 
     @Test
     public void flowsWithoutWorkerAreIgnored() {
         dispatcher = new ParallelGroupDispatcher(group, List.of(a), handler);
-        assertFalse(dispatcher.dispatch(List.of(b)));
+        assertFalse(dispatcher.dispatch(List.of(b), 0L));
     }
 
     @Test
@@ -74,7 +84,7 @@ public class ParallelGroupDispatcherTest {
         dispatcher = new ParallelGroupDispatcher(group, List.of(a, b), handler);
         dispatcher.shutdown();
 
-        assertFalse(dispatcher.dispatch(List.of(a, b)));
+        assertFalse(dispatcher.dispatch(List.of(a, b), 0L));
         Thread.sleep(50);
         assertTrue(handler.published.isEmpty());
     }

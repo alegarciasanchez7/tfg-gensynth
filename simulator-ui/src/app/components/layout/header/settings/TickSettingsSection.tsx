@@ -72,7 +72,7 @@ export function TickSettingsSection() {
       <div className="flex items-start gap-2 rounded-lg border border-cyan-500/20 bg-cyan-500/5 px-3 py-2 text-[10px] text-[var(--c-tx3)]">
         <Info size={12} className="text-cyan-400 shrink-0 mt-px" />
         <span>
-          On every tick, each enabled flow of a running group publishes its <strong className="text-[var(--c-tx1)]">burst</strong>.
+          On every tick, each enabled flow of a running group that is due (see <strong className="text-[var(--c-tx1)]">Every N ticks</strong>) sends one message.
           Changes are applied live, without stopping the simulation.
         </span>
       </div>

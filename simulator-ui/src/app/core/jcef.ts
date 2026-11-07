@@ -16,6 +16,11 @@ export interface JCEFBridge {
   sendToCore: (data: string) => void;
   
   /**
+   * Sends a request to Java and resolves with its response (cefQuery)
+   */
+  postMessage?: (data: string) => Promise<unknown>;
+
+  /**
    * Registra un callback para recibir mensajes del Core
    */
   registerCallback: (name: string, callback: (data: string) => void) => void;
@@ -104,6 +109,27 @@ export function toggleMaximize(): boolean {
     return true;
   }
   return false;
+}
+
+/**
+ * Opens a web page in the user's browser. In the desktop app Java opens it, because the
+ * embedded Chromium would show it in a bare popup; Java only accepts allow-listed URLs.
+ */
+export async function openExternalUrl(url: string): Promise<void> {
+  const bridge = getJCEFBridge();
+  if (bridge) {
+    if (!bridge.postMessage) {
+      throw new Error('The desktop bridge cannot open links');
+    }
+    await bridge.postMessage(JSON.stringify({
+      type: 'OPEN_EXTERNAL_URL',
+      commandId: `open_url_${Date.now()}`,
+      protocolVersion: '1.0.0',
+      payload: { url },
+    }));
+    return;
+  }
+  window.open(url, '_blank', 'noopener,noreferrer');
 }
 
 // ─────────────────────────────────────────────────────────────

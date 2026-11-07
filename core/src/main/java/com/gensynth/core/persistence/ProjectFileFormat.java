@@ -21,9 +21,12 @@ import java.util.Locale;
  * </pre>
  * The {@code settings} section and the flow field {@code everyTicks} (one message every N ticks)
  * are optional: files without them load with the default settings and {@code everyTicks} 1.
+ * The flow event loss fields {@code lossPercent} (0-100), {@code outageEveryTicks} and
+ * {@code outageDurationTicks} are optional too and default to 0 (no event loss).
  * The flow fields {@code burst} and {@code interval} and the group field {@code threads} are
  * legacy and ignored, and the group {@code outputMode} is "parallel" or "sequential" (other
- * values load as "parallel").
+ * values load as "parallel"). The optional group field {@code sequentialOrder} is "flow",
+ * "random" or "generated" (missing or other values load as "flow").
  * The extension makes file dialogs show only project files, and the {@code format} marker
  * guarantees that a file renamed to ".gsynth" is still rejected when it is not a GenSynth project.
  */

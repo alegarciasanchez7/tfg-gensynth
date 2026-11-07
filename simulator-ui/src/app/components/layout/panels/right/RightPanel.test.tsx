@@ -136,9 +136,50 @@ describe('RightPanel', () => {
     });
     
     await waitFor(() => expect(mockToast.success).toHaveBeenCalledWith('Variable created'));
+    // The editor of the new variable opens
+    expect(onSelectVariable).toHaveBeenCalledWith('v2');
 
     fireEvent.click(screen.getByText('temperature'));
     expect(onSelectVariable).toHaveBeenCalledWith('v1');
+  });
+
+  it('does not select anything when the variable cannot be created', async () => {
+    actions.createVariable.mockRejectedValueOnce(new Error('Core unavailable'));
+    render(<RightPanel variables={variables} selection={selection} onSelectVariable={onSelectVariable} onInsertVariable={onInsertVariable} />);
+
+    await createFromAddMenu(/^numeric$/i, 'pressure');
+
+    await waitFor(() => expect(mockToast.error).toHaveBeenCalledWith('Core unavailable'));
+    expect(onSelectVariable).not.toHaveBeenCalled();
+  });
+
+  const createFromAddMenu = async (type: RegExp, name: string) => {
+    fireEvent.click(screen.getByText(/ADD/i));
+    fireEvent.click(await screen.findByText(type));
+    fireEvent.change(screen.getByLabelText(/Identification Name/i), { target: { value: name } });
+    fireEvent.click(screen.getByRole('button', { name: /Create Variable/i }));
+    await waitFor(() => expect(actions.createVariable).toHaveBeenCalled());
+    return actions.createVariable.mock.calls[0];
+  };
+
+  it('creates a Boolean from the ADD menu with the OFF state its editor shows', async () => {
+    render(<RightPanel variables={variables} selection={selection} onSelectVariable={onSelectVariable} onInsertVariable={onInsertVariable} />);
+
+    const [name, type, , config] = await createFromAddMenu(/^boolean$/i, 'door_open');
+
+    expect(name).toBe('door_open');
+    expect(type).toBe('boolean');
+    expect(config).toEqual({ pattern: 'CONSTANT_BOOLEAN', currentValue: false });
+  });
+
+  it('creates a Temporal from the ADD menu with the default format preset', async () => {
+    render(<RightPanel variables={variables} selection={selection} onSelectVariable={onSelectVariable} onInsertVariable={onInsertVariable} />);
+
+    const [, type, , config] = await createFromAddMenu(/^temporal$/i, 'ts');
+
+    expect(type).toBe('temporal');
+    expect(config).toMatchObject({ temporalType: 'TIMESTAMP', dateFormat: "yyyy-MM-dd'T'HH:mm:ss.SSSZ" });
+    expect(config).not.toHaveProperty('min');
   });
 
   it('confirms delete variable from the row action', async () => {

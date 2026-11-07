@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Radio,
   Layers,
@@ -27,6 +27,9 @@ import { CloneDialog } from './CloneDialog';
 import { ConfirmDeleteDialog } from '../../../common/ConfirmDeleteDialog';
 import { StatusDot } from '../../../common/StatusDot';
 import { formatCount, formatRate } from '../../../../core/metricsFormat';
+import { commandErrorMessage } from '../../../../core/errorMessage';
+import { findTemplateVariableRefs } from '../../../../core/templateVariables';
+import { normalizeConnectionStatus } from '../../../../core/entityStatus';
 
 interface FlowItemProps {
   flow: Flow;
@@ -37,6 +40,8 @@ interface FlowItemProps {
   onClone: (gId: string, fId: string, count: number, namingPattern?: string) => void;
   onDelete: (gId: string, fId: string) => Promise<void>;
   formatTemplate: Record<string, string>;
+  /** Names of the flows of the group, to preview clone names that collide. */
+  siblingNames?: readonly string[];
 }
 
 const connColor: Record<ConnectionStatus, string> = {
@@ -61,21 +66,6 @@ const scopeVarColor: Record<string, string> = {
   global: 'text-amber-500',
 };
 
-function parseTemplateVars(template: string): Array<{ scope: string; name: string; key: string }> {
-  const regex = /\{\{(local|group|global)\.(\w+)\}\}/g;
-  const seen = new Set<string>();
-  const result: Array<{ scope: string; name: string; key: string }> = [];
-  let match: RegExpExecArray | null;
-  while ((match = regex.exec(template)) !== null) {
-    const key = `${match[1]}.${match[2]}`;
-    if (!seen.has(key)) {
-      seen.add(key);
-      result.push({ scope: match[1], name: match[2], key });
-    }
-  }
-  return result;
-}
-
 export function FlowItem({
   flow,
   selected,
@@ -85,24 +75,36 @@ export function FlowItem({
   onClone,
   onDelete,
   formatTemplate,
+  siblingNames,
 }: FlowItemProps) {
   const { state } = useApp();
   const isDirty = state?.dirtyItems?.flowIds?.has(flow.id) ?? false;
   const [isCloneOpen, setIsCloneOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   
-  const connCfg = connColor[flow.connectionStatus];
+  const connCfg = connColor[normalizeConnectionStatus(flow.connectionStatus)];
   const liveMetrics = state?.flowMetrics?.[flow.id];
   const fails = liveMetrics?.failed ?? 0;
+  const dropped = liveMetrics?.dropped ?? 0;
   const template = formatTemplate[flow.id] ?? '';
-  const usedVars = parseTemplateVars(template);
+  // Unscoped placeholders ({{temperature}}) resolve to the closest scope, like the Core
+  const variables = state?.variables;
+  const usedVars = useMemo(
+    () => findTemplateVariableRefs(template, variables ?? [], flow.id, groupId),
+    [template, variables, flow.id, groupId],
+  );
+
+  // The badge already shows the technology, so a "Kafka · topic" name (mock data) drops that
+  // prefix; any other name, even one containing "·", is shown as typed
+  const techPrefix = `${flow.technology} · `;
+  const displayName = flow.name.startsWith(techPrefix) ? flow.name.slice(techPrefix.length) : flow.name;
 
   const handleDeleteConfirm = async () => {
     try {
       await onDelete(groupId, flow.id);
       toast.success(`Flow "${flow.name}" deleted`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to delete flow';
+      const message = commandErrorMessage(error, 'Unable to delete flow');
       toast.error(message);
     } finally {
       setIsDeleteConfirmOpen(false);
@@ -111,7 +113,15 @@ export function FlowItem({
 
   return (
     <div
+      role="button"
+      tabIndex={0}
       onClick={() => onSelect(groupId, flow.id)}
+      onKeyDown={(e) => {
+        // Only the row itself: keys pressed on its menu button or menu items bubble up here too
+        if (e.target !== e.currentTarget || (e.key !== 'Enter' && e.key !== ' ')) return;
+        e.preventDefault();
+        onSelect(groupId, flow.id);
+      }}
       className={`w-full text-left px-3 py-2 flex flex-col gap-1 border-l-2 transition-all cursor-pointer ${
         selected
           ? 'bg-violet-500/10 border-l-violet-500'
@@ -145,7 +155,7 @@ export function FlowItem({
           className={`text-[11px] truncate ${selected ? 'text-[var(--c-tx1)]' : 'text-[var(--c-tx3)]'}`}
           style={{ fontFamily: 'JetBrains Mono, monospace' }}
         >
-          {flow.name.split('·')[1]?.trim() || flow.name}
+          {displayName}
         </span>
         {isDirty && <span className="text-amber-400 font-bold text-xs" title="Unsaved changes">*</span>}
 
@@ -199,6 +209,7 @@ export function FlowItem({
           onConfirm={(count, pattern) => onClone(groupId, flow.id, count, pattern)}
           title="Clone Flow"
           itemName={flow.name}
+          existingNames={siblingNames}
         />
 
         <ConfirmDeleteDialog
@@ -210,9 +221,9 @@ export function FlowItem({
         />
       </div>
 
-      {/* Row 2: status dot + live metrics (msg/s · sent · fails) + error */}
+      {/* Row 2: status dot + live metrics (msg/s · sent · fails · dropped) + error */}
       <div
-        className={`flex items-center gap-1.5 pl-0.5 text-[10px] transition-opacity ${!flow.enabled ? 'opacity-40' : ''}`}
+        className={`flex flex-wrap items-center gap-x-1.5 pl-0.5 text-[10px] transition-opacity [&>span]:whitespace-nowrap ${!flow.enabled ? 'opacity-40' : ''}`}
         style={{ fontFamily: 'JetBrains Mono, monospace' }}
         data-testid="flow-metrics"
       >
@@ -231,6 +242,14 @@ export function FlowItem({
         >
           {formatCount(fails)} <span className="text-[var(--c-tx4)]">fails</span>
         </span>
+        {dropped > 0 && (
+          <>
+            <span className="text-[var(--c-tx5)]">·</span>
+            <span className="text-amber-600 dark:text-amber-400" title="Generated but lost on purpose (event loss)">
+              {formatCount(dropped)} <span className="text-[var(--c-tx4)]">dropped</span>
+            </span>
+          </>
+        )}
         {flow.hasError && (
           <AlertTriangle size={10} className="text-red-500 ml-auto" />
         )}
@@ -242,7 +261,7 @@ export function FlowItem({
           {usedVars.map((v, idx) => (
             <span
               key={v.key}
-              className={`text-[9px] ${scopeVarColor[v.scope]}`}
+              className={`text-[9px] ${scopeVarColor[v.scope] ?? scopeVarColor.global}`}
               style={{ fontFamily: 'JetBrains Mono, monospace' }}
               title={`${v.scope} · {{${v.scope}.${v.name}}}`}
             >

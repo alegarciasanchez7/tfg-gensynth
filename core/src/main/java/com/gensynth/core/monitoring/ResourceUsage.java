@@ -9,10 +9,11 @@ import java.lang.management.OperatingSystemMXBean;
  *
  * @param cpuPercent   CPU load of the process, from 0 to 100 (0 when the JVM cannot measure it)
  * @param usedMemoryMb heap in use, in MB (at least 1)
- * @param heapMb       heap reserved by the JVM, in MB (at least 1)
+ * @param heapMb       heap reserved by the JVM now, in MB (at least 1)
+ * @param maxHeapMb    most heap the JVM may reserve (its limit), in MB (at least 1)
  * @param threads      live threads
  */
-public record ResourceUsage(double cpuPercent, int usedMemoryMb, int heapMb, int threads) {
+public record ResourceUsage(double cpuPercent, int usedMemoryMb, int heapMb, int maxHeapMb, int threads) {
 
     /**
      * @return the usage at this moment
@@ -21,7 +22,7 @@ public record ResourceUsage(double cpuPercent, int usedMemoryMb, int heapMb, int
         Runtime runtime = Runtime.getRuntime();
         long usedMemory = runtime.totalMemory() - runtime.freeMemory();
         return new ResourceUsage(processCpuLoad() * 100.0, bytesToMb(usedMemory),
-            bytesToMb(runtime.totalMemory()), Thread.activeCount());
+            bytesToMb(runtime.totalMemory()), bytesToMb(runtime.maxMemory()), Thread.activeCount());
     }
 
     private static double processCpuLoad() {

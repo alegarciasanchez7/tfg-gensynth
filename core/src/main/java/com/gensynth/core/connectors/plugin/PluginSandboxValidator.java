@@ -1,5 +1,6 @@
 package com.gensynth.core.connectors.plugin;
 
+import com.gensynth.core.connectors.runtime.PluginClassLoader;
 import com.gensynth.plugin.api.ConnectorField;
 import com.gensynth.plugin.api.ConnectorInfo;
 import com.gensynth.plugin.api.ConnectorPlugin;
@@ -53,6 +54,7 @@ import java.util.jar.JarInputStream;
  * exposing internal core architecture to plugin developers.
  */
 public class PluginSandboxValidator {
+    private static final String CONSTRUCTOR = "<init>";
 
     private static final Logger logger = LoggerFactory.getLogger(PluginSandboxValidator.class);
 
@@ -83,10 +85,10 @@ public class PluginSandboxValidator {
             "java/lang/Runtime", Set.of("exec", "halt", "exit"),
             "java/lang/ProcessBuilder", Set.of("start", "startPipeline"),
             "java/lang/System", Set.of("exit"),
-            "java/net/ServerSocket", Set.of("<init>"),
-            "java/net/DatagramSocket", Set.of("<init>"),
-            "java/io/FileOutputStream", Set.of("<init>"),
-            "java/io/RandomAccessFile", Set.of("<init>"),
+            "java/net/ServerSocket", Set.of(CONSTRUCTOR),
+            "java/net/DatagramSocket", Set.of(CONSTRUCTOR),
+            "java/io/FileOutputStream", Set.of(CONSTRUCTOR),
+            "java/io/RandomAccessFile", Set.of(CONSTRUCTOR),
             "java/nio/file/Files", Set.of("write", "delete", "move", "createFile", "createDirectory",
                     "createDirectories", "newOutputStream")
     );
@@ -97,6 +99,9 @@ public class PluginSandboxValidator {
     /** Set of existing plugin keys (pluginId@version) for duplicate detection. */
     private final Set<String> existingPluginKeys;
 
+    /** Keys (pluginId@version) of the connectors included in GenSynth, which cannot be imported again. */
+    private final Set<String> builtInPluginKeys;
+
     /**
      * Constructs the validator with knowledge of currently installed plugins.
      *
@@ -104,7 +109,19 @@ public class PluginSandboxValidator {
      * @param sharedLibDir       path to the directory containing shared libraries
      */
     public PluginSandboxValidator(Set<String> existingPluginKeys, Path sharedLibDir) {
+        this(existingPluginKeys, Set.of(), sharedLibDir);
+    }
+
+    /**
+     * Constructs the validator with knowledge of the installed and the built-in connectors.
+     *
+     * @param existingPluginKeys set of "pluginId@version" strings already loaded
+     * @param builtInPluginKeys  set of "pluginId@version" strings of the connectors included in GenSynth
+     * @param sharedLibDir       path to the directory containing shared libraries
+     */
+    public PluginSandboxValidator(Set<String> existingPluginKeys, Set<String> builtInPluginKeys, Path sharedLibDir) {
         this.existingPluginKeys = existingPluginKeys != null ? existingPluginKeys : Set.of();
+        this.builtInPluginKeys = builtInPluginKeys != null ? builtInPluginKeys : Set.of();
         this.sharedLibDir = sharedLibDir;
     }
 
@@ -153,7 +170,11 @@ public class PluginSandboxValidator {
 
         // 5. Check for duplicates
         String key = info.id() + "@" + info.version();
-        if (existingPluginKeys.contains(key)) {
+        if (builtInPluginKeys.contains(key)) {
+            // The included copy always wins, so an imported one would never be used
+            builder.log(PluginValidationResult.ValidationLevel.ERROR,
+                info.displayName() + " " + info.version() + " is already included in GenSynth: there is no need to import it.", key);
+        } else if (existingPluginKeys.contains(key)) {
             builder.log(PluginValidationResult.ValidationLevel.WARN, 
                 "A plugin with the same ID and version already exists. Installation will overwrite it.", key);
         } else {
@@ -310,12 +331,11 @@ public class PluginSandboxValidator {
                 }
             }
 
-            URLClassLoader sandboxLoader = new URLClassLoader(
+            // Same parent-last loader as at runtime, so a plugin whose classes are also on the
+            // application classpath (a built-in connector) is inspected from its own JAR
+            try (URLClassLoader sandboxLoader = new PluginClassLoader(
                     urls.toArray(new URL[0]),
-                    ConnectorPlugin.class.getClassLoader()
-            );
-
-            try {
+                    ConnectorPlugin.class.getClassLoader())) {
                 builder.log(PluginValidationResult.ValidationLevel.INFO, "Inspecting plugin...");
                 LoadedPlugin loaded = loadWithTimeout(sandboxLoader);
                 if (loaded == null) {
@@ -324,8 +344,6 @@ public class PluginSandboxValidator {
                     builder.log(PluginValidationResult.ValidationLevel.INFO, "Found plugin: " + loaded.info().id() + " v" + loaded.info().version());
                 }
                 return loaded;
-            } finally {
-                sandboxLoader.close();
             }
         } catch (TimeoutException e) {
             builder.log(PluginValidationResult.ValidationLevel.ERROR, "Loading timeout: plugin took too long to respond (> " + DESCRIPTOR_LOAD_TIMEOUT_SECONDS + "s)");

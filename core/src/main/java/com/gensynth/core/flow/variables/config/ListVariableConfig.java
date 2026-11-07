@@ -10,6 +10,8 @@ import java.util.concurrent.ThreadLocalRandom;
  * Supports embedded sub-variable generators for polymorphic/heterogeneous list items.
  */
 public class ListVariableConfig extends VariableConfiguration {
+    private static final String VALUE = "value";
+    private static final String WEIGHT = "weight";
 
     public enum SelectionStrategy {
         WEIGHTED_RANDOM,
@@ -91,7 +93,7 @@ public class ListVariableConfig extends VariableConfiguration {
 
     // Runtime state
     private int currentIndex = 0;
-    private List<Integer> shuffleIndices = new ArrayList<>();
+    private final List<Integer> shuffleIndices = new ArrayList<>();
     private int currentShufflePointer = 0;
     private String currentMarkovStateId = null;
 
@@ -199,8 +201,8 @@ public class ListVariableConfig extends VariableConfiguration {
             } else if (obj instanceof Map) {
                 Map<?, ?> map = (Map<?, ?>) obj;
                 String itemId = map.containsKey("id") ? String.valueOf(map.get("id")) : null;
-                Object val = map.containsKey("value") ? map.get("value") : obj;
-                double w = map.containsKey("weight") ? ((Number) map.get("weight")).doubleValue() : 1.0;
+                Object val = map.containsKey(VALUE) ? map.get(VALUE) : obj;
+                double w = map.containsKey(WEIGHT) ? ((Number) map.get(WEIGHT)).doubleValue() : 1.0;
                 parsedItems.add(new ListItem(itemId, val, w));
             } else {
                 parsedItems.add(new ListItem(null, obj, 1.0));
@@ -236,10 +238,9 @@ public class ListVariableConfig extends VariableConfiguration {
                 shuffleIndices.add(i);
             }
             Collections.shuffle(shuffleIndices);
-            this.currentMarkovStateId = items.get(0).getId();
-        } else {
-            this.currentMarkovStateId = null;
         }
+        // The chain starts in the first item shown, which may be a reordered one
+        this.currentMarkovStateId = null;
     }
 
     @Override
@@ -265,12 +266,6 @@ public class ListVariableConfig extends VariableConfiguration {
 
         if (hasExplicitWeights && !hasPositiveWeight) {
             errors.add("List variable has weights config but all weights are zero or negative");
-        }
-
-        if (selectionStrategy == SelectionStrategy.MARKOV_CHAIN) {
-            if (transitionMatrix == null || transitionMatrix.isEmpty()) {
-                errors.add("Markov chain strategy requires a non-empty transition matrix");
-            }
         }
 
         // Validate embedded configurations
@@ -314,62 +309,14 @@ public class ListVariableConfig extends VariableConfiguration {
         return (selectedItem != null) ? selectedItem.generateValue() : null;
     }
 
+    /**
+     * The items of this list in the chosen order. A list only has its own items: it cannot inherit
+     * items from another list.
+     *
+     * @return the items, reordered by the item order when one is set
+     */
     public List<ListItem> getEffectiveItems() {
-        List<ListItem> effective = new ArrayList<>();
-        if (sourceListVariableId != null && !sourceListVariableId.trim().isEmpty() && currentContext != null) {
-            String refId = sourceListVariableId.trim();
-            Object varObj = currentContext.get(refId + "_config");
-            if (varObj == null) {
-                varObj = currentContext.get(refId);
-            }
-            ListVariableConfig sourceListConfig = null;
-            if (varObj instanceof com.gensynth.core.flow.variables.ConfigurableVariable) {
-                VariableConfiguration cfg = ((com.gensynth.core.flow.variables.ConfigurableVariable) varObj).getConfiguration();
-                if (cfg instanceof ListVariableConfig) {
-                    sourceListConfig = (ListVariableConfig) cfg;
-                }
-            } else if (varObj instanceof ListVariableConfig) {
-                sourceListConfig = (ListVariableConfig) varObj;
-            }
-
-            if (sourceListConfig != null && !sourceListConfig.getEffectiveItems().isEmpty()) {
-                List<ListItem> parentItems = sourceListConfig.getEffectiveItems();
-                if ("SUBSET_SPECIFIC".equalsIgnoreCase(sourceListSelectionMode) && selectedListItemIds != null && !selectedListItemIds.isEmpty()) {
-                    Map<String, ListItem> parentMap = new HashMap<>();
-                    for (ListItem pItem : parentItems) {
-                        parentMap.put(pItem.getId(), pItem);
-                        if (pItem.getValue() != null) {
-                            parentMap.put(String.valueOf(pItem.getValue()), pItem);
-                        }
-                    }
-                    for (String sid : selectedListItemIds) {
-                        ListItem matched = parentMap.get(sid);
-                        if (matched != null && !effective.contains(matched)) {
-                            effective.add(matched);
-                        }
-                    }
-                } else if ("SUBSET_RANDOM".equalsIgnoreCase(sourceListSelectionMode)) {
-                    List<ListItem> copy = new ArrayList<>(parentItems);
-                    Collections.shuffle(copy);
-                    int count = Math.min(randomSubsetCount > 0 ? randomSubsetCount : 1, copy.size());
-                    effective.addAll(copy.subList(0, count));
-                } else if ("FIXED_ITEM".equalsIgnoreCase(sourceListSelectionMode) && selectedListItemId != null) {
-                    for (ListItem pItem : parentItems) {
-                        if (selectedListItemId.equals(pItem.getId()) || (pItem.getValue() != null && selectedListItemId.equals(String.valueOf(pItem.getValue())))) {
-                            effective.add(pItem);
-                            break;
-                        }
-                    }
-                } else {
-                    effective.addAll(parentItems);
-                }
-            }
-        }
-
-        // Add local items
-        if (items != null && !items.isEmpty()) {
-            effective.addAll(items);
-        }
+        List<ListItem> effective = items != null ? new ArrayList<>(items) : new ArrayList<>();
 
         // Reorder by itemOrder if specified
         if (itemOrder != null && !itemOrder.isEmpty()) {
@@ -400,6 +347,22 @@ public class ListVariableConfig extends VariableConfiguration {
         }
 
         return effective;
+    }
+
+    /**
+     * A new list with the same items, strategy, matrix and order, starting from the beginning:
+     * it picks items as this list does without moving this list's position.
+     *
+     * @return the copy
+     */
+    public ListVariableConfig copyGenerator() {
+        ListVariableConfig copy = new ListVariableConfig()
+                .identifier(identifier)
+                .selectionStrategy(selectionStrategy)
+                .items(items)
+                .transitionMatrix(transitionMatrix);
+        copy.setItemOrder(itemOrder);
+        return copy;
     }
 
     public List<String> getItemOrder() {
@@ -479,7 +442,7 @@ public class ListVariableConfig extends VariableConfiguration {
     }
 
     private ListItem selectMarkovChain(List<ListItem> activeItems) {
-        if (currentMarkovStateId == null && !activeItems.isEmpty()) {
+        if (currentMarkovStateId == null) {
             currentMarkovStateId = activeItems.get(0).getId();
         }
 
@@ -496,7 +459,10 @@ public class ListVariableConfig extends VariableConfiguration {
         }
 
         Map<String, Double> transitions = transitionMatrix.get(currentMarkovStateId);
-        if (transitions != null && !transitions.isEmpty()) {
+        if (transitions == null) {
+            // A state without a row (e.g. a matrix edited by hand) moves to any item
+            currentMarkovStateId = activeItems.get(ThreadLocalRandom.current().nextInt(activeItems.size())).getId();
+        } else if (!transitions.isEmpty()) {
             double sum = 0.0;
             for (double p : transitions.values()) {
                 if (p > 0) sum += p;
@@ -550,8 +516,8 @@ public class ListVariableConfig extends VariableConfiguration {
             for (ListItem item : items) {
                 Map<String, Object> itemMap = new HashMap<>();
                 itemMap.put("id", item.getId());
-                itemMap.put("value", item.getValue());
-                itemMap.put("weight", item.getWeight());
+                itemMap.put(VALUE, item.getValue());
+                itemMap.put(WEIGHT, item.getWeight());
                 if (item.getEmbeddedConfig() != null) {
                     itemMap.put("isEmbedded", true);
                     itemMap.put("embeddedType", item.getEmbeddedConfig().getType().name());

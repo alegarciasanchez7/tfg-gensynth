@@ -14,7 +14,7 @@ import static org.junit.Assert.*;
 public class StatusPanelTest {
 
     private static final long NOW = 1_000_000L;
-    private static final ResourceUsage USAGE = new ResourceUsage(12.34, 148, 512, 40);
+    private static final ResourceUsage USAGE = new ResourceUsage(12.34, 148, 512, 1024, 40);
 
     private static SimulationSnapshot simulation(int id, String file, SimulationSnapshot.Status status, long errors) {
         return new SimulationSnapshot(id, Paths.get("/data", file), "out", status, 1, 2, NOW - 252_000,

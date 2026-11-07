@@ -179,7 +179,7 @@ export function ConnectorCatalogDialog({
                   </span>
                   {connectorHealth && (
                     <span
-                      className={`w-2 h-2 rounded-full shrink-0 ${HEALTH_STYLES[connectorHealth.status].dot}`}
+                      className={`w-2 h-2 rounded-full shrink-0 ${(HEALTH_STYLES[connectorHealth.status] ?? HEALTH_STYLES.offline).dot}`}
                       title={connectorHealth.status}
                     />
                   )}
@@ -208,7 +208,7 @@ export function ConnectorCatalogDialog({
                   {selected.external ? 'Plugin' : 'Built-in'}
                 </span>
                 {health && (
-                  <span className={`rounded border px-1.5 py-0.5 text-[9px] uppercase tracking-wider ${HEALTH_STYLES[health.status].badge}`}>
+                  <span className={`rounded border px-1.5 py-0.5 text-[9px] uppercase tracking-wider ${(HEALTH_STYLES[health.status] ?? HEALTH_STYLES.offline).badge}`}>
                     {health.status}
                   </span>
                 )}

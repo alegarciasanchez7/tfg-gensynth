@@ -1,5 +1,5 @@
 import type { BridgeConfig } from './BridgeConfig';
-import type { PendingCommand, EventMap } from './BridgeTypes';
+import { USER_DIALOG_COMMANDS, type PendingCommand, type EventMap } from './BridgeTypes';
 import type {
   CoreMessage,
   CoreCommandErrorPayload,
@@ -16,6 +16,7 @@ import type {
   RestartRequiredPayload,
   RollbackReportPayload,
   InitialStatePayload,
+  UpdateStatusPayload,
 } from '../types';
 import type { ProjectSettings } from '../../types';
 
@@ -88,6 +89,9 @@ export class MessageHandler {
         case 'SETTINGS_UPDATE':
           this.emit('settings-update', message.payload as ProjectSettings);
           break;
+        case 'UPDATE_STATUS':
+          this.emit('update-status', message.payload as UpdateStatusPayload);
+          break;
       }
 
       const responsePayload = message.payload as { commandId?: string; status?: string } | null;
@@ -111,7 +115,8 @@ export class MessageHandler {
           const commandError = this.createError(message.payload as CoreCommandErrorPayload, responseId);
           const recoverable = (message.payload as CoreCommandErrorPayload)?.recoverable ?? false;
 
-          if (recoverable && pending.attempts < (this.config.maxCommandRetries ?? 0)) {
+          const resendable = !USER_DIALOG_COMMANDS.has(pending.command.type);
+          if (recoverable && resendable && pending.attempts < (this.config.maxCommandRetries ?? 0)) {
             pending.attempts += 1;
             const delay = Math.min(
               (this.config.retryBackoffMs ?? 500) * (2 ** (pending.attempts - 1)),

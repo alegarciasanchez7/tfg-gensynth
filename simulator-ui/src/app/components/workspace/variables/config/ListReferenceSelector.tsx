@@ -2,14 +2,31 @@ import React, { useState } from 'react';
 import { useApp } from '../../../../context';
 import { BaseVariableConfig, ListReferenceSelectionMode, Variable, VariableScope, VariableType } from '../../../../types';
 import { Label } from '../../../ui/label';
-import { Input } from '../../../ui/input';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../../../ui/tooltip';
 import { ChevronDown, ChevronRight } from 'lucide-react';
+
+/** How a variable that is not a List takes its value from the source list. */
+const ITEM_MODES: readonly { value: ListReferenceSelectionMode; label: string }[] = [
+  { value: 'RANDOM_ITEM', label: 'Random Item' },
+  { value: 'FIXED_ITEM', label: 'Specific Fixed' },
+  { value: 'INHERITED_GENERATION', label: 'Inherited Generation' },
+];
+
+/** Names of the list strategies, as the List editor shows them. */
+const STRATEGY_NAMES: Record<string, string> = {
+  WEIGHTED_RANDOM: 'Weighted Random',
+  SEQUENTIAL: 'Sequential',
+  SHUFFLE: 'Shuffle',
+  MARKOV_CHAIN: 'Markov Chain',
+  FIXED_SUBSET: 'Fixed Subset',
+};
 
 interface ListReferenceSelectorProps {
   config: BaseVariableConfig;
   onChange: (newConfig: Record<string, any>) => void;
   variableScope: VariableScope;
-  variableType: VariableType;
+  /** A List variable cannot inherit from another list, so it never shows this selector. */
+  variableType: Exclude<VariableType, 'list'>;
   flowId?: string;
   groupId?: string;
 }
@@ -48,9 +65,6 @@ export const ListReferenceSelector: React.FC<ListReferenceSelectorProps> = ({
   // - Local lists: Cannot be referenced by other variables (restricted/non-exportable)
   const accessibleListVariables = (state.variables || []).filter((v: Variable) => {
     if (v.type !== 'list') return false;
-    
-    // Cannot reference self
-    if (v.id === config.id || v.name === config.name) return false;
 
     if (v.scope === 'global') {
       return true; // Global lists accessible to all
@@ -66,6 +80,12 @@ export const ListReferenceSelector: React.FC<ListReferenceSelectorProps> = ({
   });
 
   const isEnabled = !!config.sourceListVariableId;
+  // Without a list to read from there is nothing to inherit (an enabled box can still be cleared)
+  const noListToInherit = !isEnabled && accessibleListVariables.length === 0;
+  const sourceScopes = variableScope === 'global' ? 'Global' : 'Global or Group';
+  const missingListHint = variableScope === 'global'
+    ? 'Create another GLOBAL List variable first: a GLOBAL variable can only inherit from GLOBAL lists.'
+    : 'Create a GLOBAL List variable, or a GROUP List variable in this group, first.';
   const selectedList = accessibleListVariables.find((v: Variable) => v.id === config.sourceListVariableId || v.name === config.sourceListVariableId);
 
   // Get items of selected list
@@ -75,14 +95,22 @@ export const ListReferenceSelector: React.FC<ListReferenceSelectorProps> = ({
   // - Literal items (isEmbedded == false): Treated as string
   // - Dynamic items (isEmbedded == true): Classified by explicit embeddedType
   const compatibleItems = listItems.filter((item: any) => {
-    if (variableType === 'list') return true; // List can absorb any item type
     if (variableType === 'string') {
       return !item.isEmbedded || item.embeddedType === 'string';
     }
     return item.isEmbedded && item.embeddedType === variableType;
   });
 
-  const selectionMode: ListReferenceSelectionMode = config.sourceListSelectionMode || (variableType === 'list' ? 'SUBSET_SPECIFIC' : 'RANDOM_ITEM');
+  const selectionMode: ListReferenceSelectionMode = config.sourceListSelectionMode || 'RANDOM_ITEM';
+  // Same default as the List editor and the Core
+  const sourceStrategy: string = selectedList?.config?.selectionStrategy || 'WEIGHTED_RANDOM';
+  const itemModeHint = selectionMode === 'FIXED_ITEM'
+    ? 'Always the item chosen below.'
+    : selectionMode === 'INHERITED_GENERATION'
+      ? (sourceStrategy === 'FIXED_SUBSET'
+        ? 'The list uses Fixed Subset, so a random item is picked on every value.'
+        : `Items are picked as the list picks them (${STRATEGY_NAMES[sourceStrategy] ?? sourceStrategy}), keeping their own position: the list's sequence is not moved.`)
+      : 'A random item of the list on every value.';
 
   const handleToggle = (checked: boolean) => {
     if (!checked) {
@@ -90,14 +118,12 @@ export const ListReferenceSelector: React.FC<ListReferenceSelectorProps> = ({
         sourceListVariableId: undefined,
         sourceListSelectionMode: undefined,
         selectedListItemId: undefined,
-        selectedListItemIds: undefined,
-        randomSubsetCount: undefined,
       });
     } else {
       const firstAvailable = accessibleListVariables[0];
       onChange({
         sourceListVariableId: firstAvailable ? firstAvailable.id : '',
-        sourceListSelectionMode: variableType === 'list' ? 'SUBSET_SPECIFIC' : 'RANDOM_ITEM',
+        sourceListSelectionMode: 'RANDOM_ITEM',
       });
     }
   };
@@ -116,16 +142,32 @@ export const ListReferenceSelector: React.FC<ListReferenceSelectorProps> = ({
               {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
             </button>
           )}
-          <input
-            type="checkbox"
-            id="enable-list-ref"
-            checked={isEnabled}
-            onChange={(e) => handleToggle(e.target.checked)}
-            className="h-3.5 w-3.5 rounded border-[var(--c-br2)] bg-[var(--c-bg1)] text-violet-500 focus:ring-violet-500/30"
-          />
-          <Label htmlFor="enable-list-ref" className="font-mono text-xs font-semibold text-[var(--c-tx1)] cursor-pointer">
-            Inherit value from parent-scope List
-          </Label>
+          <Tooltip>
+            {/* A disabled check box gets no hover events: the wrapper shows why it is disabled */}
+            <TooltipTrigger asChild>
+              <span className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="enable-list-ref"
+                  checked={isEnabled}
+                  disabled={noListToInherit}
+                  onChange={(e) => handleToggle(e.target.checked)}
+                  className="h-3.5 w-3.5 rounded border-[var(--c-br2)] bg-[var(--c-bg1)] text-violet-500 focus:ring-violet-500/30 disabled:cursor-not-allowed disabled:opacity-40"
+                />
+                <Label
+                  htmlFor="enable-list-ref"
+                  className={`font-mono text-xs font-semibold ${noListToInherit ? 'text-[var(--c-tx4)] cursor-not-allowed' : 'text-[var(--c-tx1)] cursor-pointer'}`}
+                >
+                  Inherit value from parent-scope List
+                </Label>
+              </span>
+            </TooltipTrigger>
+            {noListToInherit && (
+              <TooltipContent side="bottom" className="max-w-[280px] text-[11px] leading-relaxed">
+                No List variable to inherit from. {missingListHint}
+              </TooltipContent>
+            )}
+          </Tooltip>
         </div>
         {isEnabled && accessibleListVariables.length === 0 && (
           <span className="text-[10px] text-amber-400 font-mono">No accessible lists</span>
@@ -136,11 +178,11 @@ export const ListReferenceSelector: React.FC<ListReferenceSelectorProps> = ({
         <div className="space-y-3 pt-1 pl-5 border-l border-violet-500/20">
           <div>
             <Label className="text-[11px] text-[var(--c-tx3)] font-mono mb-1 block">
-              Source List Variable ({variableScope === 'local' ? 'Global or Group' : 'Global'})
+              Source List Variable ({sourceScopes})
             </Label>
             <select
               value={config.sourceListVariableId || ''}
-              onChange={(e) => onChange({ sourceListVariableId: e.target.value, selectedListItemId: undefined, selectedListItemIds: undefined })}
+              onChange={(e) => onChange({ sourceListVariableId: e.target.value, selectedListItemId: undefined })}
               className="w-full h-8 rounded border border-[var(--c-br2)] bg-[var(--c-bg2)] px-2 py-1 text-xs text-[var(--c-tx1)] font-mono outline-none focus:border-violet-500"
             >
               <option value="" disabled>-- Select a list --</option>
@@ -153,133 +195,52 @@ export const ListReferenceSelector: React.FC<ListReferenceSelectorProps> = ({
           </div>
 
           {selectedList && (
-            <>
-              {variableType !== 'list' ? (
-                // Mode selector for regular variables
-                <div className="space-y-2">
-                  <Label className="text-[11px] text-[var(--c-tx3)] font-mono block">Item Selection Mode</Label>
-                  <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-2">
+              <Label className="text-[11px] text-[var(--c-tx3)] font-mono block">Item Selection Mode</Label>
+              <div className="grid grid-cols-3 gap-2">
+                {ITEM_MODES.map(mode => {
+                  // A Fixed Subset list gives an array, not one item, so there is no generation to inherit
+                  const unavailable = mode.value === 'INHERITED_GENERATION' && sourceStrategy === 'FIXED_SUBSET';
+                  return (
                     <button
+                      key={mode.value}
                       type="button"
-                      onClick={() => onChange({ sourceListSelectionMode: 'RANDOM_ITEM' })}
-                      className={`h-7 px-2 rounded text-xs font-mono border transition-all ${
-                        selectionMode === 'RANDOM_ITEM'
+                      disabled={unavailable}
+                      title={unavailable ? 'Not available: a Fixed Subset list returns all its items at once' : undefined}
+                      onClick={() => onChange({ sourceListSelectionMode: mode.value })}
+                      className={`h-7 px-2 rounded text-xs font-mono border transition-all disabled:cursor-not-allowed disabled:opacity-40 ${
+                        selectionMode === mode.value
                           ? 'border-violet-500 bg-violet-500/20 text-violet-600 dark:text-violet-300 font-semibold'
                           : 'border-[var(--c-br2)] bg-[var(--c-bg2)] text-[var(--c-tx3)] hover:text-[var(--c-tx1)]'
                       }`}
                     >
-                      🎲 Random Item
+                      {mode.label}
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => onChange({ sourceListSelectionMode: 'FIXED_ITEM' })}
-                      className={`h-7 px-2 rounded text-xs font-mono border transition-all ${
-                        selectionMode === 'FIXED_ITEM'
-                          ? 'border-violet-500 bg-violet-500/20 text-violet-600 dark:text-violet-300 font-semibold'
-                          : 'border-[var(--c-br2)] bg-[var(--c-bg2)] text-[var(--c-tx3)] hover:text-[var(--c-tx1)]'
-                      }`}
-                    >
-                      📌 Specific Fixed
-                    </button>
-                  </div>
+                  );
+                })}
+              </div>
+              <p className="text-[10px] text-[var(--c-tx4)] font-mono leading-relaxed">{itemModeHint}</p>
 
-                  {selectionMode === 'FIXED_ITEM' && (
-                    <div className="pt-1">
-                      <Label className="text-[10px] text-[var(--c-tx4)] font-mono mb-1 block">
-                        Compatible Specific Item ({compatibleItems.length} available)
-                      </Label>
-                      <select
-                        value={config.selectedListItemId || ''}
-                        onChange={(e) => onChange({ selectedListItemId: e.target.value })}
-                        className="w-full h-8 rounded border border-[var(--c-br2)] bg-[var(--c-bg2)] px-2 py-1 text-xs text-[var(--c-tx1)] font-mono outline-none focus:border-violet-500"
-                      >
-                        <option value="" disabled>-- Select an item --</option>
-                        {compatibleItems.map((item: any) => (
-                          <option key={item.id} value={item.id}>
-                            {item.value || item.id} ({item.isEmbedded ? `Dynamic: ${item.embeddedType}` : 'Literal String'})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                // Mode selector for List variables creating sub-lists
-                <div className="space-y-2">
-                  <Label className="text-[11px] text-[var(--c-tx3)] font-mono block">Source List Subset</Label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => onChange({ sourceListSelectionMode: 'SUBSET_SPECIFIC' })}
-                      className={`h-7 px-2 rounded text-xs font-mono border transition-all ${
-                        selectionMode === 'SUBSET_SPECIFIC'
-                          ? 'border-violet-500 bg-violet-500/20 text-violet-600 dark:text-violet-300 font-semibold'
-                          : 'border-[var(--c-br2)] bg-[var(--c-bg2)] text-[var(--c-tx3)] hover:text-[var(--c-tx1)]'
-                      }`}
-                    >
-                      ☑ Fixed Subset
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onChange({ sourceListSelectionMode: 'SUBSET_RANDOM' })}
-                      className={`h-7 px-2 rounded text-xs font-mono border transition-all ${
-                        selectionMode === 'SUBSET_RANDOM'
-                          ? 'border-violet-500 bg-violet-500/20 text-violet-600 dark:text-violet-300 font-semibold'
-                          : 'border-[var(--c-br2)] bg-[var(--c-bg2)] text-[var(--c-tx3)] hover:text-[var(--c-tx1)]'
-                      }`}
-                    >
-                      🎲 N Random
-                    </button>
-                  </div>
-
-                  {selectionMode === 'SUBSET_SPECIFIC' && (
-                    <div className="space-y-1.5 pt-1">
-                      <Label className="text-[10px] text-[var(--c-tx4)] font-mono block">
-                        Select items to include in this sub-list:
-                      </Label>
-                      <div className="max-h-32 overflow-y-auto space-y-1 rounded border border-[var(--c-br2)] bg-[var(--c-bg1)] p-2">
-                        {listItems.map((item: any) => {
-                          const isSelected = (config.selectedListItemIds || []).includes(item.id);
-                          return (
-                            <label key={item.id} className="flex items-center gap-2 text-xs font-mono text-[var(--c-tx2)] hover:text-[var(--c-tx1)] cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={isSelected}
-                                onChange={(e) => {
-                                  const currentIds = config.selectedListItemIds || [];
-                                  const newIds = e.target.checked
-                                    ? [...currentIds, item.id]
-                                    : currentIds.filter(id => id !== item.id);
-                                  onChange({ selectedListItemIds: newIds });
-                                }}
-                                className="h-3 w-3 rounded border-[var(--c-br2)] text-violet-500"
-                              />
-                              <span>{item.value || item.id}</span>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  {selectionMode === 'SUBSET_RANDOM' && (
-                    <div className="pt-1">
-                      <Label className="text-[10px] text-[var(--c-tx4)] font-mono mb-1 block">
-                        Number of random items to select
-                      </Label>
-                      <Input
-                        type="number"
-                        min={1}
-                        max={listItems.length}
-                        value={config.randomSubsetCount || 1}
-                        onChange={(e) => onChange({ randomSubsetCount: Math.max(1, parseInt(e.target.value, 10) || 1) })}
-                        className="h-8 font-mono text-xs"
-                      />
-                    </div>
-                  )}
+              {selectionMode === 'FIXED_ITEM' && (
+                <div className="pt-1">
+                  <Label className="text-[10px] text-[var(--c-tx4)] font-mono mb-1 block">
+                    Compatible Specific Item ({compatibleItems.length} available)
+                  </Label>
+                  <select
+                    value={config.selectedListItemId || ''}
+                    onChange={(e) => onChange({ selectedListItemId: e.target.value })}
+                    className="w-full h-8 rounded border border-[var(--c-br2)] bg-[var(--c-bg2)] px-2 py-1 text-xs text-[var(--c-tx1)] font-mono outline-none focus:border-violet-500"
+                  >
+                    <option value="" disabled>-- Select an item --</option>
+                    {compatibleItems.map((item: any) => (
+                      <option key={item.id} value={item.id}>
+                        {item.value || item.id} ({item.isEmbedded ? `Dynamic: ${item.embeddedType}` : 'Literal String'})
+                      </option>
+                    ))}
+                  </select>
                 </div>
               )}
-            </>
+            </div>
           )}
         </div>
       )}

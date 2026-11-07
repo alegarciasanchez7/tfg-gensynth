@@ -57,11 +57,22 @@ export function StatsView({ running }: StatsViewProps) {
     ? Math.round(activeFlowMetrics.reduce((acc, curr) => acc + curr.latency, 0) / activeFlowMetrics.length)
     : 0;
 
+  // Messages lost on purpose by the event loss of every flow
+  const totalDropped = Object.values(flowMetrics).reduce((acc, curr) => acc + (curr.dropped ?? 0), 0);
+
+  // TOTAL SENT and ERRORS are Core counters kept since GenSynth started: they stay visible on
+  // STOP and carry over to the next run (only a restart resets them)
+  const totalSent = metrics?.totalMessages ?? 0;
+  const errorCount = metrics?.errorCount ?? 0;
   const counters = [
-    { label: 'TOTAL SENT',  value: running ? formatShortNumber(metrics?.totalMessages ?? 0) : '0',  color: 'text-cyan-500' },
-    { label: 'ERRORS',      value: running ? (metrics?.errorCount ?? 0).toLocaleString() : '0', color: (metrics?.errorCount ?? 0) > 0 ? 'text-red-500' : 'text-slate-400' },
-    { label: 'ACTIVE FLOWS', value: activeFlowMetrics.length.toString(), color: 'text-violet-500' },
-    { label: 'AVG LATENCY', value: running && avgLatency > 0 ? `${avgLatency}ms` : '--', color: 'text-emerald-500' },
+    { label: 'TOTAL SENT',  value: formatShortNumber(totalSent),  color: 'text-cyan-500',
+      title: 'Messages sent by all flows since GenSynth started' },
+    { label: 'ERRORS',      value: formatShortNumber(errorCount), color: errorCount > 0 ? 'text-red-500' : 'text-slate-400',
+      title: 'Errors since GenSynth started: failed messages plus connector and command errors' },
+    { label: 'DROPPED',     value: running ? formatShortNumber(totalDropped) : '0', color: running && totalDropped > 0 ? 'text-amber-500' : 'text-slate-400',
+      title: 'Messages lost on purpose by the event loss of the running flows' },
+    { label: 'ACTIVE FLOWS', value: activeFlowMetrics.length.toString(), color: 'text-violet-500', title: undefined },
+    { label: 'AVG LATENCY', value: running && avgLatency > 0 ? `${avgLatency}ms` : '--', color: 'text-emerald-500', title: undefined },
   ];
 
   return (
@@ -69,7 +80,7 @@ export function StatsView({ running }: StatsViewProps) {
       {/* Counters */}
       <div className="flex flex-col gap-2 shrink-0" style={{ width: 200 }}>
         {counters.map(c => (
-          <div key={c.label} className="bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded px-3 py-2 flex flex-col gap-0.5">
+          <div key={c.label} title={c.title} className="bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded px-3 py-2 flex flex-col gap-0.5">
             <span className="text-[9px] text-[var(--c-tx4)] tracking-widest" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
               {c.label}
             </span>

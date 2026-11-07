@@ -1,10 +1,10 @@
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { toast } from 'sonner';
 import { CoreCommands } from '../../core/bridge';
 import type { GroupState, FlowState, VariableState } from '../../core/types';
 import type { Group, Flow, Variable, VariableType, VariableScope } from '../../types';
 import type { AppState, AppAction } from '../reducer';
-import { mapFlowFromCore, mapGroupFromCore } from '../helpers/groupHelpers';
+import { mapFlowFromCore, mapGroupFromCore, reorderFlows } from '../helpers/groupHelpers';
 import * as CRUDActions from '../crudActions';
 import type { CRUDActionContext } from '../crudActions';
 import { normalizeVariableFromCore } from '../variableNormalization';
@@ -40,12 +40,13 @@ export function useCrudActions({
   reportCommandError,
 }: UseCrudActionsProps) {
   
-  const crudContext: CRUDActionContext = {
+  // Stable between renders, so the actions below are only recreated when it really changes
+  const crudContext: CRUDActionContext = useMemo(() => ({
     dispatch,
     reportError: reportCommandError,
     connectionMode: state.connectionMode,
     optimisticManager,
-  };
+  }), [dispatch, reportCommandError, state.connectionMode, optimisticManager]);
 
   const createGroup = useCallback(async (name: string, description?: string) => {
     const optimisticId = generateOptimisticId('group');
@@ -185,6 +186,39 @@ export function useCrudActions({
     [crudContext, state.groups, reportCommandError, dispatch, optimisticManager],
   );
 
+  const reorderGroupFlows = useCallback(
+    async (groupId: string, flowIds: string[]) => {
+      const previousGroup = state.groups.find(g => g.id === groupId);
+      if (!previousGroup) {
+        throw new Error(`Group ${groupId} not found`);
+      }
+      const previousFlows = previousGroup.flows;
+
+      try {
+        await executeOptimisticUpdate(
+          {
+            optimisticManager,
+            commandType: 'UPDATE_GROUP_CONFIG',
+            resourceId: groupId,
+          },
+          {
+            applyOptimistic: () => {
+              dispatch({ type: 'UPDATE_GROUP', payload: { id: groupId, flows: reorderFlows(previousFlows, flowIds) } });
+            },
+            rollback: () => {
+              dispatch({ type: 'UPDATE_GROUP', payload: { id: groupId, flows: previousFlows } });
+            },
+            send: () => CRUDActions.reorderGroupFlows(crudContext, groupId, flowIds),
+          }
+        );
+      } catch (error) {
+        reportCommandError('GROUPS', `reorderGroupFlows(${groupId})`, error);
+        throw error;
+      }
+    },
+    [crudContext, state.groups, reportCommandError, dispatch, optimisticManager],
+  );
+
   const createFlow = useCallback(async (
     groupId: string,
     name: string,
@@ -197,6 +231,7 @@ export function useCrudActions({
     template?: string,
     connectorConfig?: Record<string, unknown>,
     everyTicks?: number,
+    autoRename?: boolean,
   ) => {
     const optimisticId = generateOptimisticId('flow');
     const optimisticFlow = createOptimisticFlow(
@@ -265,7 +300,8 @@ export function useCrudActions({
               template,
               connectorConfig,
               onResponse,
-              everyTicks
+              everyTicks,
+              autoRename
             ),
           reconcileId: (serverFlow) => {
             const mappedFlow = mapFlowFromCore(serverFlow as FlowState);
@@ -420,7 +456,7 @@ export function useCrudActions({
   const cloneGroup = useCallback(async (groupId: string, count: number, namingPattern?: string) => {
     try {
       await CoreCommands.cloneGroup(groupId, count, namingPattern);
-      toast.success(`Iniciando clonación de grupo (${count} copias)`);
+      toast.success(`Cloning group (${count} ${count === 1 ? 'copy' : 'copies'})`);
     } catch (error) {
       reportCommandError('GROUPS', `cloneGroup(${groupId})`, error);
     }
@@ -429,7 +465,7 @@ export function useCrudActions({
   const cloneFlow = useCallback(async (groupId: string, flowId: string, count: number, namingPattern?: string) => {
     try {
       await CoreCommands.cloneFlow(groupId, flowId, count, namingPattern);
-      toast.success(`Iniciando clonación de flow (${count} copias)`);
+      toast.success(`Cloning flow (${count} ${count === 1 ? 'copy' : 'copies'})`);
     } catch (error) {
       reportCommandError('FLOWS', `cloneFlow(${flowId})`, error);
     }
@@ -592,6 +628,7 @@ export function useCrudActions({
     createGroup,
     deleteGroup,
     updateGroupConfig,
+    reorderGroupFlows,
     createFlow,
     deleteFlow,
     updateFlowConfig,
