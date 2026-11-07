@@ -17,13 +17,15 @@ import java.util.Set;
 
 /**
  * Colors the line while it is typed: known commands in cyan and unknown ones in red; after
- * {@code start}, a valid project file in green, a folder in blue and any other existing file in
- * amber; after {@code stop}, a running id (or {@code all}) in violet and anything else in red.
- * A path that does not exist yet keeps the default color, as it is usually still being typed.
+ * {@code start} or {@code see}, a valid project file in green, a folder in blue and any other
+ * existing file in yellow (after {@code start}, the id of a stopped simulation in magenta); after
+ * {@code stop}, {@code tick} or {@code metrics}, an id the command accepts (or {@code all}) in
+ * magenta and anything else in red. A path that does
+ * not exist yet keeps the default color, as it is usually still being typed.
  */
 class CliHighlighter implements Highlighter {
 
-    static final Set<String> COMMANDS = Set.of("start", "stop", "list", "clear", "help", "exit");
+    static final Set<String> COMMANDS = Set.of("start", "see", "stop", "tick", "metrics", "list", "clear", "help", "exit");
 
     /** A word of the line: where it is and its text without quotes. */
     record Word(int start, int end, String text) {
@@ -60,13 +62,17 @@ class CliHighlighter implements Highlighter {
             Word command = words.get(0);
             String name = command.text().toLowerCase(Locale.ROOT);
             paint(styles, command, COMMANDS.contains(name) ? CliTheme.PRIMARY.bold() : CliTheme.ERROR);
-            if (words.size() == 2) {
-                AttributedStyle argument = switch (name) {
-                    case "start" -> pathStyle(words.get(1).text());
-                    case "stop" -> idStyle(words.get(1).text());
+            // The argument is colored while it is the last word (tick also takes a value after it)
+            if (words.size() == 2 || words.size() == 3 && "tick".equals(name)) {
+                String argument = words.get(1).text();
+                AttributedStyle style = switch (name) {
+                    case "start" -> startStyle(argument);
+                    case "see" -> pathStyle(argument);
+                    case "stop", "tick" -> idStyle(argument, true, true);
+                    case "metrics" -> idStyle(argument, true, false);
                     default -> null;
                 };
-                paint(styles, words.get(1), argument);
+                paint(styles, words.get(1), style);
             }
         }
         AttributedStringBuilder line = new AttributedStringBuilder();
@@ -74,6 +80,17 @@ class CliHighlighter implements Highlighter {
             line.append(String.valueOf(buffer.charAt(i)), styles[i] != null ? styles[i] : CliTheme.PLAIN);
         }
         return line.toAttributedString();
+    }
+
+    /** A path, or the id of a stopped simulation to start again. */
+    private AttributedStyle startStyle(String raw) {
+        AttributedStyle style = pathStyle(raw);
+        if (style != null || raw.isEmpty() || !raw.chars().allMatch(Character::isDigit)) {
+            return style;
+        }
+        boolean stopped = manager.list().stream().anyMatch(s ->
+            s.status() == SimulationSnapshot.Status.STOPPED && String.valueOf(s.id()).equals(raw));
+        return stopped ? CliTheme.ACCENT : null;
     }
 
     private AttributedStyle pathStyle(String raw) {
@@ -92,13 +109,17 @@ class CliHighlighter implements Highlighter {
         return Files.exists(path) ? CliTheme.WARNING : null;
     }
 
-    private AttributedStyle idStyle(String raw) {
+    /**
+     * @param allowsAll   whether the command accepts {@code all}
+     * @param runningOnly whether the command only accepts running simulations
+     */
+    private AttributedStyle idStyle(String raw, boolean allowsAll, boolean runningOnly) {
         if ("all".equalsIgnoreCase(raw)) {
-            return CliTheme.ACCENT;
+            return allowsAll ? CliTheme.ACCENT : CliTheme.ERROR;
         }
         for (SimulationSnapshot simulation : manager.list()) {
-            if (simulation.status() == SimulationSnapshot.Status.RUNNING
-                    && String.valueOf(simulation.id()).equals(raw)) {
+            boolean accepted = !runningOnly || simulation.status() == SimulationSnapshot.Status.RUNNING;
+            if (accepted && String.valueOf(simulation.id()).equals(raw)) {
                 return CliTheme.ACCENT;
             }
         }

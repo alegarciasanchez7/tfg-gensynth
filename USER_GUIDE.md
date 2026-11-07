@@ -1550,91 +1550,90 @@ Clone the whole group to replicate a site with all its devices.
 ## Command line
 
 The `gensynth` command runs `.gsynth` projects from a terminal, without opening the window. Type
-`gensynth` in any folder to open its shell: it clears the terminal (as `clear` does, scrollback
-included) and shows the GenSynth logo with the version and the current folder.
+`gensynth` in any folder to open its shell:
 
 ```text
-╭────────────────────────────────────────────────────────────╮
-│       ▄▄▀▀▄▄                                               │
-│   ▄▄▀▀      ▀▀▄▄                                           │
-│ █▀▀            ▀▀█   GenSynth 0.5.2                        │
-│ █      ╱╲        █   Synthetic data generator              │
-│ █ ────╱  ╲  ╱─── █   ~/projects                            │
-│ █         ╲╱     █   Type 'help' · Tab completes paths     │
-│ █▄▄            ▄▄█                                         │
-│   ▀▀▄▄      ▄▄▀▀                                           │
-│       ▀▀▄▄▀▀                                               │
-╰────────────────────────────────────────────────────────────╯
-
+$ gensynth
+GenSynth 0.6.0 command line. Type 'help' for the list of commands.
+gensynth> see plant.gsynth
+plant.gsynth
++-- Tick: every 250 ms
+`-- Group "Sensors" (parallel, 2 flows)
+    +-- Flow "Temperature" -> File Output 1.0.0, every tick
+    |   +-- temperature (local, numeric, SINUSOIDAL)
+    |   `-- device (global, list, SEQUENTIAL)
+    `-- Flow "Humidity" -> RabbitMQ 1.0.0, every 2 ticks
+        `-- humidity (local, numeric, RANDOM)
+No problems found: it can start.
 gensynth> start plant.gsynth
-[1] Started 'plant.gsynth' (2 groups, 5 flows)
-gensynth> start "../other project/line 2.gsynth"
-[2] Started 'line 2.gsynth' (1 groups, 1 flows)
-gensynth> list
-ID   STATUS   UPTIME      MSG/S   MESSAGES  ERRORS  FILE
-1    running  00:01:12      100       7140       0  /home/me/projects/plant.gsynth
-2    running  00:00:40       10        402       0  /home/me/other project/line 2.gsynth
+[1] Started 'plant.gsynth' (1 groups, 2 flows)
+    Output folder: /home/me/GenSynth/OUTPUT_FILES_2026_11_07_10_30_00_sim1
+gensynth> tick 1 100ms
+[1] Tick set to 100 ms (was 250 ms)
+gensynth> metrics
+1 running | CPU 3.1% | RAM 96 MB | NET 1.2 KB/s | 15 msg/s | 2.4K sent | 0 err  (press any key)
 gensynth> stop 1
-[1] Stopped 'plant.gsynth' after 00:01:15: 7400 messages sent, 0 errors
+[1] Stopped 'plant.gsynth' after 00:02:41: 2412 messages sent, 0 errors
 gensynth> exit
-[2] Stopped 'line 2.gsynth' after 00:00:44: 441 messages sent, 0 errors
 Bye.
 ```
 
 | Command | What it does |
 |---|---|
-| `start <file.gsynth>` | Starts every group of the project. Relative paths start at the current folder; `~` is your user folder; quote paths with spaces. |
-| `stop <id>` | Stops that simulation and closes its connectors. |
-| `stop all` | Stops every running simulation. |
+| `start <file.gsynth>` / `start <id>` | Starts every group of the project. Relative paths start at the current folder; `~` is your user folder; quote paths with spaces. With the id of a stopped simulation, starts that file again. |
+| `see <file.gsynth>` | Shows what a project contains without running it: the tick, the groups, their flows with the connector (name and version) and the variables each flow sends, as a tree. Below, it lists the problems that would stop it from starting. |
+| `stop <id>` / `stop all` | Stops that simulation, or every running one, and closes its connectors. |
+| `tick <id> [value]` / `tick all [value]` | Without a value, shows the tick of the simulation and the ticks it makes per second. With a value, changes it while it runs, to speed it up or slow it down: `500ms`, `2s`, `1m` (from 1 ms up to 24 hours) or `fast` (as fast as possible). The project file is not changed. |
+| `metrics [id]` / `metrics all` | Shows live figures, refreshed every second: without id, one line with the totals of the running simulations and the CPU and memory of the command line; with an id, that simulation (time, messages per second, sent, errors and tick); with `all`, one line per simulation and the totals below. Press any key to go back to the prompt. |
 | `list` | Shows the simulations of the session with their status, time, messages per second, messages and errors. |
-| `clear` | Clears the terminal and shows the logo again. |
+| `clear` | Clears the screen (also `Ctrl + L`). |
 | `help` | Lists the commands. |
 | `exit` | Stops whatever is still running and closes the shell (also `Ctrl + D`, or `Ctrl + C` on an empty line). |
 
 Press **Tab** to complete what you are typing, as in any terminal:
 
-- `start ` + Tab lists the files and folders of the current folder; `start ../` + Tab lists the
-  parent folder and `start documents/` + Tab that folder. Folders end in `/` (`\` on Windows), so
-  the next Tab goes on inside them, and the names with spaces are quoted for you. Hidden files
-  appear once you type the leading dot.
-- On the first word, Tab completes the command; after `stop`, it offers `all` and the ids of the
-  running simulations with their file names.
-- The up and down arrows bring back the commands of the session, and `Ctrl + C` clears the line
+- `start ` or `see ` + Tab lists the files and folders of the current folder; `start ../` + Tab
+  lists the parent folder and `start documents/` + Tab that folder. Folders end in `/` (`\` on
+  Windows), so the next Tab goes on inside them, and the names with spaces are quoted for you.
+  Hidden files appear once you type the leading dot.
+- On the first word, Tab completes the command (a mistyped one, such as `lsit`, is answered with
+  the closest command); after `stop`, `tick` or `metrics`, it offers the ids with their file
+  names (and `all` where it is accepted); after `start`, also the ids of the stopped simulations;
+  after `tick <id>`, `fast`.
+- The up and down arrows bring back the commands of the session and `Ctrl + C` clears the line
   you are typing.
 
-While you type, the line is colored with the colors of the application: commands in cyan (red if
-the command does not exist); after `start`, a valid project file in green, a folder in blue and
-any other file in amber; after `stop`, a running id in violet and an unknown one in red. In the
-list of Tab, folders are blue and valid project files green.
-
-The bottom of the terminal keeps a **live panel**, refreshed every second, with the same figures
-as the resource bar of the window:
+**When a project cannot start**, `start` lists every reason found, one per line, with the group
+(and flow) it belongs to: variables that refer to each other in a cycle (through formulas,
+templates or conditional rules), references to variables that do not exist, invalid variable
+configurations, or `.itemN` used on a list that is not a Fixed Subset. For example:
 
 ```text
-───────────────────────────────────────────────────────────────────────────────
- ● 2 running  │ CPU 12.4%  RAM 148 MB  NET↑ 2.1 KB/s  MSG/S 110  SENT 7.5K  ERR 0
- ● 1  plant.gsynth   00:01:12     100 msg/s    7.1K sent     0 err     10 tick/s
- ● 2  line 2.gsynth  00:00:40      10 msg/s     402 sent     0 err      1 tick/s
+gensynth> start plant.gsynth
+Error: 'plant.gsynth' cannot start:
+  - Group "Sensors": Variables refer to each other in a cycle: a -> b -> a (through formulas, templates or conditional rules)
+  - Group "Alarms": Invalid configuration for variable 'threshold': Numeric range is invalid: min must be <= max
 ```
 
-- The first line adds up the running simulations: CPU and memory of the command line, data sent
-  per second, messages per second, messages sent and errors.
-- Then one line per running simulation: id, file, running time, messages per second, messages
-  sent, errors and ticks of its clock per second. With many simulations it lists a few and
-  `list` shows the rest.
-- The panel needs a terminal of at least 12 rows. To turn off the colors and the panel, set the
-  `NO_COLOR` environment variable (Tab still works). With the input redirected from a file or a
-  pipe, the shell prints plain text.
+Connector problems do not stop the start, as in the window: those flows just do not send, and
+`start` shows a warning for each one (connector not installed, invalid settings, or a failed
+connection such as a broker that is not running, with the name and version of the connector).
+A file that is not valid JSON is reported with the line and column where it breaks.
 
-- Each `start` gets an **id**: 1, 2, 3… in start order. A stopped simulation keeps its id, so
-  ids are never reused; they start again from 1 the next time you open `gensynth`.
+- Each project file gets an **id** the first time it starts: 1, 2, 3... in start order. It keeps
+  it for the whole session: starting it again after `stop` (with `start <file>` or `start <id>`)
+  reuses its id, as a new run with its time and counters back at zero. Ids start again from 1
+  the next time you open `gensynth`.
 - Several projects can run at once, each with its own output folder
   (`OUTPUT_FILES_<date>_sim<id>`), which `start` shows. It is created in the output folder chosen
   in the application (**Settings → Save & Storage → Output folder**), or in the default one when
   none was chosen or it cannot be written (`start` then shows a warning). The same file cannot run
   twice at the same time.
-- If a connector cannot start, `start` shows a warning for that flow and the rest of the project
-  keeps running.
+- The command line works in any terminal, including the text console of a server: it prints only
+  plain characters and uses the 8 standard colors, which turn off on terminals without colors.
+  Set the `NO_COLOR` environment variable to turn them off yourself (Tab still works). With the
+  input redirected from a file or a pipe, the shell prints plain text and `metrics` prints its
+  line once.
 - The command line uses the plugins installed from the application, never changes its autosave
   and opens no network port, so it can run while the window is open.
 - Its log goes to `logs/cli.log` inside the data folder (see

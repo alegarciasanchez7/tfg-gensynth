@@ -6,31 +6,28 @@ import org.jline.utils.AttributedStyle;
 import org.jline.utils.InfoCmp.Capability;
 
 /**
- * Colors of the command line, taken from the desktop application (see {@code DESIGN_SYSTEM.md}):
- * the status colors are the same in its light and dark themes. A plain theme renders the same
- * text without any escape code, for pipes, files and the tests.
+ * Colors of the command line. Only the 8 standard ANSI colors are used, which every color
+ * terminal shows, including the text console of a Linux server ({@code TERM=linux}); their hue
+ * follows the desktop application (cyan accent, green running, amber warning, red error).
+ * Secondary text has no color: a dark grey can be invisible on 8-color consoles. A plain theme
+ * renders the same text without any escape code, for pipes, files, terminals without colors and
+ * the tests.
  */
 final class CliTheme {
 
-    /** Main accent (cyan-500): commands, borders and the prompt. */
-    static final AttributedStyle PRIMARY = rgb(0x06b6d4);
-    /** Secondary accent (violet-500): simulation ids. */
-    static final AttributedStyle ACCENT = rgb(0x8b5cf6);
-    /** Running and success (emerald-400), also a valid project file. */
-    static final AttributedStyle SUCCESS = rgb(0x34d399);
-    /** Warnings (amber-400). */
-    static final AttributedStyle WARNING = rgb(0xfbbf24);
-    /** Errors (red-500). */
-    static final AttributedStyle ERROR = rgb(0xef4444);
-    /** Stopped and secondary text (slate-400). */
-    static final AttributedStyle MUTED = rgb(0x94a3b8);
-    /** Folders and information (sky-500). */
-    static final AttributedStyle INFO = rgb(0x0ea5e9);
-    /** Rates in the status panel (amber-500, as MSG/S in the resource bar). */
-    static final AttributedStyle RATE = rgb(0xf59e0b);
-    /** Ticks in the status panel (fuchsia-500, as TICK in the resource bar). */
-    static final AttributedStyle TICK = rgb(0xd946ef);
-    /** Default text. */
+    /** Main accent: commands. */
+    static final AttributedStyle PRIMARY = AttributedStyle.DEFAULT.foreground(AttributedStyle.CYAN);
+    /** Simulation ids. */
+    static final AttributedStyle ACCENT = AttributedStyle.DEFAULT.foreground(AttributedStyle.MAGENTA);
+    /** Running and success, also a valid project file. */
+    static final AttributedStyle SUCCESS = AttributedStyle.DEFAULT.foreground(AttributedStyle.GREEN);
+    /** Warnings. */
+    static final AttributedStyle WARNING = AttributedStyle.DEFAULT.foreground(AttributedStyle.YELLOW);
+    /** Errors. */
+    static final AttributedStyle ERROR = AttributedStyle.DEFAULT.foreground(AttributedStyle.RED);
+    /** Folders, as {@code ls} shows them. */
+    static final AttributedStyle INFO = AttributedStyle.DEFAULT.foreground(AttributedStyle.BLUE);
+    /** Default text, also used for secondary text. */
     static final AttributedStyle PLAIN = AttributedStyle.DEFAULT;
 
     private final Terminal terminal;
@@ -47,12 +44,14 @@ final class CliTheme {
     }
 
     /**
-     * @param terminal terminal the text is written to; its capabilities decide how many colors
-     *                 are used (true color, 256 or 16)
-     * @return a theme with colors
+     * @param terminal terminal the text is written to
+     * @return a theme with colors, or a plain one when the terminal does not show at least the 8
+     *         standard colors (a {@code dumb} terminal, or one that declares no colors)
      */
-    static CliTheme colored(Terminal terminal) {
-        return new CliTheme(terminal);
+    static CliTheme forTerminal(Terminal terminal) {
+        Integer colors = terminal.getNumericCapability(Capability.max_colors);
+        boolean supported = !Terminal.TYPE_DUMB.equals(terminal.getType()) && colors != null && colors >= 8;
+        return supported ? new CliTheme(terminal) : plain();
     }
 
     /**
@@ -60,26 +59,6 @@ final class CliTheme {
      */
     boolean isColored() {
         return terminal != null;
-    }
-
-    /**
-     * @return columns of the terminal (80 in a plain theme)
-     */
-    int width() {
-        return terminal == null || terminal.getWidth() <= 0 ? 80 : terminal.getWidth();
-    }
-
-    /**
-     * Clears the screen and the scrollback, as the {@code clear} command of the shells does, and
-     * moves the cursor to the top; does nothing in a plain theme.
-     */
-    void clearScreen() {
-        if (terminal != null) {
-            terminal.puts(Capability.clear_screen);
-            // E3 (erase the scrollback): not in the terminfo of every terminal, but widely supported
-            terminal.writer().write("\u001b[3J");
-            terminal.flush();
-        }
     }
 
     /**
@@ -97,13 +76,5 @@ final class CliTheme {
      */
     String paint(String text, AttributedStyle style) {
         return paint(new AttributedString(text, style));
-    }
-
-    /**
-     * @param rgb color as {@code 0xRRGGBB}
-     * @return a style with that foreground color
-     */
-    static AttributedStyle rgb(int rgb) {
-        return AttributedStyle.DEFAULT.foreground((rgb >> 16) & 0xff, (rgb >> 8) & 0xff, rgb & 0xff);
     }
 }

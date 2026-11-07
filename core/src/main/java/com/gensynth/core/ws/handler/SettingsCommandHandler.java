@@ -67,15 +67,27 @@ public class SettingsCommandHandler implements CommandHandler {
             return;
         }
 
-        ProjectSettings settings = new ProjectSettings(tick);
-        synchronized (ctx.getStateLock()) {
-            ctx.applyProjectSettings(settings);
-            server.persistState();
-        }
-
+        ProjectSettings settings = applyTick(tick);
         server.sendAck(conn, commandId, "settings_updated", Map.of("settings", settings.toPayload()));
         broadcastSettingsUpdate();
         server.logToBackend("info", "SETTINGS", "Tick clock set to " + tick.describe(), commandId);
+    }
+
+    /**
+     * Applies new tick settings live: running groups keep running and the clock is rescheduled.
+     * The settings are persisted with the project state. Shared by UPDATE_SETTINGS and the
+     * {@code tick} command of the command line.
+     *
+     * @param tick the new tick settings (already validated by {@link TickSettings})
+     * @return the project settings now in use
+     */
+    public ProjectSettings applyTick(TickSettings tick) {
+        ProjectSettings settings = new ProjectSettings(tick);
+        synchronized (ctx.getStateLock()) {
+            ctx.applyProjectSettings(settings);
+            ctx.getServer().persistState();
+        }
+        return settings;
     }
 
     /**

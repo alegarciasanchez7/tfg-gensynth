@@ -77,6 +77,22 @@ public class CliHighlighterTest {
     }
 
     @Test
+    public void seePathsAndTickAndMetricsIdsAreColored() throws Exception {
+        assertEquals(CliTheme.SUCCESS, styleAt("see good.gsynth", 4));
+        assertEquals(CliTheme.INFO, styleAt("see docs", 4));
+        manager.start(workingDir.resolve("good.gsynth"));
+
+        assertEquals(CliTheme.ACCENT, styleAt("tick 1 500ms", 5));
+        assertEquals(CliTheme.ACCENT, styleAt("tick all", 5));
+        assertEquals(CliTheme.ERROR, styleAt("tick 3", 5));
+        assertEquals(CliTheme.ACCENT, styleAt("metrics 1", 8));
+        assertEquals(CliTheme.ACCENT, styleAt("metrics all", 8));
+        assertEquals(CliTheme.PLAIN, styleAt("start 1", 6));
+        manager.stop(1);
+        assertEquals("a stopped id can start again", CliTheme.ACCENT, styleAt("start 1", 6));
+    }
+
+    @Test
     public void wordsKeepTheirPositionAndAcceptAnOpenQuote() {
         assertEquals(List.of(new CliHighlighter.Word(1, 6, "start"), new CliHighlighter.Word(7, 16, "my file")),
             CliHighlighter.words(" start 'my file' "));

@@ -16,8 +16,9 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Tab completion of the shell: command names, the ids of {@code stop} and the paths of
- * {@code start}. A path lists the folder typed so far, like a terminal does: {@code start }
+ * Tab completion of the shell: command names, the ids of {@code stop}, {@code tick} and
+ * {@code metrics}, the {@code fast} value of {@code tick}, the paths of {@code start} and
+ * {@code see}, and the ids {@code start} can start again. A path lists the folder typed so far, like a terminal does: {@code start }
  * lists the current folder, {@code start ../} its parent and {@code start docs/} that folder.
  * Folders end with a separator so the next Tab goes on inside them; in the list, folders are blue
  * and valid project files green.
@@ -73,20 +74,53 @@ public class CliCompleter implements Completer {
             CliHighlighter.COMMANDS.forEach(command -> candidates.add(new Candidate(command)));
             return;
         }
+        String command = line.words().get(0).toLowerCase(Locale.ROOT);
+        if (line.wordIndex() == 2 && "tick".equals(command)) {
+            // A period is typed by hand (500ms, 2s, 1m); "fast" is the only fixed word
+            candidates.add(new Candidate("fast", "fast", null, "as fast as possible", null, null, true));
+            return;
+        }
         if (line.wordIndex() != 1) {
             return;
         }
-        String command = line.words().get(0).toLowerCase(Locale.ROOT);
-        if ("start".equals(command)) {
-            addPaths(line.word().substring(0, line.wordCursor()), candidates);
-        } else if ("stop".equals(command)) {
+        switch (command) {
+            case "start" -> {
+                addPaths(line.word().substring(0, line.wordCursor()), candidates);
+                addStoppedIds(candidates);
+            }
+            case "see" -> addPaths(line.word().substring(0, line.wordCursor()), candidates);
+            case "stop", "tick" -> addIds(candidates, true, true);
+            case "metrics" -> addIds(candidates, true, false);
+            default -> {
+                // No arguments to complete
+            }
+        }
+    }
+
+    /** The simulations that can start again by their id. */
+    private void addStoppedIds(List<Candidate> candidates) {
+        for (SimulationSnapshot simulation : manager.list()) {
+            if (simulation.status() == SimulationSnapshot.Status.STOPPED) {
+                String id = String.valueOf(simulation.id());
+                candidates.add(new Candidate(id, id, null,
+                    String.valueOf(simulation.configFile().getFileName()), null, null, true));
+            }
+        }
+    }
+
+    /**
+     * @param allowsAll   whether the command accepts {@code all}
+     * @param runningOnly whether the command only accepts running simulations
+     */
+    private void addIds(List<Candidate> candidates, boolean allowsAll, boolean runningOnly) {
+        if (allowsAll) {
             candidates.add(new Candidate("all", "all", null, "every running simulation", null, null, true));
-            for (SimulationSnapshot simulation : manager.list()) {
-                if (simulation.status() == SimulationSnapshot.Status.RUNNING) {
-                    String id = String.valueOf(simulation.id());
-                    candidates.add(new Candidate(id, id, null,
-                        String.valueOf(simulation.configFile().getFileName()), null, null, true));
-                }
+        }
+        for (SimulationSnapshot simulation : manager.list()) {
+            if (!runningOnly || simulation.status() == SimulationSnapshot.Status.RUNNING) {
+                String id = String.valueOf(simulation.id());
+                candidates.add(new Candidate(id, id, null,
+                    String.valueOf(simulation.configFile().getFileName()), null, null, true));
             }
         }
     }

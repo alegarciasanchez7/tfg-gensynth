@@ -9,14 +9,21 @@ import org.java_websocket.WebSocket;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.gensynth.core.connectors.runtime.ConnectorDescriptor;
+import com.gensynth.core.flow.variables.CyclicDependencyException;
+import com.gensynth.core.flow.variables.InvalidVariableConfigException;
+import com.gensynth.core.model.StartProblem;
 import com.gensynth.core.model.TickSettings;
 import com.gensynth.core.monitoring.ResourceUsage;
+import com.gensynth.plugin.api.ConnectorConfig;
+import com.gensynth.plugin.api.ConnectorConfigException;
 import com.gensynth.core.ws.runtime.ThroughputMeter;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Supplier;
 
 import static com.gensynth.core.ws.BridgeProtocol.COMMAND_ID;
@@ -115,6 +122,87 @@ public class SystemCommandHandler implements CommandHandler {
                 }
             }
         }
+    }
+
+    /**
+     * Finds what would stop the loaded project from starting, or would leave a flow without
+     * sending, without starting anything or opening any connection: the checks of
+     * {@link FlowCommandHandler#validateGroupForStart} on every group, plus whether the connector
+     * of every enabled flow is installed and its settings are valid. Used by the command line
+     * to explain a failed start and to describe a project before running it.
+     * <p>
+     * The variable checks stop at the first problem of each group. A problem repeated in
+     * several groups (a global variable) is reported once, with no group.
+     *
+     * @return the problems found, empty when the project can start
+     */
+    public List<StartProblem> checkProject() {
+        UiBridgeWebSocketServer server = ctx.getServer();
+        List<StartProblem> problems = new ArrayList<>();
+        synchronized (ctx.getStateLock()) {
+            for (GroupRuntime group : ctx.getGroupsById().values()) {
+                try {
+                    server.flowCommandHandler.validateGroupForStart(group);
+                } catch (RuntimeException e) {
+                    addOnce(problems, toProblem(group.name, e));
+                }
+                for (FlowRuntime flow : group.flows) {
+                    if (flow.enabled) {
+                        checkConnector(group, flow).ifPresent(problems::add);
+                    }
+                }
+            }
+        }
+        return problems;
+    }
+
+    private Optional<StartProblem> checkConnector(GroupRuntime group, FlowRuntime flow) {
+        Optional<ConnectorDescriptor> descriptor = ctx.getConnectorCatalogService().findLatestConnector(flow.technology);
+        if (descriptor.isEmpty()) {
+            return Optional.of(new StartProblem(StartProblem.Kind.CONNECTOR_NOT_INSTALLED, group.name, flow.name,
+                "Connector '" + flow.technology + "' is not installed", null));
+        }
+        try {
+            ConnectorConfig.resolve(descriptor.get().fieldDefinitions(), flow.connectorConfig);
+            return Optional.empty();
+        } catch (ConnectorConfigException e) {
+            return Optional.of(new StartProblem(StartProblem.Kind.INVALID_CONNECTOR_CONFIG, group.name, flow.name,
+                "Invalid " + descriptor.get().getDisplayName() + " settings: " + String.join("; ", e.getErrors()), null));
+        }
+    }
+
+    /**
+     * Turns a failure of {@link FlowCommandHandler#validateGroupForStart} into a problem.
+     */
+    private static StartProblem toProblem(String group, RuntimeException e) {
+        Throwable cause = e.getCause();
+        if (cause instanceof CyclicDependencyException cycle) {
+            return new StartProblem(StartProblem.Kind.CYCLE, group, null,
+                "Variables refer to each other in a cycle: " + String.join(" -> ", cycle.getCycle())
+                    + " (through formulas, templates or conditional rules)", cycle.getCycle());
+        }
+        if (cause instanceof InvalidVariableConfigException) {
+            return new StartProblem(StartProblem.Kind.INVALID_VARIABLE, group, null, e.getMessage(), null);
+        }
+        if (e instanceof IllegalStateException && cause instanceof IllegalArgumentException reference) {
+            return new StartProblem(StartProblem.Kind.BROKEN_REFERENCE, group, null, reference.getMessage(), null);
+        }
+        String message = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+        StartProblem.Kind kind = message.startsWith("Invalid item reference")
+            ? StartProblem.Kind.INVALID_ITEM_REFERENCE : StartProblem.Kind.OTHER;
+        return new StartProblem(kind, group, null, message, null);
+    }
+
+    /** Adds the problem, or, when another group already has it, reports it once without group. */
+    private static void addOnce(List<StartProblem> problems, StartProblem problem) {
+        for (int i = 0; i < problems.size(); i++) {
+            StartProblem seen = problems.get(i);
+            if (seen.kind() == problem.kind() && seen.message().equals(problem.message())) {
+                problems.set(i, new StartProblem(seen.kind(), null, null, seen.message(), seen.cycle()));
+                return;
+            }
+        }
+        problems.add(problem);
     }
 
     /**

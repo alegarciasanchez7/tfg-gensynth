@@ -6,13 +6,16 @@ import com.gensynth.core.api.ISimulationManager;
 import com.gensynth.core.config.AppPaths;
 import com.gensynth.core.config.DevicePreferences;
 import com.gensynth.core.connectors.runtime.ConnectorCatalogService;
+import com.gensynth.core.model.ProjectReport;
 import com.gensynth.core.model.SimulationSnapshot;
+import com.gensynth.core.model.TickSettings;
 import com.gensynth.core.persistence.ProjectFileFormat;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -20,9 +23,10 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 /**
- * Keeps the simulations of one command line session. Ids start at 1 and follow the start
- * order; a failed start does not use an id, and a stopped simulation keeps its id until the
- * session ends. A project file can only run once at a time.
+ * Keeps the simulations of one command line session. Each project file gets an id the first time
+ * it starts (1, 2, 3... in that order) and keeps it for the whole session: starting it again
+ * after it stopped is a new run with the same id, its counters back at zero. A failed start does
+ * not use an id, and a project file can only run once at a time.
  */
 public class SimulationManager implements ISimulationManager {
 
@@ -91,27 +95,64 @@ public class SimulationManager implements ISimulationManager {
     @Override
     public synchronized SimulationSnapshot start(Path configFile) {
         Path file = resolveProjectFile(configFile);
+        Integer knownId = null;
         for (Map.Entry<Integer, HeadlessSimulation> entry : simulations.entrySet()) {
-            if (entry.getValue().isRunning() && entry.getValue().configFile().equals(file)) {
-                throw new IllegalStateException("'" + file.getFileName() + "' is already running with id "
-                    + entry.getKey());
+            if (entry.getValue().configFile().equals(file)) {
+                if (entry.getValue().isRunning()) {
+                    throw new IllegalStateException("'" + file.getFileName() + "' is already running with id "
+                        + entry.getKey());
+                }
+                knownId = entry.getKey();
             }
         }
         JsonNode project = readProject(file);
 
-        int id = nextId;
+        // A file started before keeps its id; a new one gets the next free id
+        int id = knownId != null ? knownId : nextId;
         List<String> warnings = new ArrayList<>();
         String outputDir = outputFolders.newSession(warnings::add) + "_sim" + id;
         HeadlessSimulation simulation = new HeadlessSimulation(
             id, file, project, outputDir, warnings, connectorCatalog);
         simulation.start();
-        nextId++;
+        if (knownId == null) {
+            nextId++;
+        }
+        // Replacing the entry keeps its place in the list
         simulations.put(id, simulation);
         return simulation.snapshot();
     }
 
     @Override
+    public ProjectReport inspect(Path configFile) {
+        Path file = resolveProjectFile(configFile);
+        JsonNode project = readProject(file);
+        Map<String, String> connectors = new HashMap<>();
+        for (JsonNode group : project.path("groups")) {
+            for (JsonNode flow : group.path("flows")) {
+                // Same default as FlowDefinition.fromPayload
+                String technology = flow.path("technology").asText("rabbitmq");
+                connectorCatalog.findLatestConnector(technology).ifPresent(descriptor ->
+                    connectors.put(technology, descriptor.getDisplayName() + " " + descriptor.getPluginVersion()));
+            }
+        }
+        return new ProjectReport(file, project, HeadlessSimulation.check(project, connectorCatalog), connectors);
+    }
+
+    @Override
     public synchronized SimulationSnapshot stop(int id) {
+        HeadlessSimulation simulation = running(id);
+        simulation.stop();
+        return simulation.snapshot();
+    }
+
+    @Override
+    public synchronized SimulationSnapshot changeTick(int id, TickSettings tick) {
+        HeadlessSimulation simulation = running(id);
+        simulation.changeTick(tick);
+        return simulation.snapshot();
+    }
+
+    private HeadlessSimulation running(int id) {
         HeadlessSimulation simulation = simulations.get(id);
         if (simulation == null) {
             throw new IllegalArgumentException("There is no simulation with id " + id);
@@ -119,8 +160,7 @@ public class SimulationManager implements ISimulationManager {
         if (!simulation.isRunning()) {
             throw new IllegalStateException("Simulation " + id + " is already stopped");
         }
-        simulation.stop();
-        return simulation.snapshot();
+        return simulation;
     }
 
     @Override

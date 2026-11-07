@@ -2,6 +2,7 @@ package com.gensynth.core.ws;
 
 import com.gensynth.core.connectors.plugin.PluginInstallerImpl;
 import com.gensynth.core.connectors.runtime.ConnectorCatalogService;
+import com.gensynth.core.model.StartProblem;
 import com.gensynth.core.persistence.JsonStateRepositoryImpl;
 import com.gensynth.core.persistence.StateRepository;
 import com.gensynth.core.ws.runtime.GroupRuntime;
@@ -679,6 +680,107 @@ public class UiBridgeWebSocketServerTest {
         assertFalse(server.tickClock.isRunning());
         // Shutting down a server that never started must not fail
         server.shutdown();
+    }
+
+    private static String flow(String id, String technology, boolean enabled, String template, String config) {
+        return "{\"id\":\"" + id + "\",\"name\":\"F" + id + "\",\"technology\":\"" + technology + "\",\"enabled\":"
+            + enabled + ",\"template\":\"" + template + "\",\"connectorConfig\":" + config + "}";
+    }
+
+    private static String group(String id, String name, String... flows) {
+        return "{\"id\":\"" + id + "\",\"name\":\"" + name + "\",\"flows\":[" + String.join(",", flows) + "]}";
+    }
+
+    private static String variable(String id, String scope, String flowId, String type, String config) {
+        return "{\"id\":\"" + id + "\",\"name\":\"" + id + "\",\"scope\":\"" + scope + "\",\"flowId\":"
+            + (flowId == null ? "null" : "\"" + flowId + "\"") + ",\"type\":\"" + type + "\",\"config\":" + config + "}";
+    }
+
+    private static UiBridgeWebSocketServer serverWithProject(String groups, String variables) throws Exception {
+        UiBridgeWebSocketServer server = UiBridgeWebSocketServer.createHeadless(
+                new ConnectorCatalogService(), new com.gensynth.core.persistence.NoOpStateRepository());
+        server.stateCommandHandler.importProject(new ObjectMapper().readTree(
+                "{\"groups\":[" + groups + "],\"variables\":[" + variables + "]}"), false);
+        return server;
+    }
+
+    @Test
+    public void checkProjectFindsEveryKindOfProblemWithoutStartingAnything() throws Exception {
+        String txt = "{\"format\":\"txt\"}";
+        UiBridgeWebSocketServer server = serverWithProject(String.join(",",
+                group("g1", "Cycle", flow("1", "file", true, "{{a}}", txt)),
+                group("g2", "Broken", flow("2", "file", true, "{{c}}", txt)),
+                group("g3", "Items", flow("3", "file", true, "{{colors.item1}}", txt)),
+                group("g4", "Invalid", flow("4", "file", true, "{{t}}", txt)),
+                group("g5", "Connectors",
+                        flow("5", "nope", true, "x", "{}"),
+                        flow("6", "file", true, "x", "{\"format\":\"bogus\"}"),
+                        flow("7", "nope", false, "x", "{}"))),
+                String.join(",",
+                variable("a", "local", "1", "numeric", "{\"pattern\":\"FORMULA\",\"formula\":\"{{b}} + 1\"}"),
+                variable("b", "local", "1", "numeric", "{\"pattern\":\"FORMULA\",\"formula\":\"{{a}} + 1\"}"),
+                variable("c", "local", "2", "numeric", "{\"pattern\":\"FORMULA\",\"formula\":\"{{nobody}} + 1\"}"),
+                variable("colors", "local", "3", "list",
+                        "{\"selectionStrategy\":\"RANDOM\",\"items\":[{\"id\":\"i1\",\"value\":\"red\",\"weight\":1.0}]}"),
+                variable("t", "local", "4", "numeric", "{\"pattern\":\"RANDOM\",\"min\":10,\"max\":1}")));
+        try {
+            List<StartProblem> problems = server.systemCommandHandler.checkProject();
+
+            assertEquals(List.of(StartProblem.Kind.CYCLE, StartProblem.Kind.BROKEN_REFERENCE,
+                    StartProblem.Kind.INVALID_ITEM_REFERENCE, StartProblem.Kind.INVALID_VARIABLE,
+                    StartProblem.Kind.CONNECTOR_NOT_INSTALLED, StartProblem.Kind.INVALID_CONNECTOR_CONFIG),
+                    problems.stream().map(StartProblem::kind).toList());
+            assertEquals(List.of("Cycle", "Broken", "Items", "Invalid", "Connectors", "Connectors"),
+                    problems.stream().map(StartProblem::group).toList());
+            assertTrue(problems.get(0).cycle().containsAll(List.of("a", "b")));
+            assertTrue(problems.get(1).message(), problems.get(1).message().contains("nobody"));
+            assertTrue(problems.get(3).message(), problems.get(3).message().contains("'t'"));
+            assertEquals("F5", problems.get(4).flow());
+            assertTrue(problems.get(5).message(), problems.get(5).message().startsWith("Invalid File Output settings: "));
+            // The disabled flow with the same missing connector is not reported
+            assertTrue(problems.stream().noneMatch(p -> "F7".equals(p.flow())));
+            assertFalse("nothing is started", server.tickClock.isRunning());
+            assertEquals(4, problems.stream().filter(StartProblem::blocking).count());
+        } finally {
+            server.shutdown();
+        }
+    }
+
+    @Test
+    public void checkProjectReportsAProblemOfAGlobalVariableOnce() throws Exception {
+        String txt = "{\"format\":\"txt\"}";
+        UiBridgeWebSocketServer server = serverWithProject(String.join(",",
+                group("g1", "One", flow("1", "file", true, "{{shared}}", txt)),
+                group("g2", "Two", flow("2", "file", true, "{{shared}}", txt))),
+                variable("shared", "global", null, "numeric", "{\"pattern\":\"RANDOM\",\"min\":10,\"max\":1}"));
+        try {
+            List<StartProblem> problems = server.systemCommandHandler.checkProject();
+
+            assertEquals(1, problems.size());
+            assertEquals(StartProblem.Kind.INVALID_VARIABLE, problems.get(0).kind());
+            assertNull("it belongs to no group in particular", problems.get(0).group());
+        } finally {
+            server.shutdown();
+        }
+    }
+
+    @Test
+    public void connectorErrorsNameTheConnector() throws Exception {
+        UiBridgeWebSocketServer server = serverWithProject(
+                group("g1", "Sensors", flow("1", "file", true, "x", "{\"format\":\"bogus\"}")), "");
+        try {
+            String outputDir = Files.createTempDirectory("gensynth-ws-test-connector-").toString();
+            server.systemCommandHandler.startSystemInternal(() -> outputDir);
+
+            List<StartProblem> errors = server.getConnectorErrors();
+            assertEquals(1, errors.size());
+            assertEquals(StartProblem.Kind.CONNECTOR_FAILED, errors.get(0).kind());
+            assertEquals("F1", errors.get(0).flow());
+            assertTrue(errors.get(0).message(), errors.get(0).message().startsWith("File Output 1.0.0: "));
+        } finally {
+            server.systemCommandHandler.stopSystemInternal();
+            server.shutdown();
+        }
     }
 
     // ============ Sequential order and flow order ============

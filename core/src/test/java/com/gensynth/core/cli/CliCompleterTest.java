@@ -73,8 +73,8 @@ public class CliCompleterTest {
 
     @Test
     public void firstWordCompletesCommands() {
-        assertEquals(Set.of("start", "stop", "list", "clear", "help", "exit"), values(""));
-        assertEquals(Set.of("start", "stop", "list", "clear", "help", "exit"), values("st"));
+        assertEquals(Set.of("start", "see", "stop", "tick", "metrics", "list", "clear", "help", "exit"), values(""));
+        assertEquals(Set.of("start", "see", "stop", "tick", "metrics", "list", "clear", "help", "exit"), values("st"));
     }
 
     @Test
@@ -108,6 +108,28 @@ public class CliCompleterTest {
         assertTrue(values("start a.gsynth ").isEmpty());
         assertTrue(values("list ").isEmpty());
         assertTrue(values("hello ").isEmpty());
+    }
+
+    @Test
+    public void seeCompletesPathsLikeStart() {
+        assertEquals(values("start "), values("see "));
+        assertEquals(Set.of("docs/inner.gsynth"), values("see docs/"));
+    }
+
+    @Test
+    public void tickOffersTheRunningIdsAndThenFast() throws Exception {
+        manager.start(TestProjects.fileProject(workingDir.resolve("one.gsynth")));
+        manager.start(TestProjects.fileProject(workingDir.resolve("two.gsynth")));
+        manager.stop(1);
+
+        assertEquals(Set.of("all", "2"), values("tick "));
+        assertEquals(Set.of("fast"), values("tick 2 "));
+        // metrics also shows stopped simulations
+        assertEquals(Set.of("all", "1", "2"), values("metrics "));
+        assertTrue(values("metrics 1 ").isEmpty());
+        // start offers the stopped ones, to start them again
+        assertTrue(values("start ").contains("1"));
+        assertFalse(values("start ").contains("2"));
     }
 
     @Test

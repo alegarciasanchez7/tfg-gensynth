@@ -55,7 +55,7 @@ public class CliShellTest {
         CliShell shell = new CliShell(manager, CliShell.plainInput(new BufferedReader(new StringReader(input)), out),
             out, workingDir, home, "9.9.9");
         if (terminal != null) {
-            shell.useTerminal(CliTheme.colored(terminal), null);
+            shell.useTerminal(CliTheme.forTerminal(terminal), lines -> lines.get().forEach(out::println));
         }
         shell.run();
         return bytes.toString(StandardCharsets.UTF_8);
@@ -84,9 +84,11 @@ public class CliShellTest {
         assertTrue(output, output.contains("Error: 'a.gsynth' is already running with id 1"));
         assertTrue(output, output.contains("ID   STATUS   UPTIME      MSG/S   MESSAGES  ERRORS  FILE"));
         assertTrue(output, output.contains("[1] Stopped 'a.gsynth' after "));
-        assertTrue(output, output.contains("[3] Started 'a.gsynth'"));
+        // Started again with the same id
+        assertEquals(output, 2, output.split("\\[1\\] Started 'a.gsynth'", -1).length - 1);
         assertTrue(output, output.contains("[2] Stopped 'b.gsynth'"));
-        assertTrue(output, output.contains("[3] Stopped 'a.gsynth'"));
+        assertEquals(output, 2, output.split("\\[1\\] Stopped 'a.gsynth'", -1).length - 1);
+        assertFalse(output, output.contains("[3]"));
         assertTrue(output, output.trim().endsWith("Bye."));
     }
 
@@ -126,7 +128,7 @@ public class CliShellTest {
         assertTrue(output, output.contains("Error: Usage: list"));
         assertTrue(output, output.contains("Error: Missing closing quote"));
         assertTrue(output, output.contains("Error: File not found: " + workingDir.resolve("missing.gsynth")));
-        assertTrue(output, output.contains("stop all              Stop every running simulation"));
+        assertTrue(output, output.contains("stop <id> | stop all    Stop a simulation, or every running one"));
         assertTrue(output, output.contains("No simulations yet."));
         assertTrue(output, output.contains("No simulation is running."));
     }
@@ -143,31 +145,184 @@ public class CliShellTest {
     }
 
     @Test
-    public void plainOutputHasNoEscapeCodesAndClearRepeatsTheHeader() throws Exception {
-        String output = run("clear\nclear extra\nexit\n");
+    public void plainOutputIsAsciiWithoutEscapeCodes() throws Exception {
+        TestProjects.fileProject(workingDir.resolve("a.gsynth"));
+        TestProjects.brokenProject(workingDir.resolve("broken.gsynth"));
+
+        String output = run("""
+            help
+            see a.gsynth
+            see broken.gsynth
+            start broken.gsynth
+            start a.gsynth
+            tick 1
+            metrics
+            metrics 1
+            list
+            exit
+            """);
 
         assertFalse(output, output.contains("\u001b["));
-        assertEquals(output, 2, output.split("GenSynth 9.9.9 command line", -1).length - 1);
-        assertTrue(output, output.contains("Error: Usage: clear"));
+        assertTrue(output, output.chars().allMatch(c -> c < 128));
+        assertEquals(output, 1, output.split("GenSynth 9.9.9 command line", -1).length - 1);
     }
 
     @Test
-    public void terminalOutputIsColoredAndStartsWithTheLogo() throws Exception {
+    public void terminalOutputIsColoredWithoutClearingTheScreen() throws Exception {
         TestProjects.fileProject(workingDir.resolve("a.gsynth"));
         ByteArrayOutputStream screen = new ByteArrayOutputStream();
         try (Terminal terminal = TerminalBuilder.builder().system(false).type("xterm-256color")
                 .streams(new ByteArrayInputStream(new byte[0]), screen).size(new Size(100, 30)).build()) {
             String output = run("start a.gsynth\nstart missing.gsynth\nexit\n", terminal);
 
-            assertTrue(output, output.contains("╱╲"));
-            assertTrue(output, output.contains("GenSynth"));
-            assertFalse("the plain header is not printed", output.contains("command line. Type"));
+            assertTrue(output, output.startsWith("GenSynth 9.9.9 command line."));
             assertTrue(output, output.contains("\u001b["));
             assertTrue(output, output.contains("Started"));
             assertTrue(output, output.contains("Error:"));
-            // The screen is cleared through the terminal before the header
-            assertTrue(screen.toString(StandardCharsets.UTF_8).contains("\u001b[2J"));
+            assertEquals("nothing is drawn through the terminal", "", screen.toString(StandardCharsets.UTF_8));
         }
+    }
+
+    @Test
+    public void terminalsWithoutColorsGetPlainText() throws Exception {
+        try (Terminal terminal = TerminalBuilder.builder().system(false).type("dumb")
+                .streams(new ByteArrayInputStream(new byte[0]), new ByteArrayOutputStream()).build()) {
+            assertFalse(CliTheme.forTerminal(terminal).isColored());
+        }
+    }
+
+    @Test
+    public void aFailedStartListsEveryReason() throws Exception {
+        TestProjects.brokenProject(workingDir.resolve("broken.gsynth"));
+
+        String output = run("start broken.gsynth\nexit\n");
+
+        assertTrue(output, output.contains("Error: 'broken.gsynth' cannot start:"));
+        assertTrue(output, output.contains("  - Group \"Sensors\": Variables refer to each other in a cycle: "));
+        assertTrue(output, output.contains("  - Group \"Alarms\": Invalid configuration for variable 'threshold'"));
+        assertFalse("connector problems do not stop the start", output.contains("'nope' is not installed"));
+    }
+
+    @Test
+    public void seeShowsTheProjectAsATree() throws Exception {
+        TestProjects.fileProject(workingDir.resolve("a.gsynth"));
+        TestProjects.brokenProject(workingDir.resolve("broken.gsynth"));
+
+        String output = run("see a.gsynth\nsee broken.gsynth\nsee\nexit\n");
+
+        assertTrue(output, output.contains("+-- Tick: every 20 ms"));
+        assertTrue(output, output.contains("`-- Group \"Sensors\" (parallel, 1 flow)"));
+        assertTrue(output, output.contains("    `-- Flow \"Temperature\" -> File Output 1.0.0, every tick"));
+        assertTrue(output, output.contains("No problems found: it can start."));
+        assertTrue(output, output.contains("`-- Problems (3)"));
+        assertTrue(output, output.contains("Group \"Sensors\" / flow \"Humidity\": Connector 'nope' is not installed"));
+        assertTrue(output, output.contains("Error: Usage: see <file.gsynth>"));
+        assertTrue("see starts nothing", manager.list().isEmpty());
+    }
+
+    @Test
+    public void tickShowsAndChangesTheTickOfRunningSimulations() throws Exception {
+        TestProjects.fileProject(workingDir.resolve("a.gsynth"));
+        TestProjects.fileProject(workingDir.resolve("b.gsynth"));
+
+        String output = run("""
+            tick all 1s
+            start a.gsynth
+            start b.gsynth
+            tick 1
+            tick 1 500ms
+            tick all fast
+            tick 2 2x
+            tick 2 1441m
+            tick 7 1s
+            stop 1
+            tick 1 1s
+            exit
+            """);
+
+        assertTrue(output, output.contains("No simulation is running."));
+        assertTrue(output, output.contains("[1] Tick: 20 ms ("));
+        assertTrue(output, output.contains("[1] Tick set to 500 ms (was 20 ms)"));
+        assertTrue(output, output.contains("[1] Tick set to as fast as possible (was 500 ms)"));
+        assertTrue(output, output.contains("[2] Tick set to as fast as possible (was 20 ms)"));
+        assertTrue(output, output.contains("Error: Invalid tick '2x'"));
+        assertTrue(output, output.contains("Error: Tick period cannot exceed 24 hours"));
+        assertTrue(output, output.contains("Error: There is no simulation with id 7"));
+        assertTrue(output, output.contains("Error: Simulation 1 is already stopped"));
+    }
+
+    @Test
+    public void metricsWithoutATerminalPrintsTheLineOnce() throws Exception {
+        TestProjects.fileProject(workingDir.resolve("a.gsynth"));
+
+        String output = run("metrics\nstart a.gsynth\nmetrics\nmetrics 1\nmetrics 4\nmetrics all\nexit\n");
+
+        assertTrue(output, output.contains("No simulation running | CPU "));
+        assertTrue(output, output.contains("1 running | CPU "));
+        assertTrue(output, output.contains("[1] a.gsynth | 00:00:"));
+        assertTrue(output, output.contains(" | tick 20 ms ("));
+        assertFalse("the hint is only shown with a live line", output.contains("press any key"));
+        assertTrue(output, output.contains("Error: There is no simulation with id 4"));
+        assertTrue(output, output.contains("[1] a.gsynth | 00:00:"));
+        assertTrue(output, output.contains("Total: 1 running | CPU "));
+    }
+
+    @Test
+    public void metricsAllShowsEverySimulationAndTheTotal() throws Exception {
+        TestProjects.fileProject(workingDir.resolve("a.gsynth"));
+        TestProjects.fileProject(workingDir.resolve("longer-name.gsynth"));
+
+        String output = run("metrics all\nstart a.gsynth\nstart longer-name.gsynth\nstop 1\nmetrics all\nexit\n");
+
+        assertTrue(output, output.contains("No simulations yet."));
+        // File names are aligned
+        assertTrue(output, output.contains("[1] a.gsynth           | stopped after "));
+        assertTrue(output, output.contains("[2] longer-name.gsynth | 00:00:"));
+        assertTrue(output, output.contains("Total: 1 running | CPU "));
+    }
+
+    @Test
+    public void startByIdRunsTheSameFileAgain() throws Exception {
+        TestProjects.fileProject(workingDir.resolve("a.gsynth"));
+
+        String output = run("start a.gsynth\nstart 1\nstop 1\nstart 1\nstart 5\nexit\n");
+
+        assertTrue(output, output.contains("Error: 'a.gsynth' is already running with id 1"));
+        assertEquals(output, 2, output.split("\\[1\\] Started 'a.gsynth'", -1).length - 1);
+        assertTrue(output, output.contains("Error: There is no simulation with id 5"));
+    }
+
+    @Test
+    public void unknownCommandsSuggestTheClosestOne() {
+        assertEquals("Unknown command 'lsit'. Did you mean 'list'? Type 'help' for the list of commands.",
+            CliShell.unknownCommand("lsit"));
+        assertTrue(CliShell.unknownCommand("STRAT").contains("Did you mean 'start'?"));
+        assertTrue(CliShell.unknownCommand("clera").contains("Did you mean 'clear'?"));
+        assertEquals("Unknown command 'deploy'. Type 'help' for the list of commands.", CliShell.unknownCommand("deploy"));
+    }
+
+    @Test
+    public void clearIsSentToTheScreen() throws Exception {
+        int[] cleared = {0};
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        PrintStream out = new PrintStream(bytes, true, StandardCharsets.UTF_8);
+        CliShell shell = new CliShell(manager, CliShell.plainInput(new BufferedReader(new StringReader("clear\nclear x\nexit\n")), out),
+            out, workingDir, home, "9.9.9");
+        shell.useTerminal(CliTheme.plain(), new CliShell.Screen() {
+            @Override
+            public void showLive(java.util.function.Supplier<List<String>> lines) {
+                lines.get().forEach(out::println);
+            }
+
+            @Override
+            public void clearScreen() {
+                cleared[0]++;
+            }
+        });
+        shell.run();
+
+        assertEquals(1, cleared[0]);
+        assertTrue(bytes.toString(StandardCharsets.UTF_8).contains("Error: Usage: clear"));
     }
 
     @Test

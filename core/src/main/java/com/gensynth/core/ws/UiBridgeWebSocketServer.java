@@ -13,6 +13,8 @@ import com.gensynth.core.connectors.plugin.PluginInstallerImpl;
 import com.gensynth.core.connectors.runtime.ConnectorCatalogService;
 import com.gensynth.plugin.api.ConnectorSession;
 import com.gensynth.core.model.Variable;
+import com.gensynth.core.model.StartProblem;
+import com.gensynth.core.model.TickSettings;
 import com.gensynth.core.flow.TemplateEngine;
 import com.gensynth.core.persistence.JsonStateRepositoryImpl;
 import com.gensynth.core.persistence.StateRepository;
@@ -310,6 +312,13 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
     }
 
     /**
+     * @return the tick settings of the clock now in use
+     */
+    public TickSettings getTickSettings() {
+        return bridgeContext.getProjectSettings().getTick();
+    }
+
+    /**
      * @return bytes sent during the last second (updated by the background tasks)
      */
     public double getNetworkUpPerSecond() {
@@ -317,17 +326,23 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
     }
 
     /**
-     * Lists the flows whose connector failed to start, as {@code "<group> / <flow>: <error>"}.
+     * Lists the flows whose connector failed to start, naming the connector and its version
+     * when it is installed.
      *
-     * @return one entry per flow in error, empty when every connector is up
+     * @return one {@link StartProblem.Kind#CONNECTOR_FAILED} problem per flow in error, empty when
+     *         every connector is up
      */
-    public List<String> getConnectorErrors() {
+    public List<StartProblem> getConnectorErrors() {
         synchronized (stateLock) {
-            List<String> errors = new ArrayList<>();
+            List<StartProblem> errors = new ArrayList<>();
             for (GroupRuntime group : groupsById.values()) {
                 for (FlowRuntime flow : group.flows) {
                     if (flow.hasError) {
-                        errors.add(group.name + " / " + flow.name + ": " + flow.errorMessage);
+                        String connector = connectorCatalogService.findLatestConnector(flow.technology)
+                            .map(d -> d.getDisplayName() + " " + d.getPluginVersion() + ": ")
+                            .orElse("");
+                        errors.add(new StartProblem(StartProblem.Kind.CONNECTOR_FAILED, group.name, flow.name,
+                            connector + flow.errorMessage, null));
                     }
                 }
             }

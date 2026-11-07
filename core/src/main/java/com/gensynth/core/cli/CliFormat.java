@@ -1,6 +1,10 @@
 package com.gensynth.core.cli;
 
+import com.gensynth.core.model.TickSettings;
+
 import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Number formats of the command line, the same ones the desktop application shows
@@ -9,6 +13,7 @@ import java.util.Locale;
 final class CliFormat {
 
     private static final String[] BYTE_UNITS = {"B/s", "KB/s", "MB/s", "GB/s"};
+    private static final Pattern TICK_PERIOD = Pattern.compile("(\\d+)\\s*(ms|s|m|min)");
 
     private CliFormat() {
     }
@@ -79,6 +84,57 @@ final class CliFormat {
     static String duration(long millis) {
         long seconds = Math.max(0, millis) / 1000;
         return String.format(Locale.ROOT, "%02d:%02d:%02d", seconds / 3600, (seconds / 60) % 60, seconds % 60);
+    }
+
+    /**
+     * @param tick tick settings
+     * @return the tick as typed in the {@code tick} command: {@code 500 ms}, {@code 2 s},
+     *         {@code 1 min} or {@code as fast as possible}
+     */
+    static String tick(TickSettings tick) {
+        if (tick.getMode() == TickSettings.Mode.AS_FAST_AS_POSSIBLE) {
+            return "as fast as possible";
+        }
+        String unit = switch (tick.getUnit()) {
+            case MILLISECONDS -> "ms";
+            case SECONDS -> "s";
+            case MINUTES -> "min";
+        };
+        return tick.getValue() + " " + unit;
+    }
+
+    /**
+     * Reads the tick typed in the {@code tick} command: a period ({@code 500ms}, {@code 2s},
+     * {@code 1m} or {@code 1min}) or {@code fast}, which keeps the current period so a later
+     * change back to a fixed rate starts from it.
+     *
+     * @param text    the value typed
+     * @param current tick settings now in use
+     * @return the new tick settings
+     * @throws IllegalArgumentException if the text is not a valid tick, or the period is out of
+     *                                  range (at least 1, at most 24 hours)
+     */
+    static TickSettings parseTick(String text, TickSettings current) {
+        String value = text.trim().toLowerCase(Locale.ROOT);
+        if (value.equals("fast")) {
+            return new TickSettings(TickSettings.Mode.AS_FAST_AS_POSSIBLE, current.getValue(), current.getUnit());
+        }
+        Matcher matcher = TICK_PERIOD.matcher(value);
+        if (!matcher.matches()) {
+            throw new IllegalArgumentException("Invalid tick '" + text + "': use a period such as 500ms, 2s or 1m, or 'fast'");
+        }
+        long period;
+        try {
+            period = Long.parseLong(matcher.group(1));
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("Tick period cannot exceed 24 hours");
+        }
+        TickSettings.Unit unit = switch (matcher.group(2)) {
+            case "ms" -> TickSettings.Unit.MILLISECONDS;
+            case "s" -> TickSettings.Unit.SECONDS;
+            default -> TickSettings.Unit.MINUTES;
+        };
+        return new TickSettings(TickSettings.Mode.FIXED_RATE, period, unit);
     }
 
     private static String fixed(double value, int decimals) {

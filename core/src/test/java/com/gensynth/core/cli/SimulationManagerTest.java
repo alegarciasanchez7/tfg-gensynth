@@ -2,7 +2,10 @@ package com.gensynth.core.cli;
 
 import com.gensynth.core.config.DevicePreferences;
 import com.gensynth.core.connectors.runtime.ConnectorCatalogService;
+import com.gensynth.core.model.ProjectReport;
 import com.gensynth.core.model.SimulationSnapshot;
+import com.gensynth.core.model.StartProblem;
+import com.gensynth.core.model.TickSettings;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
@@ -49,22 +52,28 @@ public class SimulationManagerTest {
     }
 
     @Test
-    public void stoppedSimulationKeepsItsIdAndIdsAreNotReused() throws Exception {
+    public void aFileKeepsItsIdAndStartsAgainFromZero() throws Exception {
         Path a = project("a.gsynth");
         manager.start(a);
         manager.start(project("b.gsynth"));
+        waitForMessages(1, 5);
 
         SimulationSnapshot stopped = manager.stop(1);
         assertEquals(SimulationSnapshot.Status.STOPPED, stopped.status());
+        assertEquals("a stopped simulation keeps its id", List.of(1, 2),
+            manager.list().stream().map(SimulationSnapshot::id).toList());
 
-        // The same file can run again once stopped, with a new id
-        assertEquals(3, manager.start(a).id());
+        // The same file starts again with the same id, as a new run with its counters at zero
+        SimulationSnapshot again = manager.start(a);
+        assertEquals(1, again.id());
+        assertTrue("messages: " + again.messagesSent(), again.messagesSent() < stopped.messagesSent());
+        assertEquals(outputs.resolve("OUTPUT") + "_sim1", again.outputDir());
 
         List<SimulationSnapshot> all = manager.list();
-        assertEquals(List.of(1, 2, 3), all.stream().map(SimulationSnapshot::id).toList());
-        assertEquals(SimulationSnapshot.Status.STOPPED, all.get(0).status());
-        assertEquals(SimulationSnapshot.Status.RUNNING, all.get(1).status());
-        assertEquals(SimulationSnapshot.Status.RUNNING, all.get(2).status());
+        assertEquals(List.of(1, 2), all.stream().map(SimulationSnapshot::id).toList());
+        assertTrue(all.stream().allMatch(s -> s.status() == SimulationSnapshot.Status.RUNNING));
+        // A new file gets the next id
+        assertEquals(3, manager.start(project("c.gsynth")).id());
     }
 
     @Test
@@ -128,7 +137,7 @@ public class SimulationManagerTest {
         assertEquals(0, stopped.messagesPerSecond(), 0);
         assertTrue("messages counted: " + stopped.messagesSent(), stopped.messagesSent() >= 5);
         assertEquals(0, stopped.errors());
-        assertTrue(stopped.connectorErrors().isEmpty());
+        assertTrue(stopped.connectorProblems().isEmpty());
 
         assertTrue(Files.exists(fileOfFirst));
         assertTrue(Files.exists(fileOfSecond));
@@ -150,8 +159,72 @@ public class SimulationManagerTest {
 
         SimulationSnapshot started = manager.start(project);
         assertEquals(SimulationSnapshot.Status.RUNNING, started.status());
-        assertEquals(1, started.connectorErrors().size());
-        assertTrue(started.connectorErrors().get(0), started.connectorErrors().get(0).startsWith("Sensors / Temperature: "));
+        // Found before starting, and not reported again when its session fails to open
+        assertEquals(1, started.connectorProblems().size());
+        StartProblem problem = started.connectorProblems().get(0);
+        assertEquals(StartProblem.Kind.CONNECTOR_NOT_INSTALLED, problem.kind());
+        assertEquals("Sensors", problem.group());
+        assertEquals("Temperature", problem.flow());
+        assertTrue(problem.message(), problem.message().contains("'nope' is not installed"));
+    }
+
+    @Test
+    public void aProjectThatCannotStartListsEveryReasonAndUsesNoId() throws Exception {
+        Path broken = TestProjects.brokenProject(temp.getRoot().toPath().resolve("broken.gsynth"));
+
+        ProjectStartException error = assertThrows(ProjectStartException.class, () -> manager.start(broken));
+
+        assertEquals("broken.gsynth", error.getFileName());
+        List<StartProblem> problems = error.getProblems();
+        assertEquals(2, problems.size());
+        StartProblem cycle = problems.get(0);
+        assertEquals(StartProblem.Kind.CYCLE, cycle.kind());
+        assertEquals("Sensors", cycle.group());
+        assertTrue(cycle.cycle().toString(), cycle.cycle().containsAll(List.of("a", "b")));
+        StartProblem invalid = problems.get(1);
+        assertEquals(StartProblem.Kind.INVALID_VARIABLE, invalid.kind());
+        assertEquals("Alarms", invalid.group());
+        assertTrue(invalid.message(), invalid.message().contains("'threshold'"));
+        assertTrue(invalid.message(), invalid.message().contains("min must be <= max"));
+
+        assertTrue(manager.list().isEmpty());
+        assertEquals(1, manager.start(project("ok.gsynth")).id());
+    }
+
+    @Test
+    public void inspectChecksAProjectWithoutStartingIt() throws Exception {
+        Path broken = TestProjects.brokenProject(temp.getRoot().toPath().resolve("broken.gsynth"));
+
+        ProjectReport report = manager.inspect(broken);
+
+        assertEquals("broken.gsynth", report.file().getFileName().toString());
+        assertEquals(List.of(StartProblem.Kind.CYCLE, StartProblem.Kind.CONNECTOR_NOT_INSTALLED,
+            StartProblem.Kind.INVALID_VARIABLE), report.problems().stream().map(StartProblem::kind).toList());
+        assertEquals("File Output 1.0.0", report.connectors().get("file"));
+        assertTrue("nope is not installed", report.connectors().get("nope") == null);
+        assertTrue("nothing is started", manager.list().isEmpty());
+        assertThrows(IllegalArgumentException.class, () -> manager.inspect(temp.getRoot().toPath().resolve("missing.gsynth")));
+    }
+
+    @Test
+    public void changeTickAppliesLiveWithoutRestarting() throws Exception {
+        manager.start(project("a.gsynth"));
+        TickSettings slower = new TickSettings(TickSettings.Mode.FIXED_RATE, 200, TickSettings.Unit.MILLISECONDS);
+
+        SimulationSnapshot changed = manager.changeTick(1, slower);
+
+        assertEquals(slower.describe(), changed.tick().describe());
+        assertEquals(SimulationSnapshot.Status.RUNNING, changed.status());
+        // 20 ms (50 ticks/s) -> 200 ms (5 ticks/s), measured over the last second
+        long deadline = System.currentTimeMillis() + 5000;
+        while (manager.list().get(0).ticksPerSecond() > 8 && System.currentTimeMillis() < deadline) {
+            Thread.sleep(100);
+        }
+        assertTrue("ticks/s: " + manager.list().get(0).ticksPerSecond(), manager.list().get(0).ticksPerSecond() <= 8);
+
+        assertThrows(IllegalArgumentException.class, () -> manager.changeTick(9, slower));
+        manager.stop(1);
+        assertThrows(IllegalStateException.class, () -> manager.changeTick(1, slower));
     }
 
     @Test

@@ -16,11 +16,13 @@ import java.util.List;
  * @param stoppedAt       stop time in epoch milliseconds, or 0 while running
  * @param messagesSent    messages sent so far
  * @param errors          errors counted so far (failed sends and connector errors)
- * @param connectorErrors flows whose connector failed to start, as {@code "<group> / <flow>: <error>"}
+ * @param connectorProblems flows that will not send because of their connector (not installed,
+ *                          invalid settings or failed connection)
  * @param warnings        other problems found when starting (e.g. the chosen output folder cannot be written)
  * @param messagesPerSecond  messages sent during the last second (0 once stopped)
  * @param ticksPerSecond     ticks of the clock during the last second (0 once stopped)
  * @param networkUpPerSecond bytes sent during the last second (0 once stopped)
+ * @param tick               tick settings of its clock
  */
 public record SimulationSnapshot(
     int id,
@@ -33,11 +35,12 @@ public record SimulationSnapshot(
     long stoppedAt,
     long messagesSent,
     long errors,
-    List<String> connectorErrors,
+    List<StartProblem> connectorProblems,
     List<String> warnings,
     double messagesPerSecond,
     double ticksPerSecond,
-    double networkUpPerSecond
+    double networkUpPerSecond,
+    TickSettings tick
 ) {
 
     /** Lifecycle state of a command line simulation. */

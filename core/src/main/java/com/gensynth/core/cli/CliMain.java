@@ -62,34 +62,22 @@ public final class CliMain {
         SimulationManager manager = new SimulationManager();
         Terminal systemTerminal = openTerminal();
         TerminalInput terminal = null;
-        StatusPanel panel = null;
         CliShell shell;
         if (systemTerminal != null) {
-            // NO_COLOR (https://no-color.org) keeps line editing and Tab, without colors or panel
-            boolean colors = System.getenv("NO_COLOR") == null;
-            CliTheme theme = colors ? CliTheme.colored(systemTerminal) : CliTheme.plain();
+            // NO_COLOR (https://no-color.org) keeps line editing and Tab, without colors
+            CliTheme theme = System.getenv("NO_COLOR") == null ? CliTheme.forTerminal(systemTerminal) : CliTheme.plain();
             ProjectFileCheck projects = new ProjectFileCheck();
             terminal = new TerminalInput(systemTerminal,
                 new CliCompleter(manager, workingDir, userHome, theme, projects),
-                colors ? new CliHighlighter(manager, projects, workingDir, userHome) : null);
+                theme.isColored() ? new CliHighlighter(manager, projects, workingDir, userHome) : null);
             shell = new CliShell(manager, terminal, System.out, workingDir, userHome, version);
-            if (colors) {
-                panel = StatusPanel.open(systemTerminal, terminal.reader(), manager);
-                shell.useTerminal(theme, panel);
-            }
+            shell.useTerminal(theme, terminal);
         } else {
             shell = new CliShell(manager, CliShell.plainInput(plainReader(), System.out), System.out,
                 workingDir, userHome, version);
         }
-        // Ctrl+C while a command runs: restore the screen and stop the simulations so their
-        // connectors are closed cleanly
-        StatusPanel openPanel = panel;
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            if (openPanel != null) {
-                openPanel.close();
-            }
-            manager.shutdown();
-        }, "gensynth-cli-shutdown"));
+        // Ctrl+C while a command runs: stop the simulations so their connectors are closed cleanly
+        Runtime.getRuntime().addShutdownHook(new Thread(manager::shutdown, "gensynth-cli-shutdown"));
 
         int exitCode = 0;
         try {
@@ -98,9 +86,6 @@ public final class CliMain {
             console.println("Error reading the input: " + e.getMessage());
             exitCode = 1;
         } finally {
-            if (panel != null) {
-                panel.close();
-            }
             manager.shutdown();
             closeTerminal(terminal);
         }

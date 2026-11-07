@@ -61,6 +61,44 @@ final class TestProjects {
             """));
     }
 
+    /**
+     * Writes a project with three problems: in group "Sensors", variables {@code a} and
+     * {@code b} refer to each other (a cycle) and the flow "Humidity" uses a connector that is
+     * not installed ({@code nope}); in group "Alarms", {@code threshold} has its minimum above
+     * its maximum.
+     *
+     * @param file where to write the project
+     * @return the file
+     */
+    static Path brokenProject(Path file) throws IOException {
+        return write(file, project("""
+            [{
+              "id": "g1", "name": "Sensors", "enabled": true, "outputMode": "parallel",
+              "flows": [
+                { "id": "f1", "name": "Temperature", "technology": "file", "enabled": true,
+                  "template": "{{a}}", "connectorConfig": { "format": "txt" } },
+                { "id": "f2", "name": "Humidity", "technology": "nope", "enabled": true,
+                  "template": "{\\"n\\":{{n}}}", "connectorConfig": {} }
+              ]
+            }, {
+              "id": "g2", "name": "Alarms", "enabled": true, "outputMode": "parallel",
+              "flows": [
+                { "id": "f3", "name": "Alarm", "technology": "file", "enabled": true,
+                  "template": "{{threshold}}", "connectorConfig": { "format": "txt" } }
+              ]
+            }]
+            """, """
+            [
+              { "id": "v1", "name": "a", "scope": "local", "flowId": "f1", "type": "numeric",
+                "config": { "pattern": "FORMULA", "formula": "{{b}} + 1" } },
+              { "id": "v2", "name": "b", "scope": "local", "flowId": "f1", "type": "numeric",
+                "config": { "pattern": "FORMULA", "formula": "{{a}} + 1" } },
+              { "id": "v3", "name": "threshold", "scope": "local", "flowId": "f3", "type": "numeric",
+                "config": { "pattern": "RANDOM", "min": 10, "max": 1 } }
+            ]
+            """));
+    }
+
     private static String project(String groups, String variables) {
         return """
             {
