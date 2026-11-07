@@ -79,6 +79,8 @@ public class CliHighlighterTest {
     @Test
     public void seePathsAndTickAndMetricsIdsAreColored() throws Exception {
         assertEquals(CliTheme.SUCCESS, styleAt("see good.gsynth", 4));
+        assertEquals(CliTheme.SUCCESS, styleAt("edit good.gsynth", 5));
+        assertEquals(CliTheme.ACCENT, styleAt("edit new", 5));
         assertEquals(CliTheme.INFO, styleAt("see docs", 4));
         manager.start(workingDir.resolve("good.gsynth"));
 

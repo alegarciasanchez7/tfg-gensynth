@@ -42,6 +42,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -98,7 +99,8 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         "UPDATE_OUTPUT_FOLDER",
         "CHECK_FOR_UPDATES",
         "INSTALL_UPDATE",
-        "CANCEL_UPDATE"
+        "CANCEL_UPDATE",
+        "REQUEST_OPEN_PROJECT"
     );
 
     private final ObjectMapper objectMapper = createConfiguredMapper();
@@ -146,6 +148,10 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
     final TemplateEngine templateEngine = new TemplateEngine();
     String currentOutputDir = null;
     WebSocket desktopSocket = null;
+    /** Project file the desktop window opens once its UI connects (from --open or a double click). */
+    private final AtomicReference<String> pendingOpenProject = new AtomicReference<>();
+    /** Brings the desktop window to the front; null when there is no window (browser mode, CLI). */
+    private volatile Runnable windowActivator;
     final BridgeContext bridgeContext = new BridgeContext(this);
     public final FlowCommandHandler flowCommandHandler = new FlowCommandHandler(bridgeContext);
     public final GroupCommandHandler groupCommandHandler = new GroupCommandHandler(bridgeContext, flowCommandHandler);
@@ -161,6 +167,72 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
     
     public WebSocket getDesktopSocket() {
         return desktopSocket;
+    }
+
+    /**
+     * Marks this engine as the one of a desktop window and sets how to bring that window to the
+     * front, so projects can be opened in it (see {@link #requestOpenProject}).
+     *
+     * @param windowActivator brings the window to the front
+     */
+    public void setWindowActivator(Runnable windowActivator) {
+        this.windowActivator = windowActivator;
+    }
+
+    /**
+     * @return whether a desktop window belongs to this engine (its UI may not have connected yet)
+     */
+    public boolean hasWindow() {
+        return windowActivator != null;
+    }
+
+    /**
+     * Sets the project file the desktop window opens once its UI connects.
+     *
+     * @param filePath absolute path of the {@code .gsynth} file
+     */
+    public void setPendingOpenProject(String filePath) {
+        pendingOpenProject.set(filePath);
+    }
+
+    /**
+     * @return the project file waiting for the desktop UI, now taken (null if none)
+     */
+    public String takePendingOpenProject() {
+        return pendingOpenProject.getAndSet(null);
+    }
+
+    /**
+     * Asks the desktop window to open a project file, or a new project: the window comes to the
+     * front and its UI goes through the same steps as Load or New, asking first when there are
+     * unsaved changes. If its UI has not connected yet, the file waits until it does.
+     *
+     * @param filePath absolute path of the {@code .gsynth} file, or null for a new project
+     */
+    public void requestOpenProject(String filePath) {
+        Runnable activator = windowActivator;
+        if (activator != null) {
+            activator.run();
+        }
+        WebSocket desktop = desktopSocket;
+        if (desktop == null) {
+            // A new window starts with an empty project: only a file has to wait
+            if (filePath != null) {
+                pendingOpenProject.set(filePath);
+            }
+            return;
+        }
+        Map<String, Object> payload = new LinkedHashMap<>();
+        if (filePath != null) {
+            payload.put("filePath", filePath);
+        }
+        String message = envelope("OPEN_PROJECT_REQUESTED", null, payload);
+        if (desktop instanceof DesktopBridgeSocket bridge) {
+            // Not the answer of a UI command: must not resolve the one the UI may be waiting for
+            bridge.push(message);
+        } else if (desktop.isOpen()) {
+            desktop.send(message);
+        }
     }
 
     public UiBridgeWebSocketServer(String host, int port) {
@@ -440,6 +512,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             switch (type) {
                 case "GET_INITIAL_STATE" -> stateCommandHandler.handleGetInitialState(conn, commandId);
                 case "LOAD_STATE" -> stateCommandHandler.handleLoadState(conn, commandId);
+                case "REQUEST_OPEN_PROJECT" -> stateCommandHandler.handleRequestOpenProject(conn, commandId, payload);
                 case "SAVE_STATE" -> stateCommandHandler.handleSaveState(conn, commandId);
                 case "SUBSCRIBE_METRICS" -> systemCommandHandler.handleSubscribeMetrics(conn, commandId);
                 case "UNSUBSCRIBE_METRICS" -> systemCommandHandler.handleUnsubscribeMetrics(conn, commandId);
@@ -762,6 +835,16 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             return;
         }
 
+        String message = envelope(type, commandId, payload);
+        if (message != null) {
+            conn.send(message);
+        }
+    }
+
+    /**
+     * @return the message as sent to the UI, or null if it cannot be serialized
+     */
+    private String envelope(String type, String commandId, Object payload) {
         try {
             Map<String, Object> envelope = new LinkedHashMap<>();
             envelope.put("type", type);
@@ -771,10 +854,11 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                 envelope.put(COMMAND_ID, commandId);
             }
             envelope.put("payload", payload);
-            conn.send(objectMapper.writeValueAsString(envelope));
+            return objectMapper.writeValueAsString(envelope);
         } catch (Exception ex) {
             totalErrors.incrementAndGet();
             logger.error("Failed to send message: {}", ex.getMessage());
+            return null;
         }
     }
 }

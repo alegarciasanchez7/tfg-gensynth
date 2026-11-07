@@ -156,7 +156,7 @@ dry runs: they build the installers as downloadable artifacts of the run and pub
 To build the installer of your own OS locally (it is written to `core/target/installer/dist`):
 
 ```bash
-./mvnw -B -Dinstaller -DskipTests package          # Linux without rpmbuild: add -Dinstaller.skipRpm=true
+./mvnw -B -Dinstaller -DskipTests package          # Linux without rpmbuild: add -Dinstaller.skipRpm=true; without dpkg-deb (Fedora): -Dinstaller.skipDeb=true
 ```
 
 ## Troubleshooting

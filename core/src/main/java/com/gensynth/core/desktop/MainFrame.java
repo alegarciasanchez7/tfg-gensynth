@@ -34,6 +34,26 @@ public class MainFrame extends JFrame {
     }
 
     /**
+     * Brings the open window to the front, restoring it if it was minimized: used when a project
+     * is opened in it from outside (the command line, a double click on a project file). Some
+     * Linux window managers ignore a plain {@code toFront}, so the window is briefly kept on top.
+     */
+    public static void bringToFront() {
+        MainFrame frame = activeFrame.get();
+        if (frame == null) {
+            return;
+        }
+        SwingUtilities.invokeLater(() -> {
+            frame.setExtendedState(frame.getExtendedState() & ~java.awt.Frame.ICONIFIED);
+            frame.setVisible(true);
+            frame.setAlwaysOnTop(true);
+            frame.toFront();
+            frame.requestFocus();
+            frame.setAlwaysOnTop(false);
+        });
+    }
+
+    /**
      * Closes the browser and disposes the frame that is currently open, if any.
      */
     public static void closeActiveFrame() {

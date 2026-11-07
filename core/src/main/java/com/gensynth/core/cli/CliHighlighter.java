@@ -25,7 +25,7 @@ import java.util.Set;
  */
 class CliHighlighter implements Highlighter {
 
-    static final Set<String> COMMANDS = Set.of("start", "see", "stop", "tick", "metrics", "list", "clear", "help", "exit");
+    static final Set<String> COMMANDS = Set.of("start", "see", "edit", "stop", "tick", "metrics", "list", "clear", "help", "exit");
 
     /** A word of the line: where it is and its text without quotes. */
     record Word(int start, int end, String text) {
@@ -68,6 +68,7 @@ class CliHighlighter implements Highlighter {
                 AttributedStyle style = switch (name) {
                     case "start" -> startStyle(argument);
                     case "see" -> pathStyle(argument);
+                    case "edit" -> "new".equalsIgnoreCase(argument) ? CliTheme.ACCENT : pathStyle(argument);
                     case "stop", "tick" -> idStyle(argument, true, true);
                     case "metrics" -> idStyle(argument, true, false);
                     default -> null;

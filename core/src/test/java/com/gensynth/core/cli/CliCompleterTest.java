@@ -73,8 +73,8 @@ public class CliCompleterTest {
 
     @Test
     public void firstWordCompletesCommands() {
-        assertEquals(Set.of("start", "see", "stop", "tick", "metrics", "list", "clear", "help", "exit"), values(""));
-        assertEquals(Set.of("start", "see", "stop", "tick", "metrics", "list", "clear", "help", "exit"), values("st"));
+        assertEquals(Set.of("start", "see", "edit", "stop", "tick", "metrics", "list", "clear", "help", "exit"), values(""));
+        assertEquals(Set.of("start", "see", "edit", "stop", "tick", "metrics", "list", "clear", "help", "exit"), values("st"));
     }
 
     @Test
@@ -108,6 +108,13 @@ public class CliCompleterTest {
         assertTrue(values("start a.gsynth ").isEmpty());
         assertTrue(values("list ").isEmpty());
         assertTrue(values("hello ").isEmpty());
+    }
+
+    @Test
+    public void editCompletesPathsAndNew() {
+        Set<String> expected = new java.util.HashSet<>(values("see "));
+        expected.add("new");
+        assertEquals(expected, values("edit "));
     }
 
     @Test

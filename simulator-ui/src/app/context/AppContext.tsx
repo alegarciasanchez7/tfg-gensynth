@@ -57,7 +57,7 @@ interface AppContextValue {
     stopSystem: () => Promise<void>;
     toggleSystem: () => Promise<void>;
     newProjectState: () => Promise<void>;
-    loadProjectState: (file?: PickedProjectFile | null) => Promise<boolean>;
+    loadProjectState: (file?: PickedProjectFile | null, filePath?: string) => Promise<boolean>;
     saveProjectState: (isAutoSave?: boolean) => Promise<boolean>;
     saveProjectStateAs: () => Promise<boolean>;
     discardItemChanges: (type: 'group' | 'flow' | 'variable', id: string) => Promise<void>;
@@ -371,7 +371,7 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
     []
   );
 
-  const loadProjectState = useCallback((file?: PickedProjectFile | null) => {
+  const loadProjectState = useCallback((file?: PickedProjectFile | null, filePath?: string) => {
     const current = stateRef.current;
     return projectActions.loadProjectState(
       {
@@ -382,6 +382,7 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
         selection: current.selection,
       },
       file,
+      filePath,
     );
   }, []);
 

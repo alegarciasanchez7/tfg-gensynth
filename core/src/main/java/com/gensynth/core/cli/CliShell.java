@@ -1,11 +1,14 @@
 package com.gensynth.core.cli;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.gensynth.core.api.IDesktopLauncher;
 import com.gensynth.core.api.ISimulationManager;
 import com.gensynth.core.model.ProjectReport;
 import com.gensynth.core.model.SimulationSnapshot;
 import com.gensynth.core.model.StartProblem;
 import com.gensynth.core.model.TickSettings;
 import com.gensynth.core.monitoring.ResourceUsage;
+import com.gensynth.core.persistence.ProjectFileFormat;
 import org.jline.utils.AttributedStyle;
 
 import java.io.BufferedReader;
@@ -32,6 +35,7 @@ public class CliShell {
     private static final String[][] HELP = {
         {"start <file.gsynth|id>", "Start a project file (quote paths with spaces), or again by its id"},
         {"see <file.gsynth>", "Show what a project contains, without running it"},
+        {"edit <file.gsynth>|new", "Open a project, or a new one, in the desktop application"},
         {"stop <id> | stop all", "Stop a simulation, or every running one"},
         {"tick <id|all> [value]", "Show or change the tick: 500ms, 2s, 1m or fast"},
         {"metrics [id|all]", "Live totals, one simulation, or every simulation"},
@@ -85,6 +89,7 @@ public class CliShell {
     private final Path userHome;
     private final String version;
     private CliTheme theme = CliTheme.plain();
+    private IDesktopLauncher desktop;
     /** Without a terminal the lines are printed once, as they are now. */
     private Screen screen;
 
@@ -136,6 +141,13 @@ public class CliShell {
     }
 
     /**
+     * @param desktop opens projects in the desktop application ({@code edit})
+     */
+    void useDesktop(IDesktopLauncher desktop) {
+        this.desktop = desktop;
+    }
+
+    /**
      * Runs the shell until {@code exit} or the end of the input, then stops every simulation
      * that is still running.
      *
@@ -179,6 +191,7 @@ public class CliShell {
             switch (command) {
                 case "start" -> start(args);
                 case "see" -> see(args);
+                case "edit" -> edit(args);
                 case "stop" -> stop(args);
                 case "tick" -> tick(args);
                 case "metrics" -> metrics(args);
@@ -231,6 +244,54 @@ public class CliShell {
         ProjectSummary.lines(report).forEach(line -> out.println(theme.paint(line)));
         if (report.problems().isEmpty()) {
             out.println(theme.paint("No problems found: it can start.", CliTheme.SUCCESS));
+        }
+    }
+
+    private void edit(List<String> args) {
+        if (args.size() != 1) {
+            throw new IllegalArgumentException("Usage: edit <file.gsynth> | edit new");
+        }
+        if (desktop == null) {
+            throw new IllegalStateException("The desktop application is not available here");
+        }
+        String target = args.get(0);
+        Path file = resolvePath(target, workingDir, userHome);
+        if ("new".equalsIgnoreCase(target) && !Files.exists(file)) {
+            file = null;
+        } else {
+            checkProjectFile(file);
+        }
+        String name = file == null ? "a new project" : "'" + file.getFileName() + "'";
+        IDesktopLauncher.Result result = desktop.open(file);
+        out.println(result == IDesktopLauncher.Result.OPENED_IN_WINDOW
+            ? "Sent " + name + " to the open GenSynth window."
+            : "Opening " + name + " in GenSynth...");
+        Integer id = file == null ? null : idOf(file);
+        out.println(id != null
+            ? "    Save it there, then 'start " + id + "' runs the changes."
+            : "    Save it there, then 'start <file.gsynth>' runs it.");
+    }
+
+    /** Fails with the reason when the file is not a project that can be opened. */
+    private static void checkProjectFile(Path file) {
+        if (!Files.isRegularFile(file)) {
+            throw new IllegalArgumentException("File not found: " + file);
+        }
+        try {
+            ProjectFileFormat.read(file, new ObjectMapper());
+        } catch (IOException e) {
+            throw new IllegalArgumentException("Cannot read " + file + ": " + e.getMessage(), e);
+        }
+    }
+
+    /** The id the file has in this session, or null if it never ran. */
+    private Integer idOf(Path file) {
+        try {
+            Path real = file.toRealPath();
+            return manager.list().stream().filter(s -> s.configFile().equals(real))
+                .map(SimulationSnapshot::id).findFirst().orElse(null);
+        } catch (IOException e) {
+            return null;
         }
     }
 

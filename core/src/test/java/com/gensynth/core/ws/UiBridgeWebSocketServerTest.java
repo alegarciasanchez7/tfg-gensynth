@@ -783,6 +783,34 @@ public class UiBridgeWebSocketServerTest {
         }
     }
 
+    @Test
+    public void aWindowOpenedWithAProjectLoadsItOnceItsUiIsReady() throws Exception {
+        Path tempDir = Files.createTempDirectory("gensynth-ws-test-open-at-start-");
+        UiBridgeWebSocketServer server = newServer(tempDir, new JsonStateRepositoryImpl(tempDir.toString()));
+        server.setWindowActivator(() -> { });
+        server.setPendingOpenProject("/projects/plant.gsynth");
+        DesktopBridgeSocket window = mock(DesktopBridgeSocket.class);
+        when(window.isOpen()).thenReturn(true);
+        server.desktopSocket = window;
+        WebSocket browser = mock(WebSocket.class);
+        when(browser.isOpen()).thenReturn(true);
+        String getInitialState = "{\"type\":\"GET_INITIAL_STATE\",\"commandId\":\"%s\",\"protocolVersion\":\"1.0.0\",\"payload\":{}}";
+
+        // Another client asking first does not take it
+        server.onMessage(browser, String.format(getInitialState, "b1"));
+        verify(window, never()).push(anyString());
+
+        server.onMessage(window, String.format(getInitialState, "w1"));
+        server.onMessage(window, String.format(getInitialState, "w2"));
+
+        ArgumentCaptor<String> pushed = ArgumentCaptor.forClass(String.class);
+        verify(window, times(1)).push(pushed.capture());
+        assertTrue(pushed.getValue(), pushed.getValue().contains("OPEN_PROJECT_REQUESTED"));
+        assertTrue(pushed.getValue(), pushed.getValue().contains("plant.gsynth"));
+        assertNull(server.takePendingOpenProject());
+        server.shutdown();
+    }
+
     // ============ Sequential order and flow order ============
 
     private static UiBridgeWebSocketServer serverWithThreeFlows(Path tempDir) throws Exception {

@@ -27,6 +27,8 @@
         <installer.packaging>${project.basedir}/../packaging</installer.packaging>
         <!-- Skips the .rpm on Linux machines without rpmbuild (-Dinstaller.skipRpm=true) -->
         <installer.skipRpm>false</installer.skipRpm>
+        <!-- Skips the .deb on Linux machines without dpkg-deb, such as Fedora (-Dinstaller.skipDeb=true) -->
+        <installer.skipDeb>false</installer.skipDeb>
         <!-- jpackage rejects macOS versions that start with 0, so the app bundle declares this one
              while GenSynth is 0.x. From 1.0 on, set it back to ${project.version} -->
         <installer.macAppVersion>1.0.0</installer.macAppVersion>
@@ -427,6 +429,10 @@
                                 <file>${installer.packaging}/launchers/gensynth-cli.properties</file>
                             </launcher>
                         </launchers>
+                        <!-- Double clicking a .gsynth file opens it in the application -->
+                        <fileAssociations>
+                            <fileAssociation>${installer.packaging}/associations/gsynth.properties</fileAssociation>
+                        </fileAssociations>
                     </configuration>
                 </plugin>
             </plugins>
@@ -569,6 +575,7 @@
                                 <goals><goal>jpackage</goal></goals>
                                 <configuration>
                                     <type>DEB</type>
+                                    <skip>${installer.skipDeb}</skip>
                                 </configuration>
                             </execution>
                             <execution>

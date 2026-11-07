@@ -34,7 +34,8 @@ export type CoreMessageType =
   | 'RESTART_REQUIRED'
   | 'ROLLBACK_REPORT'
   | 'SETTINGS_UPDATE'
-  | 'UPDATE_STATUS';
+  | 'UPDATE_STATUS'
+  | 'OPEN_PROJECT_REQUESTED';
 
 export interface CoreMessage<T = unknown> {
   type: CoreMessageType;
@@ -434,6 +435,22 @@ export interface StateFileResponsePayload {
   filePath?: string;
 }
 
+/**
+ * LOAD_STATE in desktop mode: with `filePath`, that file is loaded without the file dialog
+ * (a project sent by the command line or opened with a double click).
+ */
+export interface LoadStatePayload {
+  filePath?: string;
+}
+
+/**
+ * OPEN_PROJECT_REQUESTED: the desktop window must open this project file (`edit` in the
+ * command line, a double click on a `.gsynth`), or a new project when there is no `filePath`.
+ */
+export interface OpenProjectRequestedPayload {
+  filePath?: string;
+}
+
 export interface UILogCommandPayload {
   level: 'info' | 'warn' | 'error' | 'debug' | 'data';
   source: string;
@@ -458,7 +475,7 @@ export interface UICommandPayloadMap {
   CREATE_VARIABLE: CreateVariableCommandPayload;
   DELETE_VARIABLE: DeleteVariableCommandPayload;
   GET_INITIAL_STATE: undefined;
-  LOAD_STATE: undefined;
+  LOAD_STATE: LoadStatePayload | undefined;
   SAVE_STATE: undefined;
   GET_CONNECTOR_CATALOG: undefined;
   GET_LATEST_CONNECTOR: GetLatestConnectorCommandPayload;

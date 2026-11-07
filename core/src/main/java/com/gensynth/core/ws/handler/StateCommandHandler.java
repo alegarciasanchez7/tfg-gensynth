@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gensynth.core.model.GroupDefinition;
 import com.gensynth.core.model.ProjectSettings;
 import com.gensynth.core.model.Variable;
+import com.gensynth.core.persistence.ProjectFileFormat;
 import com.gensynth.core.util.UniqueNames;
 import com.gensynth.core.ws.BridgeContext;
 import com.gensynth.core.ws.UiBridgeWebSocketServer;
@@ -59,6 +60,50 @@ public class StateCommandHandler implements CommandHandler {
         UiBridgeWebSocketServer server = ctx.getServer();
         server.sendMessage(conn, "INITIAL_STATE", commandId, buildInitialStatePayload(commandId));
         server.systemCommandHandler.sendFlowsMetrics(conn);
+        // A window opened with a project (--open, double click) loads it once its UI is ready
+        if (conn != null && conn == server.getDesktopSocket()) {
+            String pending = server.takePendingOpenProject();
+            if (pending != null) {
+                server.requestOpenProject(pending);
+            }
+        }
+    }
+
+    /**
+     * Handles the REQUEST_OPEN_PROJECT command, sent by the command line ({@code edit}) or by a
+     * second launch of the application (double click on a project file): the desktop window
+     * opens the project, or a new one, through the same steps as Load or New.
+     *
+     * @param conn      the connection that asked
+     * @param commandId the command identifier
+     * @param payload   {@code { "filePath": "<absolute path>" }}; without it, a new project
+     */
+    public void handleRequestOpenProject(WebSocket conn, String commandId, JsonNode payload) {
+        UiBridgeWebSocketServer server = ctx.getServer();
+        String filePath = payload == null ? null : payload.path(FILE_PATH).asText(null);
+        if (filePath != null && filePath.isBlank()) {
+            filePath = null;
+        }
+        if (filePath != null) {
+            try {
+                // Checked here so the one asking learns at once that the file cannot be opened
+                ProjectFileFormat.read(Path.of(filePath), ctx.getObjectMapper());
+            } catch (IllegalArgumentException e) {
+                server.sendError(conn, commandId, "INVALID_PROJECT_FILE", e.getMessage(), Map.of(FILE_PATH, filePath));
+                return;
+            } catch (java.io.IOException e) {
+                server.sendError(conn, commandId, "LOAD_FAILED", "Cannot read " + filePath + ": " + e.getMessage(),
+                    Map.of(FILE_PATH, filePath));
+                return;
+            }
+        }
+        if (!server.hasWindow()) {
+            server.sendError(conn, commandId, "NO_DESKTOP_WINDOW",
+                "GenSynth is running without its window (browser mode): open the project from the browser", Map.of());
+            return;
+        }
+        server.requestOpenProject(filePath);
+        server.sendAck(conn, commandId, "open_project_requested");
     }
 
     /**

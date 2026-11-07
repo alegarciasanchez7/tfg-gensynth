@@ -37,18 +37,20 @@ public class GensynthMessageRouter extends CefMessageRouterHandlerAdapter {
         logger.info("[BRIDGE] Command received from UI: {}", request);
 
         try {
-            // Desktop-only request answered here; checked first because the routing below matches substrings
-            if (request.contains(OPEN_EXTERNAL_URL)) {
-                com.fasterxml.jackson.databind.JsonNode command = JSON.readTree(request);
-                if (OPEN_EXTERNAL_URL.equals(command.path("type").asText())) {
-                    String url = command.path("payload").path("url").asText(null);
-                    if (ExternalLinkOpener.open(url)) {
-                        callback.success("{\"status\":\"ok\"}");
-                    } else {
-                        callback.failure(403, "URL not allowed");
-                    }
-                    return true;
+            // Routed by the type of the command, never by its text: payloads now carry file paths,
+            // and a folder named "SAVE_STATE" must not turn a load into a save
+            com.fasterxml.jackson.databind.JsonNode command = parse(request);
+            String type = command.path("type").asText("");
+
+            // Desktop-only request answered here
+            if (OPEN_EXTERNAL_URL.equals(type)) {
+                String url = command.path("payload").path("url").asText(null);
+                if (ExternalLinkOpener.open(url)) {
+                    callback.success("{\"status\":\"ok\"}");
+                } else {
+                    callback.failure(403, "URL not allowed");
                 }
+                return true;
             }
 
             UiBridgeWebSocketServer server = com.gensynth.core.App.getWsServer();
@@ -58,7 +60,7 @@ public class GensynthMessageRouter extends CefMessageRouterHandlerAdapter {
             }
 
             // Intercept SAVE_STATE to show a file dialog in desktop mode
-            if (request.contains("SAVE_STATE")) {
+            if ("SAVE_STATE".equals(type)) {
                 runFileDialog(request, callback, () -> {
                     java.util.Optional<java.io.File> selected = DesktopFileChooser.saveFile(parentFrame,
                             "Save Gen-Synth Configuration", PROJECT_FILE_FILTER, new java.io.File(DEFAULT_PROJECT_FILE_NAME));
@@ -95,7 +97,7 @@ public class GensynthMessageRouter extends CefMessageRouterHandlerAdapter {
             }
 
             // Intercept PICK_DIRECTORY to show a folder picker
-            if (request.contains("PICK_DIRECTORY")) {
+            if ("PICK_DIRECTORY".equals(type)) {
                 String commandId = extractCommandId(request);
                 runFileDialog(request, callback, () -> {
                     java.util.Optional<java.io.File> selected =
@@ -128,39 +130,22 @@ public class GensynthMessageRouter extends CefMessageRouterHandlerAdapter {
                 return true;
             }
 
-            // Intercept LOAD_STATE to show a file dialog in desktop mode
-            if (request.contains("LOAD_STATE")) {
+            // Intercept LOAD_STATE to show a file dialog in desktop mode; with a file path (a project
+            // sent by the command line or opened with a double click) that file is loaded directly
+            if ("LOAD_STATE".equals(type)) {
+                String commandId = extractCommandId(request);
+                String filePath = command.path("payload").path("filePath").asText("");
+                if (!filePath.isBlank()) {
+                    runFileDialog(request, callback,
+                            () -> loadProject(new java.io.File(filePath), commandId, server, callback, browser));
+                    return true;
+                }
                 runFileDialog(request, callback, () -> {
                     java.util.Optional<java.io.File> selected =
                             DesktopFileChooser.openFile(parentFrame, "Load Gen-Synth Project", PROJECT_FILE_FILTER);
-                    String commandId = extractCommandId(request);
 
                     if (selected.isPresent()) {
-                        try {
-                            java.io.File selectedFile = selected.get();
-                            // Reject anything that is not a GenSynth project before touching the Core state
-                            com.fasterxml.jackson.databind.node.ObjectNode project =
-                                    ProjectFileFormat.read(selectedFile.toPath(), server.getObjectMapper());
-                            // Attach the source path so the UI knows which file is open
-                            project.put("sourceFilePath", selectedFile.getAbsolutePath());
-                            String content = server.getObjectMapper().writeValueAsString(project);
-
-                            String fullImportCommand = String.format(
-                                    "{\"type\":\"IMPORT_STATE\",\"commandId\":\"%s\",\"protocolVersion\":\"1.0.0\",\"payload\":%s}",
-                                    commandId, content);
-
-                            server.handleDesktopCommand(fullImportCommand, callback, browser);
-
-                        } catch (Exception e) {
-                            logger.error("[BRIDGE] Error loading file", e);
-                            // The UI only listens to the desktop socket, so report the error there too
-                            WebSocket desktopSocket = server.getDesktopSocket();
-                            if (desktopSocket != null) {
-                                String code = e instanceof IllegalArgumentException ? "INVALID_PROJECT_FILE" : "LOAD_FAILED";
-                                server.sendError(desktopSocket, commandId, code, e.getMessage(), null);
-                            }
-                            callback.failure(500, "Error loading file: " + e.getMessage());
-                        }
+                        loadProject(selected.get(), commandId, server, callback, browser);
                     } else {
                         // Notify the UI that the operation was cancelled
                         String cancelResponse = String.format(
@@ -185,6 +170,48 @@ public class GensynthMessageRouter extends CefMessageRouterHandlerAdapter {
             logger.error("[BRIDGE] Error processing command", e);
             callback.failure(500, e.getMessage());
             return true;
+        }
+    }
+
+    /**
+     * Loads a project file into the Core as IMPORT_STATE, with its path so the UI knows which
+     * file is open (and Save writes back to it). Files that are not GenSynth projects are
+     * rejected before the Core state is touched.
+     */
+    private void loadProject(java.io.File file, String commandId, UiBridgeWebSocketServer server,
+                             CefQueryCallback callback, CefBrowser browser) {
+        try {
+            com.fasterxml.jackson.databind.node.ObjectNode project =
+                    ProjectFileFormat.read(file.toPath(), server.getObjectMapper());
+            project.put("sourceFilePath", file.getAbsolutePath());
+            String content = server.getObjectMapper().writeValueAsString(project);
+            String fullImportCommand = String.format(
+                    "{\"type\":\"IMPORT_STATE\",\"commandId\":\"%s\",\"protocolVersion\":\"1.0.0\",\"payload\":%s}",
+                    commandId, content);
+            server.handleDesktopCommand(fullImportCommand, callback, browser);
+        } catch (Exception e) {
+            logger.error("[BRIDGE] Error loading file", e);
+            // The UI only listens to the desktop socket, so report the error there too
+            WebSocket desktopSocket = server.getDesktopSocket();
+            if (desktopSocket != null) {
+                String code = e instanceof IllegalArgumentException ? "INVALID_PROJECT_FILE" : "LOAD_FAILED";
+                server.sendError(desktopSocket, commandId, code, e.getMessage(), null);
+            }
+            callback.failure(500, "Error loading file: " + e.getMessage());
+        }
+    }
+
+    /**
+     * @param request the command received from the UI
+     * @return the command as JSON, or an empty object when it is not valid JSON (the Core then
+     *         answers it with its own error)
+     */
+    static com.fasterxml.jackson.databind.JsonNode parse(String request) {
+        try {
+            com.fasterxml.jackson.databind.JsonNode command = JSON.readTree(request);
+            return command == null ? JSON.createObjectNode() : command;
+        } catch (Exception e) {
+            return JSON.createObjectNode();
         }
     }
 

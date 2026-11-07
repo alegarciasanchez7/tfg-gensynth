@@ -92,24 +92,30 @@ async function syncBaselineWithCore(dispatch: Dispatch, operation: () => Promise
  * Opens a configuration file and replaces the current project with it.
  *
  * @param picked file already chosen by the user; if omitted a file dialog is shown
+ * @param filePath desktop mode only: path of the file to open without the dialog (a project
+ *   sent by the command line or opened with a double click)
  * @returns whether a configuration was loaded
  */
-export async function loadProjectState(ctx: ProjectLoadContext, picked?: PickedProjectFile | null): Promise<boolean> {
+export async function loadProjectState(
+  ctx: ProjectLoadContext,
+  picked?: PickedProjectFile | null,
+  filePath?: string,
+): Promise<boolean> {
   const { dispatch } = ctx;
   try {
     // Desktop mode: the Core shows the native dialog and imports the file itself
     if (ctx.connectionMode === 'jcef') {
-      let filePath: string | null = null;
+      let loadedPath: string | null = null;
       const loaded = await syncBaselineWithCore(dispatch, async () => {
-        const response = await CoreCommands.loadState();
+        const response = await CoreCommands.loadState(filePath);
         if (response?.status === 'cancelled') return false;
-        filePath = response?.filePath ?? null;
+        loadedPath = response?.filePath ?? null;
         return true;
       });
       if (!loaded) return false;
 
-      const fileName = filePath ? fileNameFromPath(filePath) : null;
-      dispatch({ type: 'SET_FILE_INFO', payload: { fileName, filePath, fileHandle: null } });
+      const fileName = loadedPath ? fileNameFromPath(loadedPath) : null;
+      dispatch({ type: 'SET_FILE_INFO', payload: { fileName, filePath: loadedPath, fileHandle: null } });
       dispatch({ type: 'SET_SELECTION', payload: { type: 'none' } });
       toast.success(`Configuration loaded${fileName ? `: ${fileName}` : ''}`);
       return true;

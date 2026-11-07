@@ -17,6 +17,7 @@ import type {
   RollbackReportPayload,
   InitialStatePayload,
   UpdateStatusPayload,
+  OpenProjectRequestedPayload,
 } from '../types';
 import type { ProjectSettings } from '../../types';
 
@@ -91,6 +92,9 @@ export class MessageHandler {
           break;
         case 'UPDATE_STATUS':
           this.emit('update-status', message.payload as UpdateStatusPayload);
+          break;
+        case 'OPEN_PROJECT_REQUESTED':
+          this.emit('open-project-requested', (message.payload ?? {}) as OpenProjectRequestedPayload);
           break;
       }
 

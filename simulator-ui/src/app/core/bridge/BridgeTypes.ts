@@ -16,6 +16,7 @@ import type {
   RollbackReportPayload,
   InitialStatePayload,
   UpdateStatusPayload,
+  OpenProjectRequestedPayload,
 } from '../types';
 import type { ProjectSettings } from '../../types';
 
@@ -99,5 +100,6 @@ export interface EventMap {
   'rollback-report': RollbackReportPayload;
   'settings-update': ProjectSettings;
   'update-status': UpdateStatusPayload;
+  'open-project-requested': OpenProjectRequestedPayload;
   'NATIVE_FILE_DROPPED': { filename: string; base64: string };
 }

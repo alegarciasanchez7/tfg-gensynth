@@ -1,5 +1,6 @@
 package com.gensynth.core.cli;
 
+import com.gensynth.core.api.IDesktopLauncher;
 import com.gensynth.core.connectors.runtime.ConnectorCatalogService;
 import org.jline.terminal.Size;
 import org.jline.terminal.Terminal;
@@ -323,6 +324,59 @@ public class CliShellTest {
 
         assertEquals(1, cleared[0]);
         assertTrue(bytes.toString(StandardCharsets.UTF_8).contains("Error: Usage: clear"));
+    }
+
+    /** Runs the shell with a desktop launcher that only records what it was asked. */
+    private String runWithDesktop(String input, IDesktopLauncher desktop) throws Exception {
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        PrintStream out = new PrintStream(bytes, true, StandardCharsets.UTF_8);
+        CliShell shell = new CliShell(manager, CliShell.plainInput(new BufferedReader(new StringReader(input)), out),
+            out, workingDir, home, "9.9.9");
+        shell.useDesktop(desktop);
+        shell.run();
+        return bytes.toString(StandardCharsets.UTF_8);
+    }
+
+    @Test
+    public void editOpensProjectsInTheDesktopApplication() throws Exception {
+        Path project = TestProjects.fileProject(workingDir.resolve("a.gsynth"));
+        java.nio.file.Files.writeString(workingDir.resolve("broken.gsynth"), "{ not json");
+        List<Path> opened = new java.util.ArrayList<>();
+        IDesktopLauncher.Result[] answer = {IDesktopLauncher.Result.LAUNCHED};
+        IDesktopLauncher desktop = file -> {
+            opened.add(file);
+            return answer[0];
+        };
+
+        String output = runWithDesktop("edit a.gsynth\nedit new\nedit\nedit missing.gsynth\nedit broken.gsynth\n", desktop);
+
+        assertTrue(output, output.contains("Opening 'a.gsynth' in GenSynth..."));
+        assertTrue(output, output.contains("    Save it there, then 'start <file.gsynth>' runs it."));
+        assertTrue(output, output.contains("Opening a new project in GenSynth..."));
+        assertTrue(output, output.contains("Error: Usage: edit <file.gsynth> | edit new"));
+        assertTrue(output, output.contains("Error: File not found: " + workingDir.resolve("missing.gsynth")));
+        assertTrue(output, output.contains("Error: Not a GenSynth project file: invalid JSON content"));
+        // Only the valid ones reach the desktop application
+        assertEquals(java.util.Arrays.asList(workingDir.resolve("a.gsynth"), null), opened);
+
+        answer[0] = IDesktopLauncher.Result.OPENED_IN_WINDOW;
+        output = runWithDesktop("start a.gsynth\nedit a.gsynth\nexit\n", desktop);
+        assertTrue(output, output.contains("Sent 'a.gsynth' to the open GenSynth window."));
+        assertTrue(output, output.contains("    Save it there, then 'start 1' runs the changes."));
+        assertTrue(project.toFile().exists());
+    }
+
+    @Test
+    public void editReportsWhyTheDesktopCannotOpen() throws Exception {
+        TestProjects.fileProject(workingDir.resolve("a.gsynth"));
+        IDesktopLauncher noDisplay = file -> {
+            throw new IllegalStateException("No graphical display: the desktop application cannot open here");
+        };
+
+        String output = runWithDesktop("edit a.gsynth\nexit\n", noDisplay);
+
+        assertTrue(output, output.contains("Error: No graphical display"));
+        assertTrue("without a launcher", run("edit new\nexit\n").contains("Error: The desktop application is not available here"));
     }
 
     @Test

@@ -89,6 +89,10 @@ public class CliCompleter implements Completer {
                 addStoppedIds(candidates);
             }
             case "see" -> addPaths(line.word().substring(0, line.wordCursor()), candidates);
+            case "edit" -> {
+                addPaths(line.word().substring(0, line.wordCursor()), candidates);
+                candidates.add(new Candidate("new", "new", null, "a new project", null, null, true));
+            }
             case "stop", "tick" -> addIds(candidates, true, true);
             case "metrics" -> addIds(candidates, true, false);
             default -> {

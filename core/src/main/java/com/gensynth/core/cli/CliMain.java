@@ -76,6 +76,7 @@ public final class CliMain {
             shell = new CliShell(manager, CliShell.plainInput(plainReader(), System.out), System.out,
                 workingDir, userHome, version);
         }
+        shell.useDesktop(new DesktopLauncher());
         // Ctrl+C while a command runs: stop the simulations so their connectors are closed cleanly
         Runtime.getRuntime().addShutdownHook(new Thread(manager::shutdown, "gensynth-cli-shutdown"));
 

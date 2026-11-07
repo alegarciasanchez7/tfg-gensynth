@@ -2,6 +2,8 @@ package com.gensynth.core;
 
 import com.gensynth.core.config.AppConfig;
 import com.gensynth.core.config.AppPaths;
+import com.gensynth.core.persistence.ProjectFileFormat;
+import com.gensynth.core.ws.OpenProjectClient;
 import com.gensynth.core.ws.UiBridgeWebSocketServer;
 import com.gensynth.core.desktop.DesktopFileChooser;
 import com.gensynth.core.desktop.MainFrame;
@@ -9,6 +11,8 @@ import com.gensynth.core.desktop.NativeLoader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.io.IOException;
 import java.nio.file.*;
@@ -184,17 +188,62 @@ public class App {
         }
     }
 
+    /**
+     * What the application was asked to do when it started.
+     *
+     * @param desktop     whether to open the desktop window
+     * @param openFile    absolute path of the project file to open in it, or null
+     * @param restartArgs the arguments a restart (e.g. after installing a plugin) uses: the same
+     *                    mode, without the project file, which is not opened again
+     */
+    record StartupArgs(boolean desktop, String openFile, List<String> restartArgs) {
+    }
+
+    /**
+     * Reads the startup arguments: {@code --desktop}, and the project file to open as
+     * {@code --open <file>} (the {@code edit} command of the command line) or alone (what Windows
+     * and Linux pass on a double click). The launchers replace their default {@code --desktop}
+     * when they receive an argument, so a project file means the desktop window too.
+     *
+     * @param args the command line arguments
+     * @return what to do
+     */
+    static StartupArgs parseArgs(String[] args) {
+        boolean desktop = false;
+        String openFile = null;
+        List<String> restartArgs = new ArrayList<>();
+        for (int i = 0; i < args.length; i++) {
+            String arg = args[i];
+            if ("--desktop".equalsIgnoreCase(arg)) {
+                desktop = true;
+            } else if ("--open".equals(arg) && i + 1 < args.length) {
+                openFile = args[++i];
+            } else if (!arg.startsWith("-") && ProjectFileFormat.hasExtension(arg)) {
+                openFile = arg;
+            } else {
+                restartArgs.add(arg);
+            }
+        }
+        if (openFile != null) {
+            desktop = true;
+            openFile = Paths.get(openFile).toAbsolutePath().normalize().toString();
+        }
+        if (desktop) {
+            restartArgs.add(0, "--desktop");
+        }
+        return new StartupArgs(desktop, openFile, List.copyOf(restartArgs));
+    }
+
     public static void main(String[] args) {
-        originalArgs = args;
+        StartupArgs startup = parseArgs(args);
+        originalArgs = startup.restartArgs().toArray(new String[0]);
         // Mark that we are in the main boot of the application
         System.setProperty("gensynth.main_boot", "true");
+        boolean isDesktop = startup.desktop();
 
-        boolean isDesktop = false;
-        for (String arg : args) {
-            if ("--desktop".equalsIgnoreCase(arg)) {
-                isDesktop = true;
-                break;
-            }
+        if (startup.openFile() != null && handOverToOpenWindow(startup.openFile())) {
+            // Exit explicitly: an error dialog leaves the Swing thread alive
+            System.exit(0);
         }
 
         App app = new App();
@@ -208,6 +257,12 @@ public class App {
             app.start();
 
             if (isDesktop) {
+                // Projects can be opened in this window from outside (CLI, double click)
+                wsServer.setWindowActivator(MainFrame::bringToFront);
+                if (startup.openFile() != null) {
+                    wsServer.setPendingOpenProject(startup.openFile());
+                }
+                registerOpenFileHandler(wsServer);
                 logger.info("[DESKTOP] Starting Gen-Synth in Desktop Mode...");
                 DesktopFileChooser.installNativeLookAndFeel();
                 org.cef.CefApp cefApp = NativeLoader.initialize();
@@ -225,6 +280,47 @@ public class App {
             logger.error("[EMERGENCY] Error: {}", t.getMessage());
             app.handleEmergencyRecovery();
         }
+    }
+
+    /**
+     * Opens the project in the GenSynth window that is already open, if any (a double click on a
+     * project file while the application is open, on Windows and Linux): a second window would
+     * clash with the first one. Errors are shown in a dialog, as there is no window of this
+     * process to show them.
+     *
+     * @param openFile absolute path of the project file
+     * @return true when an open window took it, so this process has nothing more to do
+     */
+    private static boolean handOverToOpenWindow(String openFile) {
+        AppConfig config = new AppConfig();
+        try {
+            OpenProjectClient.Outcome outcome = OpenProjectClient.send(
+                config.getWebsocketHost(), config.getWebsocketPort(), openFile, 2000);
+            return outcome == OpenProjectClient.Outcome.SENT;
+        } catch (IllegalStateException e) {
+            logger.warn("[DESKTOP] The open window could not open {}: {}", openFile, e.getMessage());
+            if (!java.awt.GraphicsEnvironment.isHeadless()) {
+                javax.swing.JOptionPane.showMessageDialog(null, e.getMessage(), "GenSynth",
+                    javax.swing.JOptionPane.ERROR_MESSAGE);
+            }
+            return true;
+        }
+    }
+
+    /**
+     * macOS sends the project files to open (double click, "Open with") as system events instead
+     * of arguments, both when the application starts and while it is open. Registered before the
+     * window, so the file that started the application is not missed.
+     */
+    private static void registerOpenFileHandler(UiBridgeWebSocketServer server) {
+        if (!java.awt.Desktop.isDesktopSupported()
+                || !java.awt.Desktop.getDesktop().isSupported(java.awt.Desktop.Action.APP_OPEN_FILE)) {
+            return;
+        }
+        java.awt.Desktop.getDesktop().setOpenFileHandler(event -> event.getFiles().stream()
+            .filter(file -> ProjectFileFormat.hasExtension(file.getName()))
+            .findFirst()
+            .ifPresent(file -> server.requestOpenProject(file.getAbsolutePath())));
     }
 
     private void handleEmergencyRecovery() {

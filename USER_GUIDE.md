@@ -1539,6 +1539,9 @@ Clone the whole group to replicate a site with all its devices.
 - Projects are saved as **`.gsynth`** files (**Save** / **Save as**), which contain the groups,
   flows, variables and the tick settings. Open them with **Load**; **New** starts an empty
   project.
+- **Double-click a `.gsynth` file** (or use *Open with → GenSynth*) to open it in GenSynth, ready
+  to edit and save. If GenSynth is already open, the project opens in that window, asking first
+  if there are unsaved changes.
 - A `*` next to the project name (and next to a group, flow or variable) means there are unsaved
   changes; GenSynth asks before closing or opening another project.
 - **Discard** (or `Ctrl + Z`) reverts the selected item to its last saved state.
@@ -1581,6 +1584,7 @@ Bye.
 | Command | What it does |
 |---|---|
 | `start <file.gsynth>` / `start <id>` | Starts every group of the project. Relative paths start at the current folder; `~` is your user folder; quote paths with spaces. With the id of a stopped simulation, starts that file again. |
+| `edit <file.gsynth>` / `edit new` | Opens the project, or a new one, in the GenSynth window to edit it (see below). |
 | `see <file.gsynth>` | Shows what a project contains without running it: the tick, the groups, their flows with the connector (name and version) and the variables each flow sends, as a tree. Below, it lists the problems that would stop it from starting. |
 | `stop <id>` / `stop all` | Stops that simulation, or every running one, and closes its connectors. |
 | `tick <id> [value]` / `tick all [value]` | Without a value, shows the tick of the simulation and the ticks it makes per second. With a value, changes it while it runs, to speed it up or slow it down: `500ms`, `2s`, `1m` (from 1 ms up to 24 hours) or `fast` (as fast as possible). The project file is not changed. |
@@ -1602,6 +1606,14 @@ Press **Tab** to complete what you are typing, as in any terminal:
   after `tick <id>`, `fast`.
 - The up and down arrows bring back the commands of the session and `Ctrl + C` clears the line
   you are typing.
+
+**Editing a project from the command line:** `edit plant.gsynth` opens it in the GenSynth window,
+ready to edit; **Save** writes back to the same file. `edit new` opens a new, empty project. If
+the window is already open, the project opens there (asking first if there are unsaved changes);
+otherwise a new window starts. The shell stays available while you edit, and closing it (or
+pressing `Ctrl + C`) does not close the window. After saving, `start <id>` (or `start <file>`)
+runs the changes. On a computer without a graphical display, such as a server reached over SSH,
+`edit` explains that the window cannot open there.
 
 **When a project cannot start**, `start` lists every reason found, one per line, with the group
 (and flow) it belongs to: variables that refer to each other in a cycle (through formulas,
