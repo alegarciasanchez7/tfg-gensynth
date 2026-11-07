@@ -1,5 +1,6 @@
 package com.gensynth.core.cli;
 
+import com.gensynth.core.config.AppEdition;
 import com.gensynth.core.config.AppPaths;
 import com.gensynth.core.ws.UiBridgeWebSocketServer;
 import org.jline.terminal.Terminal;
@@ -16,6 +17,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Set;
 
 /**
  * Entry point of the {@code gensynth} command: an interactive shell that starts and stops
@@ -40,6 +42,11 @@ public final class CliMain {
      */
     public static void main(String[] args) {
         String version = System.getProperty(VERSION_PROPERTY, "dev");
+        // The CLI edition is installed without the desktop application: no edit
+        boolean cliEdition = AppEdition.isCliOnly();
+        if (cliEdition) {
+            version += " (CLI edition)";
+        }
         for (String arg : args) {
             if ("--version".equals(arg)) {
                 System.out.println("GenSynth " + version);
@@ -63,20 +70,23 @@ public final class CliMain {
         Terminal systemTerminal = openTerminal();
         TerminalInput terminal = null;
         CliShell shell;
+        Set<String> commands = CliShell.commands(!cliEdition);
         if (systemTerminal != null) {
             // NO_COLOR (https://no-color.org) keeps line editing and Tab, without colors
             CliTheme theme = System.getenv("NO_COLOR") == null ? CliTheme.forTerminal(systemTerminal) : CliTheme.plain();
             ProjectFileCheck projects = new ProjectFileCheck();
             terminal = new TerminalInput(systemTerminal,
-                new CliCompleter(manager, workingDir, userHome, theme, projects),
-                theme.isColored() ? new CliHighlighter(manager, projects, workingDir, userHome) : null);
+                new CliCompleter(manager, workingDir, userHome, theme, projects, commands),
+                theme.isColored() ? new CliHighlighter(manager, projects, workingDir, userHome, commands) : null);
             shell = new CliShell(manager, terminal, System.out, workingDir, userHome, version);
             shell.useTerminal(theme, terminal);
         } else {
             shell = new CliShell(manager, CliShell.plainInput(plainReader(), System.out), System.out,
                 workingDir, userHome, version);
         }
-        shell.useDesktop(new DesktopLauncher());
+        if (!cliEdition) {
+            shell.useDesktop(new DesktopLauncher());
+        }
         // Ctrl+C while a command runs: stop the simulations so their connectors are closed cleanly
         Runtime.getRuntime().addShutdownHook(new Thread(manager::shutdown, "gensynth-cli-shutdown"));
 

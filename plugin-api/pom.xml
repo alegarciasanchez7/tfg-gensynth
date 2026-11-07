@@ -56,4 +56,58 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!--
+          Local static analysis without a server (scripts/unix/analyze.sh, scripts\windows\analyze.bat):
+          ./mvnw -Pcode-analysis verify. SpotBugs (target/reports/spotbugs.html), PMD (target/reports/pmd.html)
+          and CPD, duplicated code (target/reports/cpd.html). Findings are reported, never fail the build.
+        -->
+        <profile>
+            <id>code-analysis</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>com.github.spotbugs</groupId>
+                        <artifactId>spotbugs-maven-plugin</artifactId>
+                        <version>4.10.5.0</version>
+                        <configuration>
+                            <effort>Max</effort>
+                            <threshold>Medium</threshold>
+                            <xmlOutput>true</xmlOutput>
+                            <htmlOutput>true</htmlOutput>
+                            <failOnError>false</failOnError>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>spotbugs</id>
+                                <phase>verify</phase>
+                                <goals><goal>spotbugs</goal></goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-pmd-plugin</artifactId>
+                        <version>3.28.0</version>
+                        <configuration>
+                            <rulesets>
+                                <ruleset>/rulesets/java/quickstart.xml</ruleset>
+                            </rulesets>
+                            <linkXRef>false</linkXRef>
+                            <printFailingErrors>false</printFailingErrors>
+                            <failOnViolation>false</failOnViolation>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>pmd</id>
+                                <phase>verify</phase>
+                                <goals><goal>pmd</goal><goal>cpd</goal></goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

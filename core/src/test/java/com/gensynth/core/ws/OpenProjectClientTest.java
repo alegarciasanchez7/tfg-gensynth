@@ -4,6 +4,7 @@ import com.gensynth.core.api.IOpenWindowClient;
 import com.gensynth.core.connectors.plugin.PluginInstallerImpl;
 import com.gensynth.core.connectors.runtime.ConnectorCatalogService;
 import com.gensynth.core.persistence.JsonStateRepositoryImpl;
+import org.java_websocket.WebSocket;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
@@ -62,7 +63,7 @@ public class OpenProjectClientTest {
     }
 
     /** The OPEN_PROJECT_REQUESTED messages the window received. */
-    private static java.util.List<String> openRequests(DesktopBridgeSocket window) {
+    private static java.util.List<String> openRequests(WebSocket window) {
         ArgumentCaptor<String> sent = ArgumentCaptor.forClass(String.class);
         verify(window, atLeast(0)).send(sent.capture());
         return sent.getAllValues().stream().filter(m -> m.contains("\"type\":\"OPEN_PROJECT_REQUESTED\"")).toList();
@@ -72,7 +73,7 @@ public class OpenProjectClientTest {
     public void theOpenWindowReceivesTheProjectAndComesToTheFront() {
         AtomicInteger raised = new AtomicInteger();
         server.setWindowActivator(raised::incrementAndGet);
-        DesktopBridgeSocket window = mock(DesktopBridgeSocket.class);
+        WebSocket window = mock(WebSocket.class);
         when(window.isOpen()).thenReturn(true);
         server.desktopSocket = window;
 
@@ -87,7 +88,7 @@ public class OpenProjectClientTest {
     @Test
     public void aNewProjectIsSentWithoutPath() {
         server.setWindowActivator(() -> { });
-        DesktopBridgeSocket window = mock(DesktopBridgeSocket.class);
+        WebSocket window = mock(WebSocket.class);
         when(window.isOpen()).thenReturn(true);
         server.desktopSocket = window;
 

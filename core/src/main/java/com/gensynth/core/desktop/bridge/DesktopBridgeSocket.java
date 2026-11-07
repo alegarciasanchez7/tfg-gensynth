@@ -1,6 +1,6 @@
-package com.gensynth.core.ws;
+package com.gensynth.core.desktop.bridge;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import org.cef.browser.CefBrowser;
 import org.cef.callback.CefQueryCallback;
 import org.java_websocket.WebSocket;
 import org.java_websocket.drafts.Draft;
@@ -17,18 +17,28 @@ import java.util.Collection;
 
 /**
  * A virtual WebSocket implementation that routes messages back to JCEF (Desktop
- * UI).
+ * UI). It lives in the desktop package so the engine ({@code com.gensynth.core.ws})
+ * has no JCEF reference and runs without the JCEF libraries (CLI edition).
  */
 public class DesktopBridgeSocket implements WebSocket {
     private static final Logger logger = LoggerFactory.getLogger(DesktopBridgeSocket.class);
     private CefQueryCallback jcefCallback;
-    private final org.cef.browser.CefBrowser browser;
+    private final CefBrowser browser;
 
-    public DesktopBridgeSocket(UiBridgeWebSocketServer server, CefQueryCallback callback, ObjectMapper mapper, org.cef.browser.CefBrowser browser) {
+    /**
+     * @param callback the callback of the query being answered (may be null)
+     * @param browser  the browser that receives the messages pushed by the Core
+     */
+    public DesktopBridgeSocket(CefQueryCallback callback, CefBrowser browser) {
         this.jcefCallback = callback;
         this.browser = browser;
     }
 
+    /**
+     * Sets the callback of the query now being answered: the next message sent fulfils it.
+     *
+     * @param callback the query callback
+     */
     public void setCallback(CefQueryCallback callback) {
         this.jcefCallback = callback;
     }

@@ -1,5 +1,6 @@
-# Continuous delivery: builds the installer of every OS with jpackage and publishes them in a
-# GitHub Release when a version tag (v1.2.3) is pushed. Releases are only made from main.
+# Continuous delivery: builds the installers of every OS with jpackage and publishes them in a
+# GitHub Release when a version tag (v1.2.3) is pushed. Each OS gets two: the full application
+# (GenSynth-installer-*) and the CLI edition, the command line alone (GenSynth-cli-installer-*). Releases are only made from main.
 # Pull requests that change the packaging, and manual runs (workflow_dispatch), are dry runs:
 # they build the installers as downloadable artifacts of the run and publish nothing.
 name: Release
@@ -13,6 +14,7 @@ on:
       - .github/workflows/release.yml
       - packaging/**
       - core/pom.xml
+      - .github/smoke/**
   workflow_dispatch:
 
 permissions:
@@ -41,8 +43,8 @@ jobs:
           declare -A versions=(
             [pom.xml]=$(grep -m1 -oP '(?<=<version>)[^<]+' pom.xml)
             [core/pom.xml]=$(grep -m1 -oP '(?<=<version>)[^<]+' core/pom.xml)
-            [simulator-ui/package.json]=$(node -p "require('./simulator-ui/package.json').version")
-            [simulator-ui/src/app/core/appInfo.ts]=$(grep -oP "(?<=APP_VERSION = ')[^']+" simulator-ui/src/app/core/appInfo.ts)
+            [ui/package.json]=$(node -p "require('./ui/package.json').version")
+            [ui/src/app/core/appInfo.ts]=$(grep -oP "(?<=APP_VERSION = ')[^']+" ui/src/app/core/appInfo.ts)
             [sonar-project.properties]=$(grep -oP '(?<=^sonar.projectVersion=).+' sonar-project.properties)
           )
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
@@ -97,9 +99,9 @@ jobs:
       # The core build bundles the UI with npm
       - uses: actions/setup-node@v7
         with:
-          node-version-file: simulator-ui/.nvmrc
+          node-version-file: ui/.nvmrc
           cache: npm
-          cache-dependency-path: simulator-ui/package-lock.json
+          cache-dependency-path: ui/package-lock.json
 
       - name: Install the RPM tools (Linux)
         if: runner.os == 'Linux'
@@ -125,6 +127,23 @@ jobs:
         shell: pwsh
         run: .\mvnw.cmd -B -Dinstaller -DskipTests package
 
+      # The CLI edition must run without the JCEF libraries, which its installer leaves out
+      - name: Smoke test the CLI edition files
+        shell: bash
+        run: |
+          set -euo pipefail
+          input=core/target/installer/input-cli
+          if ls "$input" | grep -iE 'jcef|jogl|gluegen'; then
+            echo "::error::The CLI edition must not ship the JCEF libraries"
+            exit 1
+          fi
+          out="$(printf 'help\nedit new\nsee .github/smoke/file-output.gsynth\nstart .github/smoke/file-output.gsynth\nstop all\nexit\n' \
+            | java -Dgensynth.edition=cli -Dgensynth.home="$RUNNER_TEMP/gensynth-smoke" -cp "$input/*" com.gensynth.core.cli.CliMain)"
+          echo "$out"
+          for expected in "edit is not available in the GenSynth CLI edition" "No problems found" "[1] Started" "[1] Stopped"; do
+            grep -qF "$expected" <<< "$out" || { echo "::error::Missing in the output: $expected"; exit 1; }
+          done
+
       - name: Name the installers
         shell: bash
         run: |
@@ -138,8 +157,51 @@ jobs:
               *.rpm) cp "$file" "dist/GenSynth-installer-$VERSION.rpm" ;;
             esac
           done
+          for file in core/target/installer/dist-cli/*; do
+            case "$file" in
+              *.msi) cp "$file" "dist/GenSynth-cli-installer-$VERSION.msi" ;;
+              *.pkg) cp "$file" "dist/GenSynth-cli-installer-$VERSION.pkg" ;;
+              *.deb) cp "$file" "dist/GenSynth-cli-installer-$VERSION.deb" ;;
+              *.rpm) cp "$file" "dist/GenSynth-cli-installer-$VERSION.rpm" ;;
+            esac
+          done
           ls -la dist
-          [[ -n "$(ls dist)" ]] || { echo "::error::No installer was built"; exit 1; }
+          [[ -n "$(ls dist/GenSynth-installer-*)" ]] || { echo "::error::No installer was built"; exit 1; }
+          [[ -n "$(ls dist/GenSynth-cli-installer-*)" ]] || { echo "::error::No CLI edition installer was built"; exit 1; }
+
+      # Installs the CLI edition as a user would and runs the "gensynth" command it sets up
+      - name: Install and run the CLI edition (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y "./dist/GenSynth-cli-installer-$VERSION.deb"
+          gensynth --version | grep -F "(CLI edition)"
+          printf 'help\nexit\n' | gensynth | grep -F "Bye."
+          sudo apt-get remove -y gensynth-cli
+          [[ ! -e /usr/bin/gensynth ]] || { echo "::error::/usr/bin/gensynth was left behind"; exit 1; }
+
+      - name: Install and run the CLI edition (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          sudo installer -pkg "dist/GenSynth-cli-installer-$VERSION.pkg" -target /
+          /usr/local/bin/gensynth --version | grep -F "(CLI edition)"
+          printf 'help\nexit\n' | /usr/local/bin/gensynth | grep -F "Bye."
+
+      - name: Install and run the CLI edition (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $msi = Resolve-Path "dist\GenSynth-cli-installer-$env:VERSION.msi"
+          $install = Start-Process msiexec.exe -ArgumentList "/i `"$msi`" /qn /l*v msi-cli.log" -Wait -PassThru
+          if ($install.ExitCode -ne 0) { Get-Content msi-cli.log -Tail 50; exit $install.ExitCode }
+          $gensynth = "$env:ProgramFiles\GenSynth-CLI\cli\gensynth.cmd"
+          $version = & $gensynth --version
+          Write-Output $version
+          if ($version -notmatch 'CLI edition') { Write-Error "Unexpected version: $version"; exit 1 }
+          $session = "help`nexit`n" | & $gensynth
+          Write-Output $session
+          if (-not ($session -match 'Bye\.')) { Write-Error 'The command line did not end'; exit 1 }
 
       - uses: actions/upload-artifact@v7
         with:

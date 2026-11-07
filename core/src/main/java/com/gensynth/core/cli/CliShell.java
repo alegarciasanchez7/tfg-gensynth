@@ -16,8 +16,11 @@ import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.function.Supplier;
 
 /**
@@ -28,6 +31,11 @@ import java.util.function.Supplier;
 public class CliShell {
 
     static final String PROMPT = "gensynth> ";
+    /** The command that needs the desktop application. */
+    static final String EDIT = "edit";
+    /** Answer to {@code edit} where the desktop application is not installed (CLI edition). */
+    static final String EDIT_UNAVAILABLE = "edit is not available in the GenSynth CLI edition: "
+        + "install the full GenSynth application to edit projects.";
 
     /** Commands of the help, with their description. */
     private static final String[][] HELP = {
@@ -42,6 +50,29 @@ public class CliShell {
         {"help", "Show this help"},
         {"exit", "Stop every simulation and leave"},
     };
+
+    /**
+     * The names of the commands, in the order of the help.
+     *
+     * @param withDesktop whether the desktop application is available; without it {@code edit}
+     *                    is left out (CLI edition)
+     * @return the command names
+     */
+    static Set<String> commands(boolean withDesktop) {
+        Set<String> names = new LinkedHashSet<>();
+        for (String[] command : HELP) {
+            names.add(commandName(command));
+        }
+        if (!withDesktop) {
+            names.remove(EDIT);
+        }
+        return Collections.unmodifiableSet(names);
+    }
+
+    /** The name of a command of the help: the first word of its usage. */
+    private static String commandName(String[] command) {
+        return command[0].split(" ")[0];
+    }
 
     /**
      * Source of the command lines: a terminal with line editing, or any reader.
@@ -139,6 +170,9 @@ public class CliShell {
     }
 
     /**
+     * Enables {@code edit}. Without a launcher (CLI edition) the command is not listed and only
+     * explains that it needs the full application.
+     *
      * @param desktop opens projects in the desktop application ({@code edit})
      */
     void useDesktop(IDesktopLauncher desktop) {
@@ -199,7 +233,7 @@ public class CliShell {
                 case "exit" -> {
                     return false;
                 }
-                default -> printError(unknownCommand(tokens.get(0)));
+                default -> printError(unknownCommand(tokens.get(0), commands(desktop != null)));
             }
         } catch (ProjectStartException e) {
             printCannotStart(e);
@@ -246,11 +280,11 @@ public class CliShell {
     }
 
     private void edit(List<String> args) {
+        if (desktop == null) {
+            throw new IllegalStateException(EDIT_UNAVAILABLE);
+        }
         if (args.size() != 1) {
             throw new IllegalArgumentException("Usage: edit <file.gsynth> | edit new");
-        }
-        if (desktop == null) {
-            throw new IllegalStateException("The desktop application is not available here");
         }
         String target = args.get(0);
         Path file = null;
@@ -376,10 +410,17 @@ public class CliShell {
      * ({@code lsit} -> {@code list}).
      */
     static String unknownCommand(String typed) {
+        return unknownCommand(typed, commands(true));
+    }
+
+    /**
+     * @param typed    the unknown command
+     * @param commands the commands available, the only ones suggested
+     */
+    static String unknownCommand(String typed, Set<String> commands) {
         String suggestion = null;
         int best = 3;
-        for (String[] command : HELP) {
-            String name = command[0].split(" ")[0];
+        for (String name : commands) {
             int distance = editDistance(typed.toLowerCase(Locale.ROOT), name);
             if (distance < best) {
                 best = distance;
@@ -468,6 +509,9 @@ public class CliShell {
     private void help() {
         out.println("Commands:");
         for (String[] command : HELP) {
+            if (desktop == null && EDIT.equals(commandName(command))) {
+                continue;
+            }
             out.println("  " + theme.paint(String.format("%-24s", command[0]), CliTheme.PRIMARY) + command[1]);
         }
         out.println("Press Tab to complete commands, ids and paths.");

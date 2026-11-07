@@ -56,7 +56,7 @@ import static com.gensynth.core.ws.BridgeProtocol.STATUS;
 import static com.gensynth.core.ws.BridgeProtocol.TIMESTAMP;
 
 /**
- * Lightweight WebSocket bridge between simulator-ui and core runtime.
+ * Lightweight WebSocket bridge between the user interface (ui/) and the core runtime.
  */
 public class UiBridgeWebSocketServer extends WebSocketServer {
     private static final String CONNECTION_STATUS = "CONNECTION_STATUS";
@@ -474,16 +474,15 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
     /**
      * Entry point for desktop-mode commands (JCEF bridge).
      * This bypasses the WebSocket network layer but reuses the same business logic.
+     * The virtual socket is created by the desktop package, so this engine has no JCEF reference.
+     *
+     * @param rawMessage    the command received from the desktop UI
+     * @param desktopSocket the virtual socket of the desktop window, already set up to answer
+     *                      this command; it becomes the desktop connection of this engine
      */
-    public void handleDesktopCommand(String rawMessage, org.cef.callback.CefQueryCallback callback, org.cef.browser.CefBrowser browser) {
-        // Reuse or create the persistent desktop socket
-        if (this.desktopSocket == null) {
-            this.desktopSocket = new DesktopBridgeSocket(this, callback, objectMapper, browser);
-        } else {
-            // Update the callback for the current query, but keep the socket reference
-            ((DesktopBridgeSocket)this.desktopSocket).setCallback(callback);
-        }
-        handleCommand(this.desktopSocket, rawMessage);
+    public void handleDesktopCommand(String rawMessage, WebSocket desktopSocket) {
+        this.desktopSocket = desktopSocket;
+        handleCommand(desktopSocket, rawMessage);
     }
 
     private void handleCommand(WebSocket conn, String rawMessage) {

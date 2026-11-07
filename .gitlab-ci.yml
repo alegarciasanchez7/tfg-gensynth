@@ -11,10 +11,10 @@ frontend:
   image: node:22
   cache:
     key:
-      files: [simulator-ui/package-lock.json]
+      files: [ui/package-lock.json]
     paths: [.npm/]
   before_script:
-    - cd simulator-ui
+    - cd ui
     - npm ci --cache ../.npm --prefer-offline
   script:
     - npm run lint

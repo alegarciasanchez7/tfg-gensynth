@@ -25,6 +25,11 @@
         <installer.dir>${project.build.directory}/installer</installer.dir>
         <installer.input>${installer.dir}/input</installer.input>
         <installer.packaging>${project.basedir}/../packaging</installer.packaging>
+        <!-- CLI edition: the gensynth command line alone, without the desktop window or JCEF -->
+        <installer.cli.input>${installer.dir}/input-cli</installer.cli.input>
+        <installer.cli.dist>${installer.dir}/dist-cli</installer.cli.dist>
+        <installer.cli.name>GenSynth-CLI</installer.cli.name>
+        <installer.cli.description>GenSynth command line: runs synthetic data projects (.gsynth) from a terminal, without the desktop window.</installer.cli.description>
         <!-- Skips the .rpm on Linux machines without rpmbuild (-Dinstaller.skipRpm=true) -->
         <installer.skipRpm>false</installer.skipRpm>
         <!-- Skips the .deb on Linux machines without dpkg-deb, such as Fedora (-Dinstaller.skipDeb=true) -->
@@ -243,7 +248,7 @@
                         <configuration>
                             <executable>npm</executable>
                             <arguments><argument>install</argument></arguments>
-                            <workingDirectory>../simulator-ui</workingDirectory>
+                            <workingDirectory>../ui</workingDirectory>
                         </configuration>
                     </execution>
                     <execution>
@@ -253,7 +258,7 @@
                         <configuration>
                             <executable>npm</executable>
                             <arguments><argument>run</argument><argument>build</argument></arguments>
-                            <workingDirectory>../simulator-ui</workingDirectory>
+                            <workingDirectory>../ui</workingDirectory>
                         </configuration>
                     </execution>
                 </executions>
@@ -274,12 +279,12 @@
                         <goals><goal>run</goal></goals>
                         <configuration>
                             <target>
-                                <echo message="Copying UI distribution from simulator-ui/dist to core resources..." />
+                                <echo message="Copying UI distribution from ui/dist to core resources..." />
                                 <!-- Start clean so hashed bundles from previous builds do not pile up in the JAR -->
                                 <delete dir="${project.basedir}/src/main/resources/ui" />
                                 <mkdir dir="${project.basedir}/src/main/resources/ui" />
                                 <copy todir="${project.basedir}/src/main/resources/ui">
-                                    <fileset dir="${project.basedir}/../simulator-ui/dist" />
+                                    <fileset dir="${project.basedir}/../ui/dist" />
                                 </copy>
                             </target>
                         </configuration>
@@ -439,7 +444,60 @@
         </pluginManagement>
     </build>
 
+
     <profiles>
+        <!--
+          Local static analysis without a server (scripts/unix/analyze.sh, scripts\windows\analyze.bat):
+          ./mvnw -Pcode-analysis verify. SpotBugs (target/reports/spotbugs.html), PMD (target/reports/pmd.html)
+          and CPD, duplicated code (target/reports/cpd.html). Findings are reported, never fail the build.
+        -->
+        <profile>
+            <id>code-analysis</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>com.github.spotbugs</groupId>
+                        <artifactId>spotbugs-maven-plugin</artifactId>
+                        <version>4.10.5.0</version>
+                        <configuration>
+                            <effort>Max</effort>
+                            <threshold>Medium</threshold>
+                            <xmlOutput>true</xmlOutput>
+                            <htmlOutput>true</htmlOutput>
+                            <failOnError>false</failOnError>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>spotbugs</id>
+                                <phase>verify</phase>
+                                <goals><goal>spotbugs</goal></goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-pmd-plugin</artifactId>
+                        <version>3.28.0</version>
+                        <configuration>
+                            <rulesets>
+                                <ruleset>/rulesets/java/quickstart.xml</ruleset>
+                            </rulesets>
+                            <linkXRef>false</linkXRef>
+                            <printFailingErrors>false</printFailingErrors>
+                            <failOnViolation>false</failOnViolation>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>pmd</id>
+                                <phase>verify</phase>
+                                <goals><goal>pmd</goal><goal>cpd</goal></goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
         <profile>
             <id>benchmark</id>
             <build>
@@ -462,6 +520,11 @@
           This profile gathers the application files in target/installer/input; the installer-<os>
           profile of the running OS turns them into an installer in target/installer/dist.
           Besides the GenSynth launcher, every installer ships the gensynth-cli launcher (command line).
+          Each installer-<os> profile also builds the CLI edition in target/installer/dist-cli: the
+          command line alone (CliMain as the main launcher, started with -Dgensynth.edition=cli), from
+          target/installer/input-cli, which has no JCEF libraries. Its executions repeat the same
+          overrides of the shared settings: other name, input, main class and destination, and no
+          default arguments, second launcher or file association.
         -->
         <profile>
             <id>installer</id>
@@ -484,6 +547,17 @@
                                     <includeScope>runtime</includeScope>
                                 </configuration>
                             </execution>
+                            <execution>
+                                <id>installer-cli-dependencies</id>
+                                <phase>package</phase>
+                                <goals><goal>copy-dependencies</goal></goals>
+                                <configuration>
+                                    <outputDirectory>${installer.cli.input}</outputDirectory>
+                                    <includeScope>runtime</includeScope>
+                                    <!-- The CLI edition has no desktop window: no JCEF, JOGL or GlueGen -->
+                                    <excludeGroupIds>me.friwi</excludeGroupIds>
+                                </configuration>
+                            </execution>
                         </executions>
                     </plugin>
                     <plugin>
@@ -498,6 +572,7 @@
                                     <skip>false</skip>
                                     <target>
                                         <copy file="${project.build.directory}/${project.build.finalName}.jar" todir="${installer.input}"/>
+                                        <copy file="${project.build.directory}/${project.build.finalName}.jar" todir="${installer.cli.input}"/>
                                         <!-- Client libraries shared with the plugins: app content, not on the classpath -->
                                         <copy todir="${installer.dir}/shared">
                                             <fileset dir="${project.basedir}/lib/shared" includes="*.jar"/>
@@ -539,6 +614,35 @@
                                     <!-- cli\gensynth.cmd: the folder users add to PATH to type "gensynth" -->
                                     <appContentPaths combine.children="append">
                                         <appContentPath>${installer.packaging}/windows/cli</appContentPath>
+                                    </appContentPaths>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>installer-cli-msi</id>
+                                <phase>package</phase>
+                                <goals><goal>jpackage</goal></goals>
+                                <configuration>
+                                    <type>MSI</type>
+                                    <name>${installer.cli.name}</name>
+                                    <description>${installer.cli.description}</description>
+                                    <input>${installer.cli.input}</input>
+                                    <mainClass>com.gensynth.core.cli.CliMain</mainClass>
+                                    <destination>${installer.cli.dist}</destination>
+                                    <arguments combine.self="override"/>
+                                    <launchers combine.self="override"/>
+                                    <fileAssociations combine.self="override"/>
+                                    <javaOptions combine.children="append">
+                                        <option>-Dgensynth.edition=cli</option>
+                                    </javaOptions>
+                                    <icon>${installer.packaging}/icons/gensynth.ico</icon>
+                                    <!-- A console program: no menu entries or desktop shortcuts -->
+                                    <winConsole>true</winConsole>
+                                    <winDirChooser>true</winDirChooser>
+                                    <!-- Fixed forever, and different from the full application: both can be installed -->
+                                    <winUpgradeUuid>ec511478-7dc7-476f-af1a-1184a8e17454</winUpgradeUuid>
+                                    <!-- cli\gensynth.cmd runs GenSynth-CLI.exe: the folder users add to PATH -->
+                                    <appContentPaths combine.children="append">
+                                        <appContentPath>${installer.packaging}/windows-cli/cli</appContentPath>
                                     </appContentPaths>
                                 </configuration>
                             </execution>
@@ -587,6 +691,57 @@
                                     <skip>${installer.skipRpm}</skip>
                                 </configuration>
                             </execution>
+                            <execution>
+                                <id>installer-cli-deb</id>
+                                <phase>package</phase>
+                                <goals><goal>jpackage</goal></goals>
+                                <configuration>
+                                    <type>DEB</type>
+                                    <skip>${installer.skipDeb}</skip>
+                                    <name>${installer.cli.name}</name>
+                                    <description>${installer.cli.description}</description>
+                                    <input>${installer.cli.input}</input>
+                                    <mainClass>com.gensynth.core.cli.CliMain</mainClass>
+                                    <destination>${installer.cli.dist}</destination>
+                                    <arguments combine.self="override"/>
+                                    <launchers combine.self="override"/>
+                                    <fileAssociations combine.self="override"/>
+                                    <javaOptions combine.children="append">
+                                        <option>-Dgensynth.edition=cli</option>
+                                    </javaOptions>
+                                    <linuxPackageName>gensynth-cli</linuxPackageName>
+                                    <linuxShortcut>false</linuxShortcut>
+                                    <!-- Without an icon jpackage adds no menu entry: it is a terminal command -->
+                                    <icon combine.self="override"/>
+                                    <!-- Templates that link /usr/bin/gensynth to /opt/gensynth-cli/bin/GenSynth-CLI -->
+                                    <resourceDir>${installer.packaging}/linux-cli</resourceDir>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>installer-cli-rpm</id>
+                                <phase>package</phase>
+                                <goals><goal>jpackage</goal></goals>
+                                <configuration>
+                                    <type>RPM</type>
+                                    <skip>${installer.skipRpm}</skip>
+                                    <name>${installer.cli.name}</name>
+                                    <description>${installer.cli.description}</description>
+                                    <input>${installer.cli.input}</input>
+                                    <mainClass>com.gensynth.core.cli.CliMain</mainClass>
+                                    <destination>${installer.cli.dist}</destination>
+                                    <arguments combine.self="override"/>
+                                    <launchers combine.self="override"/>
+                                    <fileAssociations combine.self="override"/>
+                                    <javaOptions combine.children="append">
+                                        <option>-Dgensynth.edition=cli</option>
+                                    </javaOptions>
+                                    <linuxPackageName>gensynth-cli</linuxPackageName>
+                                    <linuxShortcut>false</linuxShortcut>
+                                    <!-- Without an icon jpackage adds no menu entry: it is a terminal command -->
+                                    <icon combine.self="override"/>
+                                    <resourceDir>${installer.packaging}/linux-cli</resourceDir>
+                                </configuration>
+                            </execution>
                         </executions>
                     </plugin>
                 </plugins>
@@ -620,6 +775,31 @@
                                         <!-- No spaces in the name: jpackage splits this option on whitespace -->
                                         <macDmgContentPath>${installer.packaging}/macos/READ_ME_FIRST.txt</macDmgContentPath>
                                     </macDmgContentPaths>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>installer-cli-pkg</id>
+                                <phase>package</phase>
+                                <goals><goal>jpackage</goal></goals>
+                                <configuration>
+                                    <!-- A package installer: its postinstall script links /usr/local/bin/gensynth -->
+                                    <type>PKG</type>
+                                    <name>${installer.cli.name}</name>
+                                    <description>${installer.cli.description}</description>
+                                    <input>${installer.cli.input}</input>
+                                    <mainClass>com.gensynth.core.cli.CliMain</mainClass>
+                                    <destination>${installer.cli.dist}</destination>
+                                    <arguments combine.self="override"/>
+                                    <launchers combine.self="override"/>
+                                    <fileAssociations combine.self="override"/>
+                                    <javaOptions combine.children="append">
+                                        <option>-Dgensynth.edition=cli</option>
+                                    </javaOptions>
+                                    <appVersion>${installer.macAppVersion}</appVersion>
+                                    <icon>${installer.packaging}/icons/gensynth.icns</icon>
+                                    <macPackageIdentifier>com.gensynth.cli</macPackageIdentifier>
+                                    <macPackageName>GenSynth-CLI</macPackageName>
+                                    <resourceDir>${installer.packaging}/macos-cli</resourceDir>
                                 </configuration>
                             </execution>
                         </executions>

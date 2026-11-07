@@ -118,6 +118,16 @@ public class CliCompleterTest {
     }
 
     @Test
+    public void theCliEditionNeitherOffersNorCompletesEdit() {
+        completer = new CliCompleter(manager, workingDir, temp.getRoot().toPath().resolve("home"), CliTheme.plain(), new ProjectFileCheck(),
+            CliShell.commands(false));
+
+        assertEquals(Set.of("start", "see", "stop", "tick", "metrics", "list", "clear", "help", "exit"), values(""));
+        assertTrue(values("edit ").isEmpty());
+        assertFalse(values("see ").isEmpty());
+    }
+
+    @Test
     public void seeCompletesPathsLikeStart() {
         assertEquals(values("start "), values("see "));
         assertEquals(Set.of("docs/inner.gsynth"), values("see docs/"));

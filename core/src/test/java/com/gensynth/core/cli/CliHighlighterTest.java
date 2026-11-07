@@ -77,6 +77,16 @@ public class CliHighlighterTest {
     }
 
     @Test
+    public void editIsUnknownInTheCliEdition() {
+        highlighter = new CliHighlighter(manager, new ProjectFileCheck(), workingDir, temp.getRoot().toPath(),
+            CliShell.commands(false));
+
+        assertEquals(CliTheme.ERROR, styleAt("edit good.gsynth", 0));
+        assertEquals("its argument keeps the default color", CliTheme.PLAIN, styleAt("edit good.gsynth", 5));
+        assertEquals(CliTheme.PRIMARY.bold(), styleAt("see good.gsynth", 0));
+    }
+
+    @Test
     public void seePathsAndTickAndMetricsIdsAreColored() throws Exception {
         assertEquals(CliTheme.SUCCESS, styleAt("see good.gsynth", 4));
         assertEquals(CliTheme.SUCCESS, styleAt("edit good.gsynth", 5));

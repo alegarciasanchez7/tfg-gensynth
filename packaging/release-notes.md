@@ -24,10 +24,22 @@ Fixes for the first reviews of the [user guide](https://github.com/alegarciasanc
 
 No Java installation is needed: everything GenSynth needs is included.
 
+**CLI edition (no window):** for servers or computers without a desktop, these install only the
+`gensynth` command line, without the window or its embedded browser (so `edit` is not available):
+
+| Your system | Download |
+|---|---|
+| Windows 10/11 (64-bit) | `GenSynth-cli-installer-<version>.msi` |
+| Ubuntu, Debian, Linux Mint… | `GenSynth-cli-installer-<version>.deb` |
+| Fedora, openSUSE, RHEL… | `GenSynth-cli-installer-<version>.rpm` |
+| macOS (Apple Silicon) | `GenSynth-cli-installer-<version>.pkg` |
+
+The Linux and macOS packages add the `gensynth` command; on Windows, add `C:\Program Files\GenSynth-CLI\cli` to the `PATH` (see the [User Guide](https://github.com/alegarciasanchez7/tfg-gensynth/blob/main/USER_GUIDE.md#cli-edition)).
+
 > [!IMPORTANT]
 > **Before installing**
 > - **Windows:** GenSynth is not signed, so Windows SmartScreen may show *"Windows protected your PC"*. Click **More info → Run anyway**.
-> - **macOS:** the first time, right-click GenSynth in *Applications* and choose **Open** (or *System Settings → Privacy & Security → Open Anyway*). The disk image includes a `READ_ME_FIRST.txt` file with these steps.
+> - **macOS:** the first time, right-click GenSynth in *Applications* and choose **Open** (or *System Settings → Privacy & Security → Open Anyway*). The disk image includes a `READ_ME_FIRST.txt` file with these steps. The CLI edition `.pkg` is not signed either: right-click it and choose **Open** to install it.
 > - **Linux:** install with a double click or `sudo apt install ./GenSynth-installer-<version>.deb` (`sudo dnf install ./GenSynth-installer-<version>.rpm` on Fedora).
 >
 > **First start:** GenSynth downloads its embedded browser (about 150 MB), so it needs an internet connection. A window shows the progress, and it only happens once.

@@ -789,7 +789,7 @@ public class UiBridgeWebSocketServerTest {
         UiBridgeWebSocketServer server = newServer(tempDir, new JsonStateRepositoryImpl(tempDir.toString()));
         server.setWindowActivator(() -> { });
         server.setPendingOpenProject("/projects/plant.gsynth");
-        DesktopBridgeSocket window = mock(DesktopBridgeSocket.class);
+        WebSocket window = mock(WebSocket.class);
         when(window.isOpen()).thenReturn(true);
         server.desktopSocket = window;
         WebSocket browser = mock(WebSocket.class);

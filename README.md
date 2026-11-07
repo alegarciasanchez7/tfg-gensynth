@@ -40,15 +40,21 @@ how to use the application.
 To run projects without opening the window, type `gensynth` in a terminal: see
 [Command line](USER_GUIDE.md#command-line).
 
+**CLI edition.** For servers or computers without a desktop, each release also includes
+`GenSynth-cli-installer-<version>` (`.msi`, `.deb`, `.rpm` and `.pkg` for macOS). It installs only
+the `gensynth` command line, without the window or its embedded browser, so commands that need the
+window (`edit`) are not available. See [CLI edition](USER_GUIDE.md#cli-edition).
+
 ## For developers
 
 The engine is written in Java 21 (`core/`) and the interface in React + TypeScript
-(`simulator-ui/`). To build and run it from source, with JDK 21 and Node.js 20 or newer:
+(`ui/`). With JDK 21 and Node.js 20 or newer, the [`scripts/`](scripts) folder prepares,
+builds, runs and checks everything with one command (`scripts/windows/*.bat` on Windows):
 
 ```bash
-./mvnw clean install -DskipTests
-cd core
-java -cp "target/classes:target/dependency/*" com.gensynth.core.App --desktop    # Windows: use ; instead of :
+scripts/unix/setup.sh          # once, after cloning: builds every module
+scripts/unix/run-desktop.sh    # desktop application (run-cli.sh: command line)
+scripts/unix/test.sh           # the checks of the CI
 ```
 
 - [Contributing](CONTRIBUTING.md): project structure, build, tests, CI and releases.

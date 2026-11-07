@@ -25,8 +25,6 @@ import java.util.Set;
  */
 class CliHighlighter implements Highlighter {
 
-    static final Set<String> COMMANDS = Set.of("start", "see", "edit", "stop", "tick", "metrics", "list", "clear", "help", "exit");
-
     /** A word of the line: where it is and its text without quotes. */
     record Word(int start, int end, String text) {
     }
@@ -35,18 +33,34 @@ class CliHighlighter implements Highlighter {
     private final ProjectFileCheck projects;
     private final Path workingDir;
     private final Path userHome;
+    private final Set<String> commands;
 
     /**
+     * Highlighter of every command.
+     *
      * @param manager    source of the running ids
      * @param projects   tells which files are valid projects
      * @param workingDir folder that relative paths are resolved against
      * @param userHome   folder that {@code ~} expands to
      */
     CliHighlighter(ISimulationManager manager, ProjectFileCheck projects, Path workingDir, Path userHome) {
+        this(manager, projects, workingDir, userHome, CliShell.commands(true));
+    }
+
+    /**
+     * @param manager    source of the running ids
+     * @param projects   tells which files are valid projects
+     * @param workingDir folder that relative paths are resolved against
+     * @param userHome   folder that {@code ~} expands to
+     * @param commands   the known commands; any other is shown as unknown (see {@link CliShell#commands})
+     */
+    CliHighlighter(ISimulationManager manager, ProjectFileCheck projects, Path workingDir, Path userHome,
+                   Set<String> commands) {
         this.manager = manager;
         this.projects = projects;
         this.workingDir = workingDir;
         this.userHome = userHome;
+        this.commands = commands;
     }
 
     /**
@@ -61,9 +75,10 @@ class CliHighlighter implements Highlighter {
         if (!words.isEmpty()) {
             Word command = words.get(0);
             String name = command.text().toLowerCase(Locale.ROOT);
-            paint(styles, command, COMMANDS.contains(name) ? CliTheme.PRIMARY.bold() : CliTheme.ERROR);
+            boolean known = commands.contains(name);
+            paint(styles, command, known ? CliTheme.PRIMARY.bold() : CliTheme.ERROR);
             // The argument is colored while it is the last word (tick also takes a value after it)
-            if (words.size() == 2 || words.size() == 3 && "tick".equals(name)) {
+            if (known && words.size() == 2 || words.size() == 3 && "tick".equals(name)) {
                 String argument = words.get(1).text();
                 AttributedStyle style = switch (name) {
                     case "start" -> startStyle(argument);

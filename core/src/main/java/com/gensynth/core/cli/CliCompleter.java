@@ -14,6 +14,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 /**
  * Tab completion of the shell: command names, the ids of {@code stop}, {@code tick} and
@@ -32,6 +33,7 @@ public class CliCompleter implements Completer {
     private final Path userHome;
     private final CliTheme theme;
     private final ProjectFileCheck projects;
+    private final Set<String> commands;
 
     /**
      * Completer without colors.
@@ -41,7 +43,7 @@ public class CliCompleter implements Completer {
      * @param userHome   folder that {@code ~} expands to
      */
     public CliCompleter(ISimulationManager manager, Path workingDir, Path userHome) {
-        this(manager, workingDir, userHome, CliTheme.plain(), new ProjectFileCheck());
+        this(manager, workingDir, userHome, CliTheme.plain(), new ProjectFileCheck(), CliShell.commands(true));
     }
 
     /**
@@ -50,14 +52,16 @@ public class CliCompleter implements Completer {
      * @param userHome   folder that {@code ~} expands to
      * @param theme      colors of the list: folders in blue, valid project files in green
      * @param projects   tells which files are valid projects
+     * @param commands   the command names offered (see {@link CliShell#commands})
      */
     CliCompleter(ISimulationManager manager, Path workingDir, Path userHome, CliTheme theme,
-                 ProjectFileCheck projects) {
+                 ProjectFileCheck projects, Set<String> commands) {
         this.manager = manager;
         this.workingDir = workingDir;
         this.userHome = userHome;
         this.theme = theme;
         this.projects = projects;
+        this.commands = commands;
     }
 
     /**
@@ -71,10 +75,13 @@ public class CliCompleter implements Completer {
     @Override
     public void complete(LineReader reader, ParsedLine line, List<Candidate> candidates) {
         if (line.wordIndex() == 0) {
-            CliHighlighter.COMMANDS.forEach(command -> candidates.add(new Candidate(command)));
+            commands.forEach(command -> candidates.add(new Candidate(command)));
             return;
         }
         String command = line.words().get(0).toLowerCase(Locale.ROOT);
+        if (!commands.contains(command)) {
+            return;
+        }
         if (line.wordIndex() == 2 && "tick".equals(command)) {
             // A period is typed by hand (500ms, 2s, 1m); "fast" is the only fixed word
             candidates.add(new Candidate("fast", "fast", null, "as fast as possible", null, null, true));

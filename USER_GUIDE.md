@@ -1584,7 +1584,7 @@ Bye.
 | Command | What it does |
 |---|---|
 | `start <file.gsynth>` / `start <id>` | Starts every group of the project. Relative paths start at the current folder; `~` is your user folder; quote paths with spaces. With the id of a stopped simulation, starts that file again. |
-| `edit <file.gsynth>` / `edit new` | Opens the project, or a new one, in the GenSynth window to edit it (see below). |
+| `edit <file.gsynth>` / `edit new` | Opens the project, or a new one, in the GenSynth window to edit it (see below). Not in the [CLI edition](#cli-edition). |
 | `see <file.gsynth>` | Shows what a project contains without running it: the tick, the groups, their flows with the connector (name and version) and the variables each flow sends, as a tree. Below, it lists the problems that would stop it from starting. |
 | `stop <id>` / `stop all` | Stops that simulation, or every running one, and closes its connectors. |
 | `tick <id> [value]` / `tick all [value]` | Without a value, shows the tick of the simulation and the ticks it makes per second. With a value, changes it while it runs, to speed it up or slow it down: `500ms`, `2s`, `1m` (from 1 ms up to 24 hours) or `fast` (as fast as possible). The project file is not changed. |
@@ -1670,6 +1670,31 @@ A file that is not valid JSON is reported with the line and column where it brea
   sudo mkdir -p /usr/local/bin
   sudo ln -sf /Applications/GenSynth.app/Contents/MacOS/gensynth-cli /usr/local/bin/gensynth
   ```
+
+### CLI edition
+
+For servers and computers without a desktop, each release also includes the **CLI edition**: only
+the `gensynth` command line, without the window and without its embedded browser, so it never
+downloads it.
+
+| Your system | Download | `gensynth` in the terminal |
+|---|---|---|
+| Windows 10/11 (64-bit) | `GenSynth-cli-installer-<version>.msi` | Add `C:\Program Files\GenSynth-CLI\cli` to your `PATH`, as above |
+| Ubuntu, Debian… | `GenSynth-cli-installer-<version>.deb` (`sudo apt install ./GenSynth-cli-installer-<version>.deb`) | Added by the installer (`/usr/bin/gensynth`) |
+| Fedora, openSUSE, RHEL… | `GenSynth-cli-installer-<version>.rpm` (`sudo dnf install ./GenSynth-cli-installer-<version>.rpm`) | Added by the installer (`/usr/bin/gensynth`) |
+| macOS (Apple Silicon) | `GenSynth-cli-installer-<version>.pkg` (right-click → **Open** the first time, as it is not signed) | Added by the installer (`/usr/local/bin/gensynth`) |
+
+It works like the command line of the full application, with these differences:
+
+- `edit` is not available, as there is no window to open: it is not listed in `help` or offered by
+  Tab, and typing it explains that it needs the full application. `gensynth --version` shows
+  `(CLI edition)`.
+- It includes the File Output and RabbitMQ connectors. Other connector plugins are installed from
+  the full application.
+- It keeps its files in the same folders as the full application (see
+  [Where GenSynth keeps its files](#where-gensynth-keeps-its-files)), so both editions can be
+  installed on the same computer. On Linux, `gensynth` then stays with the full application,
+  which also has `edit`, and uninstalling one of them hands the command to the other.
 
 ---
 

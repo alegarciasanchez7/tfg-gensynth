@@ -26,6 +26,8 @@ public class GensynthMessageRouter extends CefMessageRouterHandlerAdapter {
     private final javax.swing.JFrame parentFrame;
     /** True while a save, load or folder dialog is open: only one may be open at a time. */
     private final java.util.concurrent.atomic.AtomicBoolean fileDialogOpen = new java.util.concurrent.atomic.AtomicBoolean(false);
+    /** Virtual socket of this window, created with the first command and kept for the push messages. */
+    private DesktopBridgeSocket desktopSocket;
 
     public GensynthMessageRouter(javax.swing.JFrame parentFrame) {
         this.parentFrame = parentFrame;
@@ -76,7 +78,7 @@ public class GensynthMessageRouter extends CefMessageRouterHandlerAdapter {
                                 "{\"type\":\"EXPORT_STATE\",\"commandId\":\"%s\",\"protocolVersion\":\"1.0.0\",\"payload\":{\"filePath\":\"%s\"}}",
                                 commandId, path.replace("\\", "\\\\"));
 
-                        server.handleDesktopCommand(exportCommand, callback, browser);
+                        dispatch(server, exportCommand, callback, browser);
                     } else {
                         // Notify the UI that the operation was cancelled using a proper CoreMessage
                         String cancelResponse = String.format(
@@ -162,7 +164,7 @@ public class GensynthMessageRouter extends CefMessageRouterHandlerAdapter {
             }
 
             // Route the command to the main server logic using the virtual socket
-            server.handleDesktopCommand(request, callback, browser);
+            dispatch(server, request, callback, browser);
             return true;
         } catch (Exception e) {
             logger.error("[BRIDGE] Error processing command", e);
@@ -186,7 +188,7 @@ public class GensynthMessageRouter extends CefMessageRouterHandlerAdapter {
             String fullImportCommand = String.format(
                     "{\"type\":\"IMPORT_STATE\",\"commandId\":\"%s\",\"protocolVersion\":\"1.0.0\",\"payload\":%s}",
                     commandId, content);
-            server.handleDesktopCommand(fullImportCommand, callback, browser);
+            dispatch(server, fullImportCommand, callback, browser);
         } catch (Exception e) {
             logger.error("[BRIDGE] Error loading file", e);
             // The UI only listens to the desktop socket, so report the error there too
@@ -197,6 +199,25 @@ public class GensynthMessageRouter extends CefMessageRouterHandlerAdapter {
             }
             callback.failure(500, "Error loading file: " + e.getMessage());
         }
+    }
+
+    /**
+     * Sends a command to the Core through the virtual socket of this window, which answers the
+     * given query and keeps pushing messages to the browser afterwards.
+     *
+     * @param server   the Core engine
+     * @param command  the command to run
+     * @param callback the query callback answered by the first message sent back
+     * @param browser  the browser of this window
+     */
+    synchronized void dispatch(UiBridgeWebSocketServer server, String command, CefQueryCallback callback,
+                               CefBrowser browser) {
+        if (desktopSocket == null) {
+            desktopSocket = new DesktopBridgeSocket(callback, browser);
+        } else {
+            desktopSocket.setCallback(callback);
+        }
+        server.handleDesktopCommand(command, desktopSocket);
     }
 
     /**
