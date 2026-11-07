@@ -1,8 +1,10 @@
 # Continuous delivery: builds the installers of every OS with jpackage and publishes them in a
 # GitHub Release when a version tag (v1.2.3) is pushed. Each OS gets two: the full application
-# (GenSynth-installer-*) and the CLI edition, the command line alone (GenSynth-cli-installer-*). Releases are only made from main.
-# Pull requests that change the packaging, and manual runs (workflow_dispatch), are dry runs:
-# they build the installers as downloadable artifacts of the run and publish nothing.
+# (GenSynth-installer-*) and the CLI edition, the command line alone (GenSynth-cli-installer-*).
+# Releases are only made from main. Pull requests that change the packaging, and manual runs
+# (workflow_dispatch), are dry runs: they build the installers as downloadable artifacts of the
+# run and publish nothing. A manual run can build only some systems and one edition: that is how
+# scripts/*/package builds the installers of the systems other than the developer's.
 name: Release
 
 on:
@@ -16,6 +18,16 @@ on:
       - core/pom.xml
       - .github/smoke/**
   workflow_dispatch:
+    inputs:
+      os:
+        description: 'Systems, separated by commas: linux, windows, macos or all'
+        default: all
+        type: string
+      edition:
+        description: Edition
+        default: both
+        type: choice
+        options: [both, full, cli]
 
 permissions:
   contents: read
@@ -29,6 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.check.outputs.version }}
+      matrix: ${{ steps.systems.outputs.matrix }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -71,22 +84,44 @@ jobs:
             exit 1
           fi
 
+      # Every system, except in a manual run that asks for some of them
+      - name: Select the systems
+        id: systems
+        env:
+          SYSTEMS: ${{ inputs.os || 'all' }}
+        run: |
+          set -euo pipefail
+          entries=()
+          for os in $(echo "$SYSTEMS" | tr ',' ' '); do
+            case "$os" in
+              all) entries=(windows linux macos); break ;;
+              windows|linux|macos) entries+=("$os") ;;
+              *) echo "::error::Unknown system '$os': use linux, windows, macos or all"; exit 1 ;;
+            esac
+          done
+          include=()
+          for os in $(printf '%s\n' "${entries[@]}" | sort -u); do
+            case "$os" in
+              windows) include+=('{"os":"windows-latest","label":"windows-x64"}') ;;
+              linux) include+=('{"os":"ubuntu-latest","label":"linux-x64"}') ;;
+              macos) include+=('{"os":"macos-latest","label":"macos-arm64"}') ;;
+            esac
+          done
+          matrix="{\"include\":[$(IFS=,; echo "${include[*]}")]}"
+          echo "Systems: $matrix"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
   build:
     name: Installer (${{ matrix.label }})
     needs: version-check
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - os: windows-latest
-            label: windows-x64
-          - os: ubuntu-latest
-            label: linux-x64
-          - os: macos-latest
-            label: macos-arm64
+      matrix: ${{ fromJSON(needs.version-check.outputs.matrix) }}
     runs-on: ${{ matrix.os }}
     env:
       VERSION: ${{ needs.version-check.outputs.version }}
+      # Both editions, except in a manual run that asks for one
+      EDITION: ${{ inputs.edition || 'both' }}
     steps:
       - uses: actions/checkout@v7
 
@@ -118,17 +153,29 @@ jobs:
           $wix = Get-ChildItem 'C:\Program Files (x86)' -Directory -Filter 'WiX Toolset v3*' | Select-Object -First 1
           if ($wix) { Join-Path $wix.FullName 'bin' | Out-File -FilePath $env:GITHUB_PATH -Append }
 
+      - name: Choose the edition
+        shell: bash
+        run: |
+          case "$EDITION" in
+            both) flags="" ;;
+            full) flags="-Dinstaller.skipCli=true -Dinstaller.skipCliDeb=true -Dinstaller.skipCliRpm=true" ;;
+            cli) flags="-Dinstaller.skipFull=true -Dinstaller.skipFullDeb=true -Dinstaller.skipFullRpm=true" ;;
+            *) echo "::error::Unknown edition '$EDITION'"; exit 1 ;;
+          esac
+          echo "INSTALLER_FLAGS=$flags" >> "$GITHUB_ENV"
+
       - name: Build the installer
         if: runner.os != 'Windows'
-        run: ./mvnw -B -Dinstaller -DskipTests package
+        run: ./mvnw -B -Dinstaller -DskipTests $INSTALLER_FLAGS package
 
       - name: Build the installer (Windows)
         if: runner.os == 'Windows'
-        shell: pwsh
-        run: .\mvnw.cmd -B -Dinstaller -DskipTests package
+        shell: cmd
+        run: call mvnw.cmd -B -Dinstaller -DskipTests %INSTALLER_FLAGS% package
 
       # The CLI edition must run without the JCEF libraries, which its installer leaves out
       - name: Smoke test the CLI edition files
+        if: env.EDITION != 'full'
         shell: bash
         run: |
           set -euo pipefail
@@ -166,12 +213,16 @@ jobs:
             esac
           done
           ls -la dist
-          [[ -n "$(ls dist/GenSynth-installer-*)" ]] || { echo "::error::No installer was built"; exit 1; }
-          [[ -n "$(ls dist/GenSynth-cli-installer-*)" ]] || { echo "::error::No CLI edition installer was built"; exit 1; }
+          if [[ "$EDITION" != cli ]] && ! ls dist/GenSynth-installer-* >/dev/null 2>&1; then
+            echo "::error::No installer was built"; exit 1
+          fi
+          if [[ "$EDITION" != full ]] && ! ls dist/GenSynth-cli-installer-* >/dev/null 2>&1; then
+            echo "::error::No CLI edition installer was built"; exit 1
+          fi
 
       # Installs the CLI edition as a user would and runs the "gensynth" command it sets up
       - name: Install and run the CLI edition (Linux)
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && env.EDITION != 'full'
         run: |
           set -euo pipefail
           sudo apt-get install -y "./dist/GenSynth-cli-installer-$VERSION.deb"
@@ -181,7 +232,7 @@ jobs:
           [[ ! -e /usr/bin/gensynth ]] || { echo "::error::/usr/bin/gensynth was left behind"; exit 1; }
 
       - name: Install and run the CLI edition (macOS)
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && env.EDITION != 'full'
         run: |
           set -euo pipefail
           sudo installer -pkg "dist/GenSynth-cli-installer-$VERSION.pkg" -target /
@@ -189,7 +240,7 @@ jobs:
           printf 'help\nexit\n' | /usr/local/bin/gensynth | grep -F "Bye."
 
       - name: Install and run the CLI edition (Windows)
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && env.EDITION != 'full'
         shell: pwsh
         run: |
           $msi = Resolve-Path "dist\GenSynth-cli-installer-$env:VERSION.msi"
@@ -213,6 +264,7 @@ jobs:
   release:
     name: Publish the GitHub Release
     needs: [version-check, build]
+    # A tag always builds every system and edition (no inputs)
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:

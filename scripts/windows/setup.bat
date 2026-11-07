@@ -6,6 +6,15 @@ setlocal EnableExtensions
 set "SCRIPT_NAME=%~nx0"
 call "%~dp0common.bat" :init
 set "SKIP_UI="
+if not "%~1"=="" goto :args
+call "%~dp0common.bat" :ask_yes_no "Build the user interface too (needs Node.js)" Y
+if "%ANSWER%"=="no" (
+    set "SKIP_UI=yes"
+    call "%~dp0common.bat" :show_command scripts\windows\setup.bat --skip-ui
+) else (
+    call "%~dp0common.bat" :show_command scripts\windows\setup.bat
+)
+goto :run
 
 :args
 if "%~1"=="" goto :run
@@ -44,7 +53,7 @@ call "%~dp0common.bat" :build_runtime skip-ui || goto :fail
 echo.
 echo GenSynth is ready for development.
 echo.
-echo Next steps:
+echo Next steps (start them without options to be asked what to do):
 echo   scripts\windows\run-desktop.bat     desktop application
 echo   scripts\windows\run-cli.bat         gensynth command line
 echo   scripts\windows\run-browser.bat     core + UI dev server with hot reload (http://localhost:5173)
@@ -57,6 +66,8 @@ exit /b 0
 echo Usage: scripts\windows\setup.bat [--skip-ui]
 echo.
 echo   --skip-ui   Do not build the React UI (no Node.js needed); the desktop window will not work
+echo.
+echo Without options it asks what to do.
 exit /b 0
 
 :fail

@@ -3,6 +3,7 @@
 # (duplicated code) with the JaCoCo coverage on the Java modules; ESLint with the SonarJS rules,
 # the type check and the coverage on the UI. Then it lists the findings grouped by file
 # (scripts/CodeAnalysisReport.java). Findings are reported, they never fail the analysis.
+# Run it without options to be asked what to do.
 # shellcheck source=common.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 
@@ -14,7 +15,7 @@ Usage: scripts/unix/analyze.sh [core] [plugin-api] [ui] [--all] [--report-only]
   --all                  Also list the LOW and INFO findings (by default only HIGH and MEDIUM)
   --report-only          Do not analyze again: list the findings of the last analysis
 
-Every finding is also written to target/code-analysis.txt.
+Every finding is also written to target/code-analysis.txt. Without options it asks what to do.
 USAGE
 }
 
@@ -22,6 +23,25 @@ modules=()
 ui=false
 run=true
 report_options=()
+if asks_options $#; then
+    command="scripts/unix/analyze.sh"
+    ask_choice "What to analyze" 1 "Everything (core, plugin-api and ui)" "core" "plugin-api" "ui"
+    case "$CHOICE" in
+        2) modules=(core); report_options+=("core"); command="$command core" ;;
+        3) modules=(plugin-api); report_options+=("plugin-api"); command="$command plugin-api" ;;
+        4) ui=true; report_options+=("ui"); command="$command ui" ;;
+    esac
+    ask_choice "Analysis" 1 "Run a new analysis" "Show the findings of the last analysis (fast)"
+    if [ "$CHOICE" = 2 ]; then
+        run=false
+        command="$command --report-only"
+    fi
+    if ask_yes_no "Also show the LOW and INFO findings (mostly style)" n; then
+        report_options+=("--all")
+        command="$command --all"
+    fi
+    show_command "$command"
+fi
 while [ $# -gt 0 ]; do
     case "$1" in
         core|plugin-api) modules+=("$1"); report_options+=("$1") ;;

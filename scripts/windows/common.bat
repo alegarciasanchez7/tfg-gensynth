@@ -23,6 +23,61 @@ echo.
 echo ==^> %~1
 exit /b 0
 
+rem --- Questions ------------------------------------------------------------------------------
+rem A script started without options (for example with a double click) asks what to do; with
+rem options, as in the CI, it uses them and asks nothing. Texts passed to these labels must not
+rem contain the characters %% ^& ^| ^< ^> or ^^.
+
+:ask_yes_no
+rem Asks a yes/no question: %1 the question, %2 the default (Y or N). Enter takes the default.
+rem Sets ANSWER to yes or no.
+set "ASK_DEFAULT=%~2"
+set "ASK_HINT=[y/N]"
+if /i "%ASK_DEFAULT%"=="Y" set "ASK_HINT=[Y/n]"
+:ask_yes_no_again
+set "ASK_INPUT="
+set /p "ASK_INPUT=%~1? %ASK_HINT% "
+if not defined ASK_INPUT set "ASK_INPUT=%ASK_DEFAULT%"
+for %%A in (y yes s si) do if /i "%ASK_INPUT%"=="%%A" (set "ANSWER=yes" & exit /b 0)
+for %%A in (n no) do if /i "%ASK_INPUT%"=="%%A" (set "ANSWER=no" & exit /b 0)
+echo Answer y (yes) or n (no).
+goto :ask_yes_no_again
+
+:ask_choice
+rem Asks to pick an option by its number: %1 the question, %2 the number of the default option,
+rem then the options. Enter takes the default. Sets CHOICE (1, 2...).
+echo %~1:
+set "ASK_DEFAULT=%~2"
+set "ASK_COUNT=0"
+shift
+shift
+:ask_choice_list
+if "%~1"=="" goto :ask_choice_read
+set /a ASK_COUNT+=1
+echo   %ASK_COUNT%) %~1
+shift
+goto :ask_choice_list
+:ask_choice_read
+set "ASK_INPUT="
+set /p "ASK_INPUT=Choose 1-%ASK_COUNT% [%ASK_DEFAULT%]: "
+if not defined ASK_INPUT set "ASK_INPUT=%ASK_DEFAULT%"
+set "ASK_VALID="
+for /l %%N in (1,1,%ASK_COUNT%) do if "%ASK_INPUT%"=="%%N" set "ASK_VALID=yes"
+if defined ASK_VALID (set "CHOICE=%ASK_INPUT%" & exit /b 0)
+echo Type a number from 1 to %ASK_COUNT%.
+goto :ask_choice_read
+
+:ask_text
+rem Asks for a free text: %1 the question. Enter leaves it empty. Sets ANSWER.
+set "ANSWER="
+set /p "ANSWER=%~1: "
+exit /b 0
+
+:show_command
+rem After the questions, shows the command that does the same without asking
+echo (next time, without questions: %*)
+exit /b 0
+
 :check_java
 where java >nul 2>nul || (echo Error: Java was not found. Install JDK %MIN_JAVA% or newer: https://adoptium.net/temurin/releases/?version=%MIN_JAVA%& exit /b 1)
 where javac >nul 2>nul || (echo Error: javac was not found: a JRE is not enough, install JDK %MIN_JAVA% or newer: https://adoptium.net/temurin/releases/?version=%MIN_JAVA%& exit /b 1)
@@ -86,6 +141,14 @@ rem The modules of this repository (plugin API, RabbitMQ) go on the classpath as
 rem classes, so the libraries copied are only the external ones
 call :mvnw -B %BUILD_GOALS% compile dependency:copy-dependencies %BUILD_OPTIONS% -DincludeScope=runtime -DexcludeGroupIds=com.gensynth -DoutputDirectory=%DEV_LIB%
 exit /b %errorlevel%
+
+:needs_build
+rem errorlevel 0 when the core must be compiled before it can run: its classes or its libraries
+rem are missing (after a clean, or when VS Code rebuilt core\target)
+if not exist "%CORE_DIR%\target\classes" exit /b 0
+if not exist "%CORE_DIR%\%DEV_LIB%" exit /b 0
+if not exist "%REPO_ROOT%\plugin-api\target\classes" exit /b 0
+exit /b 1
 
 :is_jetbrains_runtime
 rem errorlevel 0 when the running Java is the JetBrains Runtime, which bundles its own JCEF module

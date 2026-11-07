@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Starts the core without a window (WebSocket on port 8765) and the Vite dev server of the UI
 # (http://localhost:5173), with hot reload of the UI. Ctrl+C stops both.
+# Run it without options to be asked what to do.
 # shellcheck source=common.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 
@@ -9,10 +10,20 @@ usage() {
 Usage: scripts/unix/run-browser.sh [--no-build]
 
   --no-build   Start the core compiled last, without compiling
+
+Without options it asks what to do.
 USAGE
 }
 
 build=true
+if asks_options $#; then
+    if ask_yes_no "Compile the core before starting" y; then
+        show_command "scripts/unix/run-browser.sh"
+    else
+        build=false
+        show_command "scripts/unix/run-browser.sh --no-build"
+    fi
+fi
 while [ $# -gt 0 ]; do
     case "$1" in
         --no-build) build=false ;;
@@ -24,6 +35,10 @@ done
 
 check_java
 check_node
+if [ "$build" = false ] && needs_build; then
+    warn "Nothing is compiled yet: compiling first."
+    build=true
+fi
 if [ "$build" = true ]; then
     step "Compiling the core"
     build_runtime skip-ui -q

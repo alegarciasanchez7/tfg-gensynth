@@ -34,6 +34,17 @@
         <installer.skipRpm>false</installer.skipRpm>
         <!-- Skips the .deb on Linux machines without dpkg-deb, such as Fedora (-Dinstaller.skipDeb=true) -->
         <installer.skipDeb>false</installer.skipDeb>
+        <!-- Builds only one edition: -Dinstaller.skipFull=true (only the CLI edition) or
+             -Dinstaller.skipCli=true (only the full application). On Linux, an edition and a format
+             together use the properties below (Maven cannot combine two properties in one skip),
+             which scripts/*/package set: e.g. only the CLI .rpm is skipFullDeb, skipFullRpm and
+             skipCliDeb -->
+        <installer.skipFull>false</installer.skipFull>
+        <installer.skipCli>false</installer.skipCli>
+        <installer.skipFullDeb>${installer.skipDeb}</installer.skipFullDeb>
+        <installer.skipFullRpm>${installer.skipRpm}</installer.skipFullRpm>
+        <installer.skipCliDeb>${installer.skipDeb}</installer.skipCliDeb>
+        <installer.skipCliRpm>${installer.skipRpm}</installer.skipCliRpm>
         <!-- jpackage rejects macOS versions that start with 0, so the app bundle declares this one
              while GenSynth is 0.x. From 1.0 on, set it back to ${project.version} -->
         <installer.macAppVersion>1.0.0</installer.macAppVersion>
@@ -604,6 +615,7 @@
                                 <goals><goal>jpackage</goal></goals>
                                 <configuration>
                                     <type>MSI</type>
+                                    <skip>${installer.skipFull}</skip>
                                     <icon>${installer.packaging}/icons/gensynth.ico</icon>
                                     <winMenu>true</winMenu>
                                     <winMenuGroup>GenSynth</winMenuGroup>
@@ -623,6 +635,7 @@
                                 <goals><goal>jpackage</goal></goals>
                                 <configuration>
                                     <type>MSI</type>
+                                    <skip>${installer.skipCli}</skip>
                                     <name>${installer.cli.name}</name>
                                     <description>${installer.cli.description}</description>
                                     <input>${installer.cli.input}</input>
@@ -679,7 +692,7 @@
                                 <goals><goal>jpackage</goal></goals>
                                 <configuration>
                                     <type>DEB</type>
-                                    <skip>${installer.skipDeb}</skip>
+                                    <skip>${installer.skipFullDeb}</skip>
                                 </configuration>
                             </execution>
                             <execution>
@@ -688,7 +701,7 @@
                                 <goals><goal>jpackage</goal></goals>
                                 <configuration>
                                     <type>RPM</type>
-                                    <skip>${installer.skipRpm}</skip>
+                                    <skip>${installer.skipFullRpm}</skip>
                                 </configuration>
                             </execution>
                             <execution>
@@ -697,7 +710,7 @@
                                 <goals><goal>jpackage</goal></goals>
                                 <configuration>
                                     <type>DEB</type>
-                                    <skip>${installer.skipDeb}</skip>
+                                    <skip>${installer.skipCliDeb}</skip>
                                     <name>${installer.cli.name}</name>
                                     <description>${installer.cli.description}</description>
                                     <input>${installer.cli.input}</input>
@@ -723,7 +736,7 @@
                                 <goals><goal>jpackage</goal></goals>
                                 <configuration>
                                     <type>RPM</type>
-                                    <skip>${installer.skipRpm}</skip>
+                                    <skip>${installer.skipCliRpm}</skip>
                                     <name>${installer.cli.name}</name>
                                     <description>${installer.cli.description}</description>
                                     <input>${installer.cli.input}</input>
@@ -766,6 +779,7 @@
                                 <goals><goal>jpackage</goal></goals>
                                 <configuration>
                                     <type>DMG</type>
+                                    <skip>${installer.skipFull}</skip>
                                     <appVersion>${installer.macAppVersion}</appVersion>
                                     <icon>${installer.packaging}/icons/gensynth.icns</icon>
                                     <macPackageIdentifier>com.gensynth.desktop</macPackageIdentifier>
@@ -784,6 +798,7 @@
                                 <configuration>
                                     <!-- A package installer: its postinstall script links /usr/local/bin/gensynth -->
                                     <type>PKG</type>
+                                    <skip>${installer.skipCli}</skip>
                                     <name>${installer.cli.name}</name>
                                     <description>${installer.cli.description}</description>
                                     <input>${installer.cli.input}</input>

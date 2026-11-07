@@ -6,6 +6,18 @@ set "SCRIPT_NAME=%~nx0"
 call "%~dp0common.bat" :init
 set "ALL="
 set "YES="
+if not "%~1"=="" goto :args
+echo The build output is always deleted (target, the UI bundle and the reports).
+call "%~dp0common.bat" :ask_yes_no "Also delete the data of the application run from the sources (state, logs, outputs, shared libraries, downloaded browser)" N
+rem The question above is the confirmation
+if "%ANSWER%"=="yes" (
+    set "ALL=yes"
+    set "YES=yes"
+    call "%~dp0common.bat" :show_command scripts\windows\clean.bat --all --yes
+) else (
+    call "%~dp0common.bat" :show_command scripts\windows\clean.bat
+)
+goto :run
 
 :args
 if "%~1"=="" goto :run
@@ -47,6 +59,8 @@ echo.
 echo   --all   Also delete core\state, core\logs, core\outputs, core\lib\shared and core\jcef-bundle
 echo           (installed plugins in core\plugins are kept)
 echo   --yes   Do not ask for confirmation
+echo.
+echo Without options it asks what to do.
 exit /b 0
 
 :fail

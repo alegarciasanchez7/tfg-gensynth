@@ -7,6 +7,20 @@ call "%~dp0common.bat" :init
 set "JAVA_OPTS="
 set "CLI_ARGS="
 set "BUILD=yes"
+if not "%~1"=="" goto :args
+set "COMMAND=scripts\windows\run-cli.bat"
+call "%~dp0common.bat" :ask_choice "Which command line" 1 "Full application (with edit, which opens projects in the window)" "CLI edition (as the CLI edition installer: no edit)"
+if "%CHOICE%"=="2" (
+    set "JAVA_OPTS=-Dgensynth.edition=cli"
+    set "COMMAND=%COMMAND% --cli-edition"
+)
+call "%~dp0common.bat" :ask_yes_no "Compile before starting" Y
+if "%ANSWER%"=="no" (
+    set "BUILD="
+    set "COMMAND=%COMMAND% --no-build"
+)
+call "%~dp0common.bat" :show_command %COMMAND%
+goto :run
 
 :args
 if "%~1"=="" goto :run
@@ -20,6 +34,12 @@ goto :args
 
 :run
 call "%~dp0common.bat" :check_java || goto :fail
+if defined BUILD goto :build_checked
+call "%~dp0common.bat" :needs_build
+if errorlevel 1 goto :build_checked
+echo Warning: Nothing is compiled yet: compiling first.
+set "BUILD=yes"
+:build_checked
 if defined BUILD (
     call "%~dp0common.bat" :step "Compiling"
     call "%~dp0common.bat" :build_runtime skip-ui -q || goto :fail
@@ -37,6 +57,8 @@ echo.
 echo   --cli-edition   Behave like the CLI edition installer (no edit command)
 echo   --no-build      Start what was compiled last, without compiling
 echo   Other options are passed to gensynth (--version).
+echo.
+echo Without options it asks what to do.
 echo.
 echo The command line starts in core\, as the application does from the sources: relative paths
 echo typed in it start there (absolute paths and ~ work anywhere).

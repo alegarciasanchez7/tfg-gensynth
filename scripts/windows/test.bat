@@ -6,6 +6,14 @@ set "SCRIPT_NAME=%~nx0"
 call "%~dp0common.bat" :init
 set "BACKEND=yes"
 set "FRONTEND=yes"
+if not "%~1"=="" goto :args
+call "%~dp0common.bat" :ask_choice "What to check" 1 "Backend and frontend, as the CI" "Backend only (mvnw verify)" "Frontend only (lint, typecheck, tests, build)"
+if "%CHOICE%"=="1" call "%~dp0common.bat" :show_command scripts\windows\test.bat
+if "%CHOICE%"=="2" set "FRONTEND="
+if "%CHOICE%"=="2" call "%~dp0common.bat" :show_command scripts\windows\test.bat --backend
+if "%CHOICE%"=="3" set "BACKEND="
+if "%CHOICE%"=="3" call "%~dp0common.bat" :show_command scripts\windows\test.bat --frontend
+goto :run
 
 :args
 if "%~1"=="" goto :run
@@ -52,6 +60,8 @@ echo Usage: scripts\windows\test.bat [--backend ^| --frontend]
 echo.
 echo   --backend    Only the Java modules (mvnw verify)
 echo   --frontend   Only the UI (lint, typecheck, tests with coverage, build)
+echo.
+echo Without options it asks what to do.
 exit /b 0
 
 :fail

@@ -42,8 +42,10 @@ Check your Java version with `java -version`. The scripts below check both versi
 
 The [`scripts/`](scripts/README.md) folder has one script per task, the same for every OS:
 `scripts/unix/<name>.sh` on Linux and macOS and `scripts\windows\<name>.bat` on Windows (they
-can also be opened with a double click). They always use the Maven Wrapper, run from any folder
-and print `--help`.
+can also be opened with a double click). Run them without options and they ask what to do, one
+question at a time (Enter takes the default), then show the same command with options for next
+time; with options they ask nothing. They always use the Maven Wrapper, run from any folder and
+print `--help`.
 
 | Script | What it does |
 |---|---|
@@ -55,7 +57,7 @@ and print `--help`.
 | `run-browser` | Starts the engine and the Vite dev server, with hot reload, on http://localhost:5173. |
 | `test` | The checks of the CI: `mvnw verify` and the lint, typecheck, tests and build of the UI. |
 | `analyze` | Static analysis without a server, listing each finding with its file and line: see [Local code analysis](#local-code-analysis). |
-| `package` | Builds the installers of this OS (full application and CLI edition). |
+| `package` | Builds the installers for the systems and edition chosen: this computer's here, the others on GitHub Actions (see [Releases](#releases)). |
 | `clean` | Deletes the build output; `--all` also deletes the data of the application run from source. |
 
 The run scripts start the application from `core/` with the classes of every module and the
@@ -231,17 +233,24 @@ installs its package on each OS to check the `gensynth` command. Releases are al
 
 The workflow also refuses tags that are not on `main`. Pull requests that change the packaging
 (`packaging/`, `core/pom.xml` or the workflow itself) and manual runs from the *Actions* tab are
-dry runs: they build the installers as downloadable artifacts of the run and publish nothing.
+dry runs: they build the installers as downloadable artifacts of the run and publish nothing. A
+manual run can ask for some systems (`os`: `linux`, `windows`, `macos` or `all`) and one edition
+(`edition`: `both`, `full` or `cli`).
 
-To build the installers of your own OS locally, run `scripts/unix/package.sh`
-(`scripts\windows\package.bat`, which needs WiX Toolset 3), or by hand:
+`scripts/unix/package.sh` (`scripts\windows\package.bat`) builds installers for any system:
+jpackage only builds for the system it runs on, so it builds this computer's installers here and
+starts that manual run with the GitHub CLI for the others, waits for it and downloads them to
+`core/target/installer/remote/` (the branch must be pushed). See
+[Installers](scripts/README.md#installers). By hand, on the target system:
 
 ```bash
 ./mvnw -B -Dinstaller -DskipTests package          # Linux without rpmbuild: add -Dinstaller.skipRpm=true; without dpkg-deb (Fedora): -Dinstaller.skipDeb=true
 ```
 
 The full application is written to `core/target/installer/dist` and the CLI edition to
-`core/target/installer/dist-cli`.
+`core/target/installer/dist-cli`. `-Dinstaller.skipFull=true` or `-Dinstaller.skipCli=true`
+leaves one edition out (on Linux, `package` also sets the per-format properties of
+`core/pom.xml`, such as `installer.skipCliRpm`).
 
 ## Troubleshooting
 

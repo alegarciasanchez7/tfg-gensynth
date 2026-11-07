@@ -64,6 +64,27 @@ jobs:
           # The findings listing runs with the source launcher of the JDK (no reports yet: 0 findings)
           /bin/bash scripts/unix/analyze.sh core --report-only | grep -F '== core: 0 findings'
 
+      - name: Answer the questions of the scripts (Linux and macOS)
+        if: runner.os != 'Windows'
+        env:
+          # Asks even though the answers come through a pipe
+          GENSYNTH_ASK: '1'
+        run: |
+          set -euo pipefail
+          # run-cli: CLI edition, without compiling, then a session
+          out="$(printf '2\nn\nhelp\nedit x\nexit\n' | /bin/bash scripts/unix/run-cli.sh)"
+          echo "$out"
+          grep -qF 'next time, without questions: scripts/unix/run-cli.sh --cli-edition --no-build' <<< "$out"
+          grep -qF 'edit is not available in the GenSynth CLI edition' <<< "$out"
+          # analyze: a wrong answer, then core and the last analysis
+          out="$(printf '9\n2\n2\n\n' | /bin/bash scripts/unix/analyze.sh)"
+          echo "$out"
+          grep -qF 'Type a number from 1 to 4.' <<< "$out"
+          grep -qF '== core: 0 findings' <<< "$out"
+          # package only checks its options here (a real build takes too long)
+          if /bin/bash scripts/unix/package.sh --os solaris 2> package.txt; then exit 1; fi
+          grep -qF "Unknown system 'solaris'" package.txt
+
       - name: Compile (Windows)
         if: runner.os == 'Windows'
         shell: cmd
@@ -81,6 +102,28 @@ jobs:
           findstr /c:"edit is not available in the GenSynth CLI edition" cli.txt >nul || (echo ::error::edit is not disabled& exit /b 1)
           findstr /c:"No problems found" cli.txt >nul || (echo ::error::see did not run& exit /b 1)
           findstr /c:"edit <file.gsynth>" cli.txt >nul && (echo ::error::edit is listed in the CLI edition& exit /b 1)
+          exit /b 0
+
+      - name: Answer the questions of the scripts (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          rem run-cli: CLI edition, without compiling, then a session
+          (echo 2& echo n& echo help& echo edit x& echo exit) > answers.txt
+          call scripts\windows\run-cli.bat < answers.txt > interactive.txt || exit /b 1
+          type interactive.txt
+          findstr /c:"run-cli.bat --cli-edition --no-build" interactive.txt >nul || (echo ::error::The questions of run-cli failed& exit /b 1)
+          findstr /c:"edit is not available in the GenSynth CLI edition" interactive.txt >nul || (echo ::error::edit is not disabled& exit /b 1)
+          rem analyze: a wrong answer, then core and the last analysis
+          (echo 9& echo 2& echo 2& echo.) > answers.txt
+          call scripts\windows\analyze.bat < answers.txt > interactive.txt || exit /b 1
+          type interactive.txt
+          findstr /c:"Type a number from 1 to 4." interactive.txt >nul || (echo ::error::A wrong answer was accepted& exit /b 1)
+          findstr /c:"== core: 0 findings" interactive.txt >nul || (echo ::error::The questions of analyze failed& exit /b 1)
+          rem package only checks its options here: cmd splits --os at the comma
+          call scripts\windows\package.bat --os windows,solaris > package.txt && (echo ::error::An unknown system was accepted& exit /b 1)
+          type package.txt
+          findstr /c:"Unknown system 'solaris'" package.txt >nul || (echo ::error::The systems were not read& exit /b 1)
           exit /b 0
 
       - name: List the analysis findings (Windows)

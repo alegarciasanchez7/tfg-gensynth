@@ -5,41 +5,94 @@ One script per task, for every OS:
 - **Linux and macOS:** `scripts/unix/<name>.sh` (bash, also the bash 3.2 of macOS).
 - **Windows:** `scripts\windows\<name>.bat` (plain batch files for `cmd.exe`, no PowerShell).
 
-They run from any folder, always use the Maven Wrapper of the repository (`mvnw`) and accept
-`--help`. On Windows they can also be opened with a double click: the window then waits for a key
-before closing (set `GENSYNTH_NO_PAUSE=1` to skip it).
+**Just run them.** Started without options (from a terminal, or with a double click on
+Windows), a script asks what to do, one question at a time, and Enter takes the default answer
+shown in capitals or in brackets:
+
+```text
+$ scripts/unix/run-cli.sh
+Which command line:
+  1) Full application (with edit, which opens projects in the window)
+  2) CLI edition (as the CLI edition installer: no edit)
+Choose 1-2 [1]: 2
+Compile before starting? [Y/n]
+(next time, without questions: scripts/unix/run-cli.sh --cli-edition)
+```
+
+The last line is the same command with options, which asks nothing: that is how the CI and other
+scripts call them. With options, or with the input redirected, they never ask (set
+`GENSYNTH_ASK=1` to answer the questions through a pipe, as the CI does). Every script also
+accepts `--help`.
+
+They run from any folder and always use the Maven Wrapper of the repository (`mvnw`). On Windows,
+a script opened with a double click waits for a key before its window closes (set
+`GENSYNTH_NO_PAUSE=1` to skip it).
 
 **Requirements:** JDK 21 or newer, and Node.js 20 or newer for the UI (the scripts check both and
 say where to get them). The `package` script also needs `rpmbuild`/`dpkg-deb` on Linux and
-WiX Toolset 3 on Windows.
+WiX Toolset 3 on Windows, and the [GitHub CLI](https://cli.github.com) (`gh auth login`) to build
+for other systems.
 
 ## Scripts
 
-| Script | What it does | Options |
+| Script | What it asks (or its options) |
+|---|---|
+| `setup` | Prepares a fresh clone: checks the tools, runs `npm ci`, builds and installs every module (`mvnw clean install -DskipTests`: plugin API, RabbitMQ, core with the UI and the private plugins when present) and leaves the core ready to run. Asks whether to build the UI (`--skip-ui`). |
+| `compile` | Compiles every module and leaves the core ready to run. Asks whether to build the UI too (`--skip-ui` keeps the one already built). |
+| `clean-compile` | `mvnw clean`, then the same as `compile`. |
+| `run-desktop` | Starts the desktop application. Asks whether to compile first (`--no-build`), whether to build the UI (`--skip-ui`) and which project to open (a `.gsynth` file). |
+| `run-cli` | Starts the `gensynth` command line (without building the UI, which it does not use). Asks which one: the full application or the CLI edition, without `edit` (`--cli-edition`), and whether to compile first (`--no-build`). |
+| `run-browser` | Starts the engine without a window (WebSocket on port 8765) and the Vite dev server with hot reload on http://localhost:5173. Asks whether to compile the core first (`--no-build`). |
+| `test` | The checks of the CI: `mvnw verify`, then the UI lint, typecheck, tests with coverage and build. Asks what to check (`--backend`, `--frontend`). |
+| `analyze` | Static analysis without a server, then the findings grouped by file ([below](#code-analysis)). Asks what to analyze (`core`, `plugin-api`, `ui`), whether to run it again or show the last one (`--report-only`) and whether to show the LOW and INFO findings too (`--all`). |
+| `package` | Builds installers ([below](#installers)). Asks for which systems (`--os`), which edition (`--edition`) and, on Linux, which packages (`--type`). |
+| `clean` | Deletes the build output (`target/`, the UI bundle, reports). Asks whether to delete also the data of the application run from the sources: `core/state`, `core/logs`, `core/outputs`, `core/lib/shared` and `core/jcef-bundle` (`--all`; installed plugins are kept). |
+
+A `run-*` script compiles even when told not to if nothing is compiled yet (after a clean).
+
+## Installers
+
+jpackage only builds installers for the system it runs on: a Linux machine cannot build an
+`.msi`, nor Windows a `.dmg`. So `package` builds the installers of this computer here and the
+ones of the other systems on GitHub Actions, then downloads them:
+
+```text
+$ scripts/unix/package.sh
+Installers for:
+  1) This computer (Linux)
+  2) Windows (built on GitHub Actions)
+  3) macOS (built on GitHub Actions)
+  4) Linux, Windows and macOS (the other two on GitHub Actions)
+Choose 1-4 [1]: 2
+Edition:
+  1) Both: the full application and the CLI edition
+  2) The full application only
+  3) The CLI edition only (the command line, without the window)
+Choose 1-3 [1]: 3
+(next time, without questions: scripts/unix/package.sh --os windows --edition cli --type all)
+```
+
+| Where | Built by | Output |
 |---|---|---|
-| `setup` | Prepares a fresh clone: checks the tools, runs `npm ci`, builds and installs every module (`mvnw clean install -DskipTests`: plugin API, RabbitMQ, core with the UI and the private plugins when present) and leaves the core ready to run. | `--skip-ui` |
-| `compile` | Compiles every module and leaves the core ready to run. | `--skip-ui` keeps the UI already built |
-| `clean-compile` | `mvnw clean`, then the same as `compile`. | `--skip-ui` |
-| `run-desktop` | Compiles and starts the desktop application. | `--skip-ui`, `--no-build`, a `.gsynth` file to open |
-| `run-cli` | Compiles (without the UI, which it does not use) and starts the `gensynth` command line. | `--cli-edition` behaves like the CLI edition installer (no `edit`), `--no-build`, `--version` |
-| `run-browser` | Starts the engine without a window (WebSocket on port 8765) and the Vite dev server with hot reload on http://localhost:5173. | `--no-build` |
-| `test` | The checks of the CI: `mvnw verify`, then the UI lint, typecheck, tests with coverage and build. | `--backend`, `--frontend` |
-| `analyze` | Static analysis without a server, then the list of findings with their file and line (below). | `core`, `plugin-api`, `ui`, `--all`, `--report-only` |
-| `package` | Builds the installers of this OS: the full application in `core/target/installer/dist` and the CLI edition in `core/target/installer/dist-cli`. | `--skip-deb`, `--skip-rpm` (Linux) |
-| `clean` | Deletes the build output (`target/`, the UI bundle, reports). | `--all` also deletes `core/state`, `core/logs`, `core/outputs`, `core/lib/shared` and `core/jcef-bundle` (asks first, `--yes` does not); installed plugins are kept |
+| This computer | `mvnw -Dinstaller -DskipTests clean package`, with the edition and packages chosen | `core/target/installer/dist` (full application) and `dist-cli` (CLI edition) |
+| The other systems | A manual run of the [Release workflow](../.github/workflows/release.yml) on the current branch, with only those systems and that edition (it publishes nothing). The script starts it with `gh`, builds this computer's installers meanwhile, waits for it and downloads them | `core/target/installer/remote/run-<id>/installers-<system>/` |
+
+For the GitHub build, the branch must be pushed: GitHub builds the last pushed commit, so the
+script warns when the local one is different or there are changes not committed. On Linux,
+`--type deb` or `--type rpm` builds only one kind of package here (the GitHub build makes both).
 
 Examples:
 
 ```bash
-scripts/unix/setup.sh                      # once, after cloning
-scripts/unix/run-desktop.sh ~/plant.gsynth  # open a project in the window
-scripts/unix/run-cli.sh --cli-edition      # try the CLI edition
-scripts/unix/test.sh --backend
+scripts/unix/setup.sh                                   # once, after cloning
+scripts/unix/run-desktop.sh ~/plant.gsynth               # open a project in the window
+scripts/unix/run-cli.sh --cli-edition                   # try the CLI edition
+scripts/unix/package.sh --os all --edition cli          # the CLI edition for every system
 ```
 
 ```bat
 scripts\windows\setup.bat
-scripts\windows\run-cli.bat --cli-edition
+scripts\windows\package.bat --os windows,linux --edition full
 ```
 
 ## How the application runs from the sources
@@ -101,4 +154,7 @@ The `code-analysis` profile and `eslint.sonar.config.js` are not used by the nor
 
 The [Scripts workflow](../.github/workflows/scripts.yml) runs when this folder changes: on Linux and
 macOS (with its `/bin/bash` 3.2) it runs the `.sh` scripts, and on Windows the real `.bat` files in
-`cmd.exe`. It compiles without the UI and drives the command line in both editions.
+`cmd.exe`. It compiles without the UI, drives the command line in both editions and answers the
+questions of `run-cli` and `analyze` (through a pipe on Linux and macOS, with `GENSYNTH_ASK=1`,
+and from a file on Windows). `package` is checked only for its options there; its GitHub
+builds are the Release workflow itself.

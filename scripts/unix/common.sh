@@ -25,6 +25,80 @@ success() { printf '%s%s%s\n' "$C_GREEN" "$*" "$C_RESET"; }
 warn()    { printf '%sWarning:%s %s\n' "$C_YELLOW" "$C_RESET" "$*" >&2; }
 fail()    { printf '%sError:%s %s\n' "$C_RED" "$C_RESET" "$*" >&2; exit 1; }
 
+# --- Questions -------------------------------------------------------------------------------
+# A script run without options from a terminal asks what to do; with options (or with its input
+# redirected, as in the CI) it uses them and asks nothing.
+
+# Whether to ask the options: no options were given ($1 is the number of options) and both the
+# input and the output are a terminal. GENSYNTH_ASK=1 asks with any input (the CI answers through
+# a pipe).
+asks_options() {
+    [ "$1" -eq 0 ] && { [ -n "${GENSYNTH_ASK:-}" ] || { [ -t 0 ] && [ -t 1 ]; }; }
+}
+
+# Asks a yes/no question; Enter takes the default. Returns 0 for yes.
+# Arguments: the question, the default (y or n).
+ask_yes_no() {
+    local hint answer
+    if [ "$2" = y ]; then hint="[Y/n]"; else hint="[y/N]"; fi
+    while true; do
+        printf '%s%s?%s %s ' "$C_BOLD" "$1" "$C_RESET" "$hint"
+        read -r answer || answer=""
+        case "$answer" in
+            "") [ "$2" = y ]; return ;;
+            y|Y|yes|YES|s|S|si|SI) return 0 ;;
+            n|N|no|NO) return 1 ;;
+            *) echo "Answer y (yes) or n (no)." ;;
+        esac
+    done
+}
+
+# Asks to pick one option by its number; Enter takes the default. Sets CHOICE (1, 2...).
+# Arguments: the question, the number of the default option, then the options.
+ask_choice() {
+    local question="$1" default="$2" answer i
+    shift 2
+    printf '%s%s:%s
+' "$C_BOLD" "$question" "$C_RESET"
+    i=1
+    for option in "$@"; do
+        printf '  %d) %s
+' "$i" "$option"
+        i=$((i + 1))
+    done
+    while true; do
+        printf 'Choose 1-%d [%s]: ' "$#" "$default"
+        read -r answer || answer=""
+        answer="${answer:-$default}"
+        case "$answer" in
+            ''|*[!0-9]*) ;;
+            *)
+                if [ "$answer" -ge 1 ] && [ "$answer" -le $# ]; then
+                    # shellcheck disable=SC2034 # read by the scripts that ask
+                    CHOICE="$answer"
+                    return
+                fi
+                ;;
+        esac
+        echo "Type a number from 1 to $#."
+    done
+}
+
+# Asks for a free text; Enter leaves it empty. Sets ANSWER.
+ask_text() {
+    printf '%s%s:%s ' "$C_BOLD" "$1" "$C_RESET"
+    # shellcheck disable=SC2034 # read by the scripts that ask
+    read -r ANSWER || ANSWER=""
+}
+
+# After the questions, shows the command that does the same without asking.
+# Arguments: the script and its options.
+show_command() {
+    printf '%s(next time, without questions: %s)%s\n' "$C_BLUE" "$*" "$C_RESET"
+}
+
+# --- Build ----------------------------------------------------------------------------------
+
 # Runs the Maven wrapper of the repository (never a global mvn), from the repository root.
 mvnw() {
     (cd "$REPO_ROOT" && sh ./mvnw "$@")
@@ -87,6 +161,13 @@ build_runtime() {
     mvnw -B $goals compile dependency:copy-dependencies $options \
         -DincludeScope=runtime -DexcludeGroupIds=com.gensynth \
         -DoutputDirectory="$DEV_LIB"
+}
+
+# Whether the core must be compiled before it can run: its classes or its libraries are missing
+# (after a clean, or when VS Code rebuilt core/target).
+needs_build() {
+    [ ! -d "$CORE_DIR/target/classes" ] || [ ! -d "$CORE_DIR/$DEV_LIB" ] \
+        || [ ! -d "$REPO_ROOT/plugin-api/target/classes" ]
 }
 
 # Classpath of the core, relative to core/ (where the application must start in development).

@@ -7,6 +7,27 @@ call "%~dp0common.bat" :init
 set "BUILD_ARGS="
 set "BUILD=yes"
 set "APP_ARGS="
+if not "%~1"=="" goto :args
+set "COMMAND=scripts\windows\run-desktop.bat"
+call "%~dp0common.bat" :ask_yes_no "Compile before starting" Y
+if "%ANSWER%"=="no" goto :ask_no_build
+call "%~dp0common.bat" :ask_yes_no "Build the user interface too" Y
+if "%ANSWER%"=="no" set "BUILD_ARGS=skip-ui"
+if "%ANSWER%"=="no" set "COMMAND=%COMMAND% --skip-ui"
+goto :ask_file
+:ask_no_build
+set "BUILD="
+set "COMMAND=%COMMAND% --no-build"
+:ask_file
+call "%~dp0common.bat" :ask_text "Project file to open (Enter for none)"
+if not defined ANSWER goto :asked
+rem Not in a block: a path such as C:\Program Files (x86) would end it
+if exist "%ANSWER%" for %%F in ("%ANSWER%") do set APP_ARGS="%%~fF"
+if not exist "%ANSWER%" set APP_ARGS="%ANSWER%"
+set COMMAND=%COMMAND% %APP_ARGS%
+:asked
+call "%~dp0common.bat" :show_command %COMMAND%
+goto :run
 
 :args
 if "%~1"=="" goto :run
@@ -27,6 +48,12 @@ goto :args
 
 :run
 call "%~dp0common.bat" :check_java || goto :fail
+if defined BUILD goto :build_checked
+call "%~dp0common.bat" :needs_build
+if errorlevel 1 goto :build_checked
+echo Warning: Nothing is compiled yet: compiling first.
+set "BUILD=yes"
+:build_checked
 if defined BUILD (
     if not defined BUILD_ARGS (call "%~dp0common.bat" :check_node || goto :fail)
     call "%~dp0common.bat" :step "Compiling"
@@ -54,6 +81,8 @@ echo Usage: scripts\windows\run-desktop.bat [--skip-ui] [--no-build] [file.gsynt
 echo.
 echo   --skip-ui    Keep the React UI already built instead of building it again
 echo   --no-build   Start what was compiled last, without compiling
+echo.
+echo Without options it asks what to do.
 exit /b 0
 
 :fail

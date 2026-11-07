@@ -10,6 +10,23 @@ set "MODULES="
 set "UI="
 set "RUN=yes"
 set "REPORT_OPTIONS="
+if not "%~1"=="" goto :args
+set "COMMAND=scripts\windows\analyze.bat"
+call "%~dp0common.bat" :ask_choice "What to analyze" 1 "Everything (core, plugin-api and ui)" "core" "plugin-api" "ui"
+if "%CHOICE%"=="2" set "MODULES=core"
+if "%CHOICE%"=="3" set "MODULES=plugin-api"
+if defined MODULES set "REPORT_OPTIONS=%MODULES%"
+if "%CHOICE%"=="4" set "UI=yes"
+if "%CHOICE%"=="4" set "REPORT_OPTIONS=ui"
+if defined REPORT_OPTIONS set "COMMAND=%COMMAND% %REPORT_OPTIONS%"
+call "%~dp0common.bat" :ask_choice "Analysis" 1 "Run a new analysis" "Show the findings of the last analysis (fast)"
+if "%CHOICE%"=="2" set "RUN="
+if "%CHOICE%"=="2" set "COMMAND=%COMMAND% --report-only"
+call "%~dp0common.bat" :ask_yes_no "Also show the LOW and INFO findings (mostly style)" N
+if "%ANSWER%"=="yes" set "REPORT_OPTIONS=%REPORT_OPTIONS% --all"
+if "%ANSWER%"=="yes" set "COMMAND=%COMMAND% --all"
+call "%~dp0common.bat" :show_command %COMMAND%
+goto :run
 
 :args
 if "%~1"=="" goto :run
@@ -64,7 +81,7 @@ echo   core, plugin-api, ui   What to analyze (all of them by default)
 echo   --all                  Also list the LOW and INFO findings (by default only HIGH and MEDIUM)
 echo   --report-only          Do not analyze again: list the findings of the last analysis
 echo.
-echo Every finding is also written to target\code-analysis.txt.
+echo Every finding is also written to target\code-analysis.txt. Without options it asks what to do.
 exit /b 0
 
 :fail

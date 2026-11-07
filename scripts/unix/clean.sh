@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Deletes what the builds generate. With --all it also deletes the data of the application run
 # from the sources (state, logs, outputs, shared libraries and the downloaded browser).
+# Run it without options to be asked what to do.
 # shellcheck source=common.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 
@@ -11,11 +12,24 @@ Usage: scripts/unix/clean.sh [--all] [--yes]
   --all   Also delete core/state, core/logs, core/outputs, core/lib/shared and core/jcef-bundle
           (installed plugins in core/plugins are kept)
   --yes   Do not ask for confirmation
+
+Without options it asks what to do.
 USAGE
 }
 
 all=false
 yes=false
+if asks_options $#; then
+    echo "The build output is always deleted (target/, the UI bundle and the reports)."
+    if ask_yes_no "Also delete the data of the application run from the sources (state, logs, outputs, shared libraries, downloaded browser)" n; then
+        # The question above is the confirmation
+        all=true
+        yes=true
+        show_command "scripts/unix/clean.sh --all --yes"
+    else
+        show_command "scripts/unix/clean.sh"
+    fi
+fi
 while [ $# -gt 0 ]; do
     case "$1" in
         --all) all=true ;;

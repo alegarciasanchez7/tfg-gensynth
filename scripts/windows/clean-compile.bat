@@ -4,6 +4,15 @@ setlocal EnableExtensions
 set "SCRIPT_NAME=%~nx0"
 call "%~dp0common.bat" :init
 set "BUILD_ARGS=clean"
+if not "%~1"=="" goto :args
+call "%~dp0common.bat" :ask_yes_no "Build the user interface too" Y
+if "%ANSWER%"=="no" (
+    set "BUILD_ARGS=clean skip-ui"
+    call "%~dp0common.bat" :show_command scripts\windows\clean-compile.bat --skip-ui
+) else (
+    call "%~dp0common.bat" :show_command scripts\windows\clean-compile.bat
+)
+goto :run
 
 :args
 if "%~1"=="" goto :run
@@ -31,6 +40,8 @@ exit /b 0
 echo Usage: scripts\windows\clean-compile.bat [--skip-ui]
 echo.
 echo   --skip-ui   Keep the React UI already built instead of building it again
+echo.
+echo Without options it asks what to do.
 exit /b 0
 
 :fail

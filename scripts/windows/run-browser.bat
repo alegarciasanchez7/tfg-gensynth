@@ -5,6 +5,15 @@ setlocal EnableExtensions
 set "SCRIPT_NAME=%~nx0"
 call "%~dp0common.bat" :init
 set "BUILD=yes"
+if not "%~1"=="" goto :args
+call "%~dp0common.bat" :ask_yes_no "Compile the core before starting" Y
+if "%ANSWER%"=="no" (
+    set "BUILD="
+    call "%~dp0common.bat" :show_command scripts\windows\run-browser.bat --no-build
+) else (
+    call "%~dp0common.bat" :show_command scripts\windows\run-browser.bat
+)
+goto :run
 
 :args
 if "%~1"=="" goto :run
@@ -17,6 +26,12 @@ goto :fail
 :run
 call "%~dp0common.bat" :check_java || goto :fail
 call "%~dp0common.bat" :check_node || goto :fail
+if defined BUILD goto :build_checked
+call "%~dp0common.bat" :needs_build
+if errorlevel 1 goto :build_checked
+echo Warning: Nothing is compiled yet: compiling first.
+set "BUILD=yes"
+:build_checked
 if defined BUILD (
     call "%~dp0common.bat" :step "Compiling the core"
     call "%~dp0common.bat" :build_runtime skip-ui -q || goto :fail
@@ -38,6 +53,8 @@ exit /b %EXIT_CODE%
 echo Usage: scripts\windows\run-browser.bat [--no-build]
 echo.
 echo   --no-build   Start the core compiled last, without compiling
+echo.
+echo Without options it asks what to do.
 exit /b 0
 
 :fail
