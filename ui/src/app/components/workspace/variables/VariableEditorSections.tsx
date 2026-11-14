@@ -20,10 +20,9 @@ import { NumericConfigPanel } from './config/NumericConfigPanel';
 import { StringConfigPanel } from './config/StringConfigPanel';
 import { ListConfigPanel } from './config/ListConfigPanel';
 import { TemporalConfigPanel } from './config/TemporalConfigPanel';
-import { PointConfigPanel } from './config/PointConfigPanel';
+import { LazyPointConfigPanel, LazySpatialBoundariesTab } from './config/LazyPointEditors';
 import { BooleanConfigPanel } from './config/BooleanConfigPanel';
 import { ConditionalRulesTab } from './config/ConditionalRulesTab';
-import { SpatialBoundariesTab } from './config/SpatialBoundariesTab';
 
 export type VariableEditorTheme = {
   icon: LucideIcon;
@@ -267,7 +266,7 @@ export function VariableEditorConfigCard({ typeLabel, variableId, theme, draft, 
       case 'string': return <StringConfigPanel config={parsedConfig as StringVariableConfig} onChange={handleConfigChange} flowId={draft.flowId} groupId={draft.groupId} variableScope={draft.scope} />;
       case 'list': return <ListConfigPanel config={parsedConfig as ListVariableConfig} onChange={handleConfigChange} flowId={draft.flowId} groupId={draft.groupId} />;
       case 'temporal': return <TemporalConfigPanel config={parsedConfig as TemporalVariableConfig} onChange={handleConfigChange} flowId={draft.flowId} groupId={draft.groupId} variableScope={draft.scope} />;
-      case 'point': return <PointConfigPanel config={parsedConfig as PointVariableConfig} onChange={handleConfigChange} flowId={draft.flowId} groupId={draft.groupId} variableScope={draft.scope} />;
+      case 'point': return <LazyPointConfigPanel config={parsedConfig as PointVariableConfig} onChange={handleConfigChange} flowId={draft.flowId} groupId={draft.groupId} variableScope={draft.scope} />;
       case 'boolean': return <BooleanConfigPanel config={parsedConfig as BooleanVariableConfig} onChange={handleConfigChange} flowId={draft.flowId} groupId={draft.groupId} variableScope={draft.scope} />;
       default: return <p className="text-[11px] text-[var(--c-tx4)] p-6 text-center italic">No visual editor available for this variable type.</p>;
     }
@@ -313,7 +312,7 @@ export function VariableEditorConfigCard({ typeLabel, variableId, theme, draft, 
         {draft.type === 'point' && (
           <TabsContent value="boundaries" className="mt-0">
             <div className="p-3 border rounded border-[var(--c-br1)] bg-[var(--c-bg2)]">
-              <SpatialBoundariesTab
+              <LazySpatialBoundariesTab
                 config={parsedConfig as PointVariableConfig}
                 onChange={handleConfigChange}
               />

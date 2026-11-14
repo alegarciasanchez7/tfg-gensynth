@@ -18,7 +18,7 @@ import { NumericConfigPanel } from './NumericConfigPanel';
 import { StringConfigPanel } from './StringConfigPanel';
 import { ListConfigPanel } from './ListConfigPanel';
 import { TemporalConfigPanel } from './TemporalConfigPanel';
-import { PointConfigPanel } from './PointConfigPanel';
+import { LazyPointConfigPanel } from './LazyPointEditors';
 import { BooleanConfigPanel } from './BooleanConfigPanel';
 import { ruleTargetNames } from './conditionalRuleTargets';
 
@@ -144,7 +144,7 @@ export const ConditionalRulesTab: React.FC<ConditionalRulesTabProps> = ({
         );
       case 'point':
         return (
-          <PointConfigPanel
+          <LazyPointConfigPanel
             config={cfg as PointVariableConfig}
             onChange={(newCfg) => handleOverrideChange(idx, newCfg)}
           />
