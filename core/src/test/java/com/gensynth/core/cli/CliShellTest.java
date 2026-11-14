@@ -309,7 +309,7 @@ public class CliShellTest {
         PrintStream out = new PrintStream(bytes, true, StandardCharsets.UTF_8);
         CliShell shell = new CliShell(manager, CliShell.plainInput(new BufferedReader(new StringReader("clear\nclear x\nexit\n")), out),
             out, workingDir, home, "9.9.9");
-        shell.useTerminal(CliTheme.plain(), new CliShell.Screen() {
+        shell.useTerminal(CliTheme.noColors(), new CliShell.Screen() {
             @Override
             public void showLive(java.util.function.Supplier<List<String>> lines) {
                 lines.get().forEach(out::println);

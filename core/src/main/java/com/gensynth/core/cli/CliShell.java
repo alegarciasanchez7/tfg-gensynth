@@ -117,7 +117,7 @@ public class CliShell {
     private final Path workingDir;
     private final Path userHome;
     private final String version;
-    private CliTheme theme = CliTheme.plain();
+    private CliTheme theme = CliTheme.noColors();
     private IDesktopLauncher desktop;
     /** Without a terminal the lines are printed once, as they are now. */
     private Screen screen;

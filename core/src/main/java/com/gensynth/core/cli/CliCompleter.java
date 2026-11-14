@@ -43,7 +43,7 @@ public class CliCompleter implements Completer {
      * @param userHome   folder that {@code ~} expands to
      */
     public CliCompleter(ISimulationManager manager, Path workingDir, Path userHome) {
-        this(manager, workingDir, userHome, CliTheme.plain(), new ProjectFileCheck(), CliShell.commands(true));
+        this(manager, workingDir, userHome, CliTheme.noColors(), new ProjectFileCheck(), CliShell.commands(true));
     }
 
     /**

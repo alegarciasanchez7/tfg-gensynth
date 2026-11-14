@@ -37,140 +37,131 @@ public class GensynthMessageRouter extends CefMessageRouterHandlerAdapter {
     public boolean onQuery(CefBrowser browser, CefFrame frame, long queryId, String request, boolean persistent,
             CefQueryCallback callback) {
         logger.info("[BRIDGE] Command received from UI: {}", request);
-
         try {
-            // Routed by the type of the command, never by its text: payloads now carry file paths,
-            // and a folder named "SAVE_STATE" must not turn a load into a save
-            com.fasterxml.jackson.databind.JsonNode command = parse(request);
-            String type = command.path("type").asText("");
-
-            // Desktop-only request answered here
-            if (OPEN_EXTERNAL_URL.equals(type)) {
-                String url = command.path("payload").path("url").asText(null);
-                if (ExternalLinkOpener.open(url)) {
-                    callback.success("{\"status\":\"ok\"}");
-                } else {
-                    callback.failure(403, "URL not allowed");
-                }
-                return true;
-            }
-
-            UiBridgeWebSocketServer server = com.gensynth.core.App.getWsServer();
-            if (server == null) {
-                callback.failure(500, "Gen-Synth Core is not fully initialized");
-                return true;
-            }
-
-            // Intercept SAVE_STATE to show a file dialog in desktop mode
-            if ("SAVE_STATE".equals(type)) {
-                String commandId = commandId(command);
-                runFileDialog(commandId, callback, () -> {
-                    java.util.Optional<java.io.File> selected = DesktopFileChooser.saveFile(parentFrame,
-                            "Save Gen-Synth Configuration", PROJECT_FILE_FILTER, new java.io.File(DEFAULT_PROJECT_FILE_NAME));
-
-                    if (selected.isPresent()) {
-                        String path = ProjectFileFormat.ensureExtension(selected.get().getAbsolutePath());
-
-
-                        // Construct the EXPORT_STATE command with mandatory protocolVersion and payload
-                        // object
-                        String exportCommand = String.format(
-                                "{\"type\":\"EXPORT_STATE\",\"commandId\":\"%s\",\"protocolVersion\":\"1.0.0\",\"payload\":{\"filePath\":\"%s\"}}",
-                                commandId, path.replace("\\", "\\\\"));
-
-                        dispatch(server, exportCommand, callback, browser);
-                    } else {
-                        // Notify the UI that the operation was cancelled using a proper CoreMessage
-                        String cancelResponse = String.format(
-                                "{\"type\":\"SAVE_STATE\",\"commandId\":\"%s\",\"protocolVersion\":\"1.0.0\",\"payload\":{\"status\":\"cancelled\"}}",
-                                commandId);
-
-                        WebSocket desktopSocket = server.getDesktopSocket();
-                        if (desktopSocket != null) {
-                            desktopSocket.send(cancelResponse);
-                        }
-
-                        callback.success(cancelResponse);
-                    }
-                });
-                return true;
-            }
-
-            // Intercept PICK_DIRECTORY to show a folder picker
-            if ("PICK_DIRECTORY".equals(type)) {
-                String commandId = commandId(command);
-                runFileDialog(commandId, callback, () -> {
-                    java.util.Optional<java.io.File> selected =
-                            DesktopFileChooser.chooseDirectory(parentFrame, "Select Output Directory");
-
-                    java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
-                    if (selected.isPresent()) {
-                        String path = selected.get().getAbsolutePath();
-                        payload.put("status", "success");
-                        payload.put("path", path);
-                        server.broadcastMessage("PICK_DIRECTORY_RESULT", commandId, payload);
-                        callback.success("{\"status\":\"success\"}");
-                    } else {
-                        payload.put("status", "cancelled");
-                        server.broadcastMessage("PICK_DIRECTORY_RESULT", commandId, payload);
-
-                        // Also send as a direct response to satisfy the bridge promise
-                        String cancelResponse = String.format(
-                                "{\"type\":\"PICK_DIRECTORY\",\"commandId\":\"%s\",\"protocolVersion\":\"1.0.0\",\"payload\":{\"status\":\"cancelled\"}}",
-                                commandId);
-
-                        WebSocket desktopSocket = server.getDesktopSocket();
-                        if (desktopSocket != null) {
-                            desktopSocket.send(cancelResponse);
-                        }
-
-                        callback.success(cancelResponse);
-                    }
-                });
-                return true;
-            }
-
-            // Intercept LOAD_STATE to show a file dialog in desktop mode; with a file path (a project
-            // sent by the command line or opened with a double click) that file is loaded directly
-            if ("LOAD_STATE".equals(type)) {
-                String commandId = commandId(command);
-                String filePath = command.path("payload").path("filePath").asText("");
-                if (!filePath.isBlank()) {
-                    runFileDialog(commandId, callback,
-                            () -> loadProject(new java.io.File(filePath), commandId, server, callback, browser));
-                    return true;
-                }
-                runFileDialog(commandId, callback, () -> {
-                    java.util.Optional<java.io.File> selected =
-                            DesktopFileChooser.openFile(parentFrame, "Load Gen-Synth Project", PROJECT_FILE_FILTER);
-
-                    if (selected.isPresent()) {
-                        loadProject(selected.get(), commandId, server, callback, browser);
-                    } else {
-                        // Notify the UI that the operation was cancelled
-                        String cancelResponse = String.format(
-                                "{\"type\":\"LOAD_STATE\",\"commandId\":\"%s\",\"protocolVersion\":\"1.0.0\",\"payload\":{\"status\":\"cancelled\"}}",
-                                commandId);
-
-                        WebSocket desktopSocket = server.getDesktopSocket();
-                        if (desktopSocket != null) {
-                            desktopSocket.send(cancelResponse);
-                        }
-
-                        callback.success(cancelResponse);
-                    }
-                });
-                return true;
-            }
-
-            // Route the command to the main server logic using the virtual socket
-            dispatch(server, request, callback, browser);
-            return true;
+            route(browser, request, callback);
         } catch (Exception e) {
             logger.error("[BRIDGE] Error processing command", e);
             callback.failure(500, e.getMessage());
-            return true;
         }
+        // Every query is handled here: it is always answered through the callback
+        return true;
+    }
+
+    /**
+     * Answers a command of the UI: the desktop-only ones (external links and file dialogs) here,
+     * the rest in the Core through the virtual socket of this window.
+     */
+    private void route(CefBrowser browser, String request, CefQueryCallback callback) {
+        // Routed by the type of the command, never by its text: payloads now carry file paths,
+        // and a folder named "SAVE_STATE" must not turn a load into a save
+        com.fasterxml.jackson.databind.JsonNode command = parse(request);
+        String type = command.path("type").asText("");
+
+        // Desktop-only request answered here
+        if (OPEN_EXTERNAL_URL.equals(type)) {
+            String url = command.path("payload").path("url").asText(null);
+            if (ExternalLinkOpener.open(url)) {
+                callback.success("{\"status\":\"ok\"}");
+            } else {
+                callback.failure(403, "URL not allowed");
+            }
+            return;
+        }
+
+        UiBridgeWebSocketServer server = com.gensynth.core.App.getWsServer();
+        if (server == null) {
+            callback.failure(500, "Gen-Synth Core is not fully initialized");
+            return;
+        }
+
+        switch (type) {
+            case "SAVE_STATE" -> saveState(commandId(command), server, callback, browser);
+            case "PICK_DIRECTORY" -> pickDirectory(commandId(command), server, callback);
+            case "LOAD_STATE" -> loadState(command, server, callback, browser);
+            // Route the command to the main server logic using the virtual socket
+            default -> dispatch(server, request, callback, browser);
+        }
+    }
+
+    /** Shows a save dialog in desktop mode and exports the project to the chosen file. */
+    private void saveState(String commandId, UiBridgeWebSocketServer server, CefQueryCallback callback,
+                           CefBrowser browser) {
+        runFileDialog(commandId, callback, () -> {
+            java.util.Optional<java.io.File> selected = DesktopFileChooser.saveFile(parentFrame,
+                    "Save Gen-Synth Configuration", PROJECT_FILE_FILTER, new java.io.File(DEFAULT_PROJECT_FILE_NAME));
+
+            if (selected.isPresent()) {
+                String path = ProjectFileFormat.ensureExtension(selected.get().getAbsolutePath());
+                // Construct the EXPORT_STATE command with mandatory protocolVersion and payload object
+                String exportCommand = String.format(
+                        "{\"type\":\"EXPORT_STATE\",\"commandId\":\"%s\",\"protocolVersion\":\"1.0.0\",\"payload\":{\"filePath\":\"%s\"}}",
+                        commandId, path.replace("\\", "\\\\"));
+                dispatch(server, exportCommand, callback, browser);
+            } else {
+                answerCancelled("SAVE_STATE", commandId, server, callback);
+            }
+        });
+    }
+
+    /** Shows a folder picker and sends the chosen folder to the UI. */
+    private void pickDirectory(String commandId, UiBridgeWebSocketServer server, CefQueryCallback callback) {
+        runFileDialog(commandId, callback, () -> {
+            java.util.Optional<java.io.File> selected =
+                    DesktopFileChooser.chooseDirectory(parentFrame, "Select Output Directory");
+
+            java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
+            if (selected.isPresent()) {
+                payload.put("status", "success");
+                payload.put("path", selected.get().getAbsolutePath());
+                server.broadcastMessage("PICK_DIRECTORY_RESULT", commandId, payload);
+                callback.success("{\"status\":\"success\"}");
+            } else {
+                payload.put("status", "cancelled");
+                server.broadcastMessage("PICK_DIRECTORY_RESULT", commandId, payload);
+                // Also send as a direct response to satisfy the bridge promise
+                answerCancelled("PICK_DIRECTORY", commandId, server, callback);
+            }
+        });
+    }
+
+    /**
+     * Shows an open dialog in desktop mode and loads the chosen project; with a file path (a
+     * project sent by the command line or opened with a double click) that file is loaded directly.
+     */
+    private void loadState(com.fasterxml.jackson.databind.JsonNode command, UiBridgeWebSocketServer server,
+                           CefQueryCallback callback, CefBrowser browser) {
+        String commandId = commandId(command);
+        String filePath = command.path("payload").path("filePath").asText("");
+        if (!filePath.isBlank()) {
+            runFileDialog(commandId, callback,
+                    () -> loadProject(new java.io.File(filePath), commandId, server, callback, browser));
+            return;
+        }
+        runFileDialog(commandId, callback, () -> {
+            java.util.Optional<java.io.File> selected =
+                    DesktopFileChooser.openFile(parentFrame, "Load Gen-Synth Project", PROJECT_FILE_FILTER);
+            if (selected.isPresent()) {
+                loadProject(selected.get(), commandId, server, callback, browser);
+            } else {
+                answerCancelled("LOAD_STATE", commandId, server, callback);
+            }
+        });
+    }
+
+    /**
+     * Tells the UI that the user closed a file dialog without choosing anything, as a proper
+     * CoreMessage on the desktop socket and as the answer of the query.
+     */
+    private static void answerCancelled(String type, String commandId, UiBridgeWebSocketServer server,
+                                        CefQueryCallback callback) {
+        String cancelResponse = String.format(
+                "{\"type\":\"%s\",\"commandId\":\"%s\",\"protocolVersion\":\"1.0.0\",\"payload\":{\"status\":\"cancelled\"}}",
+                type, commandId);
+        WebSocket desktopSocket = server.getDesktopSocket();
+        if (desktopSocket != null) {
+            desktopSocket.send(cancelResponse);
+        }
+        callback.success(cancelResponse);
     }
 
     /**

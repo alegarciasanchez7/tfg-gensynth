@@ -119,7 +119,7 @@ public class CliCompleterTest {
 
     @Test
     public void theCliEditionNeitherOffersNorCompletesEdit() {
-        completer = new CliCompleter(manager, workingDir, temp.getRoot().toPath().resolve("home"), CliTheme.plain(), new ProjectFileCheck(),
+        completer = new CliCompleter(manager, workingDir, temp.getRoot().toPath().resolve("home"), CliTheme.noColors(), new ProjectFileCheck(),
             CliShell.commands(false));
 
         assertEquals(Set.of("start", "see", "stop", "tick", "metrics", "list", "clear", "help", "exit"), values(""));

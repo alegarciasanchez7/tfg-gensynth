@@ -73,7 +73,7 @@ public final class CliMain {
         Set<String> commands = CliShell.commands(!cliEdition);
         if (systemTerminal != null) {
             // NO_COLOR (https://no-color.org) keeps line editing and Tab, without colors
-            CliTheme theme = System.getenv("NO_COLOR") == null ? CliTheme.forTerminal(systemTerminal) : CliTheme.plain();
+            CliTheme theme = System.getenv("NO_COLOR") == null ? CliTheme.forTerminal(systemTerminal) : CliTheme.noColors();
             ProjectFileCheck projects = new ProjectFileCheck();
             terminal = new TerminalInput(systemTerminal,
                 new CliCompleter(manager, workingDir, userHome, theme, projects, commands),

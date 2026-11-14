@@ -75,7 +75,7 @@ public class OpenProjectClientTest {
         server.setWindowActivator(raised::incrementAndGet);
         WebSocket window = mock(WebSocket.class);
         when(window.isOpen()).thenReturn(true);
-        server.desktopSocket = window;
+        server.desktopSocket.set(window);
 
         assertEquals(IOpenWindowClient.Outcome.SENT, send(project.toString()));
 
@@ -90,7 +90,7 @@ public class OpenProjectClientTest {
         server.setWindowActivator(() -> { });
         WebSocket window = mock(WebSocket.class);
         when(window.isOpen()).thenReturn(true);
-        server.desktopSocket = window;
+        server.desktopSocket.set(window);
 
         assertEquals(IOpenWindowClient.Outcome.SENT, send(null));
 

@@ -147,14 +147,14 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
 
     final TemplateEngine templateEngine = new TemplateEngine();
     String currentOutputDir = null;
-    /** Volatile: set on the browser thread, read when a project arrives from outside (WebSocket, macOS). */
-    volatile WebSocket desktopSocket = null;
+    /** Set on the browser thread, read when a project arrives from outside (WebSocket, macOS). */
+    final AtomicReference<WebSocket> desktopSocket = new AtomicReference<>();
     /** Project file the desktop window opens once its UI connects (from --open or a double click). */
     private final AtomicReference<String> pendingOpenProject = new AtomicReference<>();
     /** Makes "keep the file until the UI connects" and "the UI connected" happen one after the other. */
     private final Object openProjectLock = new Object();
     /** Brings the desktop window to the front; null when there is no window (browser mode, CLI). */
-    private volatile Runnable windowActivator;
+    private final AtomicReference<Runnable> windowActivator = new AtomicReference<>();
     final BridgeContext bridgeContext = new BridgeContext(this);
     public final FlowCommandHandler flowCommandHandler = new FlowCommandHandler(bridgeContext);
     public final GroupCommandHandler groupCommandHandler = new GroupCommandHandler(bridgeContext, flowCommandHandler);
@@ -168,8 +168,11 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
     /** Global simulation clock; runs exactly while the system is running (see BridgeContext#setSystemRunning). */
     final ITickClock tickClock = new TickClockImpl(flowCommandHandler);
     
+    /**
+     * @return the virtual socket of the desktop window, or null when no desktop UI has connected
+     */
     public WebSocket getDesktopSocket() {
-        return desktopSocket;
+        return desktopSocket.get();
     }
 
     /**
@@ -179,14 +182,14 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
      * @param windowActivator brings the window to the front
      */
     public void setWindowActivator(Runnable windowActivator) {
-        this.windowActivator = windowActivator;
+        this.windowActivator.set(windowActivator);
     }
 
     /**
      * @return whether a desktop window belongs to this engine (its UI may not have connected yet)
      */
     public boolean hasWindow() {
-        return windowActivator != null;
+        return windowActivator.get() != null;
     }
 
     /**
@@ -213,12 +216,12 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
      * @param filePath absolute path of the {@code .gsynth} file, or null for a new project
      */
     public void requestOpenProject(String filePath) {
-        Runnable activator = windowActivator;
+        Runnable activator = windowActivator.get();
         if (activator != null) {
             activator.run();
         }
         synchronized (openProjectLock) {
-            WebSocket desktop = desktopSocket;
+            WebSocket desktop = desktopSocket.get();
             if (desktop == null) {
                 // A new window starts with an empty project: only a file has to wait
                 if (filePath != null) {
@@ -476,13 +479,13 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
      * This bypasses the WebSocket network layer but reuses the same business logic.
      * The virtual socket is created by the desktop package, so this engine has no JCEF reference.
      *
-     * @param rawMessage    the command received from the desktop UI
-     * @param desktopSocket the virtual socket of the desktop window, already set up to answer
-     *                      this command; it becomes the desktop connection of this engine
+     * @param rawMessage the command received from the desktop UI
+     * @param socket     the virtual socket of the desktop window, already set up to answer
+     *                   this command; it becomes the desktop connection of this engine
      */
-    public void handleDesktopCommand(String rawMessage, WebSocket desktopSocket) {
-        this.desktopSocket = desktopSocket;
-        handleCommand(desktopSocket, rawMessage);
+    public void handleDesktopCommand(String rawMessage, WebSocket socket) {
+        desktopSocket.set(socket);
+        handleCommand(socket, rawMessage);
     }
 
     private void handleCommand(WebSocket conn, String rawMessage) {
@@ -838,8 +841,9 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                 sendMessage(connection, type, commandId, payload);
             }
         }
-        if (desktopSocket != null) {
-            sendMessage(desktopSocket, type, commandId, payload);
+        WebSocket desktop = desktopSocket.get();
+        if (desktop != null) {
+            sendMessage(desktop, type, commandId, payload);
         }
     }
 

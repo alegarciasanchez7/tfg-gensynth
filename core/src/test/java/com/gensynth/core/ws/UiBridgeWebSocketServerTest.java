@@ -791,7 +791,7 @@ public class UiBridgeWebSocketServerTest {
         server.setPendingOpenProject("/projects/plant.gsynth");
         WebSocket window = mock(WebSocket.class);
         when(window.isOpen()).thenReturn(true);
-        server.desktopSocket = window;
+        server.desktopSocket.set(window);
         WebSocket browser = mock(WebSocket.class);
         when(browser.isOpen()).thenReturn(true);
         String getInitialState = "{\"type\":\"GET_INITIAL_STATE\",\"commandId\":\"%s\",\"protocolVersion\":\"1.0.0\",\"payload\":{}}";
