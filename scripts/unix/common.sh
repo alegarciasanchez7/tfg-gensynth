@@ -104,25 +104,115 @@ mvnw() {
     (cd "$REPO_ROOT" && sh ./mvnw "$@")
 }
 
-# Prints the major version of a "java -version" output: 1.8.0 -> 8, 21.0.5 -> 21.
-java_major() {
-    local version
-    version="$(java -version 2>&1 | sed -n 's/.*version "\([^"]*\)".*/\1/p' | head -n 1)"
-    case "$version" in
-        1.*) echo "$version" | cut -d. -f2 ;;
-        *) echo "$version" | cut -d. -f1 | cut -d- -f1 | cut -d+ -f1 ;;
+# Prints the major version in a Java version string: 1.8.0 -> 8, 21.0.5 -> 21 (nothing if it is
+# not a number).
+version_major() {
+    local major
+    case "$1" in
+        1.*) major="$(echo "$1" | cut -d. -f2)" ;;
+        *) major="$(echo "$1" | cut -d. -f1 | cut -d- -f1 | cut -d+ -f1)" ;;
+    esac
+    case "$major" in
+        ''|*[!0-9]*) ;;
+        *) echo "$major" ;;
     esac
 }
 
+# Prints the major version of the java on the PATH (nothing when there is none).
+java_major() {
+    command -v java >/dev/null 2>&1 || return 0
+    version_major "$(java -version 2>&1 | sed -n 's/.*version "\([^"]*\)".*/\1/p' | head -n 1)"
+}
+
+# A path as the shell uses it: on Windows (Git Bash) JAVA_HOME is written as C:\..., which
+# would break the PATH, whose separator is ":".
+unix_path() {
+    if command -v cygpath >/dev/null 2>&1; then cygpath -u "$1"; else echo "$1"; fi
+}
+
+# Prints the major version of the JDK in the folder $1, read from its "release" file, or nothing
+# when the folder is not a JDK (a JRE has no javac).
+jdk_major() {
+    { [ -x "$1/bin/javac" ] || [ -x "$1/bin/javac.exe" ]; } || return 0
+    { [ -x "$1/bin/java" ] || [ -x "$1/bin/java.exe" ]; } || return 0
+    [ -f "$1/release" ] || return 0
+    version_major "$(tr -d '\r' < "$1/release" | sed -n 's/^JAVA_VERSION="\(.*\)"$/\1/p' | head -n 1)"
+}
+
+# Prints the newest JDK $MIN_JAVA or newer found in the folders where the usual installers put
+# it, or nothing. Linux: the system packages (/usr/lib/jvm), Oracle's RPM (/usr/java) and /opt.
+# macOS: java_home, the installers (/Library/Java/JavaVirtualMachines) and Homebrew. Both, and
+# Windows with Git Bash: SDKMAN!, asdf, mise and the JDKs downloaded by IntelliJ IDEA.
+find_jdk() {
+    local candidates=() root dir major best="" best_major=0
+    if [ -x /usr/libexec/java_home ]; then
+        dir="$(/usr/libexec/java_home -v "$MIN_JAVA+" 2>/dev/null || true)"
+        [ -z "$dir" ] || candidates+=("$dir")
+    fi
+    for root in /usr/lib/jvm /usr/java /opt /opt/java /opt/jdk \
+            "$HOME/.sdkman/candidates/java" "$HOME/.asdf/installs/java" \
+            "$HOME/.local/share/mise/installs/java" "$HOME/.jdks"; do
+        for dir in "$root"/*; do [ -d "$dir" ] && candidates+=("$dir"); done
+    done
+    for root in /Library/Java/JavaVirtualMachines "$HOME/Library/Java/JavaVirtualMachines"; do
+        for dir in "$root"/*/Contents/Home; do [ -d "$dir" ] && candidates+=("$dir"); done
+    done
+    for root in /opt/homebrew/opt /usr/local/opt /home/linuxbrew/.linuxbrew/opt; do
+        for dir in "$root"/openjdk*/libexec/openjdk.jdk/Contents/Home "$root"/openjdk*/libexec; do
+            [ -d "$dir" ] && candidates+=("$dir")
+        done
+    done
+    if [ -n "${PROGRAMFILES:-}" ] && command -v cygpath >/dev/null 2>&1; then
+        local program_files
+        program_files="$(cygpath -u "$PROGRAMFILES")"
+        for root in Java "Eclipse Adoptium" "Eclipse Foundation" Microsoft Zulu "Amazon Corretto" BellSoft Semeru; do
+            for dir in "$program_files/$root"/*; do [ -d "$dir" ] && candidates+=("$dir"); done
+        done
+    fi
+    for dir in ${candidates[@]+"${candidates[@]}"}; do
+        major="$(jdk_major "$dir")"
+        [ -n "$major" ] && [ "$major" -ge "$MIN_JAVA" ] && [ "$major" -gt "$best_major" ] || continue
+        best="$dir"
+        best_major="$major"
+    done
+    [ -z "$best" ] || echo "$best"
+}
+
 check_java() {
-    command -v java >/dev/null 2>&1 || fail "Java was not found. Install JDK $MIN_JAVA or newer: https://adoptium.net/temurin/releases/?version=$MIN_JAVA"
-    command -v javac >/dev/null 2>&1 || fail "javac was not found: a JRE is not enough, install JDK $MIN_JAVA or newer: https://adoptium.net/temurin/releases/?version=$MIN_JAVA"
+    # The JDK of JAVA_HOME (the one the Maven wrapper uses) goes first on the PATH, ahead of an
+    # older Java that an installer may have put at the front (such as Oracle's "javapath")
+    if [ -n "${JAVA_HOME:-}" ]; then
+        local java_home
+        java_home="$(unix_path "$JAVA_HOME")"
+        if [ -x "$java_home/bin/java" ] || [ -x "$java_home/bin/java.exe" ]; then
+            PATH="$java_home/bin:$PATH"
+            export PATH
+        fi
+    fi
     local major
     major="$(java_major)"
-    case "$major" in
-        ''|*[!0-9]*) warn "Could not read the Java version; JDK $MIN_JAVA or newer is needed." ;;
-        *) [ "$major" -ge "$MIN_JAVA" ] || fail "Java $major found, but JDK $MIN_JAVA or newer is needed: https://adoptium.net/temurin/releases/?version=$MIN_JAVA" ;;
-    esac
+    if [ -n "$major" ] && [ "$major" -ge "$MIN_JAVA" ] && command -v javac >/dev/null 2>&1; then
+        return 0
+    fi
+    # No JDK new enough on the PATH nor in JAVA_HOME: look for one in the usual install folders
+    # and use it as JAVA_HOME (so the Maven wrapper takes it too), only while the script runs
+    local found
+    found="$(find_jdk)"
+    if [ -n "$found" ]; then
+        found="$(unix_path "$found")"
+        JAVA_HOME="$found"
+        PATH="$found/bin:$PATH"
+        export JAVA_HOME PATH
+        echo "Using the JDK $(jdk_major "$found") found in $found (set JAVA_HOME to choose another one)"
+        return 0
+    fi
+    command -v java >/dev/null 2>&1 || fail "Java was not found. Install JDK $MIN_JAVA or newer: https://adoptium.net/temurin/releases/?version=$MIN_JAVA"
+    command -v javac >/dev/null 2>&1 || fail "javac was not found: a JRE is not enough, install JDK $MIN_JAVA or newer: https://adoptium.net/temurin/releases/?version=$MIN_JAVA"
+    if [ -z "$major" ]; then
+        warn "Could not read the Java version; JDK $MIN_JAVA or newer is needed."
+        return 0
+    fi
+    fail "Java $major found, but JDK $MIN_JAVA or newer is needed: https://adoptium.net/temurin/releases/?version=$MIN_JAVA (if it is already installed somewhere else, set JAVA_HOME to its folder)"
 }
 
 check_node() {
@@ -172,7 +262,10 @@ needs_build() {
 
 # Classpath of the core, relative to core/ (where the application must start in development).
 runtime_classpath() {
-    echo "target/classes:../plugin-api/target/classes:../connectors/rabbitmq/target/classes:$DEV_LIB/*"
+    # The Java of Windows (Git Bash) separates the classpath with ";", the others with ":"
+    local sep=":"
+    case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) sep=";" ;; esac
+    echo "target/classes${sep}../plugin-api/target/classes${sep}../connectors/rabbitmq/target/classes${sep}$DEV_LIB/*"
 }
 
 # Whether the running Java is the JetBrains Runtime, which bundles its own JCEF module.

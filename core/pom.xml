@@ -458,6 +458,24 @@
 
     <profiles>
         <!--
+          VS Code (and Eclipse) compile into target/ide instead of target/classes. Their automatic
+          build empties its output folder while it rebuilds, and the application started from the
+          scripts (which runs target/classes) then failed with NoClassDefFoundError. Active only
+          inside the IDE: m2e, the Maven support of both, sets the m2e.version property.
+        -->
+        <profile>
+            <id>ide</id>
+            <activation>
+                <property>
+                    <name>m2e.version</name>
+                </property>
+            </activation>
+            <build>
+                <directory>${project.basedir}/target/ide</directory>
+            </build>
+        </profile>
+
+        <!--
           Local static analysis without a server (scripts/unix/analyze.sh, scripts\windows\analyze.bat):
           ./mvnw -Pcode-analysis verify. SpotBugs (target/reports/spotbugs.html), PMD (target/reports/pmd.html)
           and CPD, duplicated code (target/reports/cpd.html). Findings are reported, never fail the build.

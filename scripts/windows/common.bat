@@ -79,18 +79,91 @@ echo (next time, without questions: %*)
 exit /b 0
 
 :check_java
+rem The JDK of JAVA_HOME (the one the Maven wrapper uses) goes first on the PATH: installers such
+rem as Oracle's put a "javapath" folder with an old Java at the front, ahead of the JDK
+if defined JAVA_HOME if exist "%JAVA_HOME%\bin\java.exe" set "PATH=%JAVA_HOME%\bin;%PATH%"
+call :current_java_major
+rem The number is compared on its own line: cmd expands the whole line first, and an empty
+rem JAVA_MAJOR would be a syntax error even behind "if defined"
+if not defined JAVA_MAJOR goto :check_java_search
+if %JAVA_MAJOR% LSS %MIN_JAVA% goto :check_java_search
+where javac >nul 2>nul && exit /b 0
+:check_java_search
+rem No JDK new enough on the PATH nor in JAVA_HOME: look for one in the usual install folders
+rem and use it as JAVA_HOME (so the Maven wrapper takes it too), only while the script runs
+call :find_jdk
+if not defined FOUND_JDK goto :check_java_report
+set "JAVA_HOME=%FOUND_JDK%"
+set "PATH=%FOUND_JDK%\bin;%PATH%"
+echo Using the JDK %FOUND_MAJOR% found in %FOUND_JDK% ^(set JAVA_HOME to choose another one^)
+call :current_java_major
+exit /b 0
+:check_java_report
 where java >nul 2>nul || (echo Error: Java was not found. Install JDK %MIN_JAVA% or newer: https://adoptium.net/temurin/releases/?version=%MIN_JAVA%& exit /b 1)
 where javac >nul 2>nul || (echo Error: javac was not found: a JRE is not enough, install JDK %MIN_JAVA% or newer: https://adoptium.net/temurin/releases/?version=%MIN_JAVA%& exit /b 1)
-set "JAVA_VERSION="
-set "JAVA_MAJOR="
-for /f "tokens=3" %%v in ('java -version 2^>^&1 ^| findstr /i /c:" version "') do set "JAVA_VERSION=%%~v"
-rem 1.8.0 -> 8, 21.0.5 -> 21
-for /f "tokens=1,2 delims=.-+" %%a in ("%JAVA_VERSION%") do (
-    set "JAVA_MAJOR=%%a"
-    if "%%a"=="1" set "JAVA_MAJOR=%%b"
-)
 if not defined JAVA_MAJOR (echo Warning: Could not read the Java version; JDK %MIN_JAVA% or newer is needed.& exit /b 0)
-if %JAVA_MAJOR% LSS %MIN_JAVA% (echo Error: Java %JAVA_MAJOR% found, but JDK %MIN_JAVA% or newer is needed: https://adoptium.net/temurin/releases/?version=%MIN_JAVA%& exit /b 1)
+if %JAVA_MAJOR% LSS %MIN_JAVA% (echo Error: Java %JAVA_MAJOR% found, but JDK %MIN_JAVA% or newer is needed: https://adoptium.net/temurin/releases/?version=%MIN_JAVA% ^(if it is already installed somewhere else, set JAVA_HOME to its folder^)& exit /b 1)
+exit /b 0
+
+:current_java_major
+rem Sets JAVA_MAJOR to the major version of the java on the PATH (empty when there is none)
+set "JAVA_MAJOR="
+set "JAVA_VERSION="
+where java >nul 2>nul || exit /b 0
+for /f "tokens=3" %%v in ('java -version 2^>^&1 ^| findstr /i /c:" version "') do set "JAVA_VERSION=%%~v"
+call :parse_major "%JAVA_VERSION%"
+set "JAVA_MAJOR=%PARSED_MAJOR%"
+exit /b 0
+
+:parse_major
+rem Sets PARSED_MAJOR to the major version in %1: 1.8.0 -> 8, 21.0.5 -> 21 (empty if unreadable)
+set "PARSED_MAJOR="
+for /f "tokens=1,2 delims=.-+" %%a in ("%~1") do (
+    set "PARSED_MAJOR=%%a"
+    if "%%a"=="1" set "PARSED_MAJOR=%%b"
+)
+rem Anything that is not a number (an unexpected format) counts as unreadable
+if defined PARSED_MAJOR for /f "delims=0123456789" %%x in ("%PARSED_MAJOR%") do set "PARSED_MAJOR="
+exit /b 0
+
+:find_jdk
+rem Looks for the newest JDK %MIN_JAVA% or newer in the folders where the usual installers put it
+rem (Oracle, Adoptium/Temurin, Microsoft, Zulu, Corretto, Liberica, Semeru) and in the ones of
+rem IntelliJ IDEA and Scoop. Sets FOUND_JDK (empty when there is none) and FOUND_MAJOR.
+set "FOUND_JDK="
+set "FOUND_MAJOR=0"
+for %%R in (
+    "%ProgramFiles%\Java"
+    "%ProgramFiles%\Eclipse Adoptium"
+    "%ProgramFiles%\Eclipse Foundation"
+    "%ProgramFiles%\Microsoft"
+    "%ProgramFiles%\Zulu"
+    "%ProgramFiles%\Amazon Corretto"
+    "%ProgramFiles%\BellSoft"
+    "%ProgramFiles%\Semeru"
+    "%ProgramFiles%\IBM\Semeru"
+    "%LOCALAPPDATA%\Programs\Eclipse Adoptium"
+    "%USERPROFILE%\.jdks"
+    "%USERPROFILE%\scoop\apps"
+) do if exist "%%~R\" for /d %%D in ("%%~R\*") do call :jdk_candidate "%%~fD"
+exit /b 0
+
+:jdk_candidate
+rem Keeps %1 in FOUND_JDK when it is a JDK (not a JRE) newer than the one found so far. Scoop
+rem keeps each JDK in apps\<name>\current. The version comes from the "release" file of the JDK.
+set "CANDIDATE=%~1"
+if not exist "%CANDIDATE%\bin\javac.exe" if exist "%CANDIDATE%\current\bin\javac.exe" set "CANDIDATE=%CANDIDATE%\current"
+if not exist "%CANDIDATE%\bin\javac.exe" exit /b 0
+if not exist "%CANDIDATE%\bin\java.exe" exit /b 0
+if not exist "%CANDIDATE%\release" exit /b 0
+set "CANDIDATE_VERSION="
+for /f "usebackq tokens=1,* delims==" %%k in ("%CANDIDATE%\release") do if "%%k"=="JAVA_VERSION" set "CANDIDATE_VERSION=%%~l"
+call :parse_major "%CANDIDATE_VERSION%"
+if not defined PARSED_MAJOR exit /b 0
+if %PARSED_MAJOR% LSS %MIN_JAVA% exit /b 0
+if %PARSED_MAJOR% LEQ %FOUND_MAJOR% exit /b 0
+set "FOUND_JDK=%CANDIDATE%"
+set "FOUND_MAJOR=%PARSED_MAJOR%"
 exit /b 0
 
 :check_node
@@ -104,7 +177,8 @@ exit /b 0
 :mvnw
 rem Runs the Maven wrapper of the repository (never a global mvn), from the repository root
 pushd "%REPO_ROOT%"
-call mvnw.cmd %*
+rem By its full path: with NoDefaultCurrentDirectoryInExePath set, cmd skips the current folder
+call "%REPO_ROOT%\mvnw.cmd" %*
 set "MVNW_EXIT=%errorlevel%"
 popd
 exit /b %MVNW_EXIT%
