@@ -86,6 +86,13 @@
             <version>5.11.0</version>
             <scope>test</scope>
         </dependency>
+        <!-- Waits for asynchronous conditions in tests instead of sleeping -->
+        <dependency>
+            <groupId>org.awaitility</groupId>
+            <artifactId>awaitility</artifactId>
+            <version>4.3.0</version>
+            <scope>test</scope>
+        </dependency>
 
         <!-- Shared Libraries (Provided at runtime by the core/lib/shared folder) -->
         <!-- These are NOT bundled in the core.jar to keep it slim and secure -->

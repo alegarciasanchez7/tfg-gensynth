@@ -59,8 +59,9 @@ public class ConnectorConfigTest {
 
     @Test
     public void reportsEveryInvalidFieldAtOnce() {
+        Map<String, Object> invalid = raw("host", " ", "port", 70000, "durable", "maybe", "ratio", "x", "mode", "slow");
         ConnectorConfigException error = assertThrows(ConnectorConfigException.class, () ->
-            ConnectorConfig.resolve(FIELDS, raw("host", " ", "port", 70000, "durable", "maybe", "ratio", "x", "mode", "slow")));
+            ConnectorConfig.resolve(FIELDS, invalid));
 
         assertEquals(List.of(
             "Host is required",
@@ -73,8 +74,9 @@ public class ConnectorConfigTest {
 
     @Test
     public void rejectsFractionsInWholeNumbers() {
+        Map<String, Object> fraction = raw("host", "h", "port", 1.5);
         ConnectorConfigException error = assertThrows(ConnectorConfigException.class, () ->
-            ConnectorConfig.resolve(FIELDS, raw("host", "h", "port", 1.5)));
+            ConnectorConfig.resolve(FIELDS, fraction));
         assertEquals(List.of("Port must be a whole number"), error.getErrors());
     }
 

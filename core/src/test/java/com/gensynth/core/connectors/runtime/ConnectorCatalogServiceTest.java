@@ -74,11 +74,13 @@ public class ConnectorCatalogServiceTest {
     @Test
     public void openSessionValidatesTheConfiguration() {
         ConnectorCatalogService service = new ConnectorCatalogService();
+        Map<String, Object> pdf = Map.of("format", "pdf");
+        Map<String, Object> empty = Map.of();
+        ConnectorContext context = new ConnectorContext("f", "g", "out");
         ConnectorConfigException error = assertThrows(ConnectorConfigException.class, () ->
-            service.openSession("file", Map.of("format", "pdf"), new ConnectorContext("f", "g", "out")));
+            service.openSession("file", pdf, context));
         assertTrue(error.getMessage().contains("File format must be one of"));
 
-        assertThrows(IllegalStateException.class, () ->
-            service.openSession("missing", Map.of(), new ConnectorContext("f", "g", "out")));
+        assertThrows(IllegalStateException.class, () -> service.openSession("missing", empty, context));
     }
 }

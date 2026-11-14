@@ -1,5 +1,6 @@
 package com.gensynth.core.ws;
 
+import com.gensynth.core.TestWaits;
 import com.gensynth.core.connectors.plugin.PluginInstallerImpl;
 import com.gensynth.core.connectors.runtime.ConnectorCatalogService;
 import com.gensynth.core.model.StartProblem;
@@ -557,10 +558,7 @@ public class UiBridgeWebSocketServerTest {
                 + "\"payload\":{\"tick\":{\"mode\":\"FIXED_RATE\",\"value\":20,\"unit\":\"MILLISECONDS\"}}}");
 
         server.onMessage(null, "{\"type\":\"START_SYSTEM\",\"commandId\":\"c4\",\"protocolVersion\":\"1.0.0\",\"payload\":{}}");
-        long deadline = System.currentTimeMillis() + 5000;
-        while (server.totalMessages.get() < minMessages && System.currentTimeMillis() < deadline) {
-            Thread.sleep(10);
-        }
+        TestWaits.eventually().until(() -> server.totalMessages.get() >= minMessages);
         server.onMessage(null, "{\"type\":\"STOP_SYSTEM\",\"commandId\":\"c5\",\"protocolVersion\":\"1.0.0\",\"payload\":{}}");
 
         long[] result = { server.totalMessages.get(), server.tickClock.getTickCount() };
@@ -660,8 +658,9 @@ public class UiBridgeWebSocketServerTest {
 
         assertTrue(server.groupsById.containsKey("g-cli"));
         assertTrue("nothing must be autosaved", repository.loadGroups().isEmpty());
+        JsonNode withoutGroups = new ObjectMapper().readTree("{}");
         assertThrows(IllegalArgumentException.class,
-                () -> server.stateCommandHandler.importProject(new ObjectMapper().readTree("{}"), false));
+                () -> server.stateCommandHandler.importProject(withoutGroups, false));
         server.shutdown();
     }
 

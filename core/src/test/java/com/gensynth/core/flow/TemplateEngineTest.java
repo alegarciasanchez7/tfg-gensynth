@@ -706,8 +706,18 @@ public class TemplateEngineTest {
         String template = "{\n  \"list\": {{group.lista}},\n  \"posicion\": {{local.puntito}},\n  \"n\": {{n}}\n}";
         String message = engine.evaluate(template, 7, variables, new TemplateEngine.RenderTarget("f1", "g1", "flow", "json"), null);
 
-        assertEquals("{\n  \"list\": [\n    \"A\",\n    \"B\"\n  ],\n"
-            + "  \"posicion\": {\n    \"x\": 1.5,\n    \"y\": 2.0\n  },\n  \"n\": 7\n}", message);
+        assertEquals("""
+                {
+                  "list": [
+                    "A",
+                    "B"
+                  ],
+                  "posicion": {
+                    "x": 1.5,
+                    "y": 2.0
+                  },
+                  "n": 7
+                }""", message);
     }
 
     private static Variable typed(String type, Map<String, Object> config) {

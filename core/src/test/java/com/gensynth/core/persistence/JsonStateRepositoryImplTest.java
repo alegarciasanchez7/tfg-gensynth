@@ -52,4 +52,20 @@ public class JsonStateRepositoryImplTest {
 
         assertTrue(message, message.startsWith("You do not have permission to write in " + folder.toAbsolutePath()));
     }
+
+    @Test
+    public void clearDeletesTheSavedStateAndToleratesMissingFiles() throws Exception {
+        Path dir = Files.createTempDirectory("gensynth-state-clear-");
+        JsonStateRepositoryImpl repository = new JsonStateRepositoryImpl(dir.toString());
+        repository.saveGroups(List.of());
+        repository.saveSettings(ProjectSettings.defaults());
+
+        repository.clear();
+        repository.clear();
+
+        try (var files = Files.list(dir)) {
+            assertTrue("no state file is left", files.noneMatch(file -> file.getFileName().toString().endsWith(".json")));
+        }
+        assertEquals(ProjectSettings.defaults(), repository.loadSettings());
+    }
 }

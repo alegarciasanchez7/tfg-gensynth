@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
@@ -72,7 +73,7 @@ public class StringVariableConfigTest {
         Object value = config.generateNextValue();
         String str = (String) value;
 
-        assertTrue(str.length() > 0);
+        assertFalse(str.isEmpty());
         assertNotNull(str);
     }
 
@@ -136,12 +137,12 @@ public class StringVariableConfigTest {
             .lowerCase(0.5)
             .upperCase(0.3)
             .numbers(0.2);
-        ConfigurableVariable var = VariableFactory.createFromConfig(stringConfig);
-        assertNotNull(var);
-        assertEquals("sensor1", var.getId());
-        assertEquals("STRING", var.getType());
+        ConfigurableVariable variable = VariableFactory.createFromConfig(stringConfig);
+        assertNotNull(variable);
+        assertEquals("sensor1", variable.getId());
+        assertEquals("STRING", variable.getType());
 
-        Object value = var.getValue();
+        Object value = variable.getValue();
         assertTrue(value instanceof String);
         assertEquals(8, ((String) value).length());
     }

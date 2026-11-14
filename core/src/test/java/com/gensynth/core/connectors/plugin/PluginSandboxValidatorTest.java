@@ -98,7 +98,7 @@ public class PluginSandboxValidatorTest {
 
     @Test
     public void testValidationFailsForRandomBytes() {
-        byte[] randomBytes = new byte[]{1, 2, 3, 4, 5, 6, 7, 8};
+        byte[] randomBytes = {1, 2, 3, 4, 5, 6, 7, 8};
 
         PluginValidationResult result = validator.validate(randomBytes, "test", "1.0.0");
 

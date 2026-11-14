@@ -1,5 +1,6 @@
 package com.gensynth.core.ws.dispatch;
 
+import com.gensynth.core.TestWaits;
 import com.gensynth.core.api.IFlowMessageHandler;
 import com.gensynth.core.ws.runtime.FlowRuntime;
 import com.gensynth.core.ws.runtime.GroupRuntime;
@@ -91,14 +92,8 @@ class FakeMessageHandler implements IFlowMessageHandler {
         return count == null ? 0 : count.get();
     }
 
-    static void await(String message, java.util.function.BooleanSupplier condition) throws InterruptedException {
-        long deadline = System.currentTimeMillis() + 3000;
-        while (!condition.getAsBoolean()) {
-            if (System.currentTimeMillis() > deadline) {
-                throw new AssertionError(message);
-            }
-            Thread.sleep(5);
-        }
+    static void await(String message, java.util.function.BooleanSupplier condition) {
+        TestWaits.eventually().alias(message).until(condition::getAsBoolean);
     }
 
     static FlowRuntime flow(String id) {

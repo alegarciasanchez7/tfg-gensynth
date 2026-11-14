@@ -83,8 +83,8 @@ public class SmokeHarness {
             
             evidence.add("Received: " + type + " (commandId: " + correlatedId + ")");
 
-            if (commandId.equals(correlatedId)) {
-                if ("INITIAL_STATE".equals(type)) foundResponse = true;
+            if (commandId.equals(correlatedId) && "INITIAL_STATE".equals(type)) {
+                foundResponse = true;
             }
             
             if ("TRACE_EVENT".equals(type)) {

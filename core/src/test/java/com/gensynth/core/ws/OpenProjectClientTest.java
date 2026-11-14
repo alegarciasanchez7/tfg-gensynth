@@ -110,12 +110,14 @@ public class OpenProjectClientTest {
 
     @Test
     public void invalidFilesAndEnginesWithoutWindowAreRejected() throws Exception {
-        IllegalStateException noWindow = assertThrows(IllegalStateException.class, () -> send(project.toString()));
+        String projectPath = project.toString();
+        IllegalStateException noWindow = assertThrows(IllegalStateException.class, () -> send(projectPath));
         assertTrue(noWindow.getMessage(), noWindow.getMessage().contains("without its window"));
 
         server.setWindowActivator(() -> { });
         Path broken = Files.writeString(temp.getRoot().toPath().resolve("broken.gsynth"), "{ not json");
-        IllegalStateException invalid = assertThrows(IllegalStateException.class, () -> send(broken.toString()));
+        String brokenPath = broken.toString();
+        IllegalStateException invalid = assertThrows(IllegalStateException.class, () -> send(brokenPath));
         assertTrue(invalid.getMessage(), invalid.getMessage().contains("Not a GenSynth project file"));
         assertNull("nothing waits for the window", server.takePendingOpenProject());
     }

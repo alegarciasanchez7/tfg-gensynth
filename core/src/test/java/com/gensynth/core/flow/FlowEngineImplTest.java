@@ -3,6 +3,11 @@ package com.gensynth.core.flow;
 import com.gensynth.core.config.AppConfig;
 import org.junit.Before;
 import org.junit.Test;
+
+import java.time.Duration;
+
+import static com.gensynth.core.TestWaits.awaitSettled;
+import static com.gensynth.core.TestWaits.eventually;
 import static org.junit.Assert.*;
 
 /**
@@ -240,7 +245,7 @@ public class FlowEngineImplTest {
         flowEngine.addGroup(group);
         flowEngine.executeFlow("group-1");
 
-        Thread.sleep(100);
+        eventually().until(() -> flowEngine.getGeneratedEventCount() >= 1);
 
         long eventCount = flowEngine.getGeneratedEventCount();
         assertTrue("Should generate events with single variable", eventCount >= 1);
@@ -265,7 +270,7 @@ public class FlowEngineImplTest {
         flowEngine.addGroup(group);
         flowEngine.executeFlow("group-1");
 
-        Thread.sleep(100);
+        eventually().until(() -> flowEngine.getGeneratedEventCount() >= 3);
 
         long eventCount = flowEngine.getGeneratedEventCount();
         // With 3 variables per flow, should generate 3 events per interval
@@ -303,7 +308,7 @@ public class FlowEngineImplTest {
         flowEngine.addGroup(group);
         flowEngine.executeFlow("group-1");
 
-        Thread.sleep(150);
+        eventually().until(() -> flowEngine.getGeneratedEventCount() >= 5);
 
         long eventCount = flowEngine.getGeneratedEventCount();
         // flow1=1, flow2=2, flow3=2 variables = 5 events per interval
@@ -339,7 +344,7 @@ public class FlowEngineImplTest {
         flowEngine.executeFlow("group-a");
         flowEngine.executeFlow("group-b");
 
-        Thread.sleep(100);
+        eventually().until(() -> flowEngine.getGeneratedEventCount() >= 4);
 
         long eventCount = flowEngine.getGeneratedEventCount();
         // groupA=1, groupB=3 variables = 4 events per interval minimum
@@ -399,7 +404,7 @@ public class FlowEngineImplTest {
         flowEngine.executeFlow("group-1");
 
         // Wait for some events to generate
-        Thread.sleep(150);
+        eventually().until(() -> flowEngine.getGeneratedEventCount() > 0);
 
         long eventCount = flowEngine.getGeneratedEventCount();
         assertTrue("Should generate multiple events", eventCount > 0);
@@ -421,9 +426,9 @@ public class FlowEngineImplTest {
         flowEngine.addGroup(group2);
 
         flowEngine.executeFlow("group-1");
-        Thread.sleep(50);
+        eventually().until(() -> group1.getTotalEventsSent() > 0);
         flowEngine.executeFlow("group-2");
-        Thread.sleep(50);
+        eventually().until(() -> group2.getTotalEventsSent() > 0);
 
         long eventCount = flowEngine.getGeneratedEventCount();
         assertTrue("Multiple groups should generate events", eventCount > 0);
@@ -443,7 +448,7 @@ public class FlowEngineImplTest {
         flowEngine.addGroup(group);
         flowEngine.executeFlow("group-1");
 
-        Thread.sleep(100);
+        eventually().until(() -> group.getTotalEventsSent() > 0);
 
         // Group should track metrics
         assertTrue(group.getTotalEventsSent() > 0);
@@ -465,7 +470,7 @@ public class FlowEngineImplTest {
         flowEngine.addGroup(group);
         flowEngine.executeFlow("group-1");
 
-        Thread.sleep(100);
+        eventually().until(() -> flowEngine.getGeneratedEventCount() >= 3);
 
         // Events should have been submitted to pipeline
         long eventCount = flowEngine.getGeneratedEventCount();
@@ -517,6 +522,46 @@ public class FlowEngineImplTest {
     }
 
     @Test
+    public void aFailingVariableStopsItsFlowAndIsCountedAsAnError() throws Exception {
+        config.setSimulationInterval(10);
+        Group group = new Group("group-1");
+        Flow flow = new Flow("flow-1");
+        flow.addVariable(new com.gensynth.core.api.IVariable() {
+            @Override
+            public Object getValue() {
+                throw new IllegalStateException("broken generator");
+            }
+
+            @Override
+            public void setValue(Object value) {
+                // Never set by the engine
+            }
+
+            @Override
+            public String getId() {
+                return "broken";
+            }
+
+            @Override
+            public String getType() {
+                return "numeric";
+            }
+        });
+        group.addFlow(flow);
+
+        flowEngine.onInitialize();
+        flowEngine.onStart();
+        flowEngine.addGroup(group);
+        flowEngine.executeFlow("group-1");
+
+        eventually().until(() -> group.getTotalErrors() == 1);
+        assertEquals(0, flowEngine.getGeneratedEventCount());
+
+        flowEngine.stopFlow("group-1");
+        flowEngine.onStop();
+    }
+
+    @Test
     public void testGroupDisableStopsEventGeneration() throws Exception {
         config.setSimulationInterval(20);
         
@@ -526,17 +571,13 @@ public class FlowEngineImplTest {
         flowEngine.addGroup(group);
         flowEngine.executeFlow("group-1");
 
-        Thread.sleep(80);
+        eventually().until(() -> flowEngine.getGeneratedEventCount() > 0);
         assertTrue(flowEngine.getGeneratedEventCount() > 0);
 
-        // Disable the group and let the iteration that was already past the check finish
+        // Disable the group: once the iteration that was already past the check finishes, no new
+        // events are generated while it is disabled
         group.setEnabled(false);
-        Thread.sleep(60);
-        long eventsAfterDisable = flowEngine.getGeneratedEventCount();
-
-        // Should not generate new events while disabled
-        Thread.sleep(100);
-        assertEquals(eventsAfterDisable, flowEngine.getGeneratedEventCount());
+        awaitSettled(flowEngine::getGeneratedEventCount, Duration.ofMillis(150));
         
         flowEngine.stopFlow("group-1");
         flowEngine.onStop();

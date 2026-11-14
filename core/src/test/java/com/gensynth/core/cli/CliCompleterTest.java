@@ -38,7 +38,8 @@ public class CliCompleterTest {
 
     @Before
     public void setUp() throws Exception {
-        // root/{other.gsynth, outputs/, work/{a.gsynth, notes.txt, .secret, docs/inner.gsynth}, home/projects/}
+        // Folders and files: the root holds other.gsynth, outputs and work (with a.gsynth, notes.txt,
+        // .secret and docs/inner.gsynth) and home/projects
         Path root = temp.getRoot().toPath();
         workingDir = Files.createDirectories(root.resolve("work"));
         Path home = Files.createDirectories(root.resolve("home"));

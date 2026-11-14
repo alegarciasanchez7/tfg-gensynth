@@ -20,8 +20,8 @@ public class DataGeneratorTest {
 
     @Test
     public void testNumericGeneration() {
-        Variable var = new Variable("id", "num", "LOCAL", "numeric", 0.0, Map.of("min", 10.0, "max", 10.0), "flow-1", null);
-        Object value = generator.generateValue(var);
+        Variable variable = new Variable("id", "num", "LOCAL", "numeric", 0.0, Map.of("min", 10.0, "max", 10.0), "flow-1", null);
+        Object value = generator.generateValue(variable);
         
         assertTrue(value instanceof Double);
         assertEquals(10.0, (Double) value, 0.001);
@@ -29,8 +29,8 @@ public class DataGeneratorTest {
 
     @Test
     public void testStringGeneration() {
-        Variable var = new Variable("id", "str", "LOCAL", "string", "default", null, "flow-1", null);
-        Object value = generator.generateValue(var);
+        Variable variable = new Variable("id", "str", "LOCAL", "string", "default", null, "flow-1", null);
+        Object value = generator.generateValue(variable);
         
         assertTrue(value instanceof String);
         assertFalse(((String) value).isEmpty());
@@ -38,24 +38,24 @@ public class DataGeneratorTest {
 
     @Test
     public void testBooleanGeneration() {
-        Variable var = new Variable("id", "bool", "LOCAL", "boolean", false, null, "flow-1", null);
-        Object value = generator.generateValue(var);
+        Variable variable = new Variable("id", "bool", "LOCAL", "boolean", false, null, "flow-1", null);
+        Object value = generator.generateValue(variable);
         
         assertTrue(value instanceof Boolean);
     }
 
     @Test
     public void testDateGeneration() {
-        Variable var = new Variable("id", "dt", "LOCAL", "date", 0L, null, "flow-1", null);
-        Object value = generator.generateValue(var);
+        Variable variable = new Variable("id", "dt", "LOCAL", "date", 0L, null, "flow-1", null);
+        Object value = generator.generateValue(variable);
         
         assertTrue(value instanceof java.time.Instant);
     }
 
     @Test
     public void testPointGeneration() {
-        Variable var = new Variable("id", "pt", "LOCAL", "point", Map.of(), null, "flow-1", null);
-        Object value = generator.generateValue(var);
+        Variable variable = new Variable("id", "pt", "LOCAL", "point", Map.of(), null, "flow-1", null);
+        Object value = generator.generateValue(variable);
         
         assertTrue(value instanceof Map);
         Map<?, ?> map = (Map<?, ?>) value;
@@ -65,8 +65,8 @@ public class DataGeneratorTest {
 
     @Test
     public void testListGeneration() {
-        Variable var = new Variable("id", "lst", "LOCAL", "list", "default", Map.of("items", List.of("A", "B")), "flow-1", null);
-        Object value = generator.generateValue(var);
+        Variable variable = new Variable("id", "lst", "LOCAL", "list", "default", Map.of("items", List.of("A", "B")), "flow-1", null);
+        Object value = generator.generateValue(variable);
         
         assertTrue(value instanceof String);
         assertTrue(List.of("A", "B").contains((String) value));

@@ -1,11 +1,13 @@
 package com.gensynth.core.ws.dispatch;
 
+import com.gensynth.core.TestWaits;
 import com.gensynth.core.model.SequentialOrder;
 import com.gensynth.core.ws.runtime.FlowRuntime;
 import com.gensynth.core.ws.runtime.GroupRuntime;
 import org.junit.After;
 import org.junit.Test;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -92,7 +94,9 @@ public class SequentialGroupDispatcherTest {
         await("sender takes A1", () -> dispatcher.pendingMessages() == 2);
         dispatcher.shutdown();
         release.countDown();
-        Thread.sleep(250);
+        // The message in progress finishes; nothing queued after it is sent
+        await("A1 finishes", () -> handler.published.contains("A1"));
+        TestWaits.eventually().during(Duration.ofMillis(200)).until(() -> handler.published.size() == 1);
 
         assertEquals("only the message in progress is sent", List.of("A1"), handler.published);
         assertEquals("dropped messages are generated but not sent", 1, b.generated.get() - b.sent.get());

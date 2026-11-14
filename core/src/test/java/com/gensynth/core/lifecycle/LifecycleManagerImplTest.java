@@ -93,9 +93,13 @@ public class LifecycleManagerImplTest {
                 callCount.incrementAndGet();
             }
             @Override
-            public void onStart() {}
+            public void onStart() {
+                // Not used by this test
+            }
             @Override
-            public void onStop() {}
+            public void onStop() {
+                // Not used by this test
+            }
         });
 
         manager.initialize();
@@ -108,13 +112,17 @@ public class LifecycleManagerImplTest {
 
         manager.addLifecycleListener(new ILifecycleListener() {
             @Override
-            public void onInitialize() {}
+            public void onInitialize() {
+                // Not used by this test
+            }
             @Override
             public void onStart() {
                 callCount.incrementAndGet();
             }
             @Override
-            public void onStop() {}
+            public void onStop() {
+                // Not used by this test
+            }
         });
 
         manager.initialize();
@@ -128,9 +136,13 @@ public class LifecycleManagerImplTest {
 
         manager.addLifecycleListener(new ILifecycleListener() {
             @Override
-            public void onInitialize() {}
+            public void onInitialize() {
+                // Not used by this test
+            }
             @Override
-            public void onStart() {}
+            public void onStart() {
+                // Not used by this test
+            }
             @Override
             public void onStop() {
                 callCount.incrementAndGet();
@@ -281,9 +293,13 @@ public class LifecycleManagerImplTest {
                 throw new RuntimeException("Error 1");
             }
             @Override
-            public void onStart() {}
+            public void onStart() {
+                // Not used by this test
+            }
             @Override
-            public void onStop() {}
+            public void onStop() {
+                // Not used by this test
+            }
         });
 
         manager.addLifecycleListener(new ILifecycleListener() {
@@ -292,9 +308,13 @@ public class LifecycleManagerImplTest {
                 throw new RuntimeException("Error 2");
             }
             @Override
-            public void onStart() {}
+            public void onStart() {
+                // Not used by this test
+            }
             @Override
-            public void onStop() {}
+            public void onStop() {
+                // Not used by this test
+            }
         });
 
         try {
@@ -312,9 +332,13 @@ public class LifecycleManagerImplTest {
 
         manager.addLifecycleListener(new ILifecycleListener() {
             @Override
-            public void onInitialize() {}
+            public void onInitialize() {
+                // Not used by this test
+            }
             @Override
-            public void onStart() {}
+            public void onStart() {
+                // Not used by this test
+            }
             @Override
             public void onStop() {
                 stopCount.incrementAndGet();
@@ -324,9 +348,13 @@ public class LifecycleManagerImplTest {
 
         manager.addLifecycleListener(new ILifecycleListener() {
             @Override
-            public void onInitialize() {}
+            public void onInitialize() {
+                // Not used by this test
+            }
             @Override
-            public void onStart() {}
+            public void onStart() {
+                // Not used by this test
+            }
             @Override
             public void onStop() {
                 stopCount.incrementAndGet();

@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Stream;
 
+import static com.gensynth.core.TestWaits.eventually;
 import static org.junit.Assert.*;
 
 public class SimulationManagerTest {
@@ -127,14 +128,10 @@ public class SimulationManagerTest {
         waitForMessages(1, 5);
         waitForMessages(2, 5);
         // The rate of the last second is measured by the background tasks of the engine
-        long deadline = System.currentTimeMillis() + 5000;
-        while (manager.list().get(0).messagesPerSecond() <= 0 && System.currentTimeMillis() < deadline) {
-            Thread.sleep(50);
-        }
-        assertTrue(manager.list().get(0).messagesPerSecond() > 0);
+        eventually().until(() -> manager.list().get(0).messagesPerSecond() > 0);
         assertTrue(manager.list().get(0).ticksPerSecond() > 0);
         SimulationSnapshot stopped = manager.stop(1);
-        assertEquals(0, stopped.messagesPerSecond(), 0);
+        assertEquals(0.0, stopped.messagesPerSecond(), 0.0);
         assertTrue("messages counted: " + stopped.messagesSent(), stopped.messagesSent() >= 5);
         assertEquals(0, stopped.errors());
         assertTrue(stopped.connectorProblems().isEmpty());
@@ -146,10 +143,9 @@ public class SimulationManagerTest {
 
         // A stopped simulation sends nothing more, while the other one keeps going
         long secondBefore = manager.list().get(1).messagesSent();
-        Thread.sleep(200);
+        eventually().until(() -> manager.list().get(1).messagesSent() >= secondBefore + 3);
         assertEquals(stopped.messagesSent(), manager.list().get(0).messagesSent());
         assertEquals(linesAfterStop, lines(fileOfFirst));
-        assertTrue(manager.list().get(1).messagesSent() > secondBefore);
     }
 
     @Test
@@ -203,7 +199,8 @@ public class SimulationManagerTest {
         assertEquals("File Output 1.0.0", report.connectors().get("file"));
         assertTrue("nope is not installed", report.connectors().get("nope") == null);
         assertTrue("nothing is started", manager.list().isEmpty());
-        assertThrows(IllegalArgumentException.class, () -> manager.inspect(temp.getRoot().toPath().resolve("missing.gsynth")));
+        Path missing = temp.getRoot().toPath().resolve("missing.gsynth");
+        assertThrows(IllegalArgumentException.class, () -> manager.inspect(missing));
     }
 
     @Test
@@ -216,11 +213,7 @@ public class SimulationManagerTest {
         assertEquals(slower.describe(), changed.tick().describe());
         assertEquals(SimulationSnapshot.Status.RUNNING, changed.status());
         // 20 ms (50 ticks/s) -> 200 ms (5 ticks/s), measured over the last second
-        long deadline = System.currentTimeMillis() + 5000;
-        while (manager.list().get(0).ticksPerSecond() > 8 && System.currentTimeMillis() < deadline) {
-            Thread.sleep(100);
-        }
-        assertTrue("ticks/s: " + manager.list().get(0).ticksPerSecond(), manager.list().get(0).ticksPerSecond() <= 8);
+        eventually().until(() -> manager.list().get(0).ticksPerSecond() <= 8);
 
         assertThrows(IllegalArgumentException.class, () -> manager.changeTick(9, slower));
         manager.stop(1);
@@ -282,11 +275,8 @@ public class SimulationManagerTest {
         assertTrue(manager.list().stream().allMatch(s -> s.status() == SimulationSnapshot.Status.STOPPED));
     }
 
-    private void waitForMessages(int id, long minMessages) throws InterruptedException {
-        long deadline = System.currentTimeMillis() + 5000;
-        while (manager.list().get(id - 1).messagesSent() < minMessages && System.currentTimeMillis() < deadline) {
-            Thread.sleep(10);
-        }
+    private void waitForMessages(int id, long minMessages) {
+        eventually().until(() -> manager.list().get(id - 1).messagesSent() >= minMessages);
     }
 
     private static long lines(Path file) throws Exception {
