@@ -10,10 +10,18 @@
  */
 
 import type { LogEntry } from '../types';
+import type { EntityType, OptimisticKind } from './optimisticManager';
+
+/** Name of each resource type in the log messages. */
+const RESOURCE_TYPE_NAMES: Record<EntityType, string> = {
+  group: 'Group',
+  flow: 'Flow',
+  variable: 'Variable',
+};
 
 export interface OperationLog {
-  type: 'create' | 'update' | 'delete';
-  resourceType: 'group' | 'flow' | 'variable';
+  type: OptimisticKind;
+  resourceType: EntityType;
   resourceId: string;
   resourceName?: string;
   state: 'optimistic' | 'success' | 'error' | 'reconciled';
@@ -29,11 +37,7 @@ export function createOperationLog(
   operation: OperationLog,
   timestamp: string,
 ): LogEntry {
-  const resourceTypeName = operation.resourceType === 'variable'
-    ? 'Variable'
-    : operation.resourceType === 'flow'
-    ? 'Flow'
-    : 'Group';
+  const resourceTypeName = RESOURCE_TYPE_NAMES[operation.resourceType];
 
   const levelMap = {
     optimistic: 'info',
@@ -63,12 +67,13 @@ export function createOperationLog(
     details.push(`Error: ${operation.error}`);
   }
 
-  const message = `${baseParts.join(' ')} ${details.length > 0 ? `[${details.join(', ')}]` : ''}`.trim();
+  const detailsText = details.length > 0 ? '[' + details.join(', ') + ']' : '';
+  const message = `${baseParts.join(' ')} ${detailsText}`.trim();
 
   return {
     id: `op_${operation.resourceId}_${Date.now()}`,
     timestamp,
-    level: levelMap[operation.state] as any,
+    level: levelMap[operation.state],
     source: operation.resourceType.toUpperCase(),
     message,
   };
@@ -78,8 +83,8 @@ export function createOperationLog(
  * Create optimistic operation log
  */
 export function createOptimisticLog(
-  type: 'create' | 'update' | 'delete',
-  resourceType: 'group' | 'flow' | 'variable',
+  type: OptimisticKind,
+  resourceType: EntityType,
   resourceName: string,
   timestamp: string,
 ): LogEntry {
@@ -99,8 +104,8 @@ export function createOptimisticLog(
  * Create success operation log
  */
 export function createSuccessLog(
-  type: 'create' | 'update' | 'delete',
-  resourceType: 'group' | 'flow' | 'variable',
+  type: OptimisticKind,
+  resourceType: EntityType,
   resourceId: string,
   resourceName: string,
   duration?: number,
@@ -123,8 +128,8 @@ export function createSuccessLog(
  * Create error operation log
  */
 export function createErrorLog(
-  type: 'create' | 'update' | 'delete',
-  resourceType: 'group' | 'flow' | 'variable',
+  type: OptimisticKind,
+  resourceType: EntityType,
   resourceId: string,
   resourceName: string,
   error: string,
@@ -159,13 +164,13 @@ export function createReconciliationLog(
   if (failureCount > 0) parts.push(`${failureCount} failed`);
   if (conflictCount > 0) parts.push(`${conflictCount} conflicts`);
 
-  const level = failureCount > 0 || conflictCount > 0 ? 'warn' : 'info';
+  const level: LogEntry['level'] = failureCount > 0 || conflictCount > 0 ? 'warn' : 'info';
   const message = `State reconciliation: ${parts.join(', ')}`;
 
   return {
     id: `reconcile_${Date.now()}`,
     timestamp,
-    level: level as any,
+    level,
     source: 'RECONCILIATION',
     message,
   };

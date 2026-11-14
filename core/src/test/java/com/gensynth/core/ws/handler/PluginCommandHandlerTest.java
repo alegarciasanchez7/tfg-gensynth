@@ -150,7 +150,7 @@ public class PluginCommandHandlerTest {
         Map<String, Object> result = sentPayload("PLUGIN_INSTALL_RESULT");
         assertEquals("error", result.get("status"));
         assertEquals("duplicated", result.get("message"));
-        verify(server).logToBackend(eq("error"), eq("PLUGINS"), eq("Plugin install failed: duplicated"), eq("c1"));
+        verify(server).logToBackend("error", "PLUGINS", "Plugin install failed: duplicated", "c1");
         verify(server, never()).persistState();
         verify(scheduler, never()).schedule(any(Runnable.class), anyLong(), any());
     }
@@ -166,7 +166,7 @@ public class PluginCommandHandlerTest {
 
         verify(server).persistState();
         verify(scheduler).schedule(any(Runnable.class), eq(3L), eq(TimeUnit.SECONDS));
-        verify(server).logToBackend(eq("error"), eq("PLUGINS"), eq("Plugin uninstall failed: not installed"), eq("c2"));
+        verify(server).logToBackend("error", "PLUGINS", "Plugin uninstall failed: not installed", "c2");
     }
 
     @After
@@ -177,35 +177,35 @@ public class PluginCommandHandlerTest {
 
     @Test
     public void restartInterruptedWhileStoppingTheServerKeepsTheInterruptStatus() throws Exception {
-        BridgeContext ctx = mock(BridgeContext.class);
-        UiBridgeWebSocketServer server = mock(UiBridgeWebSocketServer.class);
-        when(ctx.getServer()).thenReturn(server);
+        BridgeContext restartCtx = mock(BridgeContext.class);
+        UiBridgeWebSocketServer restartServer = mock(UiBridgeWebSocketServer.class);
+        when(restartCtx.getServer()).thenReturn(restartServer);
         // Throwing here also guarantees the real restart (which exits the JVM) is never reached
-        doThrow(new InterruptedException("stop interrupted")).when(server).stop(1000);
+        doThrow(new InterruptedException("stop interrupted")).when(restartServer).stop(1000);
 
-        new PluginCommandHandler(ctx).restartAfterPluginInstall();
+        new PluginCommandHandler(restartCtx).restartAfterPluginInstall();
 
         assertTrue("the interrupt must be restored for the caller", Thread.currentThread().isInterrupted());
     }
 
     @Test
     public void restartRunsOnItsOwnThreadSoShuttingTheSchedulerDownCannotInterruptIt() throws Exception {
-        BridgeContext ctx = mock(BridgeContext.class);
-        UiBridgeWebSocketServer server = mock(UiBridgeWebSocketServer.class);
-        ScheduledExecutorService scheduler = mock(ScheduledExecutorService.class);
-        when(ctx.getServer()).thenReturn(server);
-        when(ctx.getScheduler()).thenReturn(scheduler);
+        BridgeContext restartCtx = mock(BridgeContext.class);
+        UiBridgeWebSocketServer restartServer = mock(UiBridgeWebSocketServer.class);
+        ScheduledExecutorService restartScheduler = mock(ScheduledExecutorService.class);
+        when(restartCtx.getServer()).thenReturn(restartServer);
+        when(restartCtx.getScheduler()).thenReturn(restartScheduler);
         CompletableFuture<String> restartThread = new CompletableFuture<>();
         // Stops the restart before the real one (which exits the JVM), recording where it ran
         doAnswer(invocation -> {
             restartThread.complete(Thread.currentThread().getName());
             throw new InterruptedException("stop the test here");
-        }).when(server).stop(1000);
+        }).when(restartServer).stop(1000);
 
-        new PluginCommandHandler(ctx).scheduleRestart();
+        new PluginCommandHandler(restartCtx).scheduleRestart();
 
         ArgumentCaptor<Runnable> scheduled = ArgumentCaptor.forClass(Runnable.class);
-        verify(scheduler).schedule(scheduled.capture(), eq(3L), eq(TimeUnit.SECONDS));
+        verify(restartScheduler).schedule(scheduled.capture(), eq(3L), eq(TimeUnit.SECONDS));
         scheduled.getValue().run();
         assertEquals(PluginCommandHandler.RESTART_THREAD_NAME, restartThread.get(5, TimeUnit.SECONDS));
     }

@@ -8,7 +8,7 @@ interface FieldRowProps {
   className?: string;
 }
 
-export function FieldRow({ label, children, description, className }: FieldRowProps) {
+export function FieldRow({ label, children, description, className }: Readonly<FieldRowProps>) {
   return (
     <div className={cn("flex flex-col gap-1", className)}>
       <label

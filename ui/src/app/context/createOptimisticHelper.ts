@@ -11,8 +11,9 @@
  */
 
 import type { Group, Flow, Variable, VariableType, VariableScope } from '../types';
-import { OptimisticManager, type OptimisticOperation } from './optimisticManager';
+import { OptimisticManager, entityTypeOfCommand, type OptimisticOperation } from './optimisticManager';
 import { randomUUID } from '../core/randomId';
+import type { CreateFlowOptions } from './crudTypes';
 
 export interface CreateOptimisticContext {
   optimisticManager: OptimisticManager | null;
@@ -74,8 +75,7 @@ export async function executeCreateOptimistic<T>(
       const operation: OptimisticOperation = {
         commandId,
         kind: 'create',
-        entityType: (context.commandType.includes('GROUP') ? 'group' : 
-                    context.commandType.includes('FLOW') ? 'flow' : 'variable') as any,
+        entityType: entityTypeOfCommand(context.commandType),
         entityId: context.optimisticId,
         tempIdMapping: {
           tempId: context.optimisticId,
@@ -100,7 +100,7 @@ export async function executeCreateOptimistic<T>(
     const serverEntity = await handlers.send((response: T) => {
       // Synchronously update mapping in manager when response arrives
       if (response && typeof response === 'object' && 'id' in response) {
-        const realId = (response as any).id;
+        const realId = (response as { id?: string }).id;
         if (realId && realId !== context.optimisticId && context.optimisticManager) {
           context.optimisticManager.updateTempIdMapping(commandId, realId);
         }
@@ -109,7 +109,7 @@ export async function executeCreateOptimistic<T>(
 
     // 5. Reconcile UI: replace temp ID with real ID if different
     if (serverEntity && typeof serverEntity === 'object' && 'id' in serverEntity) {
-      const realId = (serverEntity as any).id;
+      const realId = (serverEntity as { id?: string }).id;
       if (realId && realId !== context.optimisticId) {
         // UI Reconcile (dispatch)
         handlers.reconcileId(serverEntity);
@@ -164,15 +164,9 @@ export function createOptimisticGroup(
  */
 export function createOptimisticFlow(
   id: string,
-  name: string,
-  technology: string,
-  host: string,
-  port: number,
-  topic: string = '',
-  interval: number = 1000,
-  burst: number = 1,
-  everyTicks: number = 1,
+  options: Pick<CreateFlowOptions, 'name' | 'technology' | 'host' | 'port' | 'topic' | 'interval' | 'burst' | 'everyTicks'>,
 ): Flow {
+  const { name, technology, host, port, topic = '', interval = 1000, burst = 1, everyTicks = 1 } = options;
   return {
     id,
     name,

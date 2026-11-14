@@ -17,7 +17,7 @@ export function WorkspaceBreadcrumb({
   onSelectGroup,
   onSelectFlow,
   onClearSelection,
-}: WorkspaceBreadcrumbProps) {
+}: Readonly<WorkspaceBreadcrumbProps>) {
   const findGroup = (id?: string) => groups.find(g => g.id === id);
   const findFlow = (gId?: string, fId?: string) => groups.find(g => g.id === gId)?.flows.find(f => f.id === fId);
   const findVariable = (id?: string) => variables.find(v => v.id === id);

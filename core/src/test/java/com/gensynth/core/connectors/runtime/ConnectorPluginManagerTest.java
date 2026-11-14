@@ -131,10 +131,12 @@ public class ConnectorPluginManagerTest {
             return new ConnectorSession() {
                 @Override
                 public void send(byte[] payload, java.util.Map<String, String> headers) {
+                    // A test session accepts every message
                 }
 
                 @Override
                 public void close() {
+                    // Nothing to release
                 }
             };
         }

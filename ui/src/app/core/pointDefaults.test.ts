@@ -23,7 +23,7 @@ describe('pointDefaults', () => {
   });
 });
 
-import { coordinateSystemSwitch } from './pointDefaults';
+import { coordinateSystemSwitch, unitSwitchLosses } from './pointDefaults';
 import type { PointVariableConfig } from '../types';
 
 describe('coordinateSystemSwitch', () => {
@@ -71,5 +71,40 @@ describe('coordinateSystemSwitch', () => {
     const first = coordinateSystemSwitch({ coordinateSystem: 'GEOSPATIAL' }, 'CARTESIAN_2D').updates;
     const back = coordinateSystemSwitch({ coordinateSystem: 'CARTESIAN_2D', ...first }, 'GEOSPATIAL');
     expect(back.lost).toEqual([]);
+  });
+});
+
+describe('unitSwitchLosses', () => {
+  it('lists nothing for a point at the defaults of its system', () => {
+    expect(unitSwitchLosses({}, 'CARTESIAN_2D')).toEqual([]);
+    expect(unitSwitchLosses({
+      minPoint: { x: 0, y: 0, z: 0 },
+      maxPoint: { x: 100, y: 100, z: 100 },
+      fixedPoint: { x: 50, y: 50, z: 50 },
+      boundaryPolygon: [{ x: 1, y: 1 }, { x: 2, y: 2 }],
+    }, 'CARTESIAN_3D')).toEqual([]);
+  });
+
+  it('lists the user data in order', () => {
+    expect(unitSwitchLosses({
+      boundaryPolygon: [{ x: 1, y: 1 }, { x: 2, y: 2 }, { x: 3, y: 1 }],
+      obstacles: [{ id: 'o1', type: 'WALL_SEGMENT', points: [] }],
+      maxPoint: { x: 10, y: 100, z: 100 },
+      fixedPoint: { x: 1, y: 2, z: 3 },
+      waypoints: [{ x: 1, y: 1 }],
+      orbitCenter: { x: 5, y: 5 },
+    }, 'CARTESIAN_2D')).toEqual([
+      'the region polygon',
+      '1 obstacle(s)',
+      'the region bounds',
+      'the fixed point',
+      'the waypoints',
+      'the orbit centre',
+    ]);
+  });
+
+  it('compares the bounds with the defaults of the source system', () => {
+    expect(unitSwitchLosses({ minPoint: { x: 40.3, y: -3.8, z: 0 } }, 'GEOSPATIAL')).toEqual([]);
+    expect(unitSwitchLosses({ minPoint: { x: 40.3, y: -3.8, z: 0 } }, 'CARTESIAN_2D')).toEqual(['the region bounds']);
   });
 });

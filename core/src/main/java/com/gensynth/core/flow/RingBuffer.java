@@ -112,7 +112,7 @@ public class RingBuffer<T> {
 
         // Read element
         int index = (int) (read & capacityMask);
-        T element = (T) buffer[index];
+        T element = buffer[index];
 
         // Clear slot to help GC
         buffer[index] = null;

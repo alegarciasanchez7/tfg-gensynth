@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { AlertTriangle, ArrowRightLeft, Info, RefreshCw } from 'lucide-react';
 import { Button } from '../../ui/button';
 import {
@@ -74,19 +74,21 @@ export function FormatConverterModal({
   currentFormat,
   initialTargetFormat,
   onApplyConversion,
-}: FormatConverterModalProps) {
+}: Readonly<FormatConverterModalProps>) {
   const sourceFormat = currentFormat || 'json';
   const [targetFormat, setTargetFormat] = useState<TemplateFormat>(
     initialTargetFormat || (sourceFormat === 'xml' ? 'json' : 'xml')
   );
 
-  useEffect(() => {
+  // Pick the default target again on every opening or source/initial format change (adjusting state while rendering)
+  const openKey = `${isOpen}|${sourceFormat}|${initialTargetFormat ?? ''}`;
+  const [syncedOpenKey, setSyncedOpenKey] = useState(openKey);
+  if (syncedOpenKey !== openKey) {
+    setSyncedOpenKey(openKey);
     if (isOpen) {
-      setTargetFormat(
-        initialTargetFormat || (sourceFormat === 'xml' ? 'json' : 'xml')
-      );
+      setTargetFormat(initialTargetFormat || (sourceFormat === 'xml' ? 'json' : 'xml'));
     }
-  }, [isOpen, sourceFormat, initialTargetFormat]);
+  }
 
   const { convertedPreview, kind, blockedReason } = useMemo(
     () => previewConversion(currentContent, sourceFormat, targetFormat),
@@ -171,10 +173,10 @@ export function FormatConverterModal({
             </p>
           )}
           {!blocked && kind === 'label-only' && (
-            <p role="status" className="flex items-start gap-1.5 rounded border border-cyan-500/30 bg-cyan-500/10 px-2.5 py-1.5 text-[11px] text-cyan-500">
+            <output className="flex items-start gap-1.5 rounded border border-cyan-500/30 bg-cyan-500/10 px-2.5 py-1.5 text-[11px] text-cyan-500">
               <Info size={12} className="shrink-0 mt-0.5" />
               The template is already valid {targetFormat.toUpperCase()}: applying only changes the format label, the text stays the same.
-            </p>
+            </output>
           )}
         </div>
 

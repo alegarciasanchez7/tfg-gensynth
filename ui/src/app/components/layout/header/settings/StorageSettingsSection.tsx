@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { FolderOpen, FolderOutput, RotateCcw, Save, Timer } from 'lucide-react';
 import { useApp } from '../../../../context';
 import { AUTO_SAVE_MAX_SECONDS, AUTO_SAVE_MIN_SECONDS, clampAutoSaveInterval } from '../../../../context/reducer';
@@ -8,6 +8,13 @@ import { Button } from '../../../ui/button';
 import { Switch } from '../../../ui/switch';
 import { Input } from '../../../ui/input';
 import { SettingRow } from './SettingRow';
+
+/** Why auto-save cannot save yet (auto-save on), or null when it can. */
+function autoSaveHintFor(canSaveInPlace: boolean, hasOpenFile: boolean): string | null {
+  if (!canSaveInPlace) return 'Not supported by this browser. Use Save manually.';
+  if (!hasOpenFile) return 'Save the configuration to a file to start auto-saving.';
+  return null;
+}
 
 /**
  * Save & storage settings: auto-save switch and interval, and the folder of the generated files.
@@ -20,9 +27,12 @@ export function StorageSettingsSection() {
   // Text being typed in the folder field; null while not editing, so the field shows the folder in use
   const [folderDraft, setFolderDraft] = useState<string | null>(null);
 
-  useEffect(() => {
+  // Reset the draft when the interval changes elsewhere (adjusting state while rendering)
+  const [shownInterval, setShownInterval] = useState(state.autoSaveIntervalSeconds);
+  if (!Object.is(shownInterval, state.autoSaveIntervalSeconds)) {
+    setShownInterval(state.autoSaveIntervalSeconds);
     setIntervalDraft(String(state.autoSaveIntervalSeconds));
-  }, [state.autoSaveIntervalSeconds]);
+  }
 
   const changeOutputFolder = async (path: string | null) => {
     try {
@@ -62,13 +72,7 @@ export function StorageSettingsSection() {
   const isDesktop = state.connectionMode === 'jcef';
   const canSaveInPlace = isDesktop || supportsFileSystemAccess();
   const hasOpenFile = isDesktop ? Boolean(state.currentFilePath) : Boolean(state.currentFileHandle);
-  const autoSaveHint = !state.autoSaveEnabled
-    ? null
-    : !canSaveInPlace
-      ? 'Not supported by this browser. Use Save manually.'
-      : !hasOpenFile
-        ? 'Save the configuration to a file to start auto-saving.'
-        : null;
+  const autoSaveHint = state.autoSaveEnabled ? autoSaveHintFor(canSaveInPlace, hasOpenFile) : null;
 
   return (
     <div className="flex flex-col gap-2">

@@ -11,17 +11,17 @@ export interface ConnectionManagerOptions {
 }
 
 export class ConnectionManager {
-  private config: BridgeConfig;
+  private readonly config: BridgeConfig;
   private ws: WebSocket | null = null;
   private connected = false;
   private reconnectAttempts = 0;
   private reconnectTimer: number | null = null;
 
-  private onConnected: () => void;
-  private onDisconnected: (reason: string) => void;
-  private onError: (error: Error) => void;
-  private onMessage: (raw: string) => void;
-  private resync: () => Promise<void>;
+  private readonly onConnected: () => void;
+  private readonly onDisconnected: (reason: string) => void;
+  private readonly onError: (error: Error) => void;
+  private readonly onMessage: (raw: string) => void;
+  private readonly resync: () => Promise<void>;
 
   constructor(options: ConnectionManagerOptions) {
     this.config = options.config;

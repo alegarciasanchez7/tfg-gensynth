@@ -35,10 +35,13 @@ public class ConnectorFieldTest {
         assertEquals(0.5, ConnectorField.decimal("ratio").defaultValue(0.5f).getDefaultValue());
         assertEquals(false, ConnectorField.bool("durable").getDefaultValue());
 
-        assertThrows(IllegalArgumentException.class, () -> ConnectorField.integer("port").defaultValue("5672"));
-        assertThrows(IllegalArgumentException.class, () -> ConnectorField.integer("port").defaultValue(1.5));
-        assertThrows(IllegalArgumentException.class, () -> ConnectorField.text("host").defaultValue(1));
-        assertThrows(IllegalArgumentException.class, () -> ConnectorField.bool("on").defaultValue("true"));
+        ConnectorField integer = ConnectorField.integer("port");
+        ConnectorField text = ConnectorField.text("host");
+        ConnectorField bool = ConnectorField.bool("on");
+        assertThrows(IllegalArgumentException.class, () -> integer.defaultValue("5672"));
+        assertThrows(IllegalArgumentException.class, () -> integer.defaultValue(1.5));
+        assertThrows(IllegalArgumentException.class, () -> text.defaultValue(1));
+        assertThrows(IllegalArgumentException.class, () -> bool.defaultValue("true"));
     }
 
     @Test
@@ -61,8 +64,10 @@ public class ConnectorFieldTest {
         assertEquals(1.0, port.getMin(), 0.0);
         assertEquals(65535.0, port.getMax(), 0.0);
 
-        assertThrows(IllegalArgumentException.class, () -> ConnectorField.text("host").min(1));
-        assertThrows(IllegalArgumentException.class, () -> ConnectorField.integer("n").min(10).max(1));
+        ConnectorField text = ConnectorField.text("host");
+        ConnectorField fromTen = ConnectorField.integer("n").min(10);
+        assertThrows(IllegalArgumentException.class, () -> text.min(1));
+        assertThrows(IllegalArgumentException.class, () -> fromTen.max(1));
         assertThrows(IllegalArgumentException.class, () -> port.defaultValue(0));
     }
 
@@ -70,8 +75,8 @@ public class ConnectorFieldTest {
     public void rejectsInvalidKeysAndDuplicatedKeys() {
         assertThrows(IllegalArgumentException.class, () -> ConnectorField.text("1host"));
         assertThrows(IllegalArgumentException.class, () -> ConnectorField.text("my host"));
-        assertThrows(IllegalArgumentException.class,
-            () -> ConnectorField.requireUniqueKeys(List.of(ConnectorField.text("a"), ConnectorField.integer("a"))));
+        List<ConnectorField> duplicated = List.of(ConnectorField.text("a"), ConnectorField.integer("a"));
+        assertThrows(IllegalArgumentException.class, () -> ConnectorField.requireUniqueKeys(duplicated));
     }
 
     @Test

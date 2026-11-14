@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { useApp } from '../../../../context';
 import { NumericVariableConfig, VariableScope } from '../../../../types';
 import { Input } from '../../../ui/input';
@@ -12,6 +12,8 @@ import { Info } from 'lucide-react';
 import { ListReferenceSelector } from './ListReferenceSelector';
 import { findTemplatePlaceholders } from '../../../../core/templatePlaceholders';
 import { findFormulaMatches } from './formulaTokens';
+import { autocompleteKeyAction, cycleIndex, opensVariableAutocomplete, type AutocompleteKeyAction } from './autocompleteKeys';
+import { resyncNumber, resyncOptionalNumber, resyncText, useFieldDraft } from './useFieldDraft';
 
 interface NumericConfigPanelProps {
   config: NumericVariableConfig;
@@ -23,6 +25,21 @@ interface NumericConfigPanelProps {
   variableId?: string;
   /** Set when the panel edits the generator of a list item, which cannot inherit from a list. */
   inListItem?: boolean;
+}
+
+/** The spike probability shown as a percentage: stored as 0..1, or as a legacy percentage (> 1). */
+function spikeProbabilityPercent(probability: number | undefined): number {
+  if (probability === undefined) return 5;
+  return probability > 1 ? probability : probability * 100;
+}
+
+const VALID_VARIABLE_TOKEN_CLASS = 'bg-emerald-500/20 text-emerald-400 rounded ring-1 ring-inset ring-emerald-500/40 px-0.5 -mx-0.5';
+const INVALID_VARIABLE_TOKEN_CLASS = 'bg-red-500/20 text-red-400 rounded ring-1 ring-inset ring-red-500/40 px-0.5 -mx-0.5';
+
+/** Overlay class of a formula token that is not a constant: a valid or invalid variable, or plain text. */
+function formulaTokenClass(token: { isVariable?: boolean; isValid?: boolean }): string {
+  if (!token.isVariable) return 'text-[var(--c-tx2)]';
+  return token.isValid ? VALID_VARIABLE_TOKEN_CLASS : INVALID_VARIABLE_TOKEN_CLASS;
 }
 
 export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({ 
@@ -41,15 +58,16 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
   const distributionType = config.distributionType ?? 'UNIFORM';
 
   // Synchronized local string states to allow natural typing of negative numbers and empty states
-  const [minStr, setMinStr] = useState(String(config.min ?? ''));
-  const [maxStr, setMaxStr] = useState(String(config.max ?? ''));
-  const [initialStr, setInitialStr] = useState(String(config.initialValue ?? ''));
-  const [constValueStr, setConstValueStr] = useState(String(config.constantValue ?? ''));
-  const [constMarginStr, setConstMarginStr] = useState(String(config.constantMargin ?? ''));
-  const [stepStr, setStepStr] = useState(String(config.step ?? ''));
-  const [prefixStr, setPrefixStr] = useState(config.prefix ?? '');
-  const [suffixStr, setSuffixStr] = useState(config.suffix ?? '');
-  const [integerFormatStr, setIntegerFormatStr] = useState(config.integerFormat ?? '');
+  // Drafts of the fields, re-synced when the config changes from outside
+  const [minStr, setMinStr] = useFieldDraft(config.min, String(config.min ?? ''), resyncNumber);
+  const [maxStr, setMaxStr] = useFieldDraft(config.max, String(config.max ?? ''), resyncNumber);
+  const [initialStr, setInitialStr] = useFieldDraft(config.initialValue, String(config.initialValue ?? ''), resyncOptionalNumber);
+  const [constValueStr, setConstValueStr] = useFieldDraft(config.constantValue, String(config.constantValue ?? ''), resyncNumber);
+  const [constMarginStr, setConstMarginStr] = useFieldDraft(config.constantMargin, String(config.constantMargin ?? ''), resyncNumber);
+  const [stepStr, setStepStr] = useFieldDraft(config.step, String(config.step ?? ''), resyncNumber);
+  const [prefixStr, setPrefixStr] = useFieldDraft(config.prefix, config.prefix ?? '', resyncText);
+  const [suffixStr, setSuffixStr] = useFieldDraft(config.suffix, config.suffix ?? '', resyncText);
+  const [integerFormatStr, setIntegerFormatStr] = useFieldDraft(config.integerFormat, config.integerFormat ?? '', resyncText);
 
   // New fields local string states
   const [sineFreqStr, setSineFreqStr] = useState(String(config.sineFrequency ?? 0.05));
@@ -65,7 +83,7 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
   const [noiseAmpStr, setNoiseAmpStr] = useState(String(config.noiseAmplitude ?? 1.0));
   const [noiseStdDevStr, setNoiseStdDevStr] = useState(String(config.noiseStdDev ?? 1.0));
 
-  const [spikeProbStr, setSpikeProbStr] = useState(String(config.spikeProbability !== undefined ? (config.spikeProbability > 1 ? config.spikeProbability : config.spikeProbability * 100) : 5));
+  const [spikeProbStr, setSpikeProbStr] = useState(String(spikeProbabilityPercent(config.spikeProbability)));
   const [spikeMagStr, setSpikeMagStr] = useState(String(config.spikeMagnitude ?? 50.0));
   const [spikeMinStr, setSpikeMinStr] = useState(String(config.spikeMin ?? 100.0));
   const [spikeMaxStr, setSpikeMaxStr] = useState(String(config.spikeMax ?? 200.0));
@@ -84,12 +102,13 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
 
   // Tokenize the formula for inline validation overlay
   const formulaTokens = useMemo(() => {
-    const parts: Array<{ text: string; isValid?: boolean; isVariable?: boolean; isConstant?: boolean }> = [];
+    // `start` is the offset of the token in the formula, unique and used as its key
+    const parts: Array<{ start: number; text: string; isValid?: boolean; isVariable?: boolean; isConstant?: boolean }> = [];
     let lastIndex = 0;
  
     for (const match of findFormulaMatches(formulaValue)) {
       if (match.start > lastIndex) {
-        parts.push({ text: formulaValue.substring(lastIndex, match.start) });
+        parts.push({ start: lastIndex, text: formulaValue.substring(lastIndex, match.start) });
       }
  
       if (match.kind === 'reference') {
@@ -101,6 +120,7 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
         if (lowerName === 'pi' || lowerName === 'e') {
           // Wrapped constant (e.g. {{pi}} or {{e}})
           parts.push({
+            start: match.start,
             text: rawToken,
             isConstant: true
           });
@@ -115,6 +135,7 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
           });
  
           parts.push({
+            start: match.start,
             text: rawToken,
             isValid: !!variable,
             isVariable: true
@@ -123,6 +144,7 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
       } else {
         // Raw constant literal (e.g. pi or e)
         parts.push({
+          start: match.start,
           text: match.text,
           isConstant: true
         });
@@ -131,7 +153,7 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
     }
  
     if (lastIndex < formulaValue.length) {
-      parts.push({ text: formulaValue.substring(lastIndex) });
+      parts.push({ start: lastIndex, text: formulaValue.substring(lastIndex) });
     }
  
     return parts;
@@ -170,7 +192,7 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
   const autocompleteOptions = useMemo(() => {
     if (!showAutocomplete || !state.variables) return [];
 
-    const value = inputRef.current ? inputRef.current.value : (config.formula ?? '');
+    const value = formulaValue;
     const textBeforeCursor = cursorPos > 0 ? value.substring(0, cursorPos) : value;
     const lastOpen = textBeforeCursor.lastIndexOf('{{');
     if (lastOpen === -1) return [];
@@ -186,12 +208,12 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
         if (v.scope === 'local') return v.flowId === flowId;
         return false;
       })
-      .map(v => ({ name: v.name, scope: v.scope, isConstant: false }));
+      .map(v => ({ key: v.id, name: v.name, scope: v.scope, isConstant: false }));
 
     // Append math constants!
     const constants = [
-      { name: 'pi', scope: 'Math Constant (π)', isConstant: true },
-      { name: 'e', scope: 'Math Constant (e)', isConstant: true }
+      { key: 'constant:pi', name: 'pi', scope: 'Math Constant (π)', isConstant: true },
+      { key: 'constant:e', name: 'e', scope: 'Math Constant (e)', isConstant: true }
     ];
 
     const allOptions = [...options, ...constants];
@@ -200,11 +222,14 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
       const full = `${o.scope}.${o.name}`.toLowerCase();
       return full.includes(query) || o.name.toLowerCase().includes(query);
     });
-  }, [showAutocomplete, config.formula, cursorPos, state.variables, flowId, groupId, variableId]);
+  }, [showAutocomplete, formulaValue, cursorPos, state.variables, flowId, groupId, variableId]);
 
-  useEffect(() => {
+  // A new list of options starts again from the first one
+  const [optionCount, setOptionCount] = useState(autocompleteOptions.length);
+  if (optionCount !== autocompleteOptions.length) {
+    setOptionCount(autocompleteOptions.length);
     setSelectedIndex(0);
-  }, [autocompleteOptions.length]);
+  }
 
   const insertAtCursor = (varName: string) => {
     const ta = inputRef.current;
@@ -241,85 +266,37 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
     setShowAutocomplete(false);
   };
 
+  const applyAutocompleteAction = (action: AutocompleteKeyAction) => {
+    if (action === 'next') {
+      setSelectedIndex(prev => cycleIndex(prev, 1, autocompleteOptions.length));
+    } else if (action === 'previous') {
+      setSelectedIndex(prev => cycleIndex(prev, -1, autocompleteOptions.length));
+    } else if (action === 'insert') {
+      insertOption(autocompleteOptions[selectedIndex]);
+    } else {
+      setShowAutocomplete(false);
+    }
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (showAutocomplete && autocompleteOptions.length > 0) {
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        setSelectedIndex(prev => (prev + 1) % autocompleteOptions.length);
-        return;
-      }
-      if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        setSelectedIndex(prev => (prev - 1 + autocompleteOptions.length) % autocompleteOptions.length);
-        return;
-      }
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        insertOption(autocompleteOptions[selectedIndex]);
-        return;
-      }
-      if (e.key === 'Tab') {
-        e.preventDefault();
-        insertOption(autocompleteOptions[selectedIndex]);
-        return;
-      }
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        setShowAutocomplete(false);
-        return;
-      }
+    const action = showAutocomplete && autocompleteOptions.length > 0 ? autocompleteKeyAction(e.key) : null;
+    if (action) {
+      e.preventDefault();
+      applyAutocompleteAction(action);
+      return;
     }
 
     if (e.key === '{') {
       const start = inputRef.current?.selectionStart || 0;
       const value = inputRef.current ? inputRef.current.value : (config.formula ?? '');
-      const textBefore = value.substring(0, start);
-      if (textBefore.endsWith('{')) {
+      if (opensVariableAutocomplete(value, start)) {
         setShowAutocomplete(true);
         setCursorPos(start + 1);
       }
     }
   };
 
-  // Sync state if props change externally
-  useEffect(() => {
-    if (config.min !== undefined && Number.parseFloat(minStr) !== config.min) setMinStr(String(config.min));
-  }, [config.min]);
-
-  useEffect(() => {
-    if (config.max !== undefined && Number.parseFloat(maxStr) !== config.max) setMaxStr(String(config.max));
-  }, [config.max]);
-
-  useEffect(() => {
-    if (config.initialValue === undefined || config.initialValue === null) setInitialStr('');
-    else if (Number.parseFloat(initialStr) !== config.initialValue) setInitialStr(String(config.initialValue));
-  }, [config.initialValue]);
-
-  useEffect(() => {
-    if (config.constantValue !== undefined && Number.parseFloat(constValueStr) !== config.constantValue) setConstValueStr(String(config.constantValue));
-  }, [config.constantValue]);
-
-  useEffect(() => {
-    if (config.constantMargin !== undefined && Number.parseFloat(constMarginStr) !== config.constantMargin) setConstMarginStr(String(config.constantMargin));
-  }, [config.constantMargin]);
-
-  useEffect(() => {
-    if (config.step !== undefined && Number.parseFloat(stepStr) !== config.step) setStepStr(String(config.step));
-  }, [config.step]);
-
-  useEffect(() => {
-    if (config.prefix !== undefined && config.prefix !== prefixStr) setPrefixStr(config.prefix ?? '');
-  }, [config.prefix]);
-
-  useEffect(() => {
-    if (config.suffix !== undefined && config.suffix !== suffixStr) setSuffixStr(config.suffix ?? '');
-  }, [config.suffix]);
-
-  useEffect(() => {
-    if (config.integerFormat !== undefined && config.integerFormat !== integerFormatStr) setIntegerFormatStr(config.integerFormat ?? '');
-  }, [config.integerFormat]);
-
-  const handlePatternChange = (newPattern: any) => {
+  const handlePatternChange = (newPattern: string) => {
     const updates: Partial<NumericVariableConfig> = { pattern: newPattern };
 
     if (newPattern === 'SEQUENTIAL' && (!config.sequentialGraph || config.sequentialGraph.length === 0)) {
@@ -445,7 +422,7 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
                 <CustomDropdown
                   id="numeric-precision"
                   value={precision === 'DOUBLE' ? 'FLOAT' : precision}
-                  onChange={(val) => onChange({ precision: val as any })}
+                  onChange={(val) => onChange({ precision: val as NumericVariableConfig['precision'] })}
                   options={[
                     { value: 'INTEGER', label: 'Integer' },
                     { value: 'FLOAT', label: 'Float' }
@@ -563,7 +540,7 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
           <CustomDropdown
             id="numeric-pattern"
             value={pattern}
-            onChange={(val) => handlePatternChange(val as any)}
+            onChange={(val) => handlePatternChange(val)}
             options={[
               { value: 'RANDOM', label: 'Random' },
               { value: 'CONSTANT', label: 'Constant' },
@@ -653,7 +630,7 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
                 <CustomDropdown
                   id="numeric-dist-type"
                   value={distributionType}
-                  onChange={(val) => onChange({ distributionType: val as any })}
+                  onChange={(val) => onChange({ distributionType: val as NumericVariableConfig['distributionType'] })}
                   options={[
                     { value: 'UNIFORM', label: 'Uniform' },
                     { value: 'NORMAL', label: 'Normal / Gaussian' },
@@ -714,11 +691,11 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
                   ref={overlayRef}
                   className="absolute left-0 right-0 top-0 bottom-0 pointer-events-none whitespace-pre overflow-hidden flex items-center px-3 bg-transparent text-transparent text-xs font-mono border border-transparent h-8"
                 >
-                  {formulaTokens.map((t, i) => {
+                  {formulaTokens.map((t) => {
                     if (t.isConstant) {
                       return (
                         <span 
-                          key={i} 
+                          key={t.start} 
                           className="bg-amber-500/20 text-amber-400 rounded ring-1 ring-inset ring-amber-500/40 px-0.5 -mx-0.5 font-semibold"
                         >
                           {t.text}
@@ -727,8 +704,8 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
                     }
                     return (
                       <span 
-                        key={i} 
-                        className={t.isVariable ? (t.isValid ? 'bg-emerald-500/20 text-emerald-400 rounded ring-1 ring-inset ring-emerald-500/40 px-0.5 -mx-0.5' : 'bg-red-500/20 text-red-400 rounded ring-1 ring-inset ring-red-500/40 px-0.5 -mx-0.5') : 'text-[var(--c-tx2)]'}
+                        key={t.start} 
+                        className={formulaTokenClass(t)}
                       >
                         {t.text}
                       </span>
@@ -787,7 +764,7 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
                   >
                     {autocompleteOptions.map((opt, i) => (
                       <div
-                        key={i}
+                        key={opt.key}
                         role="option"
                         aria-selected={i === selectedIndex}
                         tabIndex={-1}
@@ -814,9 +791,9 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
               {/* Premium Variable Validation Feedback Badges */}
               {formulaVariables.length > 0 && (
                 <div data-testid="formula-badges" className="flex flex-wrap gap-1.5 pt-1">
-                  {formulaVariables.map((v, idx) => (
+                  {formulaVariables.map((v) => (
                     <span
-                      key={idx}
+                      key={v.name}
                       className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono border transition-all ${
                         v.isValid
                           ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
@@ -935,7 +912,7 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
                 <CustomDropdown
                   id="drift-limit-mode"
                   value={config.driftLimitMode ?? 'CLAMP'}
-                  onChange={(val) => onChange({ driftLimitMode: val as any })}
+                  onChange={(val) => onChange({ driftLimitMode: val as NumericVariableConfig['driftLimitMode'] })}
                   options={[
                     { value: 'CLAMP', label: 'CLAMP (Freeze at min/max limit)' },
                     { value: 'WRAP', label: 'WRAP / RESET (Reset to opposite extreme)' },
@@ -1001,7 +978,7 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
                   <CustomDropdown
                     id="noise-type"
                     value={config.noiseType ?? 'GAUSSIAN'}
-                    onChange={(val) => onChange({ noiseType: val as any })}
+                    onChange={(val) => onChange({ noiseType: val as NumericVariableConfig['noiseType'] })}
                     options={[
                       { value: 'GAUSSIAN', label: 'Gaussian Noise (N(0, σ²))' },
                       { value: 'UNIFORM', label: 'Uniform Jitter (± Noise)' }
@@ -1092,7 +1069,7 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
                   <CustomDropdown
                     id="spike-mode"
                     value={config.spikeMode ?? 'FIXED_OFFSET'}
-                    onChange={(val) => onChange({ spikeMode: val as any })}
+                    onChange={(val) => onChange({ spikeMode: val as NumericVariableConfig['spikeMode'] })}
                     options={[
                       { value: 'FIXED_OFFSET', label: 'Fixed Offset (± Mag)' },
                       { value: 'RANGE_SPIKE', label: 'Critical Range (Min..Max)' },
@@ -1102,7 +1079,7 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
                 </div>
               </div>
 
-              {config.spikeMode === 'RANGE_SPIKE' ? (
+              {config.spikeMode === 'RANGE_SPIKE' && (
                 <div className="grid grid-cols-2 gap-2">
                   <div className="space-y-1">
                     <Label htmlFor="spike-min" className="text-[10px] uppercase text-[var(--c-tx4)]">Min Spike Value</Label>
@@ -1129,7 +1106,8 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
                     />
                   </div>
                 </div>
-              ) : config.spikeMode === 'MULTIPLIER' ? (
+              )}
+              {config.spikeMode === 'MULTIPLIER' && (
                 <div className="space-y-1">
                   <Label htmlFor="spike-mult" className="text-[10px] uppercase text-[var(--c-tx4)]">Multiplier Factor (K)</Label>
                   <Input
@@ -1142,7 +1120,8 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
                     className="h-8 text-xs font-mono"
                   />
                 </div>
-              ) : (
+              )}
+              {config.spikeMode !== 'RANGE_SPIKE' && config.spikeMode !== 'MULTIPLIER' && (
                 <div className="space-y-1">
                   <Label htmlFor="spike-mag" className="text-[10px] uppercase text-[var(--c-tx4)]">Offset Magnitude (±)</Label>
                   <Input

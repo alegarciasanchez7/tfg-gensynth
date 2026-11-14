@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Flow, Group } from '../../../../types';
 import type { ConnectorPluginDescriptor } from '../../../../core/types';
+import type { CreateFlowOptions } from '../../../../context/crudTypes';
 
 const { mockToast } = vi.hoisted(() => ({ mockToast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock('sonner', () => ({ toast: mockToast }));
@@ -55,7 +56,7 @@ describe('CreateFlowDialog', () => {
   const onSelectFlow = vi.fn();
   let counter = 0;
   const onCreateFlow = vi.fn(
-    async (_groupId: string, name: string, ..._rest: unknown[]) => createdFlow(`f${++counter}`, name),
+    async (_groupId: string, options: CreateFlowOptions) => createdFlow(`f${++counter}`, options.name),
   );
 
   beforeEach(() => {
@@ -98,7 +99,7 @@ describe('CreateFlowDialog', () => {
     await user.selectOptions(screen.getByRole('combobox', { name: /connector/i }), 'file');
   }
 
-  it('sends the "every N ticks" value as the last argument', async () => {
+  it('sends the "every N ticks" value in the options', async () => {
     const user = userEvent.setup();
     renderDialog();
     await fillBasics(user, 'Sensor');
@@ -109,10 +110,10 @@ describe('CreateFlowDialog', () => {
     await user.click(screen.getByRole('button', { name: 'Create flow' }));
 
     expect(onCreateFlow).toHaveBeenCalledTimes(1);
-    const args = onCreateFlow.mock.calls[0];
-    expect(args[1]).toBe('Sensor');
-    expect(args[7]).toBeUndefined(); // legacy burst
-    expect(args[10]).toBe(4);
+    const [, options] = onCreateFlow.mock.calls[0];
+    expect(options.name).toBe('Sensor');
+    expect(options.burst).toBeUndefined(); // legacy burst
+    expect(options.everyTicks).toBe(4);
     expect(onSelectFlow).toHaveBeenCalledWith('g1', 'f1');
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
@@ -142,7 +143,7 @@ describe('CreateFlowDialog', () => {
     await user.click(screen.getByRole('button', { name: 'Create 3 flows' }));
 
     await waitFor(() => expect(onCreateFlow).toHaveBeenCalledTimes(3));
-    expect(onCreateFlow.mock.calls.map((call) => call[1])).toEqual(['Sensor 1', 'Sensor 2', 'Sensor 3']);
+    expect(onCreateFlow.mock.calls.map((call) => call[1].name)).toEqual(['Sensor 1', 'Sensor 2', 'Sensor 3']);
     expect(onSelectFlow).toHaveBeenCalledWith('g1', 'f1');
     expect(mockToast.success).toHaveBeenCalledWith('3 flows created');
   });
@@ -150,7 +151,7 @@ describe('CreateFlowDialog', () => {
   it('stops at the first failure and reports how many flows were created', async () => {
     const user = userEvent.setup();
     onCreateFlow
-      .mockImplementationOnce(async (_g: string, name: string) => createdFlow('f1', name))
+      .mockImplementationOnce(async (_g: string, options: CreateFlowOptions) => createdFlow('f1', options.name))
       .mockImplementationOnce(async () => { throw new Error('Core unavailable'); });
     renderDialog(true);
     await fillBasics(user, 'Sensor');
@@ -180,7 +181,7 @@ describe('CreateFlowDialog', () => {
     await user.click(create);
 
     expect(onCreateFlow).toHaveBeenCalledTimes(1);
-    expect(onCreateFlow.mock.calls[0][9]).toEqual({ address: 'tcp://host:1' });
+    expect(onCreateFlow.mock.calls[0][1].connectorConfig).toEqual({ address: 'tcp://host:1' });
   });
 
   it('blocks a name already used in the group (trimmed, ignoring case)', async () => {
@@ -212,7 +213,7 @@ describe('CreateFlowDialog', () => {
 
   it('lets the Repeater rename taken names and previews the final names', async () => {
     const user = userEvent.setup();
-    onCreateFlow.mockImplementation(async (_g: string, name: string) =>
+    onCreateFlow.mockImplementation(async (_g: string, { name }: CreateFlowOptions) =>
       createdFlow(`f${++counter}`, name === 'Sensor 1' ? 'Sensor 1 (2)' : name));
     renderDialog(true, [group]);
     await fillBasics(user, 'Sensor');
@@ -224,7 +225,7 @@ describe('CreateFlowDialog', () => {
     await user.click(screen.getByRole('button', { name: 'Create 2 flows' }));
 
     await waitFor(() => expect(onCreateFlow).toHaveBeenCalledTimes(2));
-    expect(onCreateFlow.mock.calls.every((call) => call[11] === true)).toBe(true);
+    expect(onCreateFlow.mock.calls.every((call) => call[1].autoRename === true)).toBe(true);
     expect(mockToast.success).toHaveBeenCalledWith('2 flows created (1 renamed to keep the names unique)');
   });
 
@@ -235,4 +236,33 @@ describe('CreateFlowDialog', () => {
 
     expect(screen.getByLabelText(/^Output directory/)).toHaveValue('./out');
   });
+
+  it('resets the form when the dialog closes, and keeps it while the parent re-renders', async () => {
+    const user = userEvent.setup();
+    const connectors = [fileConnector, brokerConnector];
+    const dialog = (open: boolean) => (
+      <CreateFlowDialog
+        open={open}
+        onOpenChange={onOpenChange}
+        groupId="g1"
+        latestConnectors={connectors}
+        onCreateFlow={onCreateFlow}
+      />
+    );
+    const { rerender } = render(dialog(true));
+    await fillBasics(user, 'Sensor');
+    const outputDir = screen.getByLabelText(/^Output directory/);
+    await user.clear(outputDir);
+    await user.type(outputDir, './data');
+
+    // A parent re-render with the same catalog keeps what was typed
+    rerender(dialog(true));
+    expect(screen.getByLabelText(/^Output directory/)).toHaveValue('./data');
+
+    rerender(dialog(false));
+    rerender(dialog(true));
+    expect(screen.getByLabelText(/name/i)).toHaveValue('');
+    expect(screen.getByRole('combobox', { name: /connector/i })).toHaveValue('');
+  });
 });
+

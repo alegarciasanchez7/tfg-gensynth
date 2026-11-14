@@ -7,6 +7,7 @@ import org.slf4j.LoggerFactory;
 import java.awt.datatransfer.DataFlavor;
 import java.awt.dnd.*;
 import java.io.File;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.util.Base64;
 import java.util.LinkedHashMap;
@@ -22,22 +23,10 @@ public class NativeDropHandler extends DropTargetAdapter {
             dtde.acceptDrop(DnDConstants.ACTION_COPY);
             Object data = dtde.getTransferable().getTransferData(DataFlavor.javaFileListFlavor);
             if (data instanceof List<?> list) {
+                // Only the first file counts
                 for (Object item : list) {
                     if (item instanceof File file) {
-                        logger.info("Native drop detected: {}", file.getAbsolutePath());
-                        
-                        if (file.getName().endsWith(".jar")) {
-                            byte[] fileContent = Files.readAllBytes(file.toPath());
-                            String base64 = Base64.getEncoder().encodeToString(fileContent);
-                            
-                            Map<String, Object> payload = new LinkedHashMap<>();
-                            payload.put("filename", file.getName());
-                            payload.put("base64", base64);
-                            
-                            if (App.getWsServer() != null) {
-                                App.getWsServer().broadcastMessage("NATIVE_FILE_DROPPED", payload);
-                            }
-                        }
+                        sendDroppedFile(file);
                         break;
                     }
                 }
@@ -46,6 +35,24 @@ public class NativeDropHandler extends DropTargetAdapter {
         } catch (Exception ex) {
             logger.error("Error handling native drop: {}", ex.getMessage());
             dtde.rejectDrop();
+        }
+    }
+
+    /** Sends a dropped plugin JAR to the UI; other files are ignored. */
+    private static void sendDroppedFile(File file) throws IOException {
+        logger.info("Native drop detected: {}", file.getAbsolutePath());
+        if (!file.getName().endsWith(".jar")) {
+            return;
+        }
+        byte[] fileContent = Files.readAllBytes(file.toPath());
+        String base64 = Base64.getEncoder().encodeToString(fileContent);
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("filename", file.getName());
+        payload.put("base64", base64);
+
+        if (App.getWsServer() != null) {
+            App.getWsServer().broadcastMessage("NATIVE_FILE_DROPPED", payload);
         }
     }
 }

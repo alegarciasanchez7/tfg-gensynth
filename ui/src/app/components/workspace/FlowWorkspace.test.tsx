@@ -79,7 +79,7 @@ describe('FlowWorkspace', () => {
       <FlowWorkspace
         flow={flow}
         group={group}
-        template={undefined as any}
+        template={undefined as unknown as string}
         onTemplateChange={vi.fn()}
       />
     );
@@ -110,9 +110,9 @@ describe('FlowWorkspace', () => {
     
     render(
       <FlowWorkspace
-        flow={flowWithoutTemplate as any}
+        flow={flowWithoutTemplate}
         group={group}
-        template={undefined as any}
+        template={undefined as unknown as string}
         onTemplateChange={vi.fn()}
       />
     );
@@ -208,5 +208,15 @@ describe('FlowWorkspace', () => {
       'A flow named "X" already exists in this group',
       { id: 'flow-config-error-f1' },
     ));
+  });
+
+  it('resets the name draft when another flow is shown', () => {
+    const other: Flow = { ...flow, id: 'f2', name: 'Other Flow', everyTicks: 3 };
+    const groupWithFlows: Group = { ...group, flows: [flow, other] };
+    const { rerender } = render(<FlowWorkspace flow={flow} group={groupWithFlows} template="T" onTemplateChange={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText('Flow name'), { target: { value: '' } });
+
+    rerender(<FlowWorkspace flow={other} group={groupWithFlows} template="T" onTemplateChange={vi.fn()} />);
+    expect(screen.getByLabelText('Flow name')).toHaveValue('Other Flow');
   });
 });

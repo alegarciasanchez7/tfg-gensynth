@@ -147,14 +147,14 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
 
     final TemplateEngine templateEngine = new TemplateEngine();
     String currentOutputDir = null;
-    /** Volatile: set on the browser thread, read when a project arrives from outside (WebSocket, macOS). */
-    volatile WebSocket desktopSocket = null;
+    /** Set on the browser thread, read when a project arrives from outside (WebSocket, macOS). */
+    final AtomicReference<WebSocket> desktopSocket = new AtomicReference<>();
     /** Project file the desktop window opens once its UI connects (from --open or a double click). */
     private final AtomicReference<String> pendingOpenProject = new AtomicReference<>();
     /** Makes "keep the file until the UI connects" and "the UI connected" happen one after the other. */
     private final Object openProjectLock = new Object();
     /** Brings the desktop window to the front; null when there is no window (browser mode, CLI). */
-    private volatile Runnable windowActivator;
+    private final AtomicReference<Runnable> windowActivator = new AtomicReference<>();
     final BridgeContext bridgeContext = new BridgeContext(this);
     public final FlowCommandHandler flowCommandHandler = new FlowCommandHandler(bridgeContext);
     public final GroupCommandHandler groupCommandHandler = new GroupCommandHandler(bridgeContext, flowCommandHandler);
@@ -168,8 +168,11 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
     /** Global simulation clock; runs exactly while the system is running (see BridgeContext#setSystemRunning). */
     final ITickClock tickClock = new TickClockImpl(flowCommandHandler);
     
+    /**
+     * @return the virtual socket of the desktop window, or null when no desktop UI has connected
+     */
     public WebSocket getDesktopSocket() {
-        return desktopSocket;
+        return desktopSocket.get();
     }
 
     /**
@@ -179,14 +182,14 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
      * @param windowActivator brings the window to the front
      */
     public void setWindowActivator(Runnable windowActivator) {
-        this.windowActivator = windowActivator;
+        this.windowActivator.set(windowActivator);
     }
 
     /**
      * @return whether a desktop window belongs to this engine (its UI may not have connected yet)
      */
     public boolean hasWindow() {
-        return windowActivator != null;
+        return windowActivator.get() != null;
     }
 
     /**
@@ -213,12 +216,12 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
      * @param filePath absolute path of the {@code .gsynth} file, or null for a new project
      */
     public void requestOpenProject(String filePath) {
-        Runnable activator = windowActivator;
+        Runnable activator = windowActivator.get();
         if (activator != null) {
             activator.run();
         }
         synchronized (openProjectLock) {
-            WebSocket desktop = desktopSocket;
+            WebSocket desktop = desktopSocket.get();
             if (desktop == null) {
                 // A new window starts with an empty project: only a file has to wait
                 if (filePath != null) {
@@ -290,8 +293,8 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         this.stateRepository = stateRepository;
         this.pluginInstaller = pluginInstaller;
         this.devicePreferences = DevicePreferences.inFolder(stateRepository.getStateDirectory());
-        if (this.pluginInstaller instanceof PluginInstallerImpl) {
-            ((PluginInstallerImpl) this.pluginInstaller).setPluginManager(this.connectorCatalogService.getPluginManager());
+        if (this.pluginInstaller instanceof PluginInstallerImpl installer) {
+            installer.setPluginManager(this.connectorCatalogService.getPluginManager());
         }
         this.scheduler = Executors.newScheduledThreadPool(Math.max(4, Runtime.getRuntime().availableProcessors() * 2));
         initializeRuntime();
@@ -405,7 +408,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
      * @return the tick settings of the clock now in use
      */
     public TickSettings getTickSettings() {
-        return bridgeContext.getProjectSettings().getTick();
+        return bridgeContext.getProjectSettings().tick();
     }
 
     /**
@@ -476,13 +479,13 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
      * This bypasses the WebSocket network layer but reuses the same business logic.
      * The virtual socket is created by the desktop package, so this engine has no JCEF reference.
      *
-     * @param rawMessage    the command received from the desktop UI
-     * @param desktopSocket the virtual socket of the desktop window, already set up to answer
-     *                      this command; it becomes the desktop connection of this engine
+     * @param rawMessage the command received from the desktop UI
+     * @param socket     the virtual socket of the desktop window, already set up to answer
+     *                   this command; it becomes the desktop connection of this engine
      */
-    public void handleDesktopCommand(String rawMessage, WebSocket desktopSocket) {
-        this.desktopSocket = desktopSocket;
-        handleCommand(desktopSocket, rawMessage);
+    public void handleDesktopCommand(String rawMessage, WebSocket socket) {
+        desktopSocket.set(socket);
+        handleCommand(socket, rawMessage);
     }
 
     private void handleCommand(WebSocket conn, String rawMessage) {
@@ -526,46 +529,8 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                 return;
             }
 
-            switch (type) {
-                case "GET_INITIAL_STATE" -> stateCommandHandler.handleGetInitialState(conn, commandId);
-                case "LOAD_STATE" -> stateCommandHandler.handleLoadState(conn, commandId);
-                case "REQUEST_OPEN_PROJECT" -> stateCommandHandler.handleRequestOpenProject(conn, commandId, payload);
-                case "SAVE_STATE" -> stateCommandHandler.handleSaveState(conn, commandId);
-                case "SUBSCRIBE_METRICS" -> systemCommandHandler.handleSubscribeMetrics(conn, commandId);
-                case "UNSUBSCRIBE_METRICS" -> systemCommandHandler.handleUnsubscribeMetrics(conn, commandId);
-                case "GET_CONNECTOR_CATALOG" -> systemCommandHandler.handleGetConnectorCatalog(conn, commandId);
-                case "GET_LATEST_CONNECTOR" -> systemCommandHandler.handleGetLatestConnector(conn, payload, commandId);
-                case "START_SYSTEM" -> systemCommandHandler.handleStartSystem(conn, commandId);
-                case "STOP_SYSTEM" -> systemCommandHandler.handleStopSystem(conn, commandId);
-                case "PAUSE_GROUP" -> groupCommandHandler.handlePauseGroup(conn, payload, commandId);
-                case "CLONE_GROUP" -> groupCommandHandler.handleCloneGroup(conn, payload, commandId);
-                case "CLONE_FLOW" -> flowCommandHandler.handleCloneFlow(conn, payload, commandId);
-                case "START_GROUP" -> groupCommandHandler.handleStartGroup(conn, payload, commandId);
-                case "STOP_GROUP" -> groupCommandHandler.handleStopGroup(conn, payload, commandId);
-                case "UI_LOG" -> systemCommandHandler.handleUiLog(conn, payload, commandId);
-                case "CREATE_GROUP" -> groupCommandHandler.handleCreateGroup(conn, payload, commandId);
-                case "DELETE_GROUP" -> groupCommandHandler.handleDeleteGroup(conn, payload, commandId);
-                case "UPDATE_GROUP_CONFIG" -> groupCommandHandler.handleUpdateGroupConfig(conn, payload, commandId);
-                case "CREATE_FLOW" -> flowCommandHandler.handleCreateFlow(conn, payload, commandId);
-                case "DELETE_FLOW" -> flowCommandHandler.handleDeleteFlow(conn, payload, commandId);
-                case "UPDATE_FLOW_CONFIG" -> flowCommandHandler.handleUpdateFlowConfig(conn, payload, commandId);
-                case "CREATE_VARIABLE" -> variableCommandHandler.handleCreateVariable(conn, payload, commandId);
-                case "DELETE_VARIABLE" -> variableCommandHandler.handleDeleteVariable(conn, payload, commandId);
-                case "UPDATE_VARIABLE" -> variableCommandHandler.handleUpdateVariable(conn, payload, commandId);
-                case "VALIDATE_PLUGIN" -> pluginCommandHandler.handleValidatePlugin(conn, payload, commandId);
-                case "INSTALL_PLUGIN" -> pluginCommandHandler.handleInstallPlugin(conn, payload, commandId);
-                case "UNINSTALL_PLUGIN" -> pluginCommandHandler.handleUninstallPlugin(conn, payload, commandId);
-                case "EXPORT_STATE" -> stateCommandHandler.handleExportState(conn, commandId, payload);
-                case "IMPORT_STATE" -> stateCommandHandler.handleImportState(conn, commandId, payload);
-                case "CONVERT_MESSAGE_FORMAT" -> handleConvertMessageFormat(conn, payload, commandId);
-                case "UPDATE_SETTINGS" -> settingsCommandHandler.handleUpdateSettings(conn, payload, commandId);
-                case "UPDATE_OUTPUT_FOLDER" -> settingsCommandHandler.handleUpdateOutputFolder(conn, payload, commandId);
-                case "CHECK_FOR_UPDATES" -> updateCommandHandler.handleCheckForUpdates(conn, commandId);
-                case "INSTALL_UPDATE" -> updateCommandHandler.handleInstallUpdate(conn, payload, commandId);
-                case "CANCEL_UPDATE" -> updateCommandHandler.handleCancelUpdate(conn, commandId);
-                default -> sendError(conn, commandId, "UNSUPPORTED_COMMAND", "Unsupported command: " + type, Map.of(
-                    "command", type
-                ));
+            if (!dispatchProjectCommand(conn, type, payload, commandId)) {
+                dispatchApplicationCommand(conn, type, payload, commandId);
             }
             sendTrace(conn, commandId, "END", type, System.currentTimeMillis() - startTime, "ok");
         } catch (Exception ex) {
@@ -579,6 +544,65 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             }
         } finally {
             MDC.remove(COMMAND_ID);
+        }
+    }
+
+    /**
+     * Runs a command that edits or runs the project: its groups, flows and variables.
+     *
+     * @return false when the command is not one of them
+     */
+    private boolean dispatchProjectCommand(WebSocket conn, String type, JsonNode payload, String commandId) {
+        switch (type) {
+            case "PAUSE_GROUP" -> groupCommandHandler.handlePauseGroup(conn, payload, commandId);
+            case "CLONE_GROUP" -> groupCommandHandler.handleCloneGroup(conn, payload, commandId);
+            case "CLONE_FLOW" -> flowCommandHandler.handleCloneFlow(conn, payload, commandId);
+            case "START_GROUP" -> groupCommandHandler.handleStartGroup(conn, payload, commandId);
+            case "STOP_GROUP" -> groupCommandHandler.handleStopGroup(conn, payload, commandId);
+            case "CREATE_GROUP" -> groupCommandHandler.handleCreateGroup(conn, payload, commandId);
+            case "DELETE_GROUP" -> groupCommandHandler.handleDeleteGroup(conn, payload, commandId);
+            case "UPDATE_GROUP_CONFIG" -> groupCommandHandler.handleUpdateGroupConfig(conn, payload, commandId);
+            case "CREATE_FLOW" -> flowCommandHandler.handleCreateFlow(conn, payload, commandId);
+            case "DELETE_FLOW" -> flowCommandHandler.handleDeleteFlow(conn, payload, commandId);
+            case "UPDATE_FLOW_CONFIG" -> flowCommandHandler.handleUpdateFlowConfig(conn, payload, commandId);
+            case "CREATE_VARIABLE" -> variableCommandHandler.handleCreateVariable(conn, payload, commandId);
+            case "DELETE_VARIABLE" -> variableCommandHandler.handleDeleteVariable(conn, payload, commandId);
+            case "UPDATE_VARIABLE" -> variableCommandHandler.handleUpdateVariable(conn, payload, commandId);
+            default -> {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** Runs the commands about the state, the system, plugins, settings and updates. */
+    private void dispatchApplicationCommand(WebSocket conn, String type, JsonNode payload, String commandId) {
+        switch (type) {
+            case "GET_INITIAL_STATE" -> stateCommandHandler.handleGetInitialState(conn, commandId);
+            case "LOAD_STATE" -> stateCommandHandler.handleLoadState(conn, commandId);
+            case "REQUEST_OPEN_PROJECT" -> stateCommandHandler.handleRequestOpenProject(conn, commandId, payload);
+            case "SAVE_STATE" -> stateCommandHandler.handleSaveState(conn, commandId);
+            case "SUBSCRIBE_METRICS" -> systemCommandHandler.handleSubscribeMetrics(conn, commandId);
+            case "UNSUBSCRIBE_METRICS" -> systemCommandHandler.handleUnsubscribeMetrics(conn, commandId);
+            case "GET_CONNECTOR_CATALOG" -> systemCommandHandler.handleGetConnectorCatalog(conn, commandId);
+            case "GET_LATEST_CONNECTOR" -> systemCommandHandler.handleGetLatestConnector(conn, payload, commandId);
+            case "START_SYSTEM" -> systemCommandHandler.handleStartSystem(conn, commandId);
+            case "STOP_SYSTEM" -> systemCommandHandler.handleStopSystem(conn, commandId);
+            case "UI_LOG" -> systemCommandHandler.handleUiLog(conn, payload, commandId);
+            case "VALIDATE_PLUGIN" -> pluginCommandHandler.handleValidatePlugin(conn, payload, commandId);
+            case "INSTALL_PLUGIN" -> pluginCommandHandler.handleInstallPlugin(conn, payload, commandId);
+            case "UNINSTALL_PLUGIN" -> pluginCommandHandler.handleUninstallPlugin(conn, payload, commandId);
+            case "EXPORT_STATE" -> stateCommandHandler.handleExportState(conn, commandId, payload);
+            case "IMPORT_STATE" -> stateCommandHandler.handleImportState(conn, commandId, payload);
+            case "CONVERT_MESSAGE_FORMAT" -> handleConvertMessageFormat(conn, payload, commandId);
+            case "UPDATE_SETTINGS" -> settingsCommandHandler.handleUpdateSettings(conn, payload, commandId);
+            case "UPDATE_OUTPUT_FOLDER" -> settingsCommandHandler.handleUpdateOutputFolder(conn, payload, commandId);
+            case "CHECK_FOR_UPDATES" -> updateCommandHandler.handleCheckForUpdates(conn, commandId);
+            case "INSTALL_UPDATE" -> updateCommandHandler.handleInstallUpdate(conn, payload, commandId);
+            case "CANCEL_UPDATE" -> updateCommandHandler.handleCancelUpdate(conn, commandId);
+            default -> sendError(conn, commandId, "UNSUPPORTED_COMMAND", "Unsupported command: " + type, Map.of(
+                "command", type
+            ));
         }
     }
 
@@ -838,8 +862,9 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                 sendMessage(connection, type, commandId, payload);
             }
         }
-        if (desktopSocket != null) {
-            sendMessage(desktopSocket, type, commandId, payload);
+        WebSocket desktop = desktopSocket.get();
+        if (desktop != null) {
+            sendMessage(desktop, type, commandId, payload);
         }
     }
 

@@ -83,7 +83,7 @@ public final class ConnectorConfig {
                 } catch (NumberFormatException e) {
                     throw new IllegalArgumentException(label + " must be a whole number");
                 }
-                checkRange(field, number);
+                checkRange(field, (double) number);
                 yield number;
             }
             case DECIMAL -> {

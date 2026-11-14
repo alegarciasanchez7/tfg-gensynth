@@ -4,12 +4,15 @@ import com.gensynth.core.model.TickSettings;
 import org.junit.After;
 import org.junit.Test;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BooleanSupplier;
 
+import static com.gensynth.core.TestWaits.awaitSettled;
+import static com.gensynth.core.TestWaits.eventually;
 import static org.junit.Assert.*;
 
 public class TickClockImplTest {
@@ -28,14 +31,26 @@ public class TickClockImplTest {
         }
     }
 
-    private static void awaitTrue(String message, BooleanSupplier condition) throws InterruptedException {
-        long deadline = System.currentTimeMillis() + 3000;
-        while (!condition.getAsBoolean()) {
-            if (System.currentTimeMillis() > deadline) {
-                fail(message);
-            }
-            Thread.sleep(5);
+    private static void awaitTrue(String message, BooleanSupplier condition) {
+        eventually().alias(message).pollInterval(Duration.ofMillis(1)).until(condition::getAsBoolean);
+    }
+
+    /** Busy work of the given length inside a tick, to make overlapping ticks visible. */
+    private static void work(Duration length) {
+        long end = System.nanoTime() + length.toNanos();
+        while (System.nanoTime() < end) {
+            Thread.onSpinWait();
         }
+    }
+
+    /** Milliseconds the clock takes to emit the given number of ticks after starting it. */
+    private long millisToReach(long ticks) {
+        long start = System.nanoTime();
+        clock.start();
+        awaitTrue("expected " + ticks + " ticks", () -> clock.getTickCount() >= ticks);
+        long elapsed = (System.nanoTime() - start) / 1_000_000;
+        clock.stop();
+        return elapsed;
     }
 
     @Test
@@ -63,10 +78,8 @@ public class TickClockImplTest {
 
         clock.stop();
         assertFalse(clock.isRunning());
-        Thread.sleep(30); // let a tick already in progress finish
-        long frozen = clock.getTickCount();
-        Thread.sleep(50);
-        assertEquals(frozen, clock.getTickCount());
+        // Once a tick already in progress finishes, the counter does not move any more
+        awaitSettled(clock::getTickCount, Duration.ofMillis(50));
 
         // The first tick after the restart is number 1. Checked on the tick itself, not on the
         // counter after a wait: a slow CI runner may emit several ticks before the check
@@ -101,11 +114,7 @@ public class TickClockImplTest {
         clock = new TickClockImpl(n -> {
             int current = inFlight.incrementAndGet();
             maxInFlight.accumulateAndGet(current, Math::max);
-            try {
-                Thread.sleep(2);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
+            work(Duration.ofMillis(2));
             inFlight.decrementAndGet();
             return true;
         }, new TickSettings(TickSettings.Mode.FIXED_RATE, 1, TickSettings.Unit.MILLISECONDS));
@@ -113,7 +122,9 @@ public class TickClockImplTest {
         clock.start();
         for (int i = 0; i < 10; i++) {
             clock.applySettings(i % 2 == 0 ? AFAP : FIVE_MS);
-            Thread.sleep(10);
+            // Let the clock tick a few times with the new settings before rescheduling it again
+            long before = clock.getTickCount();
+            awaitTrue("expected ticks after rescheduling", () -> clock.getTickCount() >= before + 2);
         }
         clock.stop();
 
@@ -138,25 +149,19 @@ public class TickClockImplTest {
     @Test
     public void asFastAsPossibleIsMuchFasterThanFixedRate() throws Exception {
         clock = new TickClockImpl(n -> true, AFAP);
-        clock.start();
-        Thread.sleep(100);
-        long ticks = clock.getTickCount();
-        clock.stop();
 
-        // A 5 ms fixed rate would give about 20 ticks in 100 ms
-        assertTrue("AFAP should emit far more ticks, got " + ticks, ticks > 200);
+        // A 5 ms fixed rate would need a full second for 200 ticks
+        long millis = millisToReach(200);
+        assertTrue("AFAP should emit 200 ticks far sooner, took " + millis + " ms", millis < 500);
     }
 
     @Test
     public void asFastAsPossibleBacksOffWhenIdle() throws Exception {
         clock = new TickClockImpl(n -> false, AFAP);
-        clock.start();
-        Thread.sleep(100);
-        long ticks = clock.getTickCount();
-        clock.stop();
 
-        // 1 ms back-off: at most ~100 idle ticks in 100 ms (generous bound for slow machines)
-        assertTrue("idle AFAP should back off, got " + ticks, ticks < 400);
+        // 1 ms back-off: 100 idle ticks take about 100 ms (at least 25 ms, a generous bound)
+        long millis = millisToReach(100);
+        assertTrue("idle AFAP should back off, 100 ticks took " + millis + " ms", millis >= 25);
     }
 
     @Test
@@ -166,7 +171,8 @@ public class TickClockImplTest {
 
         clock.start();
         clock.sampleTicksPerSecond();
-        Thread.sleep(300);
+        // About 300 ms of ticks: the rate is measured over the time since the previous sample
+        awaitTrue("expected ticks to measure", () -> clock.getTickCount() >= 30);
         double rate = clock.sampleTicksPerSecond();
         assertTrue("expected roughly 100 ticks/s, got " + rate, rate > 40 && rate < 160);
 
@@ -179,11 +185,9 @@ public class TickClockImplTest {
         // Work appears every other tick (e.g. a busy flow freeing up): the adaptive back-off
         // must reset on work instead of always pausing 1 ms
         clock = new TickClockImpl(n -> n % 2 == 0, AFAP);
-        clock.start();
-        Thread.sleep(100);
-        long ticks = clock.getTickCount();
-        clock.stop();
 
-        assertTrue("expected far more than 100 ticks in 100 ms, got " + ticks, ticks > 500);
+        // Pausing 1 ms on every idle tick would need at least 250 ms for 500 ticks
+        long millis = millisToReach(500);
+        assertTrue("expected 500 ticks in far less than 250 ms, took " + millis + " ms", millis < 150);
     }
 }

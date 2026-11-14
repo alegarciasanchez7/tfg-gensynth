@@ -8,6 +8,13 @@
 export type OptimisticKind = 'update' | 'create' | 'delete';
 export type EntityType = 'group' | 'flow' | 'variable';
 
+/** Entity a command acts on, from its type (e.g. `UPDATE_FLOW_CONFIG` → `flow`). */
+export function entityTypeOfCommand(commandType: string): EntityType {
+  if (commandType.includes('GROUP')) return 'group';
+  if (commandType.includes('FLOW')) return 'flow';
+  return 'variable';
+}
+
 /**
  * Record of an optimistic operation.
  */
@@ -61,7 +68,7 @@ export interface OptimisticOperation {
  * Centralized manager for optimistic operations.
  */
 export class OptimisticManager {
-  private operations: Map<string, OptimisticOperation> = new Map();
+  private readonly operations: Map<string, OptimisticOperation> = new Map();
 
   /**
    * Register an optimistic operation.
@@ -92,7 +99,7 @@ export class OptimisticManager {
    */
   updateTempIdMapping(commandId: string, realId: string): void {
     const op = this.operations.get(commandId);
-    if (op && op.tempIdMapping) {
+    if (op?.tempIdMapping) {
       op.tempIdMapping.realId = realId;
     }
   }

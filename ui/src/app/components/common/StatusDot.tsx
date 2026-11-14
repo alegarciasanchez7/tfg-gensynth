@@ -8,7 +8,7 @@ interface StatusDotProps extends React.HTMLAttributes<HTMLSpanElement> {
   size?: 'sm' | 'md';
 }
 
-export function StatusDot({ className, status, size = 'sm', ...props }: StatusDotProps) {
+export function StatusDot({ className, status, size = 'sm', ...props }: Readonly<StatusDotProps>) {
   const dotColorClass = {
     connected: 'bg-emerald-400',
     running: 'bg-emerald-400',

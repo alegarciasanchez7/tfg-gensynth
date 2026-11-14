@@ -14,7 +14,7 @@ export function InlineButton({
   isActive = false,
   type = 'button',
   ...props
-}: InlineButtonProps) {
+}: Readonly<InlineButtonProps>) {
   const baseClasses = "flex items-center justify-center rounded border text-[11px] font-mono transition-all disabled:opacity-50 disabled:cursor-not-allowed";
   
   const variantClasses = {

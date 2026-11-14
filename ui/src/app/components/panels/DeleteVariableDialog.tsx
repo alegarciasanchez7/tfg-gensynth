@@ -22,7 +22,7 @@ export function DeleteVariableDialog({
   onOpenChange,
   variable,
   onDelete,
-}: DeleteVariableDialogProps) {
+}: Readonly<DeleteVariableDialogProps>) {
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent className="bg-[var(--c-bg2)] border-[var(--c-br1)] text-[var(--c-tx2)]">

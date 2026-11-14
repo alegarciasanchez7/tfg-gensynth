@@ -40,6 +40,7 @@ public class DesktopLauncher implements IDesktopLauncher {
 
     private static final long ANSWER_TIMEOUT_MILLIS = 2000;
     private static final String MAIN_CLASS = "com.gensynth.core.App";
+    private static final String WINDOWS = "windows";
     /** Where Linux distributions install setsid (util-linux). */
     private static final List<String> SETSID_PATHS = List.of("/usr/bin/setsid", "/bin/setsid");
 
@@ -125,7 +126,7 @@ public class DesktopLauncher implements IDesktopLauncher {
     static List<String> command(String cliLauncher, String osName, String javaHome, List<String> jvmArgs,
                                 String classPath, String setsid, String openFile) {
         String os = osName.toLowerCase(Locale.ROOT);
-        boolean windows = os.startsWith("windows");
+        boolean windows = os.startsWith(WINDOWS);
         List<String> args = new ArrayList<>();
         // It needs --desktop explicitly: any argument replaces the launcher's default ones
         args.add("--desktop");
@@ -135,12 +136,9 @@ public class DesktopLauncher implements IDesktopLauncher {
         }
 
         if (cliLauncher != null && os.startsWith("mac")) {
-            // .../GenSynth.app/Contents/MacOS/GenSynth
-            Path bundle = desktopLauncher(cliLauncher, osName).getParent().getParent().getParent();
-            if (bundle != null && bundle.toString().endsWith(".app")) {
-                List<String> command = new ArrayList<>(List.of("/usr/bin/open", "-n", "-a", bundle.toString(), "--args"));
-                command.addAll(args);
-                return command;
+            List<String> openApp = openAppBundle(cliLauncher, osName, args);
+            if (!openApp.isEmpty()) {
+                return openApp;
             }
         }
 
@@ -148,16 +146,7 @@ public class DesktopLauncher implements IDesktopLauncher {
         if (cliLauncher != null) {
             app.add(desktopLauncher(cliLauncher, osName).toString());
         } else {
-            app.add(Paths.get(javaHome, "bin", windows ? "javaw" : "java").toString());
-            for (String arg : jvmArgs) {
-                // A debugger port would clash with the one of this process
-                if (!arg.startsWith("-agentlib:jdwp") && !arg.startsWith("-Xrunjdwp")) {
-                    app.add(arg);
-                }
-            }
-            app.add("-cp");
-            app.add(classPath);
-            app.add(MAIN_CLASS);
+            addSourceBuildJava(app, javaHome, windows, jvmArgs, classPath);
         }
         app.addAll(args);
         if (windows) {
@@ -174,6 +163,36 @@ public class DesktopLauncher implements IDesktopLauncher {
     }
 
     /**
+     * @return {@code open -a} with the application bundle of a macOS installation, or an empty
+     *         list when the launcher is not inside a {@code .app} bundle
+     */
+    private static List<String> openAppBundle(String cliLauncher, String osName, List<String> args) {
+        // .../GenSynth.app/Contents/MacOS/GenSynth
+        Path bundle = desktopLauncher(cliLauncher, osName).getParent().getParent().getParent();
+        if (bundle == null || !bundle.toString().endsWith(".app")) {
+            return List.of();
+        }
+        List<String> command = new ArrayList<>(List.of("/usr/bin/open", "-n", "-a", bundle.toString(), "--args"));
+        command.addAll(args);
+        return command;
+    }
+
+    /** Adds the Java command of the source build: this JVM's options and class path. */
+    private static void addSourceBuildJava(List<String> app, String javaHome, boolean windows, List<String> jvmArgs,
+                                           String classPath) {
+        app.add(Paths.get(javaHome, "bin", windows ? "javaw" : "java").toString());
+        for (String arg : jvmArgs) {
+            // A debugger port would clash with the one of this process
+            if (!arg.startsWith("-agentlib:jdwp") && !arg.startsWith("-Xrunjdwp")) {
+                app.add(arg);
+            }
+        }
+        app.add("-cp");
+        app.add(classPath);
+        app.add(MAIN_CLASS);
+    }
+
+    /**
      * The desktop launcher sits next to the command line one in every installer (Windows: the
      * installation folder; Linux: {@code /opt/gensynth/bin}; macOS: {@code Contents/MacOS}).
      * Links are followed first: on Linux the command line is reached through
@@ -186,7 +205,7 @@ public class DesktopLauncher implements IDesktopLauncher {
         } catch (IOException e) {
             // Not there (e.g. in the tests): use it as given
         }
-        boolean windows = osName.toLowerCase(Locale.ROOT).startsWith("windows");
+        boolean windows = osName.toLowerCase(Locale.ROOT).startsWith(WINDOWS);
         return cli.resolveSibling(windows ? "GenSynth.exe" : "GenSynth");
     }
 
@@ -195,7 +214,7 @@ public class DesktopLauncher implements IDesktopLauncher {
             .redirectOutput(ProcessBuilder.Redirect.DISCARD)
             .redirectError(ProcessBuilder.Redirect.DISCARD)
             .redirectInput(ProcessBuilder.Redirect.from(new File(
-                System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("windows") ? "NUL" : "/dev/null")));
+                System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith(WINDOWS) ? "NUL" : "/dev/null")));
         // Not waited for: the window lives on its own
         builder.start();
     }

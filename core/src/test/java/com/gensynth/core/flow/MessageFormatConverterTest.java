@@ -70,6 +70,35 @@ public class MessageFormatConverterTest {
     }
 
     @Test
+    public void xmlRepeatedTagsAndItemsBecomeArraysWithTypedValues() {
+        String xml = "<root><tag>1</tag><tag>2.5</tag><item>true</item><name> text </name><empty/>"
+            + "<nested><flag>FALSE</flag></nested></root>";
+
+        String json = MessageFormatConverter.convert(xml, "XML", "JSON").replaceAll("\\s", "");
+
+        assertEquals("{\"tag\":[1,2.5],\"item\":[true],\"name\":\"text\",\"empty\":\"\",\"nested\":{\"flag\":false}}", json);
+    }
+
+    @Test
+    public void csvWithSeveralRowsBecomesAnArrayWithTypedValues() {
+        String csv = "id,ok,ratio,label\n1,true,0.5,\"a,b\"\n\n2,false\n";
+
+        String json = MessageFormatConverter.convert(csv, "CSV", "JSON").replaceAll("\\s", "");
+
+        // Blank lines are skipped and missing trailing fields are empty text
+        assertEquals("[{\"id\":1,\"ok\":true,\"ratio\":0.5,\"label\":\"a,b\"},"
+            + "{\"id\":2,\"ok\":false,\"ratio\":\"\",\"label\":\"\"}]", json);
+    }
+
+    @Test
+    public void jsonArraysAndScalarsBecomeCsvRows() {
+        assertEquals("a,b,value\n1,,\n,\"x,y\",\n,,7",
+            MessageFormatConverter.convert("[{\"a\":1,\"b\":null},{\"b\":\"x,y\"},7]", "JSON", "CSV"));
+        assertEquals("value\nhello", MessageFormatConverter.convert("\"hello\"", "JSON", "CSV"));
+        assertEquals("", MessageFormatConverter.convert("[]", "JSON", "CSV"));
+    }
+
+    @Test
     public void testSameFormatReturnsUnchanged() {
         String json = "{\"id\": \"123\"}";
         assertEquals(json, MessageFormatConverter.convert(json, "JSON", "JSON"));

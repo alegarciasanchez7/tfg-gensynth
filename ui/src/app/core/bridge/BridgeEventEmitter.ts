@@ -1,7 +1,7 @@
 import type { EventMap, EventCallback } from './BridgeTypes';
 
 export class BridgeEventEmitter {
-  private eventListeners: Map<string, Set<EventCallback>> = new Map();
+  private readonly eventListeners: Map<string, Set<EventCallback>> = new Map();
 
   on<K extends keyof EventMap>(event: K, callback: EventCallback<EventMap[K]>): () => void {
     if (!this.eventListeners.has(event)) {

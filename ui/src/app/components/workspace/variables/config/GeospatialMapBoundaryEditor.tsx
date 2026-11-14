@@ -12,7 +12,7 @@ import { Label } from '../../../ui/label';
 import { Button } from '../../../ui/button';
 import { Info, BoxSelect, AlertTriangle, WifiOff } from 'lucide-react';
 import { Tooltip, TooltipTrigger, TooltipContent } from '../../../ui/tooltip';
-import { useBoundaryModalContext } from './BoundaryExpandModal';
+import { useBoundaryModalContext } from './boundaryModalContext';
 import { centerOf, defaultBoundsFor } from '../../../../core/pointDefaults';
 import { formatDms } from '../../../../core/dms';
 import { OfflineGridOverlay } from './mapShared';
@@ -112,7 +112,6 @@ interface GeospatialMapBoundaryEditorProps {
     altitudeOscillationSpeed?: number;
     polygon?: Point3DCoord[];
   }) => void;
-  width?: number;
   height?: number;
 }
 
@@ -265,7 +264,7 @@ function MapResizeHandler() {
 }
 
 // Cursor / moving-vertex coordinates badge. Owns the cursor state so map mousemove only re-renders this badge.
-function CoordinatesHud({ movingPoint }: { movingPoint: DragPreview | null }) {
+function CoordinatesHud({ movingPoint }: Readonly<{ movingPoint: DragPreview | null }>) {
   const [cursorPos, setCursorPos] = useState<{ lat: number; lon: number } | null>(null);
   const handlers = useMemo<L.LeafletEventHandlerFnMap>(
     () => ({
@@ -280,28 +279,35 @@ function CoordinatesHud({ movingPoint }: { movingPoint: DragPreview | null }) {
   );
   useMapEvents(handlers);
 
+  let content: React.ReactNode;
+  if (movingPoint) {
+    content = (
+      <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-300">
+        <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+        <span className="font-semibold text-[9px] uppercase tracking-wider text-amber-400">MOVING POINT #{movingPoint.index + 1}:</span>
+        <span>{formatLatLon(movingPoint.lat, movingPoint.lon)}</span>
+      </div>
+    );
+  } else if (cursorPos) {
+    content = (
+      <>
+        <div className="flex items-center gap-1.5 text-cyan-600 dark:text-cyan-300">
+          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+          <span className="font-semibold text-[9px] uppercase tracking-wider text-cyan-400">CURSOR:</span>
+          <span>{formatLatLon(cursorPos.lat, cursorPos.lon)}</span>
+        </div>
+        <div className="text-[9px] text-[var(--c-tx4)] border-l border-[var(--c-br1)] pl-2">
+          {formatDms(cursorPos.lat, true)}, {formatDms(cursorPos.lon, false)}
+        </div>
+      </>
+    );
+  } else {
+    content = <div className="text-[var(--c-tx4)] italic text-[9px]">Hover or drag point markers for live coordinates</div>;
+  }
+
   return (
     <div className="absolute top-2 right-2 z-[1000] bg-[var(--c-bg2)]/90 backdrop-blur border border-[var(--c-br1)] text-[10px] font-mono px-2.5 py-1.5 rounded shadow-lg pointer-events-none text-[var(--c-tx1)] flex items-center gap-3">
-      {movingPoint ? (
-        <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-300">
-          <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
-          <span className="font-semibold text-[9px] uppercase tracking-wider text-amber-400">MOVING POINT #{movingPoint.index + 1}:</span>
-          <span>{formatLatLon(movingPoint.lat, movingPoint.lon)}</span>
-        </div>
-      ) : cursorPos ? (
-        <>
-          <div className="flex items-center gap-1.5 text-cyan-600 dark:text-cyan-300">
-            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
-            <span className="font-semibold text-[9px] uppercase tracking-wider text-cyan-400">CURSOR:</span>
-            <span>{formatLatLon(cursorPos.lat, cursorPos.lon)}</span>
-          </div>
-          <div className="text-[9px] text-[var(--c-tx4)] border-l border-[var(--c-br1)] pl-2">
-            {formatDms(cursorPos.lat, true)}, {formatDms(cursorPos.lon, false)}
-          </div>
-        </>
-      ) : (
-        <div className="text-[var(--c-tx4)] italic text-[9px]">Hover or drag point markers for live coordinates</div>
-      )}
+      {content}
     </div>
   );
 }
@@ -365,11 +371,11 @@ function GeofenceLayers({
   points,
   onVertexMove,
   onVertexDelete,
-}: {
+}: Readonly<{
   points: Point3DCoord[];
   onVertexMove: (index: number, lat: number, lon: number) => void;
   onVertexDelete: (index: number) => void;
-}) {
+}>) {
   const [preview, setPreview] = useState<DragPreview | null>(null);
   const handleDrag = useCallback((index: number, lat: number, lon: number) => setPreview({ index, lat, lon }), []);
   const handleDragEnd = useStableCallback((index: number, lat: number, lon: number) => {
@@ -381,7 +387,7 @@ function GeofenceLayers({
   const positions = useMemo(
     () =>
       points.map((p, i) =>
-        preview && preview.index === i ? ([preview.lat, preview.lon] as L.LatLngTuple) : ([latOf(p), lonOf(p)] as L.LatLngTuple)
+        preview?.index === i ? ([preview.lat, preview.lon] as L.LatLngTuple) : ([latOf(p), lonOf(p)] as L.LatLngTuple)
       ),
     [points, preview]
   );
@@ -417,13 +423,13 @@ function CommitNumberInput({
   value,
   onCommit,
   allowEmpty = false,
-}: {
+}: Readonly<{
   id: string;
   placeholder: string;
   value: number | undefined;
   onCommit: (value: number | undefined) => void;
   allowEmpty?: boolean;
-}) {
+}>) {
   const shown = value === undefined ? '' : String(value);
   const [draft, setDraft] = useState(shown);
   const [prevShown, setPrevShown] = useState(shown);
@@ -463,6 +469,303 @@ function CommitNumberInput({
       }}
       className="h-8 text-xs font-mono"
     />
+  );
+}
+
+interface GeoAltitudeSettingsProps {
+  altitudePattern: AltitudePattern;
+  altitudeUnit: AltitudeUnit;
+  altitudeReference: AltitudeReference;
+  minAlt: number;
+  maxAlt: number;
+  initialAltitude?: number;
+  maxVerticalStep: number;
+  altitudeOscillationSpeed: number;
+  emit: (patch: Partial<GeoBoundsChange>) => void;
+  /** Commits an altitude range (the values are swapped when min > max). */
+  onAltitudeChange: (a: number, b: number) => void;
+}
+
+/** Altitude dynamics pattern, its value inputs, and the unit / datum selectors. */
+function GeoAltitudeSettings({
+  altitudePattern,
+  altitudeUnit,
+  altitudeReference,
+  minAlt,
+  maxAlt,
+  initialAltitude,
+  maxVerticalStep,
+  altitudeOscillationSpeed,
+  emit,
+  onAltitudeChange: handleAltitudeChange,
+}: Readonly<GeoAltitudeSettingsProps>) {
+  return (
+    <div className="rounded border border-[var(--c-br1)] bg-[var(--c-bg4)] p-3 space-y-3">
+    <div className="flex items-center justify-between">
+      <div className="flex items-center gap-1.5">
+        <Label className="text-[10px] uppercase text-[var(--c-tx4)]">
+          Geospatial Altitude Dynamics & Datum Settings
+        </Label>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button type="button" className="text-[var(--c-tx4)] hover:text-cyan-400 cursor-help transition-colors">
+              <Info size={10} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-[340px] space-y-1.5 p-3 text-[11px] leading-relaxed">
+            <p className="font-semibold text-violet-600 dark:text-violet-300">Altitude & Elevation Dynamics Workflow:</p>
+            <p>1. Pattern: Select how elevation Z varies independently from 2D map movement.</p>
+            <p>2. Dynamic Inputs: Configure single fixed height or min/max elevation range & step limits.</p>
+            <p>3. Unit & Reference: Select measurement unit and physical datum baseline (MSL / AGL / Ellipsoid).</p>
+          </TooltipContent>
+        </Tooltip>
+      </div>
+    </div>
+
+    {/* 1. FIRST: Independent Altitude Dynamics Pattern Selector */}
+    <div className="space-y-1">
+      <div className="flex items-center gap-1">
+        <Label htmlFor="geo-alt-pattern" className="text-[9px] text-[var(--c-tx4)]">Independent Altitude Dynamics Pattern</Label>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button type="button" className="text-[var(--c-tx4)] hover:text-cyan-400 cursor-help transition-colors">
+              <Info size={9} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-[300px] p-2 text-[10px] leading-relaxed space-y-1">
+            <p className="font-semibold text-emerald-600 dark:text-emerald-300">Vertical (Z) Generation Dynamics:</p>
+            <p>• Follow Primary XY: Inherits motion from 2D plane.</p>
+            <p>• Fixed Altitude: Constant fixed elevation height.</p>
+            <p>• Random Elevation: Uniform random value in [Min Alt, Max Alt] per tick.</p>
+            <p>• Climb & Descent Walk: Smooth continuous step ascent and descent.</p>
+            <p>• Sinusoidal Oscillation: Smooth hovering sine wave oscillation.</p>
+          </TooltipContent>
+        </Tooltip>
+      </div>
+      <select
+        id="geo-alt-pattern"
+        value={altitudePattern}
+        onChange={(e) => emit({ altitudePattern: e.target.value as AltitudePattern })}
+        className="h-8 w-full rounded border border-input bg-input-background dark:bg-input/30 px-2 py-1 text-xs text-[var(--c-tx2)] outline-none hover:bg-[var(--c-bg5)] cursor-pointer"
+      >
+        <option value="FOLLOW_XY">Follow Primary XY Pattern</option>
+        <option value="FIXED_ALTITUDE">Fixed Altitude (Constant Height)</option>
+        <option value="RANDOM_UNIFORM">Random Elevation (Uniform in Range)</option>
+        <option value="RANDOM_WALK">Continuous Climb & Descent Walk</option>
+        <option value="SINE_OSCILLATION">Sinusoidal Hover Oscillation (Sine Wave)</option>
+      </select>
+    </div>
+
+    {/* 2. SECOND: Dynamic Altitude Value Input(s) matching selected Pattern */}
+    {altitudePattern === 'FIXED_ALTITUDE' ? (
+      <div className="space-y-1">
+        <div className="flex items-center gap-1">
+          <Label htmlFor="geo-fixed-alt" className="text-[9px] text-[var(--c-tx4)]">Fixed Altitude</Label>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button type="button" className="text-[var(--c-tx4)] hover:text-cyan-400 cursor-help transition-colors">
+                <Info size={9} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-[260px] p-2 text-[10px] leading-relaxed">
+              Fixed constant elevation height. Elevation range bounds are hidden because altitude remains static.
+            </TooltipContent>
+          </Tooltip>
+        </div>
+        <CommitNumberInput
+          id="geo-fixed-alt"
+          placeholder="e.g. 50.0"
+          value={minAlt}
+          onCommit={(v) => {
+            if (v !== undefined) handleAltitudeChange(v, v);
+          }}
+        />
+      </div>
+    ) : (
+      <div className={`grid ${altitudePattern === 'RANDOM_WALK' || altitudePattern === 'SINE_OSCILLATION' || altitudePattern === 'FOLLOW_XY' ? 'grid-cols-3' : 'grid-cols-2'} gap-3`}>
+        <div className="space-y-1">
+          <div className="flex items-center gap-1">
+            <Label htmlFor="geo-min-alt" className="text-[9px] text-[var(--c-tx4)]">Min Altitude</Label>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button type="button" className="text-[var(--c-tx4)] hover:text-cyan-400 cursor-help transition-colors">
+                  <Info size={9} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-[260px] p-2 text-[10px] leading-relaxed">
+                Lower elevation bound [Min Alt]. The generator will never produce values below this threshold.
+              </TooltipContent>
+            </Tooltip>
+          </div>
+          <CommitNumberInput
+            id="geo-min-alt"
+            placeholder="e.g. 0.0"
+            value={minAlt}
+            onCommit={(v) => {
+              if (v !== undefined) handleAltitudeChange(v, maxAlt);
+            }}
+          />
+        </div>
+        <div className="space-y-1">
+          <div className="flex items-center gap-1">
+            <Label htmlFor="geo-max-alt" className="text-[9px] text-[var(--c-tx4)]">Max Altitude</Label>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button type="button" className="text-[var(--c-tx4)] hover:text-cyan-400 cursor-help transition-colors">
+                  <Info size={9} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-[260px] p-2 text-[10px] leading-relaxed">
+                Upper elevation bound [Max Alt]. The generator will never produce values above this threshold.
+              </TooltipContent>
+            </Tooltip>
+          </div>
+          <CommitNumberInput
+            id="geo-max-alt"
+            placeholder="e.g. 100.0"
+            value={maxAlt}
+            onCommit={(v) => {
+              if (v !== undefined) handleAltitudeChange(minAlt, v);
+            }}
+          />
+        </div>
+
+        {altitudePattern === 'FOLLOW_XY' && (
+          <div className="space-y-1">
+            <div className="flex items-center gap-1">
+              <Label htmlFor="geo-init-alt" className="text-[9px] text-[var(--c-tx4)]">Initial Altitude (Seed)</Label>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button type="button" className="text-[var(--c-tx4)] hover:text-cyan-400 cursor-help transition-colors">
+                    <Info size={9} />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-[250px] p-2 text-[10px] leading-relaxed">
+                  Starting altitude seed value. Altitude begins at this value and varies alongside 2D plane motion.
+                </TooltipContent>
+              </Tooltip>
+            </div>
+            <CommitNumberInput
+              id="geo-init-alt"
+              placeholder="e.g. 50.0"
+              value={initialAltitude}
+              allowEmpty
+              onCommit={(v) => emit({ initialAltitude: v })}
+            />
+          </div>
+        )}
+
+        {altitudePattern === 'RANDOM_WALK' && (
+          <div className="space-y-1">
+            <div className="flex items-center gap-1">
+              <Label htmlFor="geo-v-step" className="text-[9px] text-[var(--c-tx4)]">Max Vertical Step (m/tick)</Label>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button type="button" className="text-[var(--c-tx4)] hover:text-cyan-400 cursor-help transition-colors">
+                    <Info size={9} />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-[250px] p-2 text-[10px] leading-relaxed">
+                  Maximum vertical step distance (in elevation units/meters) altitude can ascend or descend per tick.
+                </TooltipContent>
+              </Tooltip>
+            </div>
+            <CommitNumberInput
+              id="geo-v-step"
+              placeholder="e.g. 1.0"
+              value={maxVerticalStep}
+              onCommit={(v) => {
+                if (v !== undefined) emit({ maxVerticalStep: v });
+              }}
+            />
+          </div>
+        )}
+
+        {altitudePattern === 'SINE_OSCILLATION' && (
+          <div className="space-y-1">
+            <div className="flex items-center gap-1">
+              <Label htmlFor="geo-osc-speed" className="text-[9px] text-[var(--c-tx4)]">Oscillation Speed (rad/tick)</Label>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button type="button" className="text-[var(--c-tx4)] hover:text-cyan-400 cursor-help transition-colors">
+                    <Info size={9} />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-[250px] p-2 text-[10px] leading-relaxed">
+                  Angular speed of the sinusoidal hovering wave (radians per tick). Controls climb/descent frequency.
+                </TooltipContent>
+              </Tooltip>
+            </div>
+            <CommitNumberInput
+              id="geo-osc-speed"
+              placeholder="e.g. 0.1"
+              value={altitudeOscillationSpeed}
+              onCommit={(v) => {
+                if (v !== undefined) emit({ altitudeOscillationSpeed: v });
+              }}
+            />
+          </div>
+        )}
+      </div>
+    )}
+
+    {/* 3. THIRD: Measurement Unit and Datum Reference Selectors */}
+    <div className="grid grid-cols-2 gap-3 pt-1">
+      <div className="space-y-1">
+        <div className="flex items-center gap-1">
+          <Label htmlFor="geo-alt-unit" className="text-[9px] text-[var(--c-tx4)]">Altitude Measurement Unit</Label>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button type="button" className="text-[var(--c-tx4)] hover:text-cyan-400 cursor-help transition-colors">
+                <Info size={9} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-[260px] p-2 text-[10px] leading-relaxed">
+              Physical unit for output altitude: Meters (m), Feet (ft), Kilometers (km), or Miles (mi).
+            </TooltipContent>
+          </Tooltip>
+        </div>
+        <select
+          id="geo-alt-unit"
+          value={altitudeUnit}
+          onChange={(e) => emit({ altitudeUnit: e.target.value as AltitudeUnit })}
+          className="h-8 w-full rounded border border-input bg-input-background dark:bg-input/30 px-2 py-1 text-xs text-[var(--c-tx2)] outline-none hover:bg-[var(--c-bg5)] cursor-pointer"
+        >
+          <option value="METERS">Meters (m)</option>
+          <option value="FEET">Feet (ft)</option>
+          <option value="KILOMETERS">Kilometers (km)</option>
+          <option value="MILES">Miles (mi)</option>
+        </select>
+      </div>
+      <div className="space-y-1">
+        <div className="flex items-center gap-1">
+          <Label htmlFor="geo-alt-ref" className="text-[9px] text-[var(--c-tx4)]">Datum / Altitude Reference</Label>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button type="button" className="text-[var(--c-tx4)] hover:text-cyan-400 cursor-help transition-colors">
+                <Info size={9} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-[280px] p-2 text-[10px] leading-relaxed">
+              • MSL: Orthometric height relative to mean sea level (WGS84 EGM96).<br/>
+              • AGL: Relative height above local terrain ground level.<br/>
+              • ELLIPSOID: Pure WGS84 mathematical ellipsoid height (GPS hardware HAE).
+            </TooltipContent>
+          </Tooltip>
+        </div>
+        <select
+          id="geo-alt-ref"
+          value={altitudeReference}
+          onChange={(e) => emit({ altitudeReference: e.target.value as AltitudeReference })}
+          className="h-8 w-full rounded border border-input bg-input-background dark:bg-input/30 px-2 py-1 text-xs text-[var(--c-tx2)] outline-none hover:bg-[var(--c-bg5)] cursor-pointer"
+        >
+          <option value="MSL">MSL (Mean Sea Level / ASL)</option>
+          <option value="AGL">AGL (Above Ground Level)</option>
+          <option value="ELLIPSOID">ELLIPSOID (WGS84 HAE)</option>
+        </select>
+      </div>
+    </div>
+  </div>
   );
 }
 
@@ -863,272 +1166,18 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
           Altitude settings are hidden in fullscreen; edit them in the Spatial Boundaries tab.
         </p>
       ) : (
-        <div className="rounded border border-[var(--c-br1)] bg-[var(--c-bg4)] p-3 space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1.5">
-            <Label className="text-[10px] uppercase text-[var(--c-tx4)]">
-              Geospatial Altitude Dynamics & Datum Settings
-            </Label>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button type="button" className="text-[var(--c-tx4)] hover:text-cyan-400 cursor-help transition-colors">
-                  <Info size={10} />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent className="max-w-[340px] space-y-1.5 p-3 text-[11px] leading-relaxed">
-                <p className="font-semibold text-violet-600 dark:text-violet-300">Altitude & Elevation Dynamics Workflow:</p>
-                <p>1. Pattern: Select how elevation Z varies independently from 2D map movement.</p>
-                <p>2. Dynamic Inputs: Configure single fixed height or min/max elevation range & step limits.</p>
-                <p>3. Unit & Reference: Select measurement unit and physical datum baseline (MSL / AGL / Ellipsoid).</p>
-              </TooltipContent>
-            </Tooltip>
-          </div>
-        </div>
-
-        {/* 1. FIRST: Independent Altitude Dynamics Pattern Selector */}
-        <div className="space-y-1">
-          <div className="flex items-center gap-1">
-            <Label htmlFor="geo-alt-pattern" className="text-[9px] text-[var(--c-tx4)]">Independent Altitude Dynamics Pattern</Label>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button type="button" className="text-[var(--c-tx4)] hover:text-cyan-400 cursor-help transition-colors">
-                  <Info size={9} />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent className="max-w-[300px] p-2 text-[10px] leading-relaxed space-y-1">
-                <p className="font-semibold text-emerald-600 dark:text-emerald-300">Vertical (Z) Generation Dynamics:</p>
-                <p>• Follow Primary XY: Inherits motion from 2D plane.</p>
-                <p>• Fixed Altitude: Constant fixed elevation height.</p>
-                <p>• Random Elevation: Uniform random value in [Min Alt, Max Alt] per tick.</p>
-                <p>• Climb & Descent Walk: Smooth continuous step ascent and descent.</p>
-                <p>• Sinusoidal Oscillation: Smooth hovering sine wave oscillation.</p>
-              </TooltipContent>
-            </Tooltip>
-          </div>
-          <select
-            id="geo-alt-pattern"
-            value={altitudePattern}
-            onChange={(e) => emit({ altitudePattern: e.target.value as AltitudePattern })}
-            className="h-8 w-full rounded border border-input bg-input-background dark:bg-input/30 px-2 py-1 text-xs text-[var(--c-tx2)] outline-none hover:bg-[var(--c-bg5)] cursor-pointer"
-          >
-            <option value="FOLLOW_XY">Follow Primary XY Pattern</option>
-            <option value="FIXED_ALTITUDE">Fixed Altitude (Constant Height)</option>
-            <option value="RANDOM_UNIFORM">Random Elevation (Uniform in Range)</option>
-            <option value="RANDOM_WALK">Continuous Climb & Descent Walk</option>
-            <option value="SINE_OSCILLATION">Sinusoidal Hover Oscillation (Sine Wave)</option>
-          </select>
-        </div>
-
-        {/* 2. SECOND: Dynamic Altitude Value Input(s) matching selected Pattern */}
-        {altitudePattern === 'FIXED_ALTITUDE' ? (
-          <div className="space-y-1">
-            <div className="flex items-center gap-1">
-              <Label htmlFor="geo-fixed-alt" className="text-[9px] text-[var(--c-tx4)]">Fixed Altitude</Label>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button type="button" className="text-[var(--c-tx4)] hover:text-cyan-400 cursor-help transition-colors">
-                    <Info size={9} />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent className="max-w-[260px] p-2 text-[10px] leading-relaxed">
-                  Fixed constant elevation height. Elevation range bounds are hidden because altitude remains static.
-                </TooltipContent>
-              </Tooltip>
-            </div>
-            <CommitNumberInput
-              id="geo-fixed-alt"
-              placeholder="e.g. 50.0"
-              value={minAlt}
-              onCommit={(v) => {
-                if (v !== undefined) handleAltitudeChange(v, v);
-              }}
-            />
-          </div>
-        ) : (
-          <div className={`grid ${altitudePattern === 'RANDOM_WALK' || altitudePattern === 'SINE_OSCILLATION' || altitudePattern === 'FOLLOW_XY' ? 'grid-cols-3' : 'grid-cols-2'} gap-3`}>
-            <div className="space-y-1">
-              <div className="flex items-center gap-1">
-                <Label htmlFor="geo-min-alt" className="text-[9px] text-[var(--c-tx4)]">Min Altitude</Label>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button type="button" className="text-[var(--c-tx4)] hover:text-cyan-400 cursor-help transition-colors">
-                      <Info size={9} />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent className="max-w-[260px] p-2 text-[10px] leading-relaxed">
-                    Lower elevation bound [Min Alt]. The generator will never produce values below this threshold.
-                  </TooltipContent>
-                </Tooltip>
-              </div>
-              <CommitNumberInput
-                id="geo-min-alt"
-                placeholder="e.g. 0.0"
-                value={minAlt}
-                onCommit={(v) => {
-                  if (v !== undefined) handleAltitudeChange(v, maxAlt);
-                }}
-              />
-            </div>
-            <div className="space-y-1">
-              <div className="flex items-center gap-1">
-                <Label htmlFor="geo-max-alt" className="text-[9px] text-[var(--c-tx4)]">Max Altitude</Label>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button type="button" className="text-[var(--c-tx4)] hover:text-cyan-400 cursor-help transition-colors">
-                      <Info size={9} />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent className="max-w-[260px] p-2 text-[10px] leading-relaxed">
-                    Upper elevation bound [Max Alt]. The generator will never produce values above this threshold.
-                  </TooltipContent>
-                </Tooltip>
-              </div>
-              <CommitNumberInput
-                id="geo-max-alt"
-                placeholder="e.g. 100.0"
-                value={maxAlt}
-                onCommit={(v) => {
-                  if (v !== undefined) handleAltitudeChange(minAlt, v);
-                }}
-              />
-            </div>
-
-            {altitudePattern === 'FOLLOW_XY' && (
-              <div className="space-y-1">
-                <div className="flex items-center gap-1">
-                  <Label htmlFor="geo-init-alt" className="text-[9px] text-[var(--c-tx4)]">Initial Altitude (Seed)</Label>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button type="button" className="text-[var(--c-tx4)] hover:text-cyan-400 cursor-help transition-colors">
-                        <Info size={9} />
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent className="max-w-[250px] p-2 text-[10px] leading-relaxed">
-                      Starting altitude seed value. Altitude begins at this value and varies alongside 2D plane motion.
-                    </TooltipContent>
-                  </Tooltip>
-                </div>
-                <CommitNumberInput
-                  id="geo-init-alt"
-                  placeholder="e.g. 50.0"
-                  value={initialAltitude}
-                  allowEmpty
-                  onCommit={(v) => emit({ initialAltitude: v })}
-                />
-              </div>
-            )}
-
-            {altitudePattern === 'RANDOM_WALK' && (
-              <div className="space-y-1">
-                <div className="flex items-center gap-1">
-                  <Label htmlFor="geo-v-step" className="text-[9px] text-[var(--c-tx4)]">Max Vertical Step (m/tick)</Label>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button type="button" className="text-[var(--c-tx4)] hover:text-cyan-400 cursor-help transition-colors">
-                        <Info size={9} />
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent className="max-w-[250px] p-2 text-[10px] leading-relaxed">
-                      Maximum vertical step distance (in elevation units/meters) altitude can ascend or descend per tick.
-                    </TooltipContent>
-                  </Tooltip>
-                </div>
-                <CommitNumberInput
-                  id="geo-v-step"
-                  placeholder="e.g. 1.0"
-                  value={maxVerticalStep}
-                  onCommit={(v) => {
-                    if (v !== undefined) emit({ maxVerticalStep: v });
-                  }}
-                />
-              </div>
-            )}
-
-            {altitudePattern === 'SINE_OSCILLATION' && (
-              <div className="space-y-1">
-                <div className="flex items-center gap-1">
-                  <Label htmlFor="geo-osc-speed" className="text-[9px] text-[var(--c-tx4)]">Oscillation Speed (rad/tick)</Label>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button type="button" className="text-[var(--c-tx4)] hover:text-cyan-400 cursor-help transition-colors">
-                        <Info size={9} />
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent className="max-w-[250px] p-2 text-[10px] leading-relaxed">
-                      Angular speed of the sinusoidal hovering wave (radians per tick). Controls climb/descent frequency.
-                    </TooltipContent>
-                  </Tooltip>
-                </div>
-                <CommitNumberInput
-                  id="geo-osc-speed"
-                  placeholder="e.g. 0.1"
-                  value={altitudeOscillationSpeed}
-                  onCommit={(v) => {
-                    if (v !== undefined) emit({ altitudeOscillationSpeed: v });
-                  }}
-                />
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* 3. THIRD: Measurement Unit and Datum Reference Selectors */}
-        <div className="grid grid-cols-2 gap-3 pt-1">
-          <div className="space-y-1">
-            <div className="flex items-center gap-1">
-              <Label htmlFor="geo-alt-unit" className="text-[9px] text-[var(--c-tx4)]">Altitude Measurement Unit</Label>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button type="button" className="text-[var(--c-tx4)] hover:text-cyan-400 cursor-help transition-colors">
-                    <Info size={9} />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent className="max-w-[260px] p-2 text-[10px] leading-relaxed">
-                  Physical unit for output altitude: Meters (m), Feet (ft), Kilometers (km), or Miles (mi).
-                </TooltipContent>
-              </Tooltip>
-            </div>
-            <select
-              id="geo-alt-unit"
-              value={altitudeUnit}
-              onChange={(e) => emit({ altitudeUnit: e.target.value as AltitudeUnit })}
-              className="h-8 w-full rounded border border-input bg-input-background dark:bg-input/30 px-2 py-1 text-xs text-[var(--c-tx2)] outline-none hover:bg-[var(--c-bg5)] cursor-pointer"
-            >
-              <option value="METERS">Meters (m)</option>
-              <option value="FEET">Feet (ft)</option>
-              <option value="KILOMETERS">Kilometers (km)</option>
-              <option value="MILES">Miles (mi)</option>
-            </select>
-          </div>
-          <div className="space-y-1">
-            <div className="flex items-center gap-1">
-              <Label htmlFor="geo-alt-ref" className="text-[9px] text-[var(--c-tx4)]">Datum / Altitude Reference</Label>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button type="button" className="text-[var(--c-tx4)] hover:text-cyan-400 cursor-help transition-colors">
-                    <Info size={9} />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent className="max-w-[280px] p-2 text-[10px] leading-relaxed">
-                  • MSL: Orthometric height relative to mean sea level (WGS84 EGM96).<br/>
-                  • AGL: Relative height above local terrain ground level.<br/>
-                  • ELLIPSOID: Pure WGS84 mathematical ellipsoid height (GPS hardware HAE).
-                </TooltipContent>
-              </Tooltip>
-            </div>
-            <select
-              id="geo-alt-ref"
-              value={altitudeReference}
-              onChange={(e) => emit({ altitudeReference: e.target.value as AltitudeReference })}
-              className="h-8 w-full rounded border border-input bg-input-background dark:bg-input/30 px-2 py-1 text-xs text-[var(--c-tx2)] outline-none hover:bg-[var(--c-bg5)] cursor-pointer"
-            >
-              <option value="MSL">MSL (Mean Sea Level / ASL)</option>
-              <option value="AGL">AGL (Above Ground Level)</option>
-              <option value="ELLIPSOID">ELLIPSOID (WGS84 HAE)</option>
-            </select>
-          </div>
-        </div>
-      </div>
+        <GeoAltitudeSettings
+          altitudePattern={altitudePattern}
+          altitudeUnit={altitudeUnit}
+          altitudeReference={altitudeReference}
+          minAlt={minAlt}
+          maxAlt={maxAlt}
+          initialAltitude={initialAltitude}
+          maxVerticalStep={maxVerticalStep}
+          altitudeOscillationSpeed={altitudeOscillationSpeed}
+          emit={emit}
+          onAltitudeChange={handleAltitudeChange}
+        />
       )}
     </div>
   );

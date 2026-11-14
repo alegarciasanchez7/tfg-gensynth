@@ -1,5 +1,6 @@
 package com.gensynth.core.ws;
 
+import com.gensynth.core.TestWaits;
 import com.gensynth.core.connectors.plugin.PluginInstallerImpl;
 import com.gensynth.core.connectors.runtime.ConnectorCatalogService;
 import com.gensynth.core.model.StartProblem;
@@ -351,7 +352,7 @@ public class UiBridgeWebSocketServerTest {
         com.gensynth.core.model.TickSettings expected = new com.gensynth.core.model.TickSettings(
                 com.gensynth.core.model.TickSettings.Mode.FIXED_RATE, 250, com.gensynth.core.model.TickSettings.Unit.MILLISECONDS);
         assertEquals(expected, server.tickClock.getSettings());
-        assertEquals(expected, repository.loadSettings().getTick());
+        assertEquals(expected, repository.loadSettings().tick());
 
         // Desktop socket is null and the mock is not a registered connection, so only the ack reaches it
         List<JsonNode> messages = sentMessages(mockConn);
@@ -420,8 +421,8 @@ public class UiBridgeWebSocketServerTest {
                   }
                 }
                 """);
-        assertEquals(com.gensynth.core.model.TickSettings.Mode.AS_FAST_AS_POSSIBLE, server.tickClock.getSettings().getMode());
-        assertEquals(2, server.tickClock.getSettings().getValue());
+        assertEquals(com.gensynth.core.model.TickSettings.Mode.AS_FAST_AS_POSSIBLE, server.tickClock.getSettings().mode());
+        assertEquals(2, server.tickClock.getSettings().value());
 
         Path exportPath = tempDir.resolve("with-settings.gsynth");
         server.onMessage(mockConn, "{\"type\":\"EXPORT_STATE\",\"commandId\":\"cmd-export-settings\",\"protocolVersion\":\"1.0.0\","
@@ -447,8 +448,8 @@ public class UiBridgeWebSocketServerTest {
 
         server.onMessage(null, "{\"type\":\"LOAD_STATE\",\"commandId\":\"cmd-load\",\"protocolVersion\":\"1.0.0\",\"payload\":{}}");
 
-        assertEquals(5, server.tickClock.getSettings().getValue());
-        assertEquals(com.gensynth.core.model.TickSettings.Unit.SECONDS, server.tickClock.getSettings().getUnit());
+        assertEquals(5, server.tickClock.getSettings().value());
+        assertEquals(com.gensynth.core.model.TickSettings.Unit.SECONDS, server.tickClock.getSettings().unit());
         server.shutdown();
     }
 
@@ -557,10 +558,7 @@ public class UiBridgeWebSocketServerTest {
                 + "\"payload\":{\"tick\":{\"mode\":\"FIXED_RATE\",\"value\":20,\"unit\":\"MILLISECONDS\"}}}");
 
         server.onMessage(null, "{\"type\":\"START_SYSTEM\",\"commandId\":\"c4\",\"protocolVersion\":\"1.0.0\",\"payload\":{}}");
-        long deadline = System.currentTimeMillis() + 5000;
-        while (server.totalMessages.get() < minMessages && System.currentTimeMillis() < deadline) {
-            Thread.sleep(10);
-        }
+        TestWaits.eventually().until(() -> server.totalMessages.get() >= minMessages);
         server.onMessage(null, "{\"type\":\"STOP_SYSTEM\",\"commandId\":\"c5\",\"protocolVersion\":\"1.0.0\",\"payload\":{}}");
 
         long[] result = { server.totalMessages.get(), server.tickClock.getTickCount() };
@@ -660,8 +658,9 @@ public class UiBridgeWebSocketServerTest {
 
         assertTrue(server.groupsById.containsKey("g-cli"));
         assertTrue("nothing must be autosaved", repository.loadGroups().isEmpty());
+        JsonNode withoutGroups = new ObjectMapper().readTree("{}");
         assertThrows(IllegalArgumentException.class,
-                () -> server.stateCommandHandler.importProject(new ObjectMapper().readTree("{}"), false));
+                () -> server.stateCommandHandler.importProject(withoutGroups, false));
         server.shutdown();
     }
 
@@ -791,7 +790,7 @@ public class UiBridgeWebSocketServerTest {
         server.setPendingOpenProject("/projects/plant.gsynth");
         WebSocket window = mock(WebSocket.class);
         when(window.isOpen()).thenReturn(true);
-        server.desktopSocket = window;
+        server.desktopSocket.set(window);
         WebSocket browser = mock(WebSocket.class);
         when(browser.isOpen()).thenReturn(true);
         String getInitialState = "{\"type\":\"GET_INITIAL_STATE\",\"commandId\":\"%s\",\"protocolVersion\":\"1.0.0\",\"payload\":{}}";

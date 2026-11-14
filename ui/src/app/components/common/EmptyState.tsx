@@ -6,7 +6,7 @@ interface EmptyStateProps extends React.HTMLAttributes<HTMLDivElement> {
   message: string;
 }
 
-export function EmptyState({ className, title = "Void Space", message, ...props }: EmptyStateProps) {
+export function EmptyState({ className, title = "Void Space", message, ...props }: Readonly<EmptyStateProps>) {
   return (
     <div className={cn("flex flex-col items-center justify-center py-8 text-[var(--c-tx4)] px-4 text-center", className)} {...props}>
       <span className="text-[9px] uppercase tracking-tighter opacity-50 mb-2 font-mono" style={{ fontFamily: 'JetBrains Mono, monospace' }}>

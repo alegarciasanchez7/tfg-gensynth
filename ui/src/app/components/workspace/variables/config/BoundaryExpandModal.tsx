@@ -1,17 +1,9 @@
-import React, { useEffect, createContext, useContext } from 'react';
+import React, { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '../../../ui/button';
 import { Maximize2, Minimize2 } from 'lucide-react';
 import { Tooltip, TooltipTrigger, TooltipContent } from '../../../ui/tooltip';
-
-export interface BoundaryModalContextType {
-  /** True inside the fullscreen editor: the boundary editors switch to their fill layout. */
-  isFullScreen: boolean;
-}
-
-export const BoundaryModalContext = createContext<BoundaryModalContextType>({ isFullScreen: false });
-
-export const useBoundaryModalContext = () => useContext(BoundaryModalContext);
+import { BoundaryModalContext, type BoundaryModalContextType } from './boundaryModalContext';
 
 const FULLSCREEN_CONTEXT: BoundaryModalContextType = { isFullScreen: true };
 

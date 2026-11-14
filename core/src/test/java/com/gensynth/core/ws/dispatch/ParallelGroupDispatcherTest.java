@@ -1,10 +1,12 @@
 package com.gensynth.core.ws.dispatch;
 
+import com.gensynth.core.TestWaits;
 import com.gensynth.core.ws.runtime.FlowRuntime;
 import com.gensynth.core.ws.runtime.GroupRuntime;
 import org.junit.After;
 import org.junit.Test;
 
+import java.time.Duration;
 import java.util.HashSet;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -56,10 +58,11 @@ public class ParallelGroupDispatcherTest {
         dispatcher = new ParallelGroupDispatcher(group, List.of(a, b), handler);
 
         for (int tick = 0; tick < 5; tick++) {
-            dispatcher.dispatch(List.of(a, b), 0L);
+            dispatcher.dispatch(List.of(a), 0L);
+            // B's worker clears its busy flag just after recording the send: retry until B takes it
+            await("B keeps accepting ticks while A is blocked", () -> dispatcher.dispatch(List.of(b), 0L));
             int expected = tick + 1;
             await("B keeps sending while A is blocked", () -> b.sent.get() == expected);
-            Thread.sleep(20); // the worker clears its busy flag right after recording the send
         }
 
         assertEquals("A generated only the message that is still in progress", 1, handler.generated("A"));
@@ -68,9 +71,8 @@ public class ParallelGroupDispatcherTest {
 
         release.countDown();
         await("A finishes its message", () -> a.sent.get() == 1);
-        Thread.sleep(20);
-        dispatcher.dispatch(List.of(a), 0L);
-        await("A accepts ticks again", () -> a.sent.get() == 2);
+        await("A accepts ticks again", () -> dispatcher.dispatch(List.of(a), 0L));
+        await("A sends again", () -> a.sent.get() == 2);
     }
 
     @Test
@@ -85,7 +87,6 @@ public class ParallelGroupDispatcherTest {
         dispatcher.shutdown();
 
         assertFalse(dispatcher.dispatch(List.of(a, b), 0L));
-        Thread.sleep(50);
-        assertTrue(handler.published.isEmpty());
+        TestWaits.eventually().during(Duration.ofMillis(50)).until(handler.published::isEmpty);
     }
 }

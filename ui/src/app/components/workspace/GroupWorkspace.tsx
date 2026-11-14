@@ -9,18 +9,19 @@ import { Button } from '../ui/button';
 import { formatRate, groupRate } from '../../core/metricsFormat';
 import { commandErrorMessage } from '../../core/errorMessage';
 import { normalizeGroupStatus } from '../../core/entityStatus';
+import type { GroupConfigUpdate } from '../../context/crudTypes';
 
 function EditableField({
   label,
   value,
   onChange,
   wide,
-}: {
+}: Readonly<{
   label: string;
   value: string;
   onChange: (value: string) => void;
   wide?: boolean;
-}) {
+}>) {
   return (
     <div className={`flex flex-col gap-1 ${wide ? 'col-span-2' : ''}`}>
       <label className="text-[10px] text-[var(--c-tx4)] tracking-wider uppercase"
@@ -130,7 +131,7 @@ interface GroupWorkspaceProps {
   group: Group;
 }
 
-export function GroupWorkspace({ group }: GroupWorkspaceProps) {
+export function GroupWorkspace({ group }: Readonly<GroupWorkspaceProps>) {
   const { state, actions } = useApp();
   const [isDeleting, setIsDeleting] = useState(false);
   const isDirty = state.dirtyItems.groupIds.has(group.id);
@@ -141,7 +142,7 @@ export function GroupWorkspace({ group }: GroupWorkspaceProps) {
     paused:  { color: 'text-amber-500',   bg: 'bg-amber-500/10 border-amber-500/40',    label: 'PAUSED' },
   }[normalizeGroupStatus(group.status)];
 
-  const handleUpdate = (updates: Partial<Omit<Group, 'id' | 'flows'>>) => {
+  const handleUpdate = (updates: GroupConfigUpdate) => {
     actions.updateGroupConfig(group.id, updates, group.name);
   };
 

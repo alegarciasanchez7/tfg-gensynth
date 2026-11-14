@@ -21,9 +21,9 @@ public class TickSettingsTest {
     @Test
     public void defaultsAreOneTickPerSecond() {
         TickSettings defaults = TickSettings.defaults();
-        assertEquals(TickSettings.Mode.FIXED_RATE, defaults.getMode());
-        assertEquals(1, defaults.getValue());
-        assertEquals(TickSettings.Unit.SECONDS, defaults.getUnit());
+        assertEquals(TickSettings.Mode.FIXED_RATE, defaults.mode());
+        assertEquals(1, defaults.value());
+        assertEquals(TickSettings.Unit.SECONDS, defaults.unit());
         assertEquals(TimeUnit.SECONDS.toNanos(1), defaults.periodNanos());
     }
 
@@ -48,20 +48,24 @@ public class TickSettingsTest {
 
     @Test
     public void fromPayloadAcceptsIntegerAndLongValues() {
-        assertEquals(10, TickSettings.fromPayload(payload("FIXED_RATE", 10, "SECONDS")).getValue());
-        assertEquals(10, TickSettings.fromPayload(payload("FIXED_RATE", 10L, "SECONDS")).getValue());
+        assertEquals(10, TickSettings.fromPayload(payload("FIXED_RATE", 10, "SECONDS")).value());
+        assertEquals(10, TickSettings.fromPayload(payload("FIXED_RATE", 10L, "SECONDS")).value());
+    }
+
+    private static void assertRejected(Map<String, Object> payload) {
+        assertThrows(IllegalArgumentException.class, () -> TickSettings.fromPayload(payload));
     }
 
     @Test
     public void fromPayloadRejectsInvalidValues() {
         assertThrows(IllegalArgumentException.class, () -> TickSettings.fromPayload(null));
-        assertThrows(IllegalArgumentException.class, () -> TickSettings.fromPayload(payload("FIXED_RATE", 0, "SECONDS")));
-        assertThrows(IllegalArgumentException.class, () -> TickSettings.fromPayload(payload("FIXED_RATE", -5, "SECONDS")));
-        assertThrows(IllegalArgumentException.class, () -> TickSettings.fromPayload(payload("FIXED_RATE", 1.5, "SECONDS")));
-        assertThrows(IllegalArgumentException.class, () -> TickSettings.fromPayload(payload("FIXED_RATE", "1", "SECONDS")));
-        assertThrows(IllegalArgumentException.class, () -> TickSettings.fromPayload(payload("SOMETIMES", 1, "SECONDS")));
-        assertThrows(IllegalArgumentException.class, () -> TickSettings.fromPayload(payload("FIXED_RATE", 1, "HOURS")));
-        assertThrows(IllegalArgumentException.class, () -> TickSettings.fromPayload(payload(null, 1, "SECONDS")));
+        assertRejected(payload("FIXED_RATE", 0, "SECONDS"));
+        assertRejected(payload("FIXED_RATE", -5, "SECONDS"));
+        assertRejected(payload("FIXED_RATE", 1.5, "SECONDS"));
+        assertRejected(payload("FIXED_RATE", "1", "SECONDS"));
+        assertRejected(payload("SOMETIMES", 1, "SECONDS"));
+        assertRejected(payload("FIXED_RATE", 1, "HOURS"));
+        assertRejected(payload(null, 1, "SECONDS"));
     }
 
     @Test

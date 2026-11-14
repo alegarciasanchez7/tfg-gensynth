@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
 import { Button } from '../../../ui/button';
 import {
@@ -18,6 +18,7 @@ import { buildPatternNames } from '../../../../core/namingPattern';
 import { defaultConnectorConfig, validateConnectorConfig } from '../../../../core/connectorFields';
 import { findFlowNameConflict } from '../../../../core/flowNames';
 import { commandErrorMessage } from '../../../../core/errorMessage';
+import type { CreateFlowHandler } from '../../../../context/crudTypes';
 
 const DEFAULT_REPEAT_COUNT = '2';
 const DEFAULT_REPEAT_PATTERN = '${name} ${index}';
@@ -25,6 +26,57 @@ const DEFAULT_REPEAT_PATTERN = '${name} ${index}';
 function isPositiveInteger(value: string): boolean {
   const parsed = Number(value);
   return value.trim() !== '' && Number.isInteger(parsed) && parsed >= 1;
+}
+
+/** Subtitle of the dialog: Repeater, add to a given group, or pick the group. */
+function dialogDescription(repeat: boolean | undefined, groupId: string | undefined, targetGroup: Group | undefined): string {
+  if (repeat) return 'Create several flows with the same initial configuration.';
+  if (!groupId) return 'Create a new flow. Select a group first.';
+  const where = targetGroup ? `"${targetGroup.name}"` : 'this group';
+  return `Create a new flow inside ${where}.`;
+}
+
+/** The props and the chosen connector that the form follows. */
+interface FormSyncInputs {
+  open: boolean;
+  groupId: string | undefined;
+  flowTechnology: string;
+  latestConnectors: ConnectorPluginDescriptor[];
+}
+
+/** What the form does when its inputs change. */
+interface FormSyncHandlers {
+  /** A new groupId was given: select that group. */
+  onGroupChange: (groupId: string) => void;
+  /** Another connector (or a new catalog) was chosen: its default configuration. */
+  onConnectorChange: (config: Record<string, unknown>) => void;
+  /** The dialog was closed: reset the form. */
+  onClose: () => void;
+}
+
+/**
+ * Keeps the form in sync with its inputs while rendering (instead of in effects): follows a new
+ * groupId, loads the defaults of the chosen connector and resets the form when the dialog closes.
+ */
+function useFormSync(inputs: FormSyncInputs, handlers: FormSyncHandlers): void {
+  const [synced, setSynced] = useState(inputs);
+  const dialogChanged = synced.open !== inputs.open || synced.groupId !== inputs.groupId;
+  const connectorChanged = synced.flowTechnology !== inputs.flowTechnology || synced.latestConnectors !== inputs.latestConnectors;
+  if (!dialogChanged && !connectorChanged) return;
+
+  setSynced(inputs);
+  if (inputs.groupId && synced.groupId !== inputs.groupId) {
+    handlers.onGroupChange(inputs.groupId);
+  }
+  if (connectorChanged) {
+    const descriptor = inputs.flowTechnology
+      ? inputs.latestConnectors.find((c) => c.pluginId === inputs.flowTechnology)
+      : undefined;
+    handlers.onConnectorChange(descriptor ? defaultConnectorConfig(descriptor.fields) : {});
+  }
+  if (dialogChanged && !inputs.open) {
+    handlers.onClose();
+  }
 }
 
 interface CreateFlowDialogProps {
@@ -35,20 +87,7 @@ interface CreateFlowDialogProps {
   /** If provided, binds directly to this group and hides the group selector. */
   groupId?: string;
   latestConnectors: ConnectorPluginDescriptor[];
-  onCreateFlow: (
-    groupId: string,
-    name: string,
-    technology: string,
-    host: string,
-    port: number,
-    topic?: string,
-    interval?: number,
-    burst?: number,
-    template?: string,
-    connectorConfig?: Record<string, unknown>,
-    everyTicks?: number,
-    autoRename?: boolean,
-  ) => Promise<Flow>;
+  onCreateFlow: CreateFlowHandler;
   onSelectFlow?: (groupId: string, flowId: string) => void;
   /** Repeater mode: creates N flows with the same initial configuration and a naming pattern. */
   repeat?: boolean;
@@ -63,7 +102,7 @@ export function CreateFlowDialog({
   onCreateFlow,
   onSelectFlow,
   repeat = false,
-}: CreateFlowDialogProps) {
+}: Readonly<CreateFlowDialogProps>) {
   const [selectedGroupId, setSelectedGroupId] = useState(groupId || '');
   const [flowName, setFlowName] = useState('');
   const [flowTechnology, setFlowTechnology] = useState('');
@@ -75,15 +114,10 @@ export function CreateFlowDialog({
 
   const selectedConnector = latestConnectors.find((c) => c.pluginId === flowTechnology);
 
-  useEffect(() => {
-    if (groupId) {
-      setSelectedGroupId(groupId);
-    }
-  }, [groupId]);
-
-  useEffect(() => {
-    if (!open) {
-      // Reset form on close
+  useFormSync({ open, groupId, flowTechnology, latestConnectors }, {
+    onGroupChange: setSelectedGroupId,
+    onConnectorChange: setConnectorConfig,
+    onClose: () => {
       setFlowName('');
       setFlowTechnology('');
       setConnectorConfig({});
@@ -94,17 +128,8 @@ export function CreateFlowDialog({
       if (!groupId) {
         setSelectedGroupId('');
       }
-    }
-  }, [open, groupId]);
-
-  useEffect(() => {
-    if (!flowTechnology) {
-      setConnectorConfig({});
-      return;
-    }
-    const descriptor = latestConnectors.find((c) => c.pluginId === flowTechnology);
-    setConnectorConfig(descriptor ? defaultConnectorConfig(descriptor.fields) : {});
-  }, [flowTechnology, latestConnectors]);
+    },
+  });
 
   const everyTicksValid = isPositiveInteger(flowEveryTicks);
   const repeatValid = !repeat || (isPositiveInteger(repeatCount) && repeatPattern.trim() !== '');
@@ -137,20 +162,18 @@ export function CreateFlowDialog({
     try {
       // One after another so the flows keep the order of their names
       for (const name of names) {
-        created.push(await onCreateFlow(
-          targetGroupId,
+        created.push(await onCreateFlow(targetGroupId, {
           name,
-          flowTechnology.trim(),
-          '', // Legacy host/port/topic: the destination is part of the connector configuration
-          0,
-          undefined,
-          undefined, // Legacy interval: generation is paced by the global tick clock
-          undefined, // Legacy burst: one message every N ticks
-          '{}',
+          technology: flowTechnology.trim(),
+          // Legacy host/port/topic: the destination is part of the connector configuration.
+          // Legacy interval/burst are left out: generation is paced by the global tick clock.
+          host: '',
+          port: 0,
+          template: '{}',
           connectorConfig,
           everyTicks,
-          repeat, // autoRename: the Repeater never fails on a taken name
-        ));
+          autoRename: repeat, // the Repeater never fails on a taken name
+        }));
       }
       // With autoRename the Core answers with the final name of each flow
       const renamed = created.filter((flow, i) => flow.name !== names[i].trim()).length;
@@ -178,11 +201,7 @@ export function CreateFlowDialog({
           <DialogHeader className="shrink-0 mb-4">
             <DialogTitle className="text-[var(--c-tx1)]">{repeat ? 'Repeater' : 'Add flow'}</DialogTitle>
             <DialogDescription className="text-[var(--c-tx4)]">
-              {repeat
-                ? 'Create several flows with the same initial configuration.'
-                : groupId
-                  ? `Create a new flow inside ${targetGroup ? `"${targetGroup.name}"` : 'this group'}.`
-                  : 'Create a new flow. Select a group first.'}
+              {dialogDescription(repeat, groupId, targetGroup)}
             </DialogDescription>
           </DialogHeader>
 

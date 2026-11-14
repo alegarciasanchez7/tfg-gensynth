@@ -22,7 +22,7 @@ import type { OptimisticManager } from '../optimisticManager';
 
 interface UseBridgeSubscriptionsProps {
   state: AppState;
-  stateRef: React.MutableRefObject<AppState>;
+  stateRef: React.RefObject<AppState>;
   dispatch: React.Dispatch<AppAction>;
   optimisticManager: OptimisticManager | null;
   useMockData?: boolean;
@@ -162,6 +162,7 @@ export function useBridgeSubscriptions({
       }),
 
       bridge.on('trace', (trace: TracePayload) => {
+        const duration = trace.durationMs ? `(${trace.durationMs}ms)` : '';
         dispatch({
           type: 'ADD_LOG',
           payload: {
@@ -169,7 +170,7 @@ export function useBridgeSubscriptions({
             timestamp: new Date(trace.timestamp).toLocaleTimeString('en-GB', { hour12: false }),
             level: trace.status === 'error' ? 'error' : 'debug',
             source: 'TRACE',
-            message: `[${trace.type}] ${trace.operation} ${trace.durationMs ? `(${trace.durationMs}ms)` : ''}`,
+            message: `[${trace.type}] ${trace.operation} ${duration}`,
             commandId: trace.commandId,
           },
         });

@@ -28,13 +28,15 @@ public class ConfigLoaderImplTest {
     @Test
     public void testLoadYamlConfiguration() throws ConfigLoadException, IOException {
         // Create a test YAML file
-        String yamlContent = "server:\n" +
-                "  port: 8080\n" +
-                "  host: localhost\n" +
-                "brokers:\n" +
-                "  mqtt:\n" +
-                "    host: test.mosquitto.org\n" +
-                "    port: 1883\n";
+        String yamlContent = """
+                server:
+                  port: 8080
+                  host: localhost
+                brokers:
+                  mqtt:
+                    host: test.mosquitto.org
+                    port: 1883
+                """;
 
         File yamlFile = new File(testConfigDir, "test-config.yml");
         Files.write(yamlFile.toPath(), yamlContent.getBytes());
@@ -60,18 +62,20 @@ public class ConfigLoaderImplTest {
     @Test
     public void testLoadJsonConfiguration() throws ConfigLoadException, IOException {
         // Create a test JSON file
-        String jsonContent = "{\n" +
-                "  \"server\": {\n" +
-                "    \"port\": 8080,\n" +
-                "    \"host\": \"localhost\"\n" +
-                "  },\n" +
-                "  \"brokers\": {\n" +
-                "    \"mqtt\": {\n" +
-                "      \"host\": \"test.mosquitto.org\",\n" +
-                "      \"port\": 1883\n" +
-                "    }\n" +
-                "  }\n" +
-                "}\n";
+        String jsonContent = """
+                {
+                  "server": {
+                    "port": 8080,
+                    "host": "localhost"
+                  },
+                  "brokers": {
+                    "mqtt": {
+                      "host": "test.mosquitto.org",
+                      "port": 1883
+                    }
+                  }
+                }
+                """;
 
         File jsonFile = new File(testConfigDir, "test-config.json");
         Files.write(jsonFile.toPath(), jsonContent.getBytes());
@@ -96,11 +100,13 @@ public class ConfigLoaderImplTest {
 
     @Test
     public void testLoadFromStream() throws ConfigLoadException {
-        String yamlContent = "server:\n" +
-                "  port: 8080\n" +
-                "brokers:\n" +
-                "  kafka:\n" +
-                "    brokers: localhost:9092\n";
+        String yamlContent = """
+                server:
+                  port: 8080
+                brokers:
+                  kafka:
+                    brokers: localhost:9092
+                """;
 
         ByteArrayInputStream stream = new ByteArrayInputStream(yamlContent.getBytes());
         Map<String, Object> config = configLoader.loadFromStream(stream, "yaml");
@@ -139,12 +145,14 @@ public class ConfigLoaderImplTest {
 
     @Test
     public void testGetValue() throws ConfigLoadException, ConfigKeyException {
-        String yamlContent = "server:\n" +
-                "  port: 8080\n" +
-                "  host: localhost\n" +
-                "brokers:\n" +
-                "  mqtt:\n" +
-                "    enabled: true\n";
+        String yamlContent = """
+                server:
+                  port: 8080
+                  host: localhost
+                brokers:
+                  mqtt:
+                    enabled: true
+                """;
 
         ByteArrayInputStream stream = new ByteArrayInputStream(yamlContent.getBytes());
         configLoader.loadFromStream(stream, "yaml");
@@ -161,11 +169,13 @@ public class ConfigLoaderImplTest {
 
     @Test
     public void testGetValueWithDefault() throws ConfigLoadException {
-        String yamlContent = "server:\n" +
-                "  port: 8080\n" +
-                "brokers:\n" +
-                "  kafka:\n" +
-                "    brokers: localhost:9092\n";
+        String yamlContent = """
+                server:
+                  port: 8080
+                brokers:
+                  kafka:
+                    brokers: localhost:9092
+                """;
 
         ByteArrayInputStream stream = new ByteArrayInputStream(yamlContent.getBytes());
         configLoader.loadFromStream(stream, "yaml");
@@ -176,11 +186,13 @@ public class ConfigLoaderImplTest {
 
     @Test(expected = ConfigKeyException.class)
     public void testGetValueKeyNotFound() throws ConfigLoadException, ConfigKeyException {
-        String yamlContent = "server:\n" +
-                "  port: 8080\n" +
-                "brokers:\n" +
-                "  kafka:\n" +
-                "    brokers: localhost:9092\n";
+        String yamlContent = """
+                server:
+                  port: 8080
+                brokers:
+                  kafka:
+                    brokers: localhost:9092
+                """;
 
         ByteArrayInputStream stream = new ByteArrayInputStream(yamlContent.getBytes());
         configLoader.loadFromStream(stream, "yaml");
@@ -190,11 +202,13 @@ public class ConfigLoaderImplTest {
 
     @Test
     public void testValidateValidConfiguration() throws ConfigLoadException, ConfigValidationException {
-        String yamlContent = "server:\n" +
-                "  port: 8080\n" +
-                "brokers:\n" +
-                "  mqtt:\n" +
-                "    host: localhost\n";
+        String yamlContent = """
+                server:
+                  port: 8080
+                brokers:
+                  mqtt:
+                    host: localhost
+                """;
 
         ByteArrayInputStream stream = new ByteArrayInputStream(yamlContent.getBytes());
         Map<String, Object> config = configLoader.loadFromStream(stream, "yaml");

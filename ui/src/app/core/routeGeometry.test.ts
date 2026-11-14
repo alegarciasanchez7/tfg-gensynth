@@ -199,3 +199,33 @@ describe('region helpers', () => {
     expect(c.y).toBeCloseTo(33.333, 2);
   });
 });
+
+describe('obstacle and boundary messages', () => {
+  it('names unnamed obstacles by their type', () => {
+    expect(checkObstacleCollision({ x: 40, y: 10 }, { x: 60, y: 10 }, [wall]))
+      .toBe('Cannot draw route edge crossing forbidden wall barrier: "Wall Segment"');
+    const unnamedZone = { ...zone(), name: undefined };
+    expect(checkObstacleCollision(null, { x: 50, y: 50 }, [unnamedZone]))
+      .toBe('Cannot place route node inside forbidden obstacle zone: "Forbidden Zone"');
+    expect(checkObstacleCollision({ x: 30, y: 50 }, { x: 70, y: 50 }, [unnamedZone]))
+      .toBe('Cannot draw route edge crossing forbidden obstacle region: "Forbidden Zone"');
+  });
+
+  it('ignores a wall with a single point and checks no edge without an origin', () => {
+    const dot: BoundaryObstacle = { ...wall, points: [{ x: 50, y: 10 }] };
+    expect(checkObstacleCollision({ x: 40, y: 10 }, { x: 60, y: 10 }, [dot])).toBeNull();
+    expect(checkObstacleCollision(null, { x: 60, y: 10 }, [wall])).toBeNull();
+  });
+
+  it('rejects an edge whose origin is outside the polygon or the box', () => {
+    expect(checkBoundaryCompliance({ x: 20, y: 5 }, { x: 5, y: 5 }, square))
+      .toBe('Cannot draw route edge from an origin node located outside the allowed boundary region.');
+    expect(checkBoundaryCompliance({ x: 200, y: 5 }, { x: 5, y: 5 }, [], { x: 0, y: 0 }, { x: 100, y: 100 }))
+      .toBe('Cannot draw route edge from an origin node outside allowed boundary limits.');
+    expect(checkBoundaryCompliance({ x: 2, y: 5 }, { x: 5, y: 5 }, [], { x: 0, y: 0 }, { x: 100, y: 100 })).toBeNull();
+  });
+
+  it('accepts anything without a polygon nor a box', () => {
+    expect(checkBoundaryCompliance({ x: -5, y: 5 }, { x: 500, y: 5 }, [])).toBeNull();
+  });
+});

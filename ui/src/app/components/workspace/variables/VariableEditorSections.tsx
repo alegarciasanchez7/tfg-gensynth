@@ -4,6 +4,7 @@ import { Input } from '../../../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../components/ui/tabs';
 import type { 
+  Group,
   Variable, 
   VariableConfig, 
   NumericVariableConfig, 
@@ -19,10 +20,9 @@ import { NumericConfigPanel } from './config/NumericConfigPanel';
 import { StringConfigPanel } from './config/StringConfigPanel';
 import { ListConfigPanel } from './config/ListConfigPanel';
 import { TemporalConfigPanel } from './config/TemporalConfigPanel';
-import { PointConfigPanel } from './config/PointConfigPanel';
+import { LazyPointConfigPanel, LazySpatialBoundariesTab } from './config/LazyPointEditors';
 import { BooleanConfigPanel } from './config/BooleanConfigPanel';
 import { ConditionalRulesTab } from './config/ConditionalRulesTab';
-import { SpatialBoundariesTab } from './config/SpatialBoundariesTab';
 
 export type VariableEditorTheme = {
   icon: LucideIcon;
@@ -45,7 +45,7 @@ interface VariableEditorHeaderProps {
   actions?: ReactNode;
 }
 
-export function VariableEditorHeader({ variable, theme, scopeBadgeClass, isDirty, actions }: VariableEditorHeaderProps) {
+export function VariableEditorHeader({ variable, theme, scopeBadgeClass, isDirty, actions }: Readonly<VariableEditorHeaderProps>) {
   const Icon = theme.icon;
 
   return (
@@ -87,13 +87,13 @@ interface VariableEditorIdentityCardProps {
   draft: VariableDraft;
   setDraft: Dispatch<SetStateAction<VariableDraft>>;
   scopeOptions: VariableEditorScopeOption[];
-  groups: Variable['scope'] extends any ? any[] : any[]; // Simplified for props, but we'll use Group[]
+  groups: Group[];
 }
 
-export function VariableEditorIdentityCard({ draft, setDraft, scopeOptions, groups }: VariableEditorIdentityCardProps) {
+export function VariableEditorIdentityCard({ draft, setDraft, scopeOptions, groups }: Readonly<VariableEditorIdentityCardProps>) {
   // Flatten flows with group name for the selector
   const allFlows = (groups || []).flatMap(g =>
-    (g.flows || []).map((f: any) => ({
+    (g.flows || []).map(f => ({
       id: f.id,
       name: f.name,
       groupName: g.name,
@@ -235,7 +235,7 @@ interface VariableEditorConfigCardProps {
   setDraft: Dispatch<SetStateAction<VariableDraft>>;
 }
 
-export function VariableEditorConfigCard({ typeLabel, variableId, theme, draft, setDraft }: VariableEditorConfigCardProps) {
+export function VariableEditorConfigCard({ typeLabel, variableId, theme, draft, setDraft }: Readonly<VariableEditorConfigCardProps>) {
   const Icon = theme.icon;
 
   let parsedConfig: VariableConfig = {};
@@ -266,7 +266,7 @@ export function VariableEditorConfigCard({ typeLabel, variableId, theme, draft, 
       case 'string': return <StringConfigPanel config={parsedConfig as StringVariableConfig} onChange={handleConfigChange} flowId={draft.flowId} groupId={draft.groupId} variableScope={draft.scope} />;
       case 'list': return <ListConfigPanel config={parsedConfig as ListVariableConfig} onChange={handleConfigChange} flowId={draft.flowId} groupId={draft.groupId} />;
       case 'temporal': return <TemporalConfigPanel config={parsedConfig as TemporalVariableConfig} onChange={handleConfigChange} flowId={draft.flowId} groupId={draft.groupId} variableScope={draft.scope} />;
-      case 'point': return <PointConfigPanel config={parsedConfig as PointVariableConfig} onChange={handleConfigChange} flowId={draft.flowId} groupId={draft.groupId} variableScope={draft.scope} />;
+      case 'point': return <LazyPointConfigPanel config={parsedConfig as PointVariableConfig} onChange={handleConfigChange} flowId={draft.flowId} groupId={draft.groupId} variableScope={draft.scope} />;
       case 'boolean': return <BooleanConfigPanel config={parsedConfig as BooleanVariableConfig} onChange={handleConfigChange} flowId={draft.flowId} groupId={draft.groupId} variableScope={draft.scope} />;
       default: return <p className="text-[11px] text-[var(--c-tx4)] p-6 text-center italic">No visual editor available for this variable type.</p>;
     }
@@ -312,7 +312,7 @@ export function VariableEditorConfigCard({ typeLabel, variableId, theme, draft, 
         {draft.type === 'point' && (
           <TabsContent value="boundaries" className="mt-0">
             <div className="p-3 border rounded border-[var(--c-br1)] bg-[var(--c-bg2)]">
-              <SpatialBoundariesTab
+              <LazySpatialBoundariesTab
                 config={parsedConfig as PointVariableConfig}
                 onChange={handleConfigChange}
               />
@@ -325,16 +325,13 @@ export function VariableEditorConfigCard({ typeLabel, variableId, theme, draft, 
 }
 
 interface VariableEditorActionsProps {
-  isSaving?: boolean;
   isDeleting: boolean;
   isDirty?: boolean;
-  onSave?: () => void;
   onDiscard: () => void;
   onDelete: () => void;
-  saveButtonTitle?: string;
 }
 
-export function VariableEditorActions({ isDeleting, isDirty, onDiscard, onDelete }: VariableEditorActionsProps) {
+export function VariableEditorActions({ isDeleting, isDirty, onDiscard, onDelete }: Readonly<VariableEditorActionsProps>) {
   return (
     <div className="flex gap-1.5">
       <button

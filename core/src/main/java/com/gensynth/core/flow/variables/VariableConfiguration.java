@@ -14,7 +14,7 @@ public abstract class VariableConfiguration {
     protected Object defaultValue;
     protected long tickCounter;
 
-    public VariableConfiguration() {
+    protected VariableConfiguration() {
         this.anomalyConfig = new AnomalyConfig();
         this.tickCounter = 0;
     }
@@ -117,40 +117,45 @@ public abstract class VariableConfiguration {
         }
 
         String refId = sourceListVariableId.trim();
+        com.gensynth.core.flow.variables.config.ListVariableConfig sourceListConfig = sourceListConfigOf(refId);
+        if (sourceListConfig != null && !sourceListConfig.getEffectiveItems().isEmpty()) {
+            return pickFromSourceList(sourceListConfig);
+        }
+
+        return currentContext.get(refId);
+    }
+
+    /** The source list in the context (its config entry first, then the variable), or null if it is not a list. */
+    private com.gensynth.core.flow.variables.config.ListVariableConfig sourceListConfigOf(String refId) {
         Object varObj = currentContext.get(refId + "_config");
         if (varObj == null) {
             varObj = currentContext.get(refId);
         }
-
-        com.gensynth.core.flow.variables.config.ListVariableConfig sourceListConfig = null;
-        if (varObj instanceof com.gensynth.core.flow.variables.ConfigurableVariable) {
-            VariableConfiguration cfg = ((com.gensynth.core.flow.variables.ConfigurableVariable) varObj).getConfiguration();
-            if (cfg instanceof com.gensynth.core.flow.variables.config.ListVariableConfig) {
-                sourceListConfig = (com.gensynth.core.flow.variables.config.ListVariableConfig) cfg;
-            }
-        } else if (varObj instanceof com.gensynth.core.flow.variables.config.ListVariableConfig) {
-            sourceListConfig = (com.gensynth.core.flow.variables.config.ListVariableConfig) varObj;
+        if (varObj instanceof ConfigurableVariable variable) {
+            return variable.getConfiguration() instanceof com.gensynth.core.flow.variables.config.ListVariableConfig list
+                    ? list
+                    : null;
         }
+        return varObj instanceof com.gensynth.core.flow.variables.config.ListVariableConfig directList ? directList : null;
+    }
 
-        if (sourceListConfig != null && !sourceListConfig.getEffectiveItems().isEmpty()) {
-            // A Fixed Subset list gives an array, not one item: that mode falls back to a random item
-            if ("INHERITED_GENERATION".equalsIgnoreCase(sourceListSelectionMode)
-                    && sourceListConfig.getSelectionStrategy() != com.gensynth.core.flow.variables.config.ListVariableConfig.SelectionStrategy.FIXED_SUBSET) {
-                return inheritedGeneratorOf(sourceListConfig).generateNextValue();
-            }
-            java.util.List<com.gensynth.core.flow.variables.config.ListVariableConfig.ListItem> items = sourceListConfig.getEffectiveItems();
-            if ("FIXED_ITEM".equalsIgnoreCase(sourceListSelectionMode) && selectedListItemId != null) {
-                for (com.gensynth.core.flow.variables.config.ListVariableConfig.ListItem item : items) {
-                    if (selectedListItemId.equals(item.getId())) {
-                        return item.generateValue();
-                    }
+    /** Value of the source list item chosen by the selection mode (the list has items). */
+    private Object pickFromSourceList(com.gensynth.core.flow.variables.config.ListVariableConfig sourceListConfig) {
+        // A Fixed Subset list gives an array, not one item: that mode falls back to a random item
+        if ("INHERITED_GENERATION".equalsIgnoreCase(sourceListSelectionMode)
+                && sourceListConfig.getSelectionStrategy() != com.gensynth.core.flow.variables.config.ListVariableConfig.SelectionStrategy.FIXED_SUBSET) {
+            return inheritedGeneratorOf(sourceListConfig).generateNextValue();
+        }
+        java.util.List<com.gensynth.core.flow.variables.config.ListVariableConfig.ListItem> items = sourceListConfig.getEffectiveItems();
+        if ("FIXED_ITEM".equalsIgnoreCase(sourceListSelectionMode) && selectedListItemId != null) {
+            for (com.gensynth.core.flow.variables.config.ListVariableConfig.ListItem item : items) {
+                if (selectedListItemId.equals(item.getId())) {
+                    return item.generateValue();
                 }
             }
-            int idx = java.util.concurrent.ThreadLocalRandom.current().nextInt(items.size());
-            return items.get(idx).generateValue();
         }
-
-        return currentContext.get(refId);
+        int idx = java.util.concurrent.ThreadLocalRandom.current().nextInt(items.size());
+        return items.get(idx).generateValue();
     }
 
     /**
@@ -190,58 +195,11 @@ public abstract class VariableConfiguration {
     }
 
     protected void applyConditionalRules() {
-        if (conditionalRules == null || conditionalRules.isEmpty()) {
-            hasActiveOverride = false;
-            activeOverrideValue = null;
-            activeOverrideConfig = null;
-            return;
-        }
-
-        for (ConditionalRule rule : conditionalRules) {
-            if (rule.targetVariable == null || rule.targetVariable.isEmpty()) {
-                continue;
-            }
-
-            // Find value in context by target variable name (e.g. "hola")
-            Object contextVal = currentContext.get(rule.targetVariable);
-            if (contextVal == null) {
-                // Try finding by name if keys are UUIDs by mapping/filtering
-                // Note: currentContext keys might be UUIDs if populated in Flow.java
-                // But Flow.java maps by ID. We check if there's any key matching rule.targetVariable name
-                // To be safe, we look up the key by targetVariable name.
-                contextVal = currentContext.get(rule.targetVariable);
-            }
-
-            if (contextVal != null) {
-                boolean match = evaluateCondition(contextVal, rule.condition, rule.value);
-                if (match) {
-                    hasActiveOverride = true;
-                    activeOverrideConfig = null;
-                    // The overrides can contain a full generator config, a JSON payload or a mapping of properties.
-                    if (rule.overrides != null && rule.overrides.keySet().stream().anyMatch(GENERATOR_KEYS::contains)) {
-                        activeOverrideConfig = rule.overrides;
-                        activeOverrideValue = null;
-                    } else if (rule.overrides != null && !rule.overrides.isEmpty()) {
-                        if (rule.overrides.containsKey(this.identifier)) {
-                            activeOverrideValue = rule.overrides.get(this.identifier);
-                        } else if (rule.overrides.containsKey("constantValue")) { // Extract fixed string mode property
-                            activeOverrideValue = rule.overrides.get("constantValue");
-                        } else if (rule.overrides.containsKey("value")) {
-                            activeOverrideValue = rule.overrides.get("value");
-                        } else {
-                            Object firstVal = rule.overrides.values().stream().findFirst().orElse(null);
-                            if (firstVal != null) {
-                                activeOverrideValue = firstVal;
-                            } else {
-                                activeOverrideValue = rule.overrides;
-                            }
-                        }
-                    } else {
-                        activeOverrideValue = rule.value; // Fallback
-                    }
-                    org.slf4j.LoggerFactory.getLogger(VariableConfiguration.class)
-                        .debug("[RULE MATCH] Variable '{}' triggered override on condition '{} {} {}' context value was: '{}'. New active override: '{}'",
-                            this.identifier, rule.targetVariable, rule.condition, rule.value, contextVal, activeOverrideValue);
+        if (conditionalRules != null) {
+            for (ConditionalRule rule : conditionalRules) {
+                Object contextVal = matchingContextValue(rule);
+                if (contextVal != null) {
+                    activateOverride(rule, contextVal);
                     return; // Stop at first matching rule
                 }
             }
@@ -251,6 +209,53 @@ public abstract class VariableConfiguration {
         hasActiveOverride = false;
         activeOverrideValue = null;
         activeOverrideConfig = null;
+    }
+
+    /**
+     * Context value of the rule's target variable when the rule matches it, otherwise null.
+     * The context is keyed by the target variable as the rule names it.
+     */
+    private Object matchingContextValue(ConditionalRule rule) {
+        if (rule.targetVariable == null || rule.targetVariable.isEmpty()) {
+            return null;
+        }
+        Object contextVal = currentContext.get(rule.targetVariable);
+        if (contextVal != null && evaluateCondition(contextVal, rule.condition, rule.value)) {
+            return contextVal;
+        }
+        return null;
+    }
+
+    private void activateOverride(ConditionalRule rule, Object contextVal) {
+        hasActiveOverride = true;
+        activeOverrideConfig = null;
+        // The overrides can contain a full generator config, a JSON payload or a mapping of properties.
+        if (rule.overrides != null && rule.overrides.keySet().stream().anyMatch(GENERATOR_KEYS::contains)) {
+            activeOverrideConfig = rule.overrides;
+            activeOverrideValue = null;
+        } else if (rule.overrides != null && !rule.overrides.isEmpty()) {
+            activeOverrideValue = overrideValueOf(rule.overrides);
+        } else {
+            activeOverrideValue = rule.value; // Fallback
+        }
+        org.slf4j.LoggerFactory.getLogger(VariableConfiguration.class)
+            .debug("[RULE MATCH] Variable '{}' triggered override on condition '{} {} {}' context value was: '{}'. New active override: '{}'",
+                this.identifier, rule.targetVariable, rule.condition, rule.value, contextVal, activeOverrideValue);
+    }
+
+    /** Single override value: this variable's entry, the fixed-mode value, "value", or else the first entry. */
+    private Object overrideValueOf(Map<String, Object> overrides) {
+        if (overrides.containsKey(this.identifier)) {
+            return overrides.get(this.identifier);
+        }
+        if (overrides.containsKey("constantValue")) { // Extract fixed string mode property
+            return overrides.get("constantValue");
+        }
+        if (overrides.containsKey("value")) {
+            return overrides.get("value");
+        }
+        Object firstVal = overrides.values().stream().findFirst().orElse(null);
+        return firstVal != null ? firstVal : overrides;
     }
 
     private boolean evaluateCondition(Object contextVal, String operator, Object ruleVal) {
@@ -266,42 +271,41 @@ public abstract class VariableConfiguration {
         Double contextNum = tryParseDouble(contextVal);
         Double ruleNum = tryParseDouble(ruleVal);
 
-        switch (op) {
-            case "EQUALS":
-                if (contextNum != null && ruleNum != null) {
-                    return contextNum.equals(ruleNum);
-                }
-                return contextStr.equals(ruleStr);
+        return switch (op) {
+            case "EQUALS" -> isEqual(contextNum, ruleNum, contextStr, ruleStr);
+            case "NOT_EQUALS" -> !isEqual(contextNum, ruleNum, contextStr, ruleStr);
+            case "GREATER_THAN" -> isGreater(contextNum, ruleNum, contextStr, ruleStr);
+            case "LESS_THAN" -> isLess(contextNum, ruleNum, contextStr, ruleStr);
+            case "CONTAINS" -> contextStr.contains(ruleStr);
+            default -> false;
+        };
+    }
 
-            case "NOT_EQUALS":
-                if (contextNum != null && ruleNum != null) {
-                    return !contextNum.equals(ruleNum);
-                }
-                return !contextStr.equals(ruleStr);
-
-            case "GREATER_THAN":
-                if (contextNum != null && ruleNum != null) {
-                    return contextNum > ruleNum;
-                }
-                return contextStr.compareTo(ruleStr) > 0;
-
-            case "LESS_THAN":
-                if (contextNum != null && ruleNum != null) {
-                    return contextNum < ruleNum;
-                }
-                return contextStr.compareTo(ruleStr) < 0;
-
-            case "CONTAINS":
-                return contextStr.contains(ruleStr);
-
-            default:
-                return false;
+    // Both sides numeric: compare as numbers; otherwise compare the texts
+    private static boolean isEqual(Double contextNum, Double ruleNum, String contextStr, String ruleStr) {
+        if (contextNum != null && ruleNum != null) {
+            return contextNum.equals(ruleNum);
         }
+        return contextStr.equals(ruleStr);
+    }
+
+    private static boolean isGreater(Double contextNum, Double ruleNum, String contextStr, String ruleStr) {
+        if (contextNum != null && ruleNum != null) {
+            return contextNum > ruleNum;
+        }
+        return contextStr.compareTo(ruleStr) > 0;
+    }
+
+    private static boolean isLess(Double contextNum, Double ruleNum, String contextStr, String ruleStr) {
+        if (contextNum != null && ruleNum != null) {
+            return contextNum < ruleNum;
+        }
+        return contextStr.compareTo(ruleStr) < 0;
     }
 
     private Double tryParseDouble(Object obj) {
-        if (obj instanceof Number) {
-            return ((Number) obj).doubleValue();
+        if (obj instanceof Number number) {
+            return number.doubleValue();
         }
         try {
             return Double.parseDouble(obj.toString());

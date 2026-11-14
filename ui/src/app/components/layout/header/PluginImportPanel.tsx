@@ -1,15 +1,111 @@
 import { useState, useRef, useEffect, useCallback, useId } from 'react';
 import { Upload, X, Check, AlertTriangle, Loader2, FileArchive, ArrowRight, ShieldCheck } from 'lucide-react';
 import { CoreCommands, bridge } from '../../../core/bridge';
-import type { PluginValidationResultPayload } from '../../../core/types';
+import type { PluginValidationResultPayload, ValidationEntry } from '../../../core/types';
+import {
+  dropZoneStateClass,
+  notAJarResult,
+  requestFailedResult,
+  validationIdentity,
+  withUniqueKeys,
+  type ValidationState,
+} from './pluginImportHelpers';
 
-type ValidationState = 'idle' | 'validating' | 'success' | 'error';
+
+/** Text colour of each validation log level (unknown levels from the Core fall back to cyan). */
+const LOG_LEVEL_CLASS: Record<ValidationEntry['level'], string> = {
+  ERROR: 'text-red-400',
+  WARN: 'text-amber-400',
+  INFO: 'text-cyan-400',
+};
+
+/** Terminal-style list of the validation log entries. */
+function ValidationLogs({ logs, succeeded }: Readonly<{ logs: ValidationEntry[] | undefined; succeeded: boolean }>) {
+  return (
+    <div className="mt-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+      <div className="flex items-center gap-2 mb-2">
+        <ShieldCheck size={12} className={succeeded ? 'text-emerald-400' : 'text-red-400'} />
+        <span className="text-[10px] text-[var(--c-tx4)] font-bold uppercase tracking-wider">Validation Logs</span>
+      </div>
+      <div className="bg-black/60 border border-[var(--c-br1)] rounded-lg p-2.5 font-mono text-[10px] max-h-40 overflow-y-auto custom-scrollbar shadow-inner">
+        {logs && logs.length > 0 ? (
+          withUniqueKeys(logs).map(({ key, entry: log }) => (
+            <div key={key} className="mb-2 last:mb-0 border-l border-white/5 pl-2">
+              <div className="flex items-center gap-2">
+                <span className={LOG_LEVEL_CLASS[log.level] ?? 'text-cyan-400'}>
+                  [{log.level}]
+                </span>
+                <span className="text-[var(--c-tx3)]">{log.message}</span>
+              </div>
+              {log.context && (
+                <div className="text-[9px] text-[var(--c-tx5)] italic ml-6 mt-0.5 break-all">
+                  ↳ {log.context}
+                </div>
+              )}
+            </div>
+          ))
+        ) : (
+          <div className="text-[var(--c-tx5)] italic">No detailed logs available.</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Content of the drop zone: validating, validated, file picked or empty. */
+function DropZoneContent({ validationState, fileName }: Readonly<{ validationState: ValidationState; fileName: string | null }>) {
+  if (validationState === 'validating') {
+    return (
+      <div className="flex flex-col items-center gap-3 py-2">
+        <Loader2 size={24} className="text-amber-400 animate-spin" />
+        <span className="text-[11px] text-amber-600 dark:text-amber-300 font-medium animate-pulse">Verifying bytecode integrity...</span>
+      </div>
+    );
+  }
+  if (validationState === 'success') {
+    return (
+      <div className="flex flex-col items-center gap-2">
+        <div className="w-10 h-10 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-400">
+          <ShieldCheck size={24} />
+        </div>
+        <span className="text-[11px] text-emerald-600 dark:text-emerald-300 font-bold">{fileName}</span>
+        <span className="text-[9px] text-emerald-500/70 uppercase tracking-tighter">Integrity Verified</span>
+      </div>
+    );
+  }
+  if (fileName) {
+    return (
+      <>
+        <FileArchive size={24} className="text-cyan-400" />
+        <span className="text-[11px] text-[var(--c-tx2)] text-center font-medium">{fileName}</span>
+        <span className="text-[9px] text-[var(--c-tx5)] uppercase">Ready to Validate</span>
+      </>
+    );
+  }
+  return (
+    <>
+      <div className="w-10 h-10 rounded-full bg-[var(--c-bg4)] flex items-center justify-center text-[var(--c-tx4)] mb-1">
+        <Upload size={20} />
+      </div>
+      <div className="text-center">
+        <span className="text-[11px] text-[var(--c-tx4)] block font-medium">Drop plugin .jar here</span>
+        <span className="text-[9px] text-[var(--c-tx5)]">or click to browse filesystem</span>
+      </div>
+    </>
+  );
+}
+
+/** A file dropped on the native desktop window, sent by the Core (JCEF drop fix). */
+interface NativeFileDrop {
+  filename: string;
+  base64: string;
+}
 
 interface PluginImportPanelProps {
   onClose: () => void;
 }
 
-export function PluginImportPanel({ onClose }: PluginImportPanelProps) {
+export function PluginImportPanel({ onClose }: Readonly<PluginImportPanelProps>) {
   const ref = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const nameInputId = useId();
@@ -49,30 +145,26 @@ export function PluginImportPanel({ onClose }: PluginImportPanelProps) {
     });
   }, []);
 
-  const handleFileSelected = useCallback(async (file: File) => {
-    if (!file.name.endsWith('.jar')) {
+  /**
+   * Validates a picked or dropped file: rejects anything that is not a .jar, otherwise loads its
+   * Base64 content and asks the Core to validate it, filling the empty name and version fields.
+   */
+  const validateJar = useCallback(async (jarFileName: string, loadBase64: () => Promise<string>) => {
+    if (!jarFileName.endsWith('.jar')) {
       setValidationState('error');
-      setValidationResult({
-        status: 'error',
-        valid: false,
-        logs: [
-          { level: 'ERROR', message: 'Only .jar files are accepted.', context: 'Validation' }
-        ],
-      });
+      setValidationResult(notAJarResult());
       return;
     }
 
-    setFileName(file.name);
+    setFileName(jarFileName);
     setValidationState('validating');
     setValidationResult(null);
 
     try {
-      const base64 = await readFileAsBase64(file);
+      const base64 = await loadBase64();
       setJarBase64(base64);
 
-      const name = pluginName.trim() || file.name.replace('.jar', '');
-      const version = pluginVersion.trim() || '1.0.0';
-
+      const { name, version } = validationIdentity(jarFileName, pluginName, pluginVersion);
       const response = await CoreCommands.validatePlugin(base64, name, version);
 
       setValidationResult(response);
@@ -86,13 +178,14 @@ export function PluginImportPanel({ onClose }: PluginImportPanelProps) {
       }
     } catch {
       setValidationState('error');
-      setValidationResult({
-        status: 'error',
-        valid: false,
-        logs: [{ level: 'ERROR', message: 'Validation request failed. Is the backend running?' }],
-      });
+      setValidationResult(requestFailedResult());
     }
-  }, [pluginName, pluginVersion, readFileAsBase64]);
+  }, [pluginName, pluginVersion]);
+
+  const handleFileSelected = useCallback(
+    (file: File) => validateJar(file.name, () => readFileAsBase64(file)),
+    [validateJar, readFileAsBase64],
+  );
 
   const handleInstall = useCallback(async () => {
     if (!jarBase64 || !validationResult?.valid) return;
@@ -111,46 +204,9 @@ export function PluginImportPanel({ onClose }: PluginImportPanelProps) {
 
   // Handle file coming from native Desktop App bridge (JCEF drop fix)
   useEffect(() => {
-    const handleNativeDrop = async (payload: any) => {
+    const handleNativeDrop = async (payload: NativeFileDrop) => {
       if (payload.filename && payload.base64) {
-        if (!payload.filename.endsWith('.jar')) {
-          setValidationState('error');
-          setValidationResult({
-            status: 'error',
-            valid: false,
-            logs: [{ level: 'ERROR', message: 'Only .jar files are accepted.', context: 'Validation' }],
-          });
-          return;
-        }
-
-        setFileName(payload.filename);
-        setValidationState('validating');
-        setValidationResult(null);
-        setJarBase64(payload.base64);
-
-        try {
-          const name = pluginName.trim() || payload.filename.replace('.jar', '');
-          const version = pluginVersion.trim() || '1.0.0';
-
-          const response = await CoreCommands.validatePlugin(payload.base64, name, version);
-
-          setValidationResult(response);
-          setValidationState(response.valid ? 'success' : 'error');
-
-          if (response.displayName && !pluginName.trim()) {
-            setPluginName(response.displayName);
-          }
-          if (response.pluginVersion && !pluginVersion.trim()) {
-            setPluginVersion(response.pluginVersion);
-          }
-        } catch {
-          setValidationState('error');
-          setValidationResult({
-            status: 'error',
-            valid: false,
-            logs: [{ level: 'ERROR', message: 'Validation request failed. Is the backend running?' }],
-          });
-        }
+        await validateJar(payload.filename, () => Promise.resolve(payload.base64));
       }
     };
 
@@ -158,7 +214,7 @@ export function PluginImportPanel({ onClose }: PluginImportPanelProps) {
     return () => {
       bridge.off('NATIVE_FILE_DROPPED', handleNativeDrop);
     };
-  }, [pluginName, pluginVersion]);
+  }, [validateJar]);
 
   return (
     <div
@@ -214,17 +270,7 @@ export function PluginImportPanel({ onClose }: PluginImportPanelProps) {
         {/* Drop zone */}
         <button
           type="button"
-          className={`relative w-full border-2 border-dashed rounded-xl p-6 flex flex-col items-center justify-center gap-3 cursor-pointer transition-all duration-300 ${
-            isDragging
-              ? 'border-cyan-400 bg-cyan-400/5 scale-[1.02]'
-              : validationState === 'validating'
-                ? 'border-amber-400/50 bg-amber-400/5'
-                : validationState === 'success'
-                  ? 'border-emerald-500/40 bg-emerald-500/5'
-                  : fileName
-                    ? 'border-[var(--c-br2)] bg-[var(--c-bg1)]'
-                    : 'border-[var(--c-br1)] hover:border-[var(--c-br3)] hover:bg-[var(--c-bg5)]'
-          }`}
+          className={`relative w-full border-2 border-dashed rounded-xl p-6 flex flex-col items-center justify-center gap-3 cursor-pointer transition-all duration-300 ${dropZoneStateClass(isDragging, validationState, fileName)}`}
           onDragOver={validationState !== 'validating' ? (e) => { e.preventDefault(); setIsDragging(true); } : undefined}
           onDragLeave={() => setIsDragging(false)}
           onDrop={(e) => {
@@ -234,36 +280,7 @@ export function PluginImportPanel({ onClose }: PluginImportPanelProps) {
           }}
           onClick={() => fileInputRef.current?.click()}
         >
-          {validationState === 'validating' ? (
-            <div className="flex flex-col items-center gap-3 py-2">
-              <Loader2 size={24} className="text-amber-400 animate-spin" />
-              <span className="text-[11px] text-amber-600 dark:text-amber-300 font-medium animate-pulse">Verifying bytecode integrity...</span>
-            </div>
-          ) : validationState === 'success' ? (
-            <div className="flex flex-col items-center gap-2">
-              <div className="w-10 h-10 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-400">
-                <ShieldCheck size={24} />
-              </div>
-              <span className="text-[11px] text-emerald-600 dark:text-emerald-300 font-bold">{fileName}</span>
-              <span className="text-[9px] text-emerald-500/70 uppercase tracking-tighter">Integrity Verified</span>
-            </div>
-          ) : fileName ? (
-            <>
-              <FileArchive size={24} className="text-cyan-400" />
-              <span className="text-[11px] text-[var(--c-tx2)] text-center font-medium">{fileName}</span>
-              <span className="text-[9px] text-[var(--c-tx5)] uppercase">Ready to Validate</span>
-            </>
-          ) : (
-            <>
-              <div className="w-10 h-10 rounded-full bg-[var(--c-bg4)] flex items-center justify-center text-[var(--c-tx4)] mb-1">
-                <Upload size={20} />
-              </div>
-              <div className="text-center">
-                <span className="text-[11px] text-[var(--c-tx4)] block font-medium">Drop plugin .jar here</span>
-                <span className="text-[9px] text-[var(--c-tx5)]">or click to browse filesystem</span>
-              </div>
-            </>
-          )}
+          <DropZoneContent validationState={validationState} fileName={fileName} />
         </button>
 
         {/* Summary of the validated plugin */}
@@ -284,37 +301,7 @@ export function PluginImportPanel({ onClose }: PluginImportPanelProps) {
 
         {/* Validation Logs (Terminal Style) */}
         {validationResult && (
-          <div className="mt-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-            <div className="flex items-center gap-2 mb-2">
-              <ShieldCheck size={12} className={validationState === 'success' ? 'text-emerald-400' : 'text-red-400'} />
-              <span className="text-[10px] text-[var(--c-tx4)] font-bold uppercase tracking-wider">Validation Logs</span>
-            </div>
-            <div className="bg-black/60 border border-[var(--c-br1)] rounded-lg p-2.5 font-mono text-[10px] max-h-40 overflow-y-auto custom-scrollbar shadow-inner">
-              {validationResult.logs && validationResult.logs.length > 0 ? (
-                validationResult.logs.map((log, i) => (
-                  <div key={i} className="mb-2 last:mb-0 border-l border-white/5 pl-2">
-                    <div className="flex items-center gap-2">
-                      <span className={
-                        log.level === 'ERROR' ? 'text-red-400' :
-                        log.level === 'WARN' ? 'text-amber-400' :
-                        'text-cyan-400'
-                      }>
-                        [{log.level}]
-                      </span>
-                      <span className="text-[var(--c-tx3)]">{log.message}</span>
-                    </div>
-                    {log.context && (
-                      <div className="text-[9px] text-[var(--c-tx5)] italic ml-6 mt-0.5 break-all">
-                        ↳ {log.context}
-                      </div>
-                    )}
-                  </div>
-                ))
-              ) : (
-                <div className="text-[var(--c-tx5)] italic">No detailed logs available.</div>
-              )}
-            </div>
-          </div>
+          <ValidationLogs logs={validationResult.logs} succeeded={validationState === 'success'} />
         )}
 
         {/* Action Button Section */}

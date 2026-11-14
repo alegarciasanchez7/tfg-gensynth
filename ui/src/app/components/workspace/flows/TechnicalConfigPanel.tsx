@@ -5,7 +5,12 @@ import { FieldRow } from '../../common/FieldRow';
 import { ConnectorConfigForm } from '../../common/ConnectorConfigForm';
 import { EventLossSection, type EventLossPatch } from './EventLossSection';
 
-export { compareVersions } from '../../../context/helpers/connectorHelpers';
+/** Badge colours of a connector health status (offline and unknown ones are grey). */
+function healthBadgeClass(status: ConnectorHealthSummary['status']): string {
+  if (status === 'healthy') return 'border-emerald-500/30 text-emerald-500 bg-emerald-500/10';
+  if (status === 'degraded') return 'border-amber-500/30 text-amber-500 bg-amber-500/10';
+  return 'border-slate-400/30 text-slate-400 bg-slate-500/10';
+}
 
 interface TechnicalConfigPanelProps {
   flow: Flow;
@@ -55,7 +60,7 @@ export function TechnicalConfigPanel({
   onConnectorVersionChange,
   onConnectorConfigChange,
   onEventLossChange,
-}: TechnicalConfigPanelProps) {
+}: Readonly<TechnicalConfigPanelProps>) {
   return (
     <div
       className={`flex flex-col border-r border-[var(--c-br1)] overflow-y-auto ${
@@ -168,15 +173,7 @@ export function TechnicalConfigPanel({
               <span>plugin API {latestConnectorForFlow.apiVersion}</span>
               {latestConnectorForFlow.external && <span>installed plugin</span>}
               {selectedHealth && (
-                <span
-                  className={`rounded border px-1.5 py-0.5 uppercase ${
-                    selectedHealth.status === 'healthy'
-                      ? 'border-emerald-500/30 text-emerald-500 bg-emerald-500/10'
-                      : selectedHealth.status === 'degraded'
-                      ? 'border-amber-500/30 text-amber-500 bg-amber-500/10'
-                      : 'border-slate-400/30 text-slate-400 bg-slate-500/10'
-                  }`}
-                >
+                <span className={`rounded border px-1.5 py-0.5 uppercase ${healthBadgeClass(selectedHealth.status)}`}>
                   {selectedHealth.status}
                 </span>
               )}

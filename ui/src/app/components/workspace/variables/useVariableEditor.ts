@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateActio
 import { Binary, ListChecks, ALargeSmall, CalendarClock, MapPin, ToggleLeft } from 'lucide-react';
 import { toast } from 'sonner';
 import { useApp } from '../../../context';
-import type { Variable } from '../../../types';
+import type { NumericVariableConfig, Variable } from '../../../types';
 import { useVariableValidation } from '../../../context/hooks/useVariableValidation';
 import { findVariableNameConflict } from '../../../core/variableNames';
 
@@ -113,7 +113,8 @@ function stableStringify(value: unknown): string {
     const entries = Object.entries(value as Record<string, unknown>)
       .filter(([, v]) => v !== undefined)
       .sort(([a], [b]) => a.localeCompare(b));
-    return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`).join(',')}}`;
+    const fields = entries.map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`);
+    return `{${fields.join(',')}}`;
   }
   return JSON.stringify(value ?? null);
 }
@@ -144,7 +145,7 @@ function parseConfig(text: string) {
 
 export function useVariableEditor(variable: Variable) {
   const { state, actions } = useApp();
-  const [draft, setDraftState] = useState<VariableDraft>(() => createDraft(variable));
+  const [draft, setDraft] = useState<VariableDraft>(() => createDraft(variable));
   const [isDeleting, setIsDeleting] = useState(false);
   const isDirty = state?.dirtyItems?.variableIds?.has(variable.id) ?? false;
   // Latest draft, so quick consecutive edits build on each other
@@ -165,7 +166,7 @@ export function useVariableEditor(variable: Variable) {
     appliedIdentity.current = identityOf(next);
     lastSentKey.current = null;
     draftRef.current = next;
-    setDraftState(next);
+    setDraft(next);
   };
 
   useEffect(() => {
@@ -207,10 +208,10 @@ export function useVariableEditor(variable: Variable) {
     actions.updateVariable(variable.id, update);
   };
 
-  const setDraft: Dispatch<SetStateAction<VariableDraft>> = (valueOrFn) => {
+  const editDraft: Dispatch<SetStateAction<VariableDraft>> = (valueOrFn) => {
     const next = typeof valueOrFn === 'function' ? valueOrFn(draftRef.current) : valueOrFn;
     draftRef.current = next;
-    setDraftState(next);
+    setDraft(next);
     // Auto-update context state
     sendDraft(next, currentVariables());
   };
@@ -271,20 +272,21 @@ export function useVariableEditor(variable: Variable) {
       if (identityIssue) errors.name = identityIssue;
       
       let cycle: string[] | null = null;
-      if (draft.type === 'numeric' && parsedConfig.formula) {
-        cycle = detectCycle(variablesList, variable.id, draft.name, parsedConfig.formula);
+      const formula = (parsedConfig as NumericVariableConfig).formula;
+      if (draft.type === 'numeric' && formula) {
+        cycle = detectCycle(variablesList, variable.id, draft.name, formula);
       }
       return { errors, cycle, isJsonValid: true };
     } catch {
       return { errors: {}, cycle: null, isJsonValid: false };
     }
-  }, [draft.configText, draft.type, draft.name, variable.id, variablesNow, identityIssue]);
+  }, [draft.configText, draft.type, draft.name, variable.id, variablesNow, identityIssue, validateConfig, detectCycle]);
 
   const hasValidationError = !validationResult.isJsonValid || Object.keys(validationResult.errors).length > 0 || validationResult.cycle !== null;
 
   return {
     draft,
-    setDraft,
+    setDraft: editDraft,
     isSaving: false,
     isDeleting,
     isDirty,

@@ -7,7 +7,8 @@ vi.mock('../../../../context', () => ({
   useApp: () => mockUseApp(),
 }));
 
-import { SettingsDialog, SETTINGS_CATEGORIES } from './SettingsDialog';
+import { SettingsDialog } from './SettingsDialog';
+import { SETTINGS_CATEGORIES } from './settingsCategories';
 
 describe('SettingsDialog', () => {
   beforeEach(() => {

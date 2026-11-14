@@ -64,7 +64,9 @@ public class MainFrame extends JFrame {
                     frame.browser.close(true);
                 }
                 frame.dispose();
-            } catch (Exception ignored) {}
+            } catch (Exception ignored) {
+                // Best effort: the window is going away anyway (shutdown or restart)
+            }
         }
     }
     

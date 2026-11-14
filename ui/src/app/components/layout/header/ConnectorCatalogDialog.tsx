@@ -50,7 +50,7 @@ function formatRange(field: ConnectorFieldDescriptor): string | null {
   return field.min !== undefined ? `≥ ${field.min}` : `≤ ${field.max}`;
 }
 
-function MetaChip({ label, value }: { label: string; value: string }) {
+function MetaChip({ label, value }: Readonly<{ label: string; value: string }>) {
   return (
     <span className="rounded border border-[var(--c-br2)] bg-[var(--c-bg1)] px-1.5 py-0.5 text-[10px] text-[var(--c-tx4)]">
       {label}: <span className="text-[var(--c-tx2)]">{value}</span>
@@ -58,7 +58,7 @@ function MetaChip({ label, value }: { label: string; value: string }) {
   );
 }
 
-function FieldRow({ field }: { field: ConnectorFieldDescriptor }) {
+function FieldRow({ field }: Readonly<{ field: ConnectorFieldDescriptor }>) {
   const defaultValue = formatDefault(field);
   const range = formatRange(field);
   return (
@@ -86,12 +86,74 @@ function FieldRow({ field }: { field: ConnectorFieldDescriptor }) {
   );
 }
 
-function UsageStat({ label, value, tone }: { label: string; value: number; tone?: string }) {
+function UsageStat({ label, value, tone }: Readonly<{ label: string; value: number; tone?: string }>) {
   return (
     <div className="flex-1 min-w-[90px] rounded-md border border-[var(--c-br2)] bg-[var(--c-bg1)] px-3 py-2">
       <div className={`text-base font-semibold ${tone ?? 'text-[var(--c-tx1)]'}`}>{value}</div>
       <div className="text-[10px] uppercase tracking-wider text-[var(--c-tx4)]">{label}</div>
     </div>
+  );
+}
+
+/** A connector of the catalog list: name, version, kind and health dot. */
+function ConnectorListItem({
+  connector,
+  isSelected,
+  health,
+  onSelect,
+}: Readonly<{
+  connector: ConnectorPluginDescriptor;
+  isSelected: boolean;
+  health: ConnectorHealthSummary | undefined;
+  onSelect: () => void;
+}>) {
+  return (
+    <button
+      type="button"
+      aria-current={isSelected ? 'page' : undefined}
+      onClick={onSelect}
+      className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-left border-l-2 transition-colors ${
+        isSelected
+          ? 'bg-cyan-500/10 border-l-cyan-500'
+          : 'border-l-transparent hover:bg-cyan-500/5'
+      }`}
+    >
+      <Plug size={14} className={isSelected ? 'text-cyan-400 shrink-0' : 'text-[var(--c-tx4)] shrink-0'} />
+      <span className="flex-1 min-w-0">
+        <span className={`block truncate text-xs ${isSelected ? 'text-[var(--c-tx1)]' : 'text-[var(--c-tx2)]'}`}>
+          {connector.displayName}
+        </span>
+        <span className="block text-[10px] text-[var(--c-tx4)]">
+          v{connector.pluginVersion} · {connector.external ? 'Plugin' : 'Built-in'}
+        </span>
+      </span>
+      {health && (
+        <span
+          className={`w-2 h-2 rounded-full shrink-0 ${(HEALTH_STYLES[health.status] ?? HEALTH_STYLES.offline).dot}`}
+          title={health.status}
+        />
+      )}
+    </button>
+  );
+}
+
+/** Usage counters of the selected connector, or a note when no running flow uses it. */
+function UsageSummary({ health }: Readonly<{ health: ConnectorHealthSummary | undefined }>) {
+  if (!health) {
+    return <p className="text-[11px] text-[var(--c-tx4)]">No running flow uses this connector.</p>;
+  }
+  return (
+    <>
+      <div className="flex flex-wrap gap-2">
+        <UsageStat label="Flows" value={health.flowCount} />
+        <UsageStat label="Connected" value={health.connectedCount} tone="text-emerald-500" />
+        <UsageStat label="Warnings" value={health.warningCount} tone={health.warningCount > 0 ? 'text-amber-500' : undefined} />
+        <UsageStat label="Errors" value={health.errorCount} tone={health.errorCount > 0 ? 'text-red-500' : undefined} />
+      </div>
+      {health.lastMessage && (
+        <p className="mt-2 text-[11px] text-[var(--c-tx3)] break-words">Last message: {health.lastMessage}</p>
+      )}
+    </>
   );
 }
 
@@ -105,7 +167,7 @@ export function ConnectorCatalogDialog({
   latestConnectors,
   connectorHealthSummary,
   onImportPlugin,
-}: ConnectorCatalogDialogProps) {
+}: Readonly<ConnectorCatalogDialogProps>) {
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [confirmUninstall, setConfirmUninstall] = useState(false);
   const [uninstalling, setUninstalling] = useState(false);
@@ -154,36 +216,14 @@ export function ConnectorCatalogDialog({
           <div className="flex-1 overflow-y-auto">
             {latestConnectors.map((connector) => {
               const key = connectorKey(connector);
-              const isSelected = selected !== undefined && key === connectorKey(selected);
-              const connectorHealth = healthOf(connector);
               return (
-                <button
+                <ConnectorListItem
                   key={key}
-                  type="button"
-                  aria-current={isSelected ? 'page' : undefined}
-                  onClick={() => select(key)}
-                  className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-left border-l-2 transition-colors ${
-                    isSelected
-                      ? 'bg-cyan-500/10 border-l-cyan-500'
-                      : 'border-l-transparent hover:bg-cyan-500/5'
-                  }`}
-                >
-                  <Plug size={14} className={isSelected ? 'text-cyan-400 shrink-0' : 'text-[var(--c-tx4)] shrink-0'} />
-                  <span className="flex-1 min-w-0">
-                    <span className={`block truncate text-xs ${isSelected ? 'text-[var(--c-tx1)]' : 'text-[var(--c-tx2)]'}`}>
-                      {connector.displayName}
-                    </span>
-                    <span className="block text-[10px] text-[var(--c-tx4)]">
-                      v{connector.pluginVersion} · {connector.external ? 'Plugin' : 'Built-in'}
-                    </span>
-                  </span>
-                  {connectorHealth && (
-                    <span
-                      className={`w-2 h-2 rounded-full shrink-0 ${(HEALTH_STYLES[connectorHealth.status] ?? HEALTH_STYLES.offline).dot}`}
-                      title={connectorHealth.status}
-                    />
-                  )}
-                </button>
+                  connector={connector}
+                  isSelected={selected !== undefined && key === connectorKey(selected)}
+                  health={healthOf(connector)}
+                  onSelect={() => select(key)}
+                />
               );
             })}
           </div>
@@ -225,21 +265,7 @@ export function ConnectorCatalogDialog({
             <div className="flex-1 overflow-y-auto px-6 py-5 flex flex-col gap-6">
               <section aria-label="Usage">
                 <h3 className="mb-2 text-[10px] uppercase tracking-widest text-[var(--c-tx4)]">Usage</h3>
-                {health ? (
-                  <>
-                    <div className="flex flex-wrap gap-2">
-                      <UsageStat label="Flows" value={health.flowCount} />
-                      <UsageStat label="Connected" value={health.connectedCount} tone="text-emerald-500" />
-                      <UsageStat label="Warnings" value={health.warningCount} tone={health.warningCount > 0 ? 'text-amber-500' : undefined} />
-                      <UsageStat label="Errors" value={health.errorCount} tone={health.errorCount > 0 ? 'text-red-500' : undefined} />
-                    </div>
-                    {health.lastMessage && (
-                      <p className="mt-2 text-[11px] text-[var(--c-tx3)] break-words">Last message: {health.lastMessage}</p>
-                    )}
-                  </>
-                ) : (
-                  <p className="text-[11px] text-[var(--c-tx4)]">No running flow uses this connector.</p>
-                )}
+                <UsageSummary health={health} />
               </section>
 
               <section aria-label="Configuration fields">

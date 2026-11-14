@@ -1,12 +1,12 @@
-export { 
-  AppProvider, 
-  useApp, 
-  useSystemStatus, 
-  useGroups, 
-  useVariables, 
-  useSelection, 
-  useMetrics, 
+export { AppProvider } from './AppContext';
+export {
+  useApp,
+  useSystemStatus,
+  useGroups,
+  useVariables,
+  useSelection,
+  useMetrics,
   useLogs,
   useConnection,
   useConnectorCatalog,
-} from './AppContext';
+} from './useApp';

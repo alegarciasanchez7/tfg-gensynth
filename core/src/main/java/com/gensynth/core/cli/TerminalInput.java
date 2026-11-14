@@ -28,6 +28,8 @@ final class TerminalInput implements CliShell.LineSource, CliShell.Screen, Close
 
     private static final String HINT = "  (press any key)";
     private static final long REFRESH_MILLIS = 1000;
+    /** Wait for the rest of the characters of a key such as an arrow, in milliseconds. */
+    private static final long DRAIN_MILLIS = 50;
 
     private final Terminal terminal;
     private final LineReader reader;
@@ -110,10 +112,8 @@ final class TerminalInput implements CliShell.LineSource, CliShell.Screen, Close
                 if (e.getPartialLine().isEmpty()) {
                     return null;
                 }
-            } catch (EndOfFileException e) {
-                return null;
-            } catch (IOError e) {
-                // The terminal went away (window closed, connection lost): end as with Ctrl + D
+            } catch (EndOfFileException | IOError e) {
+                // Ctrl + D, or the terminal went away (window closed, connection lost)
                 return null;
             }
         }
@@ -152,8 +152,9 @@ final class TerminalInput implements CliShell.LineSource, CliShell.Screen, Close
             }
             // Keys such as the arrows send several characters: drop the rest so they are not
             // typed at the next prompt
-            while (keys.peek(50) >= 0) {
-                keys.read();
+            int extra = keys.read(DRAIN_MILLIS);
+            while (extra >= 0) {
+                extra = keys.read(DRAIN_MILLIS);
             }
         } finally {
             terminal.setAttributes(previous);

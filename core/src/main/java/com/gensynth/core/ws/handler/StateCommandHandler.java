@@ -15,6 +15,7 @@ import org.java_websocket.WebSocket;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -46,7 +47,7 @@ public class StateCommandHandler implements CommandHandler {
     }
 
     @Override
-    public void handle(WebSocket conn, JsonNode payload, String commandId) throws Exception {
+    public void handle(WebSocket conn, JsonNode payload, String commandId) throws IOException {
         // Methods are routed individually by UiBridgeWebSocketServer.
     }
 
@@ -88,7 +89,7 @@ public class StateCommandHandler implements CommandHandler {
             } catch (IllegalArgumentException e) {
                 server.sendError(conn, commandId, "INVALID_PROJECT_FILE", e.getMessage(), Map.of(FILE_PATH, filePath));
                 return;
-            } catch (java.io.IOException e) {
+            } catch (IOException e) {
                 server.sendError(conn, commandId, "LOAD_FAILED", "Cannot read " + filePath + ": " + e.getMessage(),
                     Map.of(FILE_PATH, filePath));
                 return;
@@ -185,29 +186,8 @@ public class StateCommandHandler implements CommandHandler {
         UiBridgeWebSocketServer server = ctx.getServer();
         ObjectMapper objectMapper = ctx.getObjectMapper();
 
-        List<GroupDefinition> newGroups = new ArrayList<>();
-        JsonNode groupsNode = payload.path(GROUPS);
-        if (groupsNode.isArray()) {
-            for (JsonNode groupNode : groupsNode) {
-                @SuppressWarnings("unchecked")
-                Map<String, Object> groupMap = objectMapper.convertValue(groupNode, Map.class);
-                newGroups.add(GroupDefinition.fromPayload(groupMap));
-            }
-        }
-
-        List<Variable> newVariables = new ArrayList<>();
-        JsonNode variablesNode = payload.path("variables");
-        if (variablesNode.isArray()) {
-            for (JsonNode varNode : variablesNode) {
-                @SuppressWarnings("unchecked")
-                Map<String, Object> varMap = objectMapper.convertValue(varNode, Map.class);
-                Variable variable = Variable.fromPayload(varMap);
-                if (variable.getScope().equals("LOCAL")) {
-                    logger.info("Importing LOCAL variable '{}' for flow '{}'", variable.getName(), variable.getFlowId());
-                }
-                newVariables.add(variable);
-            }
-        }
+        List<GroupDefinition> newGroups = readGroups(payload.path(GROUPS), objectMapper);
+        List<Variable> newVariables = readVariables(payload.path("variables"), objectMapper);
 
         ProjectSettings settings = ProjectSettings.fromPayload(
             payload.has(SETTINGS) ? objectMapper.convertValue(payload.get(SETTINGS), Map.class) : null
@@ -226,8 +206,8 @@ public class StateCommandHandler implements CommandHandler {
             for (GroupDefinition def : newGroups) {
                 ctx.getGroupsById().put(def.getGroupId(), GroupRuntime.fromDefinition(def));
             }
-            for (Variable var : newVariables) {
-                ctx.getVariablesById().put(var.getId(), var);
+            for (Variable variable : newVariables) {
+                ctx.getVariablesById().put(variable.getId(), variable);
             }
             logDuplicateNames(ctx.getGroupsById().values());
 
@@ -238,6 +218,36 @@ public class StateCommandHandler implements CommandHandler {
             }
         }
         return newGroups.size();
+    }
+
+    /** @return the groups of an imported project ({@code groups} array; none when it is not an array) */
+    private static List<GroupDefinition> readGroups(JsonNode groupsNode, ObjectMapper objectMapper) {
+        List<GroupDefinition> groups = new ArrayList<>();
+        if (groupsNode.isArray()) {
+            for (JsonNode groupNode : groupsNode) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> groupMap = objectMapper.convertValue(groupNode, Map.class);
+                groups.add(GroupDefinition.fromPayload(groupMap));
+            }
+        }
+        return groups;
+    }
+
+    /** @return the variables of an imported project ({@code variables} array; none when it is not an array) */
+    private static List<Variable> readVariables(JsonNode variablesNode, ObjectMapper objectMapper) {
+        List<Variable> variables = new ArrayList<>();
+        if (variablesNode.isArray()) {
+            for (JsonNode varNode : variablesNode) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> varMap = objectMapper.convertValue(varNode, Map.class);
+                Variable variable = Variable.fromPayload(varMap);
+                if (variable.getScope().equals("LOCAL")) {
+                    logger.info("Importing LOCAL variable '{}' for flow '{}'", variable.getName(), variable.getFlowId());
+                }
+                variables.add(variable);
+            }
+        }
+        return variables;
     }
 
     /**
@@ -407,7 +417,9 @@ public class StateCommandHandler implements CommandHandler {
             logger.error("Failed to include rollback report in initial state", e);
             try {
                 java.nio.file.Files.deleteIfExists(AppPaths.current().rollbackReport());
-            } catch (Exception ignored) {}
+            } catch (Exception ignored) {
+                // Best effort: a report left behind is shown again on the next start
+            }
         }
 
         return payload;

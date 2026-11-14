@@ -41,14 +41,14 @@ export default defineConfig([
     },
     rules: {
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_', ignoreRestSiblings: true }],
-      // Pre-existing debt, reported as warnings (and in SonarQube) until it is paid off progressively
-      '@typescript-eslint/no-explicit-any': 'warn',
-      'react-refresh/only-export-components': 'warn',
-      'react-hooks/set-state-in-effect': 'warn',
-      'react-hooks/refs': 'warn',
-      'react-hooks/use-memo': 'warn',
-      'react-hooks/purity': 'warn',
-      'react-hooks/immutability': 'warn',
+      '@typescript-eslint/no-explicit-any': 'error',
+      'react-refresh/only-export-components': 'error',
+      'react-hooks/set-state-in-effect': 'error',
+      'react-hooks/refs': 'error',
+      'react-hooks/use-memo': 'error',
+      'react-hooks/purity': 'error',
+      'react-hooks/immutability': 'error',
+      'react-hooks/exhaustive-deps': 'error',
       // The desktop app serves the UI from http://gensynth.local (not a secure context), where it is undefined
       'no-restricted-properties': ['error', {
         object: 'crypto',

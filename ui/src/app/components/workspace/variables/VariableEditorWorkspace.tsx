@@ -14,7 +14,7 @@ interface VariableEditorWorkspaceProps {
   onBack: () => void;
 }
 
-export function VariableEditorWorkspace({ variable, onBack }: VariableEditorWorkspaceProps) {
+export function VariableEditorWorkspace({ variable, onBack }: Readonly<VariableEditorWorkspaceProps>) {
   const { state } = useApp();
   const {
     draft,
@@ -80,8 +80,8 @@ export function VariableEditorWorkspace({ variable, onBack }: VariableEditorWork
                   Circular dependency detected: <span className="font-mono text-amber-600 dark:text-amber-300">{validationResult.cycle.join(' → ')}</span>
                 </div>
               )}
-              {Object.values(validationResult.errors).map((err, idx) => (
-                <div key={idx}>{err}</div>
+              {Object.entries(validationResult.errors).map(([field, err]) => (
+                <div key={field}>{err}</div>
               ))}
             </div>
           </div>

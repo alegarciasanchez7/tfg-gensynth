@@ -103,7 +103,7 @@ export function buildConnectorHealthSummary(
     .map((entry) => {
       const allConnected = entry.connectedCount === entry.flowCount && entry.flowCount > 0;
       const hasProblems = entry.errorCount > 0 || entry.warningCount > 0;
-      const status: ConnectorHealthStatus = allConnected ? 'healthy' : hasProblems ? 'degraded' : 'offline';
+      const status = connectorHealthStatus(allConnected, hasProblems);
 
       return {
         ...entry,
@@ -157,4 +157,10 @@ export function formatConnectorHealthMessage(summary: ConnectorHealthSummary[]):
   return summary
     .map((entry) => `${entry.displayName}@${entry.pluginVersion}:${entry.status}`)
     .join(' | ');
+}
+
+/** Health of a connector: healthy when all its flows are connected, degraded when some report problems. */
+function connectorHealthStatus(allConnected: boolean, hasProblems: boolean): ConnectorHealthStatus {
+  if (allConnected) return 'healthy';
+  return hasProblems ? 'degraded' : 'offline';
 }

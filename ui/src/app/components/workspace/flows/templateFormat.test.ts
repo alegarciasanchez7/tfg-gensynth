@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { detectTemplateFormat, isTemplateInFormat, resolveTemplateFormat } from './templateFormat';
+import { detectTemplateFormat, isTemplateInFormat, parseCsv, resolveTemplateFormat } from './templateFormat';
 
 const JSON_TEMPLATE = '{\n  "id": "{{uuid}}",\n  "t": {{temperature}}\n}';
 
@@ -35,5 +35,22 @@ describe('templateFormat', () => {
     expect(isTemplateInFormat(JSON_TEMPLATE, 'csv')).toBe(false);
     expect(isTemplateInFormat('id,t\n1,2', 'csv')).toBe(true);
     expect(isTemplateInFormat('anything', 'plain')).toBe(true);
+  });
+});
+
+describe('parseCsv', () => {
+  it('splits CRLF, LF and CR line breaks and skips blank lines', () => {
+    expect(parseCsv('a,b\r\n1,2\n\n3,4\r5,6')).toEqual([['a', 'b'], ['1', '2'], ['3', '4'], ['5', '6']]);
+  });
+
+  it('keeps commas, escaped quotes and line breaks inside quoted fields', () => {
+    expect(parseCsv('"x,y","say ""hi""","two\nlines"')).toEqual([['x,y', 'say "hi"', 'two\nlines']]);
+  });
+
+  it('opens quotes only at the start of a field and rejects an unclosed one', () => {
+    expect(parseCsv('a"b,c')).toEqual([['a"b', 'c']]);
+    expect(parseCsv('  "q",c')).toEqual([['q', 'c']]);
+    expect(parseCsv('"open')).toBeNull();
+    expect(parseCsv('')).toEqual([]);
   });
 });

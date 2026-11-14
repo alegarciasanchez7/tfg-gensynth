@@ -26,50 +26,69 @@ function isJsonDocument(text: string): boolean {
   }
 }
 
+/** State of the CSV parser while it walks the text. */
+interface CsvParseState {
+  records: string[][];
+  record: string[];
+  field: string;
+  quoted: boolean;
+}
+
+/** Closes the current record, skipping it when it is a blank line. */
+function endCsvRecord(state: CsvParseState): void {
+  state.record.push(state.field);
+  if (state.record.length > 1 || state.record[0].trim() !== '') state.records.push(state.record);
+  state.record = [];
+  state.field = '';
+}
+
+/** Reads the character at `i` inside a quoted field; returns the index of the next one. */
+function readQuotedChar(state: CsvParseState, text: string, i: number): number {
+  const char = text[i];
+  if (char === '"' && text[i + 1] === '"') {
+    state.field += '"';
+    return i + 2;
+  }
+  if (char === '"') {
+    state.quoted = false;
+  } else {
+    state.field += char;
+  }
+  return i + 1;
+}
+
+/** Reads the character at `i` outside quotes; returns the index of the next one. */
+function readUnquotedChar(state: CsvParseState, text: string, i: number): number {
+  const char = text[i];
+  if (char === '"' && state.field.trim() === '') {
+    state.quoted = true;
+    state.field = '';
+  } else if (char === ',') {
+    state.record.push(state.field);
+    state.field = '';
+  } else if (char === '\n' || char === '\r') {
+    endCsvRecord(state);
+    // A CRLF line break is a single break
+    if (char === '\r' && text[i + 1] === '\n') return i + 2;
+  } else {
+    state.field += char;
+  }
+  return i + 1;
+}
+
 /**
  * Parses CSV text (RFC 4180: quoted fields may contain commas, quotes as `""` and line breaks).
  * Returns null when a quoted field is never closed. Blank lines are skipped.
  */
 export function parseCsv(text: string): string[][] | null {
-  const records: string[][] = [];
-  let record: string[] = [];
-  let field = '';
-  let quoted = false;
+  const state: CsvParseState = { records: [], record: [], field: '', quoted: false };
   let i = 0;
-  const endRecord = () => {
-    record.push(field);
-    if (record.length > 1 || record[0].trim() !== '') records.push(record);
-    record = [];
-    field = '';
-  };
   while (i < text.length) {
-    const char = text[i];
-    if (quoted) {
-      if (char === '"' && text[i + 1] === '"') {
-        field += '"';
-        i += 1;
-      } else if (char === '"') {
-        quoted = false;
-      } else {
-        field += char;
-      }
-    } else if (char === '"' && field.trim() === '') {
-      quoted = true;
-      field = '';
-    } else if (char === ',') {
-      record.push(field);
-      field = '';
-    } else if (char === '\n' || char === '\r') {
-      if (char === '\r' && text[i + 1] === '\n') i += 1;
-      endRecord();
-    } else {
-      field += char;
-    }
-    i += 1;
+    i = state.quoted ? readQuotedChar(state, text, i) : readUnquotedChar(state, text, i);
   }
-  if (quoted) return null;
-  endRecord();
-  return records;
+  if (state.quoted) return null;
+  endCsvRecord(state);
+  return state.records;
 }
 
 /**

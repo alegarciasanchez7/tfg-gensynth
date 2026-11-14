@@ -104,8 +104,8 @@ public class Flow {
             // Provide context for formula evaluation or conditional rules
             variable.setContext(context);
 
-            if (variable instanceof SimpleVariable) {
-                ((SimpleVariable) variable).generateNextValue();
+            if (variable instanceof SimpleVariable simpleVariable) {
+                simpleVariable.generateNextValue();
             }
 
             Object currentValue = variable.getValue();
@@ -140,9 +140,9 @@ public class Flow {
         Set<String> visited = new HashSet<>();
         Set<String> visiting = new HashSet<>();
 
-        for (IVariable var : variables.values()) {
-            if (!visited.contains(var.getId())) {
-                topologicalSortUtil(var.getId(), visited, visiting, sorted);
+        for (IVariable variable : variables.values()) {
+            if (!visited.contains(variable.getId())) {
+                topologicalSortUtil(variable.getId(), visited, visiting, sorted);
             }
         }
 
@@ -184,14 +184,6 @@ public class Flow {
 
     public void setEnabled(boolean enabled) {
         this.enabled = enabled;
-    }
-
-    /**
-     * Get device ID (alias for getFlowId for backwards compatibility).
-     */
-    @Deprecated(since = "1.0.0", forRemoval = true)
-    public String getDeviceId() {
-        return flowId;
     }
 
     /**

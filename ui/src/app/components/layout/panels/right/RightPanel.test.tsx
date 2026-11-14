@@ -205,4 +205,40 @@ describe('RightPanel', () => {
     await waitFor(() => expect(actions.deleteVariable).toHaveBeenCalledWith('v1'));
     await waitFor(() => expect(mockToast.success).toHaveBeenCalledWith('Variable deleted'));
   });
+
+  it('switches to the scope of a new selection type', () => {
+    const { rerender } = render(<RightPanel variables={variables} selection={selection} onSelectVariable={onSelectVariable} onInsertVariable={onInsertVariable} />);
+    expect(screen.getByText('temperature')).toBeInTheDocument();
+
+    rerender(<RightPanel variables={variables} selection={{ type: 'group', groupId: 'g1' }} onSelectVariable={onSelectVariable} onInsertVariable={onInsertVariable} />);
+    expect(screen.getByText(/No variables found in group scope/i)).toBeInTheDocument();
+  });
+
+  it('keeps the scope the user picked while another flow is selected', () => {
+    const { rerender } = render(<RightPanel variables={variables} selection={selection} onSelectVariable={onSelectVariable} onInsertVariable={onInsertVariable} />);
+    fireEvent.click(screen.getByRole('button', { name: 'GLOBAL' }));
+    expect(screen.getByText(/No variables found in global scope/i)).toBeInTheDocument();
+
+    rerender(<RightPanel variables={variables} selection={{ type: 'flow', groupId: 'g1', flowId: 'f2' }} onSelectVariable={onSelectVariable} onInsertVariable={onInsertVariable} />);
+    expect(screen.getByText(/No variables found in global scope/i)).toBeInTheDocument();
+  });
+
+  it('starts in the scope of the selected variable and creates new variables in the selected group', async () => {
+    const groupVariable: Variable = { id: 'v9', name: 'humidity', type: 'numeric', scope: 'group', groupId: 'g1', config: {} };
+    render(
+      <RightPanel
+        variables={[...variables, groupVariable]}
+        selection={{ type: 'variable', variableId: 'v9', groupId: 'g1' }}
+        onSelectVariable={onSelectVariable}
+        onInsertVariable={onInsertVariable}
+      />,
+    );
+    expect(screen.getByText('humidity')).toBeInTheDocument();
+
+    const call = await createFromAddMenu(/^numeric$/i, 'pressure');
+    expect(call[2]).toBe('group');
+    expect(call[4]).toBeUndefined();
+    expect(call[5]).toBe('g1');
+  });
 });
+

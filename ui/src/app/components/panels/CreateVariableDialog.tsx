@@ -19,7 +19,6 @@ import { defaultConfigTextForType } from '../workspace/variables/config/defaultC
 interface CreateVariableDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  activeScope: VariableScope;
   groups: Group[];
   state: {
     name: string;
@@ -60,7 +59,7 @@ export function CreateVariableDialog({
   onStateChange,
   onSubmit,
   variablesList = [],
-}: CreateVariableDialogProps) {
+}: Readonly<CreateVariableDialogProps>) {
   const { validateConfig, detectCycle } = useVariableValidation();
 
   // Parse config JSON safely and perform validation
@@ -81,7 +80,7 @@ export function CreateVariableDialog({
     } catch {
       return { errors: {}, cycle: null, jsonError: 'Invalid JSON structure' };
     }
-  }, [state.configText, state.type, state.name, state.scope, state.flowId, state.groupId, variablesList]);
+  }, [state, variablesList, validateConfig, detectCycle]);
   const { jsonError } = validationResult;
 
   const hasValidationError = Object.keys(validationResult.errors).length > 0 || jsonError !== null || validationResult.cycle !== null;
@@ -274,8 +273,8 @@ export function CreateVariableDialog({
                     Circular dependency detected: <span className="font-mono text-amber-600 dark:text-amber-300">{validationResult.cycle.join(' → ')}</span>
                   </div>
                 )}
-                {Object.values(validationResult.errors).map((err, idx) => (
-                  <div key={idx}>{err}</div>
+                {Object.entries(validationResult.errors).map(([field, err]) => (
+                  <div key={field}>{err}</div>
                 ))}
               </div>
             </div>

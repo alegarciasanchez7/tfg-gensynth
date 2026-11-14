@@ -56,8 +56,8 @@ public class CliFormatTest {
         assertEquals("1 MINUTES", CliFormat.parseTick("1m", current).describe());
         assertEquals("1 MINUTES", CliFormat.parseTick("1min", current).describe());
         TickSettings fast = CliFormat.parseTick("FAST", current);
-        assertEquals(TickSettings.Mode.AS_FAST_AS_POSSIBLE, fast.getMode());
-        assertEquals("keeps the period to come back to", 3, fast.getValue());
+        assertEquals(TickSettings.Mode.AS_FAST_AS_POSSIBLE, fast.mode());
+        assertEquals("keeps the period to come back to", 3, fast.value());
     }
 
     @Test

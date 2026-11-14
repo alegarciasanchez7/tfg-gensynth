@@ -14,8 +14,12 @@ import java.util.concurrent.TimeUnit;
  * ({@link Mode#FIXED_RATE}, defined by {@code value} + {@code unit}) or as fast as the
  * machine allows ({@link Mode#AS_FAST_AS_POSSIBLE}). The period is kept in AFAP mode so
  * switching back to a fixed rate restores the previous value.
+ *
+ * @param mode  clock mode
+ * @param value period value, at least 1
+ * @param unit  period unit
  */
-public final class TickSettings {
+public record TickSettings(Mode mode, long value, Unit unit) {
 
     /** Tick clock modes. */
     public enum Mode {
@@ -35,28 +39,16 @@ public final class TickSettings {
     /** Longest accepted tick period (24 hours), in nanoseconds. */
     public static final long MAX_PERIOD_NANOS = TimeUnit.HOURS.toNanos(24);
 
-    private final Mode mode;
-    private final long value;
-    private final Unit unit;
-
-    /**
-     * Creates tick settings after validating them.
-     *
-     * @param mode  clock mode
-     * @param value period value, at least 1
-     * @param unit  period unit
-     * @throws IllegalArgumentException if the values are out of range
-     */
-    public TickSettings(Mode mode, long value, Unit unit) {
-        this.mode = Objects.requireNonNull(mode, "mode cannot be null");
-        this.unit = Objects.requireNonNull(unit, "unit cannot be null");
+    // Validates the settings: throws IllegalArgumentException when a value is out of range
+    public TickSettings {
+        Objects.requireNonNull(mode, "mode cannot be null");
+        Objects.requireNonNull(unit, "unit cannot be null");
         if (value < 1) {
             throw new IllegalArgumentException("Tick period value must be at least 1");
         }
         if (toTimeUnit(unit).toNanos(value) > MAX_PERIOD_NANOS) {
             throw new IllegalArgumentException("Tick period cannot exceed 24 hours");
         }
-        this.value = value;
     }
 
     /**
@@ -133,39 +125,6 @@ public final class TickSettings {
      */
     public String describe() {
         return mode == Mode.AS_FAST_AS_POSSIBLE ? mode.name() : value + " " + unit.name();
-    }
-
-    /**
-     * @return the clock mode
-     */
-    public Mode getMode() {
-        return mode;
-    }
-
-    /**
-     * @return the period value
-     */
-    public long getValue() {
-        return value;
-    }
-
-    /**
-     * @return the period unit
-     */
-    public Unit getUnit() {
-        return unit;
-    }
-
-    @Override
-    public boolean equals(Object o) {
-        if (this == o) return true;
-        if (!(o instanceof TickSettings that)) return false;
-        return value == that.value && mode == that.mode && unit == that.unit;
-    }
-
-    @Override
-    public int hashCode() {
-        return Objects.hash(mode, value, unit);
     }
 
     @Override

@@ -28,6 +28,23 @@ describe('PointConfigPanel', () => {
     expect(handleChange).toHaveBeenCalledWith({ maxStepDistance: 5.2 });
   });
 
+  it('follows a step distance changed from outside the input', () => {
+    const { rerender } = render(<PointConfigPanel config={defaultConfig} onChange={vi.fn()} />);
+    rerender(<PointConfigPanel config={{ ...defaultConfig, maxStepDistance: 0.25 }} onChange={vi.fn()} />);
+
+    expect(screen.getByLabelText(/Max Step Distance/i)).toHaveValue('0.25');
+  });
+
+  it('keeps the typed text while it already means the stored step distance', () => {
+    const { rerender } = render(<PointConfigPanel config={defaultConfig} onChange={vi.fn()} />);
+    const stepInput = screen.getByLabelText(/Max Step Distance/i);
+
+    fireEvent.change(stepInput, { target: { value: '5.' } });
+    rerender(<PointConfigPanel config={{ ...defaultConfig, maxStepDistance: 5 }} onChange={vi.fn()} />);
+
+    expect(stepInput).toHaveValue('5.');
+  });
+
   it('toggles GPS noise and modifies jitter radius', () => {
     const handleChange = vi.fn();
     const gpsConfig: PointVariableConfig = {

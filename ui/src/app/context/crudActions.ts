@@ -15,10 +15,13 @@
 
 import type React from 'react';
 import bridge from '../core/bridge';
-import type { Group, Flow, Variable } from '../types';
+import type { Variable } from '../types';
+import type { AppAction } from './reducer';
+import { mapGroupFromCore } from './helpers/groupHelpers';
 import type { GroupState, FlowState, VariableState } from '../core/types';
 import type { OptimisticManager } from './optimisticManager';
 import { randomUUID } from '../core/randomId';
+import type { CreateFlowOptions, CreateVariableOptions, FlowConfigUpdate, GroupConfigUpdate } from './crudTypes';
 
 // ─────────────────────────────────────────────────────────────
 // Helper Types
@@ -31,7 +34,7 @@ export interface CRUDError {
 }
 
 export interface CRUDActionContext {
-  dispatch: React.Dispatch<any>;
+  dispatch: React.Dispatch<AppAction>;
   reportError: (source: string, action: string, error: unknown) => void;
   connectionMode: 'websocket' | 'jcef' | 'mock';
   optimisticManager: OptimisticManager | null;
@@ -119,7 +122,7 @@ export async function createGroup(
       flows: [],
     };
 
-    ctx.dispatch({ type: 'SET_GROUPS', payload: [newGroup] });
+    ctx.dispatch({ type: 'SET_GROUPS', payload: [mapGroupFromCore(newGroup)] });
     return newGroup;
   } catch (error) {
     const err = extractCommandError(error);
@@ -156,7 +159,7 @@ export async function reorderGroupFlows(
 export async function updateGroupConfig(
   ctx: CRUDActionContext,
   groupId: string,
-  config: Partial<Omit<Group, 'id' | 'flows'>>,
+  config: GroupConfigUpdate,
   groupName?: string,
 ): Promise<void> {
   if (!groupId?.trim()) {
@@ -229,19 +232,10 @@ export async function deleteGroup(
 export async function createFlow(
   ctx: CRUDActionContext,
   groupId: string,
-  name: string,
-  technology: string,
-  host: string,
-  port: number,
-  topic?: string,
-  interval?: number,
-  burst?: number,
-  template?: string,
-  connectorConfig?: Record<string, unknown>,
+  options: CreateFlowOptions,
   onResponse?: (data: FlowState) => void,
-  everyTicks?: number,
-  autoRename?: boolean,
 ): Promise<FlowState> {
+  const { name, technology, host, port, topic, interval, burst, template, connectorConfig, everyTicks, autoRename } = options;
   // Validations
   if (!groupId?.trim()) throwValidationError('groupId', 'is required');
   if (!name?.trim()) throwValidationError('name', 'is required');
@@ -304,7 +298,7 @@ export async function updateFlowConfig(
   ctx: CRUDActionContext,
   groupId: string,
   flowId: string,
-  config: Partial<Omit<Flow, 'id' | 'connectionStatus' | 'throughput' | 'hasError' | 'errorMessage'>> & { template?: string },
+  config: FlowConfigUpdate,
   flowName?: string,
 ): Promise<void> {
   if (!groupId?.trim()) throwValidationError('groupId', 'is required');
@@ -395,15 +389,10 @@ export async function deleteFlow(
  */
 export async function createVariable(
   ctx: CRUDActionContext,
-  name: string,
-  type: string,
-  scope: 'global' | 'group' | 'local',
-  config?: Record<string, unknown>,
-  flowId?: string,
-  groupId?: string,
-  variableId?: string,
+  options: CreateVariableOptions,
   onResponse?: (data: VariableState) => void,
 ): Promise<VariableState> {
+  const { name, type, scope, config, flowId, groupId, variableId } = options;
   // Validations
   if (!name?.trim()) throwValidationError('name', 'is required');
   const validTypes = ['numeric', 'string', 'boolean', 'temporal', 'point', 'list'];
@@ -435,8 +424,8 @@ export async function createVariable(
     const newVariable: VariableState = {
       id: generatedId,
       name: name.trim(),
-      type: type as any,
-      scope: scope as any,
+      type,
+      scope,
       flowId,
       groupId,
       config: config || {},

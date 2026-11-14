@@ -97,4 +97,20 @@ describe('TickSettingsSection', () => {
     renderWith(oneSecond, { systemStatus: 'running', metrics: { ticksPerSecond: 1.02 } });
     expect(screen.getByText('Measured: 1.02 ticks/s')).toBeInTheDocument();
   });
+
+  it('shows a new tick value in place of the draft and clears its error', async () => {
+    const { rerender } = renderWith(oneSecond);
+    const input = screen.getByLabelText('Tick period value');
+    fireEvent.change(input, { target: { value: '0' } });
+    fireEvent.blur(input);
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
+
+    mockUseApp.mockReturnValue({
+      state: { settings: { tick: { ...oneSecond, value: 3 } }, systemStatus: 'stopped', metrics: null },
+      actions: { updateTickSettings },
+    });
+    rerender(<TickSettingsSection />);
+    expect(screen.getByLabelText('Tick period value')).toHaveValue(3);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
 });

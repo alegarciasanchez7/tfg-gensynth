@@ -46,7 +46,7 @@ export function CloseConfigurationDialog({
   hasUnsavedChanges,
   onConfirm,
   onCancel,
-}: CloseConfigurationDialogProps) {
+}: Readonly<CloseConfigurationDialogProps>) {
   const [isBusy, setIsBusy] = useState(false);
   const copy = COPY[reason];
   const Icon = reason === 'new' ? FilePlus : FolderOpen;

@@ -99,7 +99,7 @@ public class StringVariableExhaustiveGenerationTest {
         // Alphanumeric
         config.formattedMaskType("ALPHANUMERIC").customMask("????");
         String alpha = (String) config.generateNextValue();
-        assertTrue(alpha.length() > 0);
+        assertFalse(alpha.isEmpty());
 
         // Custom
         config.formattedMaskType("CUSTOM_MASK").customMask("@#$?");

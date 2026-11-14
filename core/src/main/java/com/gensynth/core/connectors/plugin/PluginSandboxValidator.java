@@ -58,8 +58,6 @@ public class PluginSandboxValidator {
 
     private static final Logger logger = LoggerFactory.getLogger(PluginSandboxValidator.class);
 
-    /** Current core API version for compatibility checking. */
-
     /** Maximum time in seconds to load and inspect a plugin descriptor. */
     private static final int DESCRIPTOR_LOAD_TIMEOUT_SECONDS = 5;
 
@@ -361,7 +359,9 @@ public class PluginSandboxValidator {
             if (tempFile != null) {
                 try {
                     Files.deleteIfExists(tempFile);
-                } catch (IOException ignored) {}
+                } catch (IOException ignored) {
+                    // Best effort: the temporary copy is in the system temporary folder
+                }
             }
         }
     }
@@ -423,8 +423,9 @@ public class PluginSandboxValidator {
                             ConnectorInfo info = plugin.info();
                             List<ConnectorField> fields = ConnectorField.requireUniqueKeys(List.copyOf(plugin.fields()));
                             return new LoadedPlugin(info, fields.size());
-                        } catch (Throwable t) {
-                            throw new RuntimeException("Dry-run failed: plugin info or fields are invalid. " + t.getMessage(), t);
+                        } catch (Exception | LinkageError t) {
+                            // LinkageError: a plugin built against classes this API version lacks
+                            throw new IllegalStateException("Dry-run failed: plugin info or fields are invalid. " + t.getMessage(), t);
                         }
                     }
                 }

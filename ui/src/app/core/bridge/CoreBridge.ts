@@ -8,11 +8,11 @@ import { MessageHandler } from './MessageHandler';
 import { validateCommand } from './CommandValidator';
 
 export class CoreBridge {
-  private config: BridgeConfig;
-  private emitter: BridgeEventEmitter;
-  private connectionManager: ConnectionManager;
-  private messageHandler: MessageHandler;
-  private pendingCommands: Map<string, PendingCommand> = new Map();
+  private readonly config: BridgeConfig;
+  private readonly emitter: BridgeEventEmitter;
+  private readonly connectionManager: ConnectionManager;
+  private readonly messageHandler: MessageHandler;
+  private readonly pendingCommands: Map<string, PendingCommand> = new Map();
   private commandIdCounter = 0;
 
   constructor(config: Partial<BridgeConfig> = {}) {
@@ -73,7 +73,7 @@ export class CoreBridge {
     }
   }
 
-  send<T extends UICommandType, R = any>(
+  send<T extends UICommandType, R = unknown>(
     type: T,
     payload?: UICommandPayloadMap[T],
     onResponse?: (data: R) => void
@@ -94,13 +94,14 @@ export class CoreBridge {
         payload,
       };
 
+      // The pending table is untyped: the response payload is the R this command was sent for
       const pending: PendingCommand = {
-        resolve,
+        resolve: resolve as (value: unknown) => void,
         reject,
         timerId: 0,
         command,
         attempts: 0,
-        onResponse,
+        onResponse: onResponse as ((payload: unknown) => void) | undefined,
       };
 
       const scheduleAttempt = () => {

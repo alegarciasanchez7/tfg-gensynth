@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Pause, Play } from 'lucide-react';
 import { useApp } from '../../../../context';
 
@@ -22,7 +22,34 @@ function payloadOf(logMessage: string): string {
   return at === -1 ? logMessage : logMessage.slice(at + PAYLOAD_SEPARATOR.length);
 }
 
-export function PreviewView({ running }: PreviewViewProps) {
+/** The message shown for the selected flow, or what the panel waits for. */
+function PreviewPayload({ shown, captured, running }: Readonly<{ shown: CapturedPayload | null; captured: boolean; running: boolean }>) {
+  if (shown) {
+    return (
+      <pre
+        data-testid="preview-payload"
+        className={`text-[11px] leading-relaxed select-text ${captured ? 'text-amber-600 dark:text-amber-300' : 'text-emerald-600 dark:text-emerald-400'}`}
+        style={MONO}
+      >
+        {shown.payload}
+      </pre>
+    );
+  }
+  if (running) {
+    return (
+      <pre className="text-[11px] text-[var(--c-tx5)] leading-relaxed" style={MONO}>
+        {'// waiting for data...'}
+      </pre>
+    );
+  }
+  return (
+    <div className="flex items-center justify-center h-full text-center text-[var(--c-tx5)] text-[11px]" style={MONO}>
+      No message from this flow yet. Start the system or its group to see its last message.
+    </div>
+  );
+}
+
+export function PreviewView({ running }: Readonly<PreviewViewProps>) {
   const { state } = useApp();
   const { groups, logs } = state;
   const [selectedFlowId, setSelectedFlowId] = useState<string | null>(null);
@@ -31,11 +58,10 @@ export function PreviewView({ running }: PreviewViewProps) {
 
   const allFlows = groups.flatMap(g => g.flows.map(f => ({ ...f, groupName: g.name })));
 
-  useEffect(() => {
-    if (!selectedFlowId && allFlows.length > 0) {
-      setSelectedFlowId(allFlows[0].id);
-    }
-  }, [allFlows, selectedFlowId]);
+  // Select the first flow once there is one (adjusting state while rendering)
+  if (!selectedFlowId && allFlows.length > 0) {
+    setSelectedFlowId(allFlows[0].id);
+  }
 
   const currentFlow = allFlows.find(f => f.id === selectedFlowId);
 
@@ -146,23 +172,7 @@ export function PreviewView({ running }: PreviewViewProps) {
             </div>
           </div>
           <div className="flex-1 overflow-auto p-3">
-            {shown ? (
-              <pre
-                data-testid="preview-payload"
-                className={`text-[11px] leading-relaxed select-text ${captured ? 'text-amber-600 dark:text-amber-300' : 'text-emerald-600 dark:text-emerald-400'}`}
-                style={MONO}
-              >
-                {shown.payload}
-              </pre>
-            ) : running ? (
-              <pre className="text-[11px] text-[var(--c-tx5)] leading-relaxed" style={MONO}>
-                {'// waiting for data...'}
-              </pre>
-            ) : (
-              <div className="flex items-center justify-center h-full text-center text-[var(--c-tx5)] text-[11px]" style={MONO}>
-                No message from this flow yet. Start the system or its group to see its last message.
-              </div>
-            )}
+            <PreviewPayload shown={shown} captured={Boolean(captured)} running={running} />
           </div>
         </div>
       </div>

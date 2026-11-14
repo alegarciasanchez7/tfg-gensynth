@@ -160,28 +160,14 @@ public class Variable {
         String type = (String) payload.getOrDefault("type", "string");
         
         // Robustness: Try different naming conventions for flowId and groupId
-        String flowId = (String) payload.get("flowId");
-        if (flowId == null) flowId = (String) payload.get("flowid");
-        if (flowId == null) flowId = (String) payload.get("flow_id");
-        
-        String groupId = (String) payload.get("groupId");
-        if (groupId == null) groupId = (String) payload.get("groupid");
-        if (groupId == null) groupId = (String) payload.get("group_id");
+        String flowId = firstString(payload, "flowId", "flowid", "flow_id");
+        String groupId = firstString(payload, "groupId", "groupid", "group_id");
 
         Object defaultValue = payload.getOrDefault("defaultValue", "");
         @SuppressWarnings("unchecked")
         Map<String, Object> config = (Map<String, Object>) payload.getOrDefault("config", Map.of());
-
-        if ((config == null || config.isEmpty()) && defaultValue instanceof String) {
-            String dfStr = ((String) defaultValue).trim();
-            if (dfStr.startsWith("{") && dfStr.endsWith("}")) {
-                try {
-                    com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-                    config = mapper.readValue(dfStr, new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
-                } catch (Exception e) {
-                    logger.error("Failed to auto-recover variable config from defaultValue: {}", e.getMessage());
-                }
-            }
+        if ((config == null || config.isEmpty()) && defaultValue instanceof String defaultText) {
+            config = recoverConfig(defaultText, config);
         }
 
         // Robustness: If scope is LOCAL but flowId is missing, downgrade to GLOBAL to avoid crashing on import
@@ -198,6 +184,36 @@ public class Variable {
         }
 
         return new Variable(id, name, scope.toUpperCase(), type, defaultValue, config, flowId, groupId);
+    }
+
+    /** @return the text under the first of the keys that has a value, or null */
+    private static String firstString(Map<String, Object> payload, String... keys) {
+        for (String key : keys) {
+            String value = (String) payload.get(key);
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Older files kept the configuration as JSON in the default value: reads it from there.
+     *
+     * @return the configuration found, or {@code config} when there is none
+     */
+    private static Map<String, Object> recoverConfig(String defaultText, Map<String, Object> config) {
+        String dfStr = defaultText.trim();
+        if (!dfStr.startsWith("{") || !dfStr.endsWith("}")) {
+            return config;
+        }
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            return mapper.readValue(dfStr, new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+        } catch (Exception e) {
+            logger.error("Failed to auto-recover variable config from defaultValue: {}", e.getMessage());
+            return config;
+        }
     }
 
     @Override

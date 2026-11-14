@@ -76,7 +76,7 @@ export function FlowItem({
   onDelete,
   formatTemplate,
   siblingNames,
-}: FlowItemProps) {
+}: Readonly<FlowItemProps>) {
   const { state } = useApp();
   const isDirty = state?.dirtyItems?.flowIds?.has(flow.id) ?? false;
   const [isCloneOpen, setIsCloneOpen] = useState(false);

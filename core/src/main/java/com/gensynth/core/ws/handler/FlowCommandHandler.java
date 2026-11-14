@@ -13,6 +13,7 @@ import com.gensynth.core.ws.runtime.FlowRuntime;
 import com.gensynth.core.ws.runtime.GroupRuntime;
 import org.java_websocket.WebSocket;
 
+import java.io.IOException;
 import java.util.*;
 import com.gensynth.core.api.IFlowMessageHandler;
 import com.gensynth.core.api.IGroupDispatcher;
@@ -75,7 +76,7 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
     }
 
     @Override
-    public void handle(WebSocket conn, JsonNode payload, String commandId) throws Exception {
+    public void handle(WebSocket conn, JsonNode payload, String commandId) throws IOException {
         // Routed directly by method references in UiBridgeWebSocketServer.
     }
 
@@ -228,51 +229,10 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
 
             // Generation fields (everyTicks, event loss, template, format) apply on the next tick.
             // Connection fields (technology, host, port, connectorConfig) apply when the group is restarted.
-            if (payload.hasNonNull("name")) {
-                String newName = payload.path("name").asText(flow.name).trim();
-                if (newName.isEmpty()) {
-                    server.sendError(conn, commandId, INVALID_PAYLOAD, "Flow name cannot be empty", Map.of(FLOW_ID, flowId));
-                    return;
-                }
-                if (UniqueNames.isTaken(group.flowNames(flowId), newName)) {
-                    sendDuplicateFlowName(conn, commandId, null, newName, groupId);
-                    return;
-                }
-                flow.name = newName;
+            if (!applyName(conn, commandId, payload, group, flow) || !applyTechnology(conn, commandId, payload, flow)) {
+                return;
             }
-            if (payload.hasNonNull(TECHNOLOGY)) {
-                String technology = payload.path(TECHNOLOGY).asText(flow.technology);
-                if (ctx.getConnectorCatalogService().findLatestConnector(technology).isEmpty()) {
-                    server.sendError(conn, commandId, INVALID_PAYLOAD, "Connector not found for technology: " + technology, Map.of(TECHNOLOGY, technology));
-                    return;
-                }
-                flow.technology = technology;
-            }
-            if (payload.hasNonNull("host")) {
-                flow.host = payload.path("host").asText(flow.host);
-            }
-            if (payload.hasNonNull("port")) {
-                flow.port = payload.path("port").asInt(flow.port);
-            }
-            if (payload.hasNonNull(TOPIC)) {
-                flow.topic = payload.path(TOPIC).asText(flow.topic);
-            }
-            if (payload.hasNonNull(INTERVAL)) {
-                flow.interval = Math.max(50, payload.path(INTERVAL).asInt(flow.interval));
-            }
-            if (payload.hasNonNull(BURST)) {
-                flow.burst = Math.max(1, payload.path(BURST).asInt(flow.burst));
-            }
-            if (payload.hasNonNull(EVERY_TICKS)) {
-                flow.everyTicks.set(Math.max(1, payload.path(EVERY_TICKS).asInt(flow.everyTicks.get())));
-            }
-            applyEventLoss(flow, payload);
-            if (payload.hasNonNull(TEMPLATE)) {
-                flow.template = payload.path(TEMPLATE).asText(flow.template);
-            }
-            if (payload.hasNonNull(FORMAT)) {
-                flow.format = payload.path(FORMAT).asText(flow.format);
-            }
+            applySendFields(flow, payload);
             if (payload.hasNonNull(CONNECTOR_CONFIG) && payload.get(CONNECTOR_CONFIG).isObject()) {
                 flow.connectorConfig = parseConnectorConfig(payload.get(CONNECTOR_CONFIG));
             }
@@ -295,6 +255,75 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
         server.sendAck(conn, commandId, "flow_updated");
         server.logToBackend("info", SOURCE_FLOWS, "Updated config for flow '" + updatedFlowName + "'", commandId);
         server.broadcastGroupsUpdate();
+    }
+
+    /**
+     * Renames the flow when the payload has a name.
+     *
+     * @return false when the name is empty or taken (the error is sent and nothing else changes)
+     */
+    private boolean applyName(WebSocket conn, String commandId, JsonNode payload, GroupRuntime group, FlowRuntime flow) {
+        if (!payload.hasNonNull("name")) {
+            return true;
+        }
+        String newName = payload.path("name").asText(flow.name).trim();
+        if (newName.isEmpty()) {
+            ctx.getServer().sendError(conn, commandId, INVALID_PAYLOAD, "Flow name cannot be empty", Map.of(FLOW_ID, flow.id));
+            return false;
+        }
+        if (UniqueNames.isTaken(group.flowNames(flow.id), newName)) {
+            sendDuplicateFlowName(conn, commandId, null, newName, group.id);
+            return false;
+        }
+        flow.name = newName;
+        return true;
+    }
+
+    /**
+     * Changes the flow's connector when the payload has a technology.
+     *
+     * @return false when there is no connector for it (the error is sent and nothing else changes)
+     */
+    private boolean applyTechnology(WebSocket conn, String commandId, JsonNode payload, FlowRuntime flow) {
+        if (!payload.hasNonNull(TECHNOLOGY)) {
+            return true;
+        }
+        String technology = payload.path(TECHNOLOGY).asText(flow.technology);
+        if (ctx.getConnectorCatalogService().findLatestConnector(technology).isEmpty()) {
+            ctx.getServer().sendError(conn, commandId, INVALID_PAYLOAD, "Connector not found for technology: " + technology, Map.of(TECHNOLOGY, technology));
+            return false;
+        }
+        flow.technology = technology;
+        return true;
+    }
+
+    /** Copies the connection target and the generation settings present in the payload. */
+    private static void applySendFields(FlowRuntime flow, JsonNode payload) {
+        if (payload.hasNonNull("host")) {
+            flow.host = payload.path("host").asText(flow.host);
+        }
+        if (payload.hasNonNull("port")) {
+            flow.port = payload.path("port").asInt(flow.port);
+        }
+        if (payload.hasNonNull(TOPIC)) {
+            flow.topic = payload.path(TOPIC).asText(flow.topic);
+        }
+        if (payload.hasNonNull(INTERVAL)) {
+            flow.interval = Math.max(50, payload.path(INTERVAL).asInt(flow.interval));
+        }
+        if (payload.hasNonNull(BURST)) {
+            flow.burst = Math.max(1, payload.path(BURST).asInt(flow.burst));
+        }
+        if (payload.hasNonNull(EVERY_TICKS)) {
+            flow.everyTicks.set(Math.max(1, payload.path(EVERY_TICKS).asInt(flow.everyTicks.get())));
+        }
+        applyEventLoss(flow, payload);
+        if (payload.hasNonNull(TEMPLATE)) {
+            flow.template = payload.path(TEMPLATE).asText(flow.template);
+        }
+        if (payload.hasNonNull(FORMAT)) {
+            flow.format = payload.path(FORMAT).asText(flow.format);
+        }
     }
 
     public void handleCloneFlow(WebSocket conn, JsonNode payload, String commandId) {
@@ -348,20 +377,20 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
 
                 // Clone variables for this flow
                 List<Variable> flowVars = new ArrayList<>();
-                for (Variable var : ctx.getVariablesById().values()) {
-                    if (original.id.equals(var.getFlowId())) {
-                        flowVars.add(var);
+                for (Variable variable : ctx.getVariablesById().values()) {
+                    if (original.id.equals(variable.getFlowId())) {
+                        flowVars.add(variable);
                     }
                 }
-                for (Variable var : flowVars) {
+                for (Variable variable : flowVars) {
                     String newVarId = UUID.randomUUID().toString();
                     Variable varClone = new Variable(
                         newVarId,
-                        var.getName(),
-                        var.getScope(),
-                        var.getType(),
-                        var.getDefaultValue(),
-                        var.getConfig(),
+                        variable.getName(),
+                        variable.getScope(),
+                        variable.getType(),
+                        variable.getDefaultValue(),
+                        variable.getConfig(),
                         newFlowId,
                         groupId
                     );
@@ -436,28 +465,12 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
     public void validateGroupForStart(GroupRuntime group) {
         // Validate all variables in the group and perform cycle detection fail-fast
         Map<String, VariableConfiguration> configs = new HashMap<>();
-        for (Variable var : ctx.getVariablesById().values()) {
-            boolean isGlobal = "GLOBAL".equalsIgnoreCase(var.getScope());
-            boolean isGroupScope = "GROUP".equalsIgnoreCase(var.getScope()) && group.id.equals(var.getGroupId());
-            boolean isLocalScope = false;
-            for (FlowRuntime flow : group.flows) {
-                if ("LOCAL".equalsIgnoreCase(var.getScope()) && flow.id.equals(var.getFlowId())) {
-                    isLocalScope = true;
-                    break;
-                }
-            }
-            if (isGlobal || isGroupScope || isLocalScope) {
-                VariableConfiguration vc;
-                try {
-                    vc = VariableFactory.createFromMap(var.getId(), var.getType(), var.getConfig());
-                } catch (InvalidVariableConfigException e) {
-                    // Name the variable as the user sees it, not by its internal id
-                    throw new IllegalStateException("Invalid configuration for variable '" + var.getName() + "': "
-                        + String.join("; ", e.getErrors()), e);
-                }
-                configs.put(var.getName(), vc);
-                if (var.getId() != null && !var.getId().equals(var.getName())) {
-                    configs.put(var.getId(), vc);
+        for (Variable variable : ctx.getVariablesById().values()) {
+            if (isReachableFrom(group, variable)) {
+                VariableConfiguration vc = parseConfiguration(variable);
+                configs.put(variable.getName(), vc);
+                if (variable.getId() != null && !variable.getId().equals(variable.getName())) {
+                    configs.put(variable.getId(), vc);
                 }
             }
         }
@@ -478,41 +491,77 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
             if (template != null && !template.isEmpty()) {
                 java.util.regex.Matcher matcher = tagPattern.matcher(template);
                 while (matcher.find()) {
-                    String fullSpec = matcher.group(1).trim();
-                    if ("uuid".equals(fullSpec) || "ts".equals(fullSpec) || "n".equals(fullSpec)
-                        || TemplateEngine.FLOW_NAME_PLACEHOLDER.equals(fullSpec)) {
-                        continue;
-                    }
-                    String scopePart = null;
-                    String namePart = fullSpec;
-                    boolean isItemAccess = false;
-
-                    if (fullSpec.contains(".")) {
-                        String[] parts = fullSpec.split("\\.");
-                        if (parts.length >= 3 && parts[parts.length - 1].toLowerCase().startsWith("item")) {
-                            scopePart = parts[0].toLowerCase();
-                            namePart = parts[1];
-                            isItemAccess = true;
-                        } else if (parts.length == 2 && parts[1].toLowerCase().startsWith("item")) {
-                            scopePart = null;
-                            namePart = parts[0];
-                            isItemAccess = true;
-                        }
-                    }
-
-                    if (isItemAccess) {
-                        Variable variable = ctx.getTemplateEngine().findAccessibleVariable(
-                            ctx.getVariablesById(), namePart, scopePart, flow.id, group.id
-                        );
-                        if (variable != null && VariableType.LIST.matches(variable.getType())) {
-                            Map<String, Object> varConfig = variable.getConfig();
-                            Object stratObj = varConfig != null ? varConfig.get("selectionStrategy") : null;
-                            if (stratObj != null && !"FIXED_SUBSET".equalsIgnoreCase(stratObj.toString())) {
-                                throw new IllegalStateException("Invalid item reference in flow '" + flow.name + "': Variable '" + variable.getName() + "' uses selection strategy '" + stratObj + "' (not 'FIXED_SUBSET') and cannot be referenced with sub-item index (.itemX).");
-                            }
-                        }
-                    }
+                    checkItemReference(matcher.group(1).trim(), flow, group);
                 }
+            }
+        }
+    }
+
+    /** Whether a flow of the group can use the variable: a global one, one of the group or one of its flows. */
+    private static boolean isReachableFrom(GroupRuntime group, Variable variable) {
+        if ("GLOBAL".equalsIgnoreCase(variable.getScope())) {
+            return true;
+        }
+        if ("GROUP".equalsIgnoreCase(variable.getScope()) && group.id.equals(variable.getGroupId())) {
+            return true;
+        }
+        if (!"LOCAL".equalsIgnoreCase(variable.getScope())) {
+            return false;
+        }
+        for (FlowRuntime flow : group.flows) {
+            if (flow.id.equals(variable.getFlowId())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @return the variable's generator configuration
+     * @throws IllegalStateException naming the variable when its configuration is invalid
+     */
+    private static VariableConfiguration parseConfiguration(Variable variable) {
+        try {
+            return VariableFactory.createFromMap(variable.getId(), variable.getType(), variable.getConfig());
+        } catch (InvalidVariableConfigException e) {
+            // Name the variable as the user sees it, not by its internal id
+            throw new IllegalStateException("Invalid configuration for variable '" + variable.getName() + "': "
+                + String.join("; ", e.getErrors()), e);
+        }
+    }
+
+    /**
+     * Checks one placeholder of a flow template: an item reference ({@code .itemX}) is only valid
+     * on a list with the Fixed Subset strategy.
+     *
+     * @throws IllegalStateException when the placeholder reads an item of another kind of list
+     */
+    private void checkItemReference(String fullSpec, FlowRuntime flow, GroupRuntime group) {
+        if ("uuid".equals(fullSpec) || "ts".equals(fullSpec) || "n".equals(fullSpec)
+            || TemplateEngine.FLOW_NAME_PLACEHOLDER.equals(fullSpec) || !fullSpec.contains(".")) {
+            return;
+        }
+        String scopePart;
+        String namePart;
+        String[] parts = fullSpec.split("\\.");
+        if (parts.length >= 3 && parts[parts.length - 1].toLowerCase().startsWith("item")) {
+            scopePart = parts[0].toLowerCase();
+            namePart = parts[1];
+        } else if (parts.length == 2 && parts[1].toLowerCase().startsWith("item")) {
+            scopePart = null;
+            namePart = parts[0];
+        } else {
+            return;
+        }
+
+        Variable variable = ctx.getTemplateEngine().findAccessibleVariable(
+            ctx.getVariablesById(), namePart, scopePart, flow.id, group.id
+        );
+        if (variable != null && VariableType.LIST.matches(variable.getType())) {
+            Map<String, Object> varConfig = variable.getConfig();
+            Object stratObj = varConfig != null ? varConfig.get("selectionStrategy") : null;
+            if (stratObj != null && !"FIXED_SUBSET".equalsIgnoreCase(stratObj.toString())) {
+                throw new IllegalStateException("Invalid item reference in flow '" + flow.name + "': Variable '" + variable.getName() + "' uses selection strategy '" + stratObj + "' (not 'FIXED_SUBSET') and cannot be referenced with sub-item index (.itemX).");
             }
         }
     }

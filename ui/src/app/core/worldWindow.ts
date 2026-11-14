@@ -10,12 +10,21 @@ export interface WorldWindow {
   scale: number;
 }
 
+/** The smallest of 1, 2, 5 and 10 that is >= the mantissa `n` (1 <= n < 10). */
+const niceMantissa = (n: number): number => {
+  if (n <= 1) return 1;
+  if (n <= 2) return 2;
+  if (n <= 5) return 5;
+  return 10;
+};
+
 /** Rounds a raw grid step up to a "nice" 1, 2 or 5 × 10^k value. */
 export const niceStep = (raw: number): number => {
-  if (!(raw > 0) || !Number.isFinite(raw)) return 1;
+  // Number.isFinite also rejects NaN
+  if (raw <= 0 || !Number.isFinite(raw)) return 1;
   const pow = Math.pow(10, Math.floor(Math.log10(raw)));
   const n = raw / pow;
-  return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * pow;
+  return niceMantissa(n) * pow;
 };
 
 /**

@@ -1,9 +1,14 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react';
 import { useApp } from '../../../context';
 import type { Variable } from '../../../types';
-import { findTemplatePlaceholders, isSystemPlaceholder, SYSTEM_PLACEHOLDERS } from '../../../core/templatePlaceholders';
-import { findReachableVariable } from '../../../core/templateVariables';
-import { filterAutocompleteOptions, optionReference, type AutocompleteOption } from './templateAutocomplete';
+import {
+  autocompleteQuery,
+  buildAutocompleteOptions,
+  filterAutocompleteOptions,
+  optionReference,
+  type AutocompleteOption,
+} from './templateAutocomplete';
+import { tokenizeTemplate } from './templateTokens';
 
 interface TemplateEditorProps {
   value: string;
@@ -14,32 +19,12 @@ interface TemplateEditorProps {
   className?: string;
 }
 
-/** Items of a list in the order it generates them (a list only has its own items). */
-function getEffectiveListItems(v: Variable): Array<{ id: string; label: string }> {
-  const config = v.config || {};
-  const combined: any[] = (config.items || []).map((item: any, idx: number) => {
-    if (typeof item === 'object' && item !== null) {
-      return {
-        id: item.id || `item_${idx + 1}`,
-        value: item.value !== undefined && item.value !== '' ? String(item.value) : (item.embeddedType ? item.embeddedType : `Item ${idx + 1}`),
-      };
-    }
-    return { id: `item_${idx + 1}`, value: String(item) };
-  });
-
-  if (config.itemOrder && Array.isArray(config.itemOrder) && config.itemOrder.length > 0) {
-    const orderMap = new Map(config.itemOrder.map((id: string, index: number) => [id, index]));
-    combined.sort((a, b) => {
-      const idxA = orderMap.has(a.id) ? orderMap.get(a.id)! : (orderMap.has(String(a.value)) ? orderMap.get(String(a.value))! : 99999);
-      const idxB = orderMap.has(b.id) ? orderMap.get(b.id)! : (orderMap.has(String(b.value)) ? orderMap.get(String(b.value))! : 99999);
-      return idxA - idxB;
-    });
-  }
-
-  return combined.map((item, idx) => ({
-    id: item.id || `item_${idx}`,
-    label: item.value ? String(item.value) : `Item ${idx + 1}`,
-  }));
+/** Highlight classes of a template token: plain text, a valid placeholder or an invalid one. */
+function tokenClassName(token: { isValid?: boolean; isVariable?: boolean }): string {
+  if (!token.isVariable) return 'text-[var(--c-tx2)]';
+  return token.isValid
+    ? 'bg-emerald-500/20 text-emerald-400 rounded ring-1 ring-inset ring-emerald-500/40'
+    : 'bg-red-500/20 text-red-400 rounded ring-1 ring-inset ring-red-500/40';
 }
 
 export function TemplateEditor({
@@ -49,7 +34,7 @@ export function TemplateEditor({
   flowId,
   groupId,
   className = '',
-}: TemplateEditorProps) {
+}: Readonly<TemplateEditorProps>) {
   const [showAutocomplete, setShowAutocomplete] = useState(false);
   const [cursorPos, setCursorPos] = useState(0);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -58,311 +43,89 @@ export function TemplateEditor({
   const { actions } = useApp();
 
   // Parse variables for highlighting and validation
-  const tokens = useMemo(() => {
-    const parts: Array<{ text: string; isValid?: boolean; isVariable?: boolean }> = [];
-    let lastIndex = 0;
-
-    for (const placeholder of findTemplatePlaceholders(value)) {
-      // Add text before variable
-      if (placeholder.start > lastIndex) {
-        parts.push({ text: value.substring(lastIndex, placeholder.start) });
-      }
-
-      const fullSpec = placeholder.spec.trim();
-      const isSystem = isSystemPlaceholder(fullSpec);
-      
-      let isValid = false;
-      if (isSystem) {
-        isValid = true;
-      } else {
-        let scope: string | null = null;
-        let name = fullSpec;
-        let subProperty: string | null = null;
-        let isItemAccess = false;
-
-        if (fullSpec.includes('.')) {
-          const parts = fullSpec.split('.');
-          const knownScopes = ['local', 'group', 'global'];
-          if (knownScopes.includes(parts[0].toLowerCase())) {
-            scope = parts[0].toLowerCase();
-            name = parts[1];
-            if (parts.length >= 3) {
-              subProperty = parts[2];
-              if (subProperty.toLowerCase().startsWith('item')) {
-                isItemAccess = true;
-              }
-            }
-          } else {
-            scope = null;
-            name = parts[0];
-            if (parts.length >= 2) {
-              subProperty = parts[1];
-              if (subProperty.toLowerCase().startsWith('item')) {
-                isItemAccess = true;
-              }
-            }
-          }
-        }
-
-        // Same lookup as the Core: without a scope, the closest one wins (local, group, global)
-        const variable = findReachableVariable(variables, name, scope as Variable['scope'] | null, flowId, groupId);
-        
-        if (variable) {
-          if (isItemAccess && variable.type === 'list') {
-            // Item access needs a whole list: only Fixed Subset yields one (the default is Weighted Random)
-            const strategy = variable.config?.selectionStrategy || 'WEIGHTED_RANDOM';
-            isValid = strategy === 'FIXED_SUBSET';
-          } else if (subProperty) {
-            const lowerProp = subProperty.toLowerCase();
-            if (variable.type === 'point') {
-              const validPointProps = [
-                'latitude', 'longitude', 'altitude',
-                'latitudedecimal', 'longitudedecimal',
-                'altitudeunit', 'altitudereference',
-                'x', 'y', 'z',
-                'nodename', 'node_name', 'node', 'nodeid', 'node_id',
-                'targetnode', 'targetnodename', 'target_node_name', 'targetnodeid', 'target_node_id',
-                'ispaused', 'stepinedge', 'totaledgesteps'
-              ];
-              isValid = validPointProps.includes(lowerProp);
-            } else if (variable.type === 'temporal') {
-              const validTemporalProps = [
-                'month', 'monthtext', 'month_text', 'monthname', 'month_name',
-                'monthshort', 'month_short', 'monthnumber', 'monthvalue', 'month_number', 'month_val',
-                'year', 'day', 'dayofmonth', 'day_of_month', 'dayofweek', 'day_of_week', 'dayofweekname',
-                'dayofweeknumber', 'dayofweekvalue',
-                'hour', 'hours', 'minute', 'minutes', 'second', 'seconds',
-                'millisecond', 'millis', 'timestamp', 'epochmilli', 'epoch_milli', 'timezone', 'time_zone', 'tz'
-              ];
-              isValid = validTemporalProps.includes(lowerProp);
-            } else if (variable.type === 'numeric') {
-              const validNumericProps = [
-                'integerpart', 'int', 'integer', 'integer_part', 'fractionalpart', 'fractional_part', 'decimalpart',
-                'fraction', 'decimal', 'abs', 'absolute', 'round', 'floor', 'ceil', 'ceiling', 'sign', 'signum'
-              ];
-              isValid = validNumericProps.includes(lowerProp);
-            } else if (variable.type === 'string') {
-              const validStringProps = [
-                'length', 'size', 'upper', 'uppercase', 'lower', 'lowercase', 'trim',
-                'firstchar', 'first_char', 'lastchar', 'last_char'
-              ];
-              isValid = validStringProps.includes(lowerProp);
-            } else if (variable.type === 'boolean') {
-              const validBooleanProps = [
-                'inverse', 'negation', 'not', 'asnumber', 'binary', 'int', 'asstring', 'text', 'asupper', 'upper'
-              ];
-              isValid = validBooleanProps.includes(lowerProp);
-            } else if (variable.type === 'list') {
-              const validListProps = ['size', 'length', 'count', 'first', 'firstitem', 'last', 'lastitem'];
-              isValid = validListProps.includes(lowerProp) || lowerProp.startsWith('item');
-            } else {
-              isValid = true;
-            }
-          } else {
-            isValid = true;
-          }
-        }
-      }
-
-      parts.push({ 
-        text: value.substring(placeholder.start, placeholder.end), 
-        isValid, 
-        isVariable: true 
-      });
-      lastIndex = placeholder.end;
-    }
-
-    if (lastIndex < value.length) {
-      parts.push({ text: value.substring(lastIndex) });
-    }
-
-    return parts;
-  }, [value, variables, flowId, groupId]);
+  const tokens = useMemo(
+    () => tokenizeTemplate(value, variables, flowId, groupId),
+    [value, variables, flowId, groupId],
+  );
 
   // Handle autocomplete logic
   const autocompleteOptions = useMemo(() => {
     if (!showAutocomplete) return [];
-
-    const textBeforeCursor = value.substring(0, cursorPos);
-    const lastBraces = textBeforeCursor.lastIndexOf('{{');
-    if (lastBraces === -1) return [];
-
-    const query = textBeforeCursor.substring(lastBraces + 2).trim().toLowerCase();
-    
-    const options: AutocompleteOption[] = SYSTEM_PLACEHOLDERS.map(p => ({
-      name: p.name,
-      scope: 'system',
-      detail: p.detail,
-    }));
-
-    const accessibleVars = variables.filter(v => {
-      if (v.scope === 'global') return true;
-      if (v.scope === 'group') return v.groupId === groupId;
-      if (v.scope === 'local') return v.flowId === flowId;
-      return false;
-    });
-
-    accessibleVars.forEach(v => {
-      if (v.type === 'list') {
-        // Same default as the Core and the list editor
-        const strategy = v.config?.selectionStrategy || 'WEIGHTED_RANDOM';
-        const isFixedSubset = strategy === 'FIXED_SUBSET';
-
-        options.push({ 
-          name: v.name, 
-          scope: v.scope, 
-          detail: isFixedSubset ? 'Fixed Subset / Entire List' : 'Single Item Selection' 
-        });
-
-        // Size/first/last and item access are offered for Fixed Subset only. Other strategies
-        // yield a single item each tick: the Core still resolves size/first/last (1 / the item)
-        // and the highlight accepts them, but suggesting them would be misleading
-        if (isFixedSubset) {
-          options.push({ name: `${v.name}.size`, scope: v.scope, detail: 'List Item Count' });
-          options.push({ name: `${v.name}.first`, scope: v.scope, detail: 'First List Item' });
-          options.push({ name: `${v.name}.last`, scope: v.scope, detail: 'Last List Item' });
-
-          const effectiveItems = getEffectiveListItems(v);
-          effectiveItems.forEach((item, index) => {
-            options.push({
-              name: `${v.name}.item${index}`,
-              scope: v.scope,
-              detail: `item${index} (${item.label})`,
-            });
-          });
-        }
-      } else if (v.type === 'point') {
-        options.push({ name: v.name, scope: v.scope, detail: 'Full Point Object' });
-
-        // Same default as the Core and the point editor
-        const coordSys = v.config?.coordinateSystem || 'CARTESIAN_3D';
-        if (coordSys === 'GEOSPATIAL') {
-          options.push({ name: `${v.name}.latitude`, scope: v.scope, detail: 'Latitude (Degrees / DMS)' });
-          options.push({ name: `${v.name}.longitude`, scope: v.scope, detail: 'Longitude (Degrees / DMS)' });
-          options.push({ name: `${v.name}.altitude`, scope: v.scope, detail: 'Altitude' });
-          options.push({ name: `${v.name}.altitudeUnit`, scope: v.scope, detail: 'Altitude Unit' });
-          options.push({ name: `${v.name}.altitudeReference`, scope: v.scope, detail: 'Altitude Reference' });
-          if (v.config?.geospatialFormat === 'DEGREES_MINUTES_SECONDS') {
-            options.push({ name: `${v.name}.latitudeDecimal`, scope: v.scope, detail: 'Latitude (Decimal Degrees)' });
-            options.push({ name: `${v.name}.longitudeDecimal`, scope: v.scope, detail: 'Longitude (Decimal Degrees)' });
-          }
-        } else if (coordSys === 'CARTESIAN_3D') {
-          options.push({ name: `${v.name}.x`, scope: v.scope, detail: 'X Coordinate' });
-          options.push({ name: `${v.name}.y`, scope: v.scope, detail: 'Y Coordinate' });
-          options.push({ name: `${v.name}.z`, scope: v.scope, detail: 'Z Coordinate' });
-        } else {
-          options.push({ name: `${v.name}.x`, scope: v.scope, detail: 'X Coordinate' });
-          options.push({ name: `${v.name}.y`, scope: v.scope, detail: 'Y Coordinate' });
-        }
-
-        if (v.config?.pattern === 'GRAPH_ROUTE' || (v.config?.graphNodes && v.config.graphNodes.length > 0)) {
-          options.push({ name: `${v.name}.nodeName`, scope: v.scope, detail: 'Graph Node Display Name' });
-          options.push({ name: `${v.name}.nodeId`, scope: v.scope, detail: 'Graph Node ID' });
-          options.push({ name: `${v.name}.targetNodeName`, scope: v.scope, detail: 'Target Node Display Name' });
-          options.push({ name: `${v.name}.targetNodeId`, scope: v.scope, detail: 'Target Node ID' });
-          options.push({ name: `${v.name}.isPaused`, scope: v.scope, detail: 'Stopped at a Node (true/false)' });
-        }
-      } else if (v.type === 'temporal') {
-        options.push({ name: v.name, scope: v.scope, detail: 'Formatted Date/Time' });
-        options.push({ name: `${v.name}.monthText`, scope: v.scope, detail: 'Month Name (August, January...)' });
-        options.push({ name: `${v.name}.monthShort`, scope: v.scope, detail: 'Short Month Name (Jan, Feb...)' });
-        options.push({ name: `${v.name}.monthNumber`, scope: v.scope, detail: 'Month Number (1-12)' });
-        options.push({ name: `${v.name}.year`, scope: v.scope, detail: 'Year (e.g. 2026)' });
-        options.push({ name: `${v.name}.day`, scope: v.scope, detail: 'Day of Month (1-31)' });
-        options.push({ name: `${v.name}.dayOfWeek`, scope: v.scope, detail: 'Day of Week (Monday...)' });
-        options.push({ name: `${v.name}.dayOfWeekNumber`, scope: v.scope, detail: 'Day of Week Number (1-7)' });
-        options.push({ name: `${v.name}.hour`, scope: v.scope, detail: 'Hour (0-23)' });
-        options.push({ name: `${v.name}.minute`, scope: v.scope, detail: 'Minute (0-59)' });
-        options.push({ name: `${v.name}.second`, scope: v.scope, detail: 'Second (0-59)' });
-        options.push({ name: `${v.name}.timestamp`, scope: v.scope, detail: 'Epoch Milliseconds' });
-        options.push({ name: `${v.name}.timezone`, scope: v.scope, detail: 'Time Zone (e.g. UTC)' });
-      } else if (v.type === 'numeric') {
-        options.push({ name: v.name, scope: v.scope, detail: 'Numeric Value' });
-        options.push({ name: `${v.name}.integerPart`, scope: v.scope, detail: 'Integer Part' });
-        options.push({ name: `${v.name}.decimalPart`, scope: v.scope, detail: 'Fractional Decimal Part' });
-        options.push({ name: `${v.name}.abs`, scope: v.scope, detail: 'Absolute Value' });
-        options.push({ name: `${v.name}.round`, scope: v.scope, detail: 'Rounded Value' });
-        options.push({ name: `${v.name}.floor`, scope: v.scope, detail: 'Rounded Down' });
-        options.push({ name: `${v.name}.ceil`, scope: v.scope, detail: 'Rounded Up' });
-        options.push({ name: `${v.name}.sign`, scope: v.scope, detail: 'Sign (-1, 0 or 1)' });
-      } else if (v.type === 'string') {
-        options.push({ name: v.name, scope: v.scope, detail: 'String Value' });
-        options.push({ name: `${v.name}.length`, scope: v.scope, detail: 'String Length' });
-        options.push({ name: `${v.name}.upper`, scope: v.scope, detail: 'Uppercase String' });
-        options.push({ name: `${v.name}.lower`, scope: v.scope, detail: 'Lowercase String' });
-        options.push({ name: `${v.name}.trim`, scope: v.scope, detail: 'Without Surrounding Spaces' });
-        options.push({ name: `${v.name}.firstChar`, scope: v.scope, detail: 'First Character' });
-        options.push({ name: `${v.name}.lastChar`, scope: v.scope, detail: 'Last Character' });
-      } else if (v.type === 'boolean') {
-        options.push({ name: v.name, scope: v.scope, detail: 'Boolean Value (true/false)' });
-        options.push({ name: `${v.name}.inverse`, scope: v.scope, detail: 'Inverse Boolean (false/true)' });
-        options.push({ name: `${v.name}.asNumber`, scope: v.scope, detail: 'Binary Number (1 or 0)' });
-        options.push({ name: `${v.name}.asString`, scope: v.scope, detail: 'Text ("true" / "false")' });
-        options.push({ name: `${v.name}.upper`, scope: v.scope, detail: 'Uppercase (TRUE / FALSE)' });
-      } else {
-        options.push({ name: v.name, scope: v.scope });
-      }
-    });
-
-    return filterAutocompleteOptions(options, query);
+    const query = autocompleteQuery(value, cursorPos);
+    if (query === null) return [];
+    return filterAutocompleteOptions(buildAutocompleteOptions(variables, flowId, groupId), query);
   }, [showAutocomplete, value, cursorPos, variables, flowId, groupId]);
 
-  useEffect(() => {
+  // A new list of options selects its first one again (adjusting state while rendering)
+  const [optionCount, setOptionCount] = useState(autocompleteOptions.length);
+  if (optionCount !== autocompleteOptions.length) {
+    setOptionCount(autocompleteOptions.length);
     setSelectedIndex(0);
-  }, [autocompleteOptions.length]);
+  }
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (showAutocomplete && autocompleteOptions.length > 0) {
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        setSelectedIndex(prev => (prev + 1) % autocompleteOptions.length);
-        return;
-      }
-      if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        setSelectedIndex(prev => (prev - 1 + autocompleteOptions.length) % autocompleteOptions.length);
-        return;
-      }
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        insertOption(autocompleteOptions[selectedIndex]);
-        return;
-      }
-      if (e.key === 'Escape') {
-        setShowAutocomplete(false);
-        return;
-      }
-    }
-    if (e.key === 'Tab') {
+  const autocompleteOpen = showAutocomplete && autocompleteOptions.length > 0;
+
+  /** Keys of the open autocomplete list; returns whether the key was handled. */
+  const handleAutocompleteKey = (e: React.KeyboardEvent<HTMLTextAreaElement>): boolean => {
+    const count = autocompleteOptions.length;
+    if (e.key === 'ArrowDown') {
       e.preventDefault();
-      if (showAutocomplete && autocompleteOptions.length > 0) {
-        insertOption(autocompleteOptions[selectedIndex]);
-      } else {
-        const start = textareaRef.current?.selectionStart || 0;
-        const end = textareaRef.current?.selectionEnd || 0;
-        const newValue = value.substring(0, start) + '  ' + value.substring(end);
-        onChange(newValue);
-        setTimeout(() => {
-          if (textareaRef.current) {
-            textareaRef.current.setSelectionRange(start + 2, start + 2);
-          }
-        }, 0);
-      }
-      return;
+      setSelectedIndex(prev => (prev + 1) % count);
+      return true;
     }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSelectedIndex(prev => (prev - 1 + count) % count);
+      return true;
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      insertOption(autocompleteOptions[selectedIndex]);
+      return true;
+    }
+    if (e.key === 'Escape') {
+      setShowAutocomplete(false);
+      return true;
+    }
+    return false;
+  };
 
-    if (e.key === '{') {
-      const start = textareaRef.current?.selectionStart || 0;
-      const textBefore = value.substring(0, start);
-      if (textBefore.endsWith('{')) {
-        setShowAutocomplete(true);
-        setCursorPos(start + 1);
+  /** Tab without the autocomplete: inserts two spaces at the cursor. */
+  const insertIndent = () => {
+    const start = textareaRef.current?.selectionStart || 0;
+    const end = textareaRef.current?.selectionEnd || 0;
+    const newValue = value.substring(0, start) + '  ' + value.substring(end);
+    onChange(newValue);
+    setTimeout(() => {
+      if (textareaRef.current) {
+        textareaRef.current.setSelectionRange(start + 2, start + 2);
       }
+    }, 0);
+  };
+
+  /** A second `{` typed right after another one opens the autocomplete. */
+  const openAutocompleteOnBraces = () => {
+    const start = textareaRef.current?.selectionStart || 0;
+    const textBefore = value.substring(0, start);
+    if (textBefore.endsWith('{')) {
+      setShowAutocomplete(true);
+      setCursorPos(start + 1);
     }
   };
 
-  const valueRef = useRef(value);
-  valueRef.current = value;
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (autocompleteOpen && handleAutocompleteKey(e)) return;
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      if (autocompleteOpen) {
+        insertOption(autocompleteOptions[selectedIndex]);
+      } else {
+        insertIndent();
+      }
+      return;
+    }
+    if (e.key === '{') openAutocompleteOnBraces();
+  };
 
   const insertOption = (opt: AutocompleteOption) => {
     insertAtCursor(optionReference(opt));
@@ -371,7 +134,7 @@ export function TemplateEditor({
 
   const insertAtCursor = (varRef: string) => {
     const ta = textareaRef.current;
-    const currentVal = valueRef.current;
+    const currentVal = value;
 
     const start = ta ? ta.selectionStart : currentVal.length;
     const end = ta ? ta.selectionEnd : currentVal.length;
@@ -409,10 +172,17 @@ export function TemplateEditor({
     }, 0);
   };
 
+  // The callback registered in the context always runs the latest insertAtCursor (current value,
+  // onChange and cursor), although it is registered only once per actions object
+  const insertAtCursorRef = useRef(insertAtCursor);
+  useLayoutEffect(() => {
+    insertAtCursorRef.current = insertAtCursor;
+  });
+
   useEffect(() => {
     actions?.registerTemplateEditor?.((name: string, scope?: string) => {
       const ref = scope ? `${scope}.${name}` : name;
-      insertAtCursor(ref);
+      insertAtCursorRef.current(ref);
     });
 
     return () => {
@@ -472,10 +242,10 @@ export function TemplateEditor({
         className="absolute inset-0 pointer-events-none whitespace-pre-wrap break-all overflow-auto text-transparent"
         style={{ ...editorStyles, scrollbarWidth: 'none' }}
       >
-        {tokens.map((t, i) => (
+        {tokens.map((t) => (
           <span 
-            key={i} 
-            className={t.isVariable ? (t.isValid ? 'bg-emerald-500/20 text-emerald-400 rounded ring-1 ring-inset ring-emerald-500/40' : 'bg-red-500/20 text-red-400 rounded ring-1 ring-inset ring-red-500/40') : 'text-[var(--c-tx2)]'}
+            key={t.start} 
+            className={tokenClassName(t)}
           >
             {t.text}
           </span>
@@ -525,7 +295,7 @@ export function TemplateEditor({
         >
           {autocompleteOptions.map((opt, i) => (
             <div
-              key={i}
+              key={`${opt.scope}.${opt.name}`}
               role="option"
               aria-selected={i === selectedIndex}
               tabIndex={-1}

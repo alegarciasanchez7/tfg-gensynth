@@ -10,6 +10,7 @@ import { FEEDBACK_FORM_URL, isFeedbackAvailable } from '../../../core/feedback';
 import { openExternalUrl } from '../../../core/jcef';
 import { PROJECT_FILE_EXTENSION } from '../../../core/fileStorage';
 import { APP_VERSION } from '../../../core/appInfo';
+import { hasPreStartErrors as checkPreStartErrors } from './preStartCheck';
 
 interface HeaderProps {
   systemStatus: SystemStatus;
@@ -54,6 +55,20 @@ const StatusBadge = ({ status }: { status: SystemStatus }) => {
   );
 };
 
+/** Tooltip of the START/STOP button. */
+function powerButtonTitle(isRunning: boolean, hasPreStartErrors: boolean): string {
+  if (isRunning) return 'Stop simulator';
+  if (hasPreStartErrors) return 'Warning: Validation errors or circular dependencies detected! Click to try starting anyway.';
+  return 'Start simulator';
+}
+
+/** Colour classes of the START/STOP button: red to stop, amber when the start has warnings, green otherwise. */
+function powerButtonToneClass(isRunning: boolean, hasPreStartErrors: boolean): string {
+  if (isRunning) return 'border-red-500/50 bg-red-500/10 text-red-400 hover:bg-red-500/20';
+  if (hasPreStartErrors) return 'border-amber-500/50 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20';
+  return 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20';
+}
+
 export function Header({
   systemStatus,
   onStatusToggle,
@@ -68,7 +83,7 @@ export function Header({
   variables = [],
   availableUpdateVersion = null,
   onShowUpdate,
-}: HeaderProps) {
+}: Readonly<HeaderProps>) {
   const [showSettings, setShowSettings] = useState(false);
   const [showCatalog, setShowCatalog] = useState(false);
   const [showPluginImport, setShowPluginImport] = useState(false);
@@ -82,86 +97,19 @@ export function Header({
     : displayName;
 
   // Perform a pre-start check to highlight interlock/cycle/broken-references errors
-  const hasPreStartErrors = useMemo(() => {
-    if (variables.length === 0) return false;
-    const varNames = new Set(variables.map(v => v.name));
-    const getDeps = (formula?: string): string[] => {
-      if (!formula) return [];
-      const deps: string[] = [];
-      const regex = /(?:\[|{{)([a-zA-Z0-9_-]+)(?:\]|}})/g;
-      let match;
-      while ((match = regex.exec(formula)) !== null) {
-        deps.push(match[1]);
-      }
-      return deps;
-    };
+  const hasPreStartErrors = useMemo(() => checkPreStartErrors(variables), [variables]);
 
-    // Check broken references
-    for (const v of variables) {
-      const config = v.config || {};
-      if (v.type === 'numeric' && config.pattern === 'FORMULA' && config.formula) {
-        const formulaDeps = getDeps(config.formula);
-        for (const dep of formulaDeps) {
-          if (dep.toLowerCase() !== 'pi' && dep.toLowerCase() !== 'e' && !varNames.has(dep)) {
-            return true;
-          }
-        }
-      }
-      if (config.conditionalRules && Array.isArray(config.conditionalRules)) {
-        for (const rule of config.conditionalRules) {
-          if (rule.targetVariable && rule.targetVariable.trim()) {
-            if (!varNames.has(rule.targetVariable.trim())) {
-              return true;
-            }
-          }
-        }
-      }
+  /** Runs a file action (load/save) with the file buttons disabled, logging its failure. */
+  const runFileAction = async (action: () => Promise<unknown>, label: string) => {
+    setLoadingState(true);
+    try {
+      await action();
+    } catch (error) {
+      console.error(`[Header] ${label} project error:`, error);
+    } finally {
+      setLoadingState(false);
     }
-
-    // Check cycles
-    const detectCycle = (
-      varsList: any[],
-      currentVarId: string,
-      currentVarName: string,
-      formula?: string
-    ): boolean => {
-      const adjList = new Map<string, string[]>();
-      for (const v of varsList) {
-        if (v.id === currentVarId) {
-          adjList.set(v.name, getDeps(formula));
-        } else {
-          adjList.set(v.name, getDeps(v.config?.formula));
-        }
-      }
-      const visited = new Set<string>();
-      const recStack = new Set<string>();
-      const dfs = (node: string): boolean => {
-        visited.add(node);
-        recStack.add(node);
-        const neighbors = adjList.get(node) || [];
-        for (const neighbor of neighbors) {
-          if (!visited.has(neighbor)) {
-            if (dfs(neighbor)) return true;
-          } else if (recStack.has(neighbor)) {
-            return true;
-          }
-        }
-        recStack.delete(node);
-        return false;
-      };
-      return dfs(currentVarName);
-    };
-
-    for (const v of variables) {
-      if (v.type === 'numeric' && v.config?.formula) {
-        if (detectCycle(variables, v.id, v.name, v.config.formula)) {
-          return true;
-        }
-      }
-    }
-
-    return false;
-  }, [variables]);
+  };
 
   return (
     <div
@@ -206,13 +154,8 @@ export function Header({
       <div className="flex items-center gap-1 shrink-0">
         <button
           onClick={onStatusToggle}
-          title={!isRunning && hasPreStartErrors ? 'Warning: Validation errors or circular dependencies detected! Click to try starting anyway.' : isRunning ? 'Stop simulator' : 'Start simulator'}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-xs transition-all ${isRunning
-              ? 'border-red-500/50 bg-red-500/10 text-red-400 hover:bg-red-500/20'
-              : hasPreStartErrors
-                ? 'border-amber-500/50 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20'
-                : 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
-            }`}
+          title={powerButtonTitle(isRunning, hasPreStartErrors)}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-xs transition-all ${powerButtonToneClass(isRunning, hasPreStartErrors)}`}
           style={{ fontFamily: 'JetBrains Mono, monospace' }}
         >
           {isRunning ? (
@@ -237,16 +180,7 @@ export function Header({
           <FilePlus size={12} /> New
         </button>
         <button
-          onClick={async () => {
-            setLoadingState(true);
-            try {
-              await onLoadProject();
-            } catch (error) {
-              console.error('[Header] Load project error:', error);
-            } finally {
-              setLoadingState(false);
-            }
-          }}
+          onClick={() => runFileAction(onLoadProject, 'Load')}
           disabled={loadingState}
           title="Load configuration from file"
           className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-[var(--c-br1)] text-xs text-[var(--c-tx3)] hover:text-[var(--c-tx1)] hover:border-[var(--c-br3)] hover:bg-[var(--c-bg5)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
@@ -254,16 +188,7 @@ export function Header({
           <FolderOpen size={12} /> Load
         </button>
         <button
-          onClick={async () => {
-            setLoadingState(true);
-            try {
-              await onSaveProject();
-            } catch (error) {
-              console.error('[Header] Save project error:', error);
-            } finally {
-              setLoadingState(false);
-            }
-          }}
+          onClick={() => runFileAction(onSaveProject, 'Save')}
           disabled={loadingState}
           title="Save changes to configuration file (Ctrl+S)"
           className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-[var(--c-br1)] text-xs text-[var(--c-tx3)] hover:text-[var(--c-tx1)] hover:border-[var(--c-br3)] hover:bg-[var(--c-bg5)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
@@ -271,16 +196,7 @@ export function Header({
           <Save size={12} /> Save
         </button>
         <button
-          onClick={async () => {
-            setLoadingState(true);
-            try {
-              await onSaveAsProject();
-            } catch (error) {
-              console.error('[Header] Save As project error:', error);
-            } finally {
-              setLoadingState(false);
-            }
-          }}
+          onClick={() => runFileAction(onSaveAsProject, 'Save As')}
           disabled={loadingState}
           title="Save configuration as a new file"
           className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-[var(--c-br1)] text-xs text-[var(--c-tx3)] hover:text-[var(--c-tx1)] hover:border-[var(--c-br3)] hover:bg-[var(--c-bg5)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"

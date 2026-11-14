@@ -8,15 +8,19 @@ import java.io.File;
 import java.io.IOException;
 import java.lang.management.ManagementFactory;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /**
  * Utility to handle self-restarting of the Gen-Synth Core process.
  * Essential for applying plugin changes without manual intervention.
  */
-public class RestartUtil {
+public final class RestartUtil {
 
     private static final Logger logger = LoggerFactory.getLogger(RestartUtil.class);
+
+    private RestartUtil() {
+    }
 
     /**
      * Spawns a new instance of the current application and then terminates the current one.
@@ -30,49 +34,24 @@ public class RestartUtil {
             String classpath = System.getProperty("java.class.path");
             boolean isMaven = classpath.contains("plexus-classworlds") || System.getProperty("maven.home") != null;
 
-            List<String> command = new ArrayList<>();
             // Installed application: relaunch its native launcher, which knows the bundled runtime
             String launcher = System.getProperty(AppPaths.LAUNCHER_PROPERTY);
-
+            String[] args = com.gensynth.core.App.getOriginalArgs();
+            List<String> command;
             if (launcher != null) {
                 logger.info("Detected installed application. Restarting via its launcher...");
-                command.add(launcher);
-                String[] args = com.gensynth.core.App.getOriginalArgs();
-                if (args != null) {
-                    command.addAll(List.of(args));
-                }
+                command = launcherCommand(launcher, args);
             } else if (isMaven) {
                 logger.info("Detected Maven environment. Restarting via Maven...");
-                command.add(isWindows ? "mvn.cmd" : "mvn");
-                command.add("exec:java");
-                command.add("-Dexec.mainClass=com.gensynth.core.App");
-                
-                // Add original application arguments for Maven
-                String[] args = com.gensynth.core.App.getOriginalArgs();
-                if (args != null && args.length > 0) {
-                    command.add("-Dexec.args=" + String.join(" ", args));
-                }
+                command = mavenCommand(isWindows, args);
             } else {
                 logger.info("Detected standard Java environment. Restarting via Java...");
-                String javaHome = System.getProperty("java.home");
-                String javaBin = javaHome + File.separator + "bin" + File.separator + "java";
-                
-                command.add(javaBin);
-                command.addAll(ManagementFactory.getRuntimeMXBean().getInputArguments());
-                command.add("-cp");
-                command.add(classpath);
-                command.add("com.gensynth.core.App");
-
-                // Add original application arguments (e.g., --desktop)
-                String[] args = com.gensynth.core.App.getOriginalArgs();
-                if (args != null) {
-                    for (String arg : args) {
-                        command.add(arg);
-                    }
-                }
+                command = javaCommand(classpath, args);
             }
 
-            logger.info("Spawning new process: {}", String.join(" ", command));
+            if (logger.isInfoEnabled()) {
+                logger.info("Spawning new process: {}", String.join(" ", command));
+            }
 
             ProcessBuilder builder = new ProcessBuilder(command);
             // On Windows, if running Maven, we might need shell execution
@@ -94,6 +73,49 @@ public class RestartUtil {
         }
     }
 
+    /** The installed application's launcher with the original arguments. */
+    static List<String> launcherCommand(String launcher, String[] args) {
+        List<String> command = new ArrayList<>();
+        command.add(launcher);
+        if (args != null) {
+            command.addAll(List.of(args));
+        }
+        return command;
+    }
+
+    /** Maven's exec:java with the original arguments, for the development environment. */
+    static List<String> mavenCommand(boolean isWindows, String[] args) {
+        List<String> command = new ArrayList<>();
+        command.add(isWindows ? "mvn.cmd" : "mvn");
+        command.add("exec:java");
+        command.add("-Dexec.mainClass=com.gensynth.core.App");
+
+        // Add original application arguments for Maven
+        if (args != null && args.length > 0) {
+            command.add("-Dexec.args=" + String.join(" ", args));
+        }
+        return command;
+    }
+
+    /** This JVM, with its options and class path, and the original arguments. */
+    static List<String> javaCommand(String classpath, String[] args) {
+        String javaHome = System.getProperty("java.home");
+        String javaBin = javaHome + File.separator + "bin" + File.separator + "java";
+
+        List<String> command = new ArrayList<>();
+        command.add(javaBin);
+        command.addAll(ManagementFactory.getRuntimeMXBean().getInputArguments());
+        command.add("-cp");
+        command.add(classpath);
+        command.add("com.gensynth.core.App");
+
+        // Add original application arguments (e.g., --desktop)
+        if (args != null) {
+            Collections.addAll(command, args);
+        }
+        return command;
+    }
+
     /**
      * Closes this instance (WebSocket server, window and embedded browser), starts the given
      * command and exits. The command starts after the resources are released, so it can bind
@@ -107,7 +129,9 @@ public class RestartUtil {
         if (com.gensynth.core.App.getWsServer() != null) {
             try {
                 com.gensynth.core.App.getWsServer().shutdown();
-            } catch (Exception ignored) {}
+            } catch (Exception ignored) {
+                // Best effort: the restart goes ahead anyway
+            }
         }
 
         // 2. Mark restarting flag and close desktop frame

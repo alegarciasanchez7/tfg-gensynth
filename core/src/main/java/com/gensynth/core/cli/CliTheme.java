@@ -39,7 +39,7 @@ final class CliTheme {
     /**
      * @return a theme that writes no escape codes
      */
-    static CliTheme plain() {
+    static CliTheme noColors() {
         return new CliTheme(null);
     }
 
@@ -51,7 +51,7 @@ final class CliTheme {
     static CliTheme forTerminal(Terminal terminal) {
         Integer colors = terminal.getNumericCapability(Capability.max_colors);
         boolean supported = !Terminal.TYPE_DUMB.equals(terminal.getType()) && colors != null && colors >= 8;
-        return supported ? new CliTheme(terminal) : plain();
+        return supported ? new CliTheme(terminal) : noColors();
     }
 
     /**

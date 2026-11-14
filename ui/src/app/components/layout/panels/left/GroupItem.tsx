@@ -32,7 +32,7 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from '../../../ui/dropdown-menu';
-import type { Group, Flow, Selection, GroupStatus } from '../../../../types';
+import type { Group, Selection, GroupStatus } from '../../../../types';
 import type { ConnectorPluginDescriptor } from '../../../../core/types';
 import { CloneDialog } from './CloneDialog';
 import { ConfirmDeleteDialog } from '../../../common/ConfirmDeleteDialog';
@@ -41,6 +41,7 @@ import { CreateFlowDialog } from './CreateFlowDialog';
 import { formatRate, groupRate } from '../../../../core/metricsFormat';
 import { commandErrorMessage } from '../../../../core/errorMessage';
 import { normalizeGroupStatus } from '../../../../core/entityStatus';
+import type { CreateFlowHandler, FlowConfigUpdate, GroupConfigUpdate } from '../../../../context/crudTypes';
 
 interface GroupItemProps {
   group: Group;
@@ -50,22 +51,9 @@ interface GroupItemProps {
   onSelectFlow: (gId: string, fId: string) => void;
   onToggleGroup: (id: string) => void;
   onDeleteGroup: (groupId: string) => Promise<void>;
-  onCreateFlow: (
-    groupId: string,
-    name: string,
-    technology: string,
-    host: string,
-    port: number,
-    topic?: string,
-    interval?: number,
-    burst?: number,
-    template?: string,
-    connectorConfig?: Record<string, unknown>,
-    everyTicks?: number,
-    autoRename?: boolean,
-  ) => Promise<Flow>;
-  onUpdateGroupConfig: (groupId: string, config: any, name?: string) => Promise<void>;
-  onUpdateFlowConfig: (groupId: string, flowId: string, config: any, name?: string) => Promise<void>;
+  onCreateFlow: CreateFlowHandler;
+  onUpdateGroupConfig: (groupId: string, config: GroupConfigUpdate, name?: string) => Promise<void>;
+  onUpdateFlowConfig: (groupId: string, flowId: string, config: FlowConfigUpdate, name?: string) => Promise<void>;
   onCloneGroup: (groupId: string, count: number, namingPattern?: string) => void;
   onCloneFlow: (groupId: string, flowId: string, count: number, namingPattern?: string) => void;
   onDeleteFlow: (groupId: string, flowId: string) => Promise<void>;
@@ -96,7 +84,7 @@ export function GroupItem({
   onDeleteFlow,
   latestConnectors,
   groupNames,
-}: GroupItemProps) {
+}: Readonly<GroupItemProps>) {
   const { state } = useApp();
   const isDirty = state?.dirtyItems?.groupIds?.has(group.id) ?? false;
   // Normalised: an unknown status from the Core must not crash the whole panel

@@ -23,12 +23,12 @@ import type { ProjectSettings } from '../../types';
 export type EventCallback<T = unknown> = (data: T) => void;
 
 export type PendingCommand = {
-  resolve: (value: any) => void;
+  resolve: (value: unknown) => void;
   reject: (error: Error) => void;
   timerId: number;
   command: UICommand;
   attempts: number;
-  onResponse?: (payload: any) => void;
+  onResponse?: (payload: unknown) => void;
 };
 
 export const SUPPORTED_COMMANDS = new Set<UICommandType>([

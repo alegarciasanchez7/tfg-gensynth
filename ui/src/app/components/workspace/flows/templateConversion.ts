@@ -97,7 +97,8 @@ function toCsv(value: TemplateValue): string {
       `CSV only holds flat fields, but "${nested}" contains a nested object or list. Flatten the template before converting.`,
     );
   }
-  const cell = (v: TemplateValue | undefined) => csvCell(v === undefined || v === null ? '' : String(v));
+  // Nested values were rejected above: every cell is a scalar (or missing)
+  const cell = (v: TemplateValue | undefined) => csvCell(v === undefined || v === null || typeof v === 'object' ? '' : String(v));
   return [headers.map(csvCell).join(','), ...objects.map((row) => headers.map((h) => cell(row[h])).join(','))].join('\n');
 }
 

@@ -39,10 +39,9 @@ public class VariableFactoryConfigKeysTest {
 
         NumericVariableConfig numeric = (NumericVariableConfig) VariableFactory.createFromMap("v", "NUMERIC", config);
 
-        assertEquals(defaults.getSineFrequency(), numeric.getSineFrequency(), 0.0);
-        assertEquals(defaults.getDriftRate(), numeric.getDriftRate(), 0.0);
-        assertEquals(defaults.getNoiseStdDev(), numeric.getNoiseStdDev(), 0.0);
-        assertEquals(defaults.getSpikeMultiplier(), numeric.getSpikeMultiplier(), 0.0);
+        assertEquals(
+            List.of(defaults.getSineFrequency(), defaults.getDriftRate(), defaults.getNoiseStdDev(), defaults.getSpikeMultiplier()),
+            List.of(numeric.getSineFrequency(), numeric.getDriftRate(), numeric.getNoiseStdDev(), numeric.getSpikeMultiplier()));
         assertNull(numeric.getDriftInitialValue());
         assertNull(numeric.getSourceListVariableId());
         assertEquals(defaults.getSourceListSelectionMode(), numeric.getSourceListSelectionMode());

@@ -18,8 +18,9 @@ import { NumericConfigPanel } from './NumericConfigPanel';
 import { StringConfigPanel } from './StringConfigPanel';
 import { ListConfigPanel } from './ListConfigPanel';
 import { TemporalConfigPanel } from './TemporalConfigPanel';
-import { PointConfigPanel } from './PointConfigPanel';
+import { LazyPointConfigPanel } from './LazyPointEditors';
 import { BooleanConfigPanel } from './BooleanConfigPanel';
+import { ruleTargetNames } from './conditionalRuleTargets';
 
 interface ConditionalRulesTabProps {
   rules: ConditionalRule[];
@@ -57,44 +58,10 @@ export const ConditionalRulesTab: React.FC<ConditionalRulesTabProps> = ({
   const suggestionsRef = useRef<HTMLDivElement>(null);
 
   // Get allowed target variable names based on scope rules
-  const allVariables = React.useMemo(() => {
-    if (!state.variables) return [];
-
-    const srcGroup = state.groups?.find(g => 
-      (groupId && g.id === groupId) || 
-      (flowId && g.flows.some(f => f.id === flowId))
-    );
-    const effectiveGroupId = groupId || srcGroup?.id;
-    const groupFlowIds = srcGroup?.flows.map(f => f.id) || [];
-
-    return state.variables
-      .filter(v => {
-        if (currentVariableName && v.name === currentVariableName) {
-          return false;
-        }
-
-        if (variableScope === 'local') {
-          if (v.scope === 'local' && flowId && v.flowId === flowId) return true;
-          if (v.scope === 'group' && effectiveGroupId && v.groupId === effectiveGroupId) return true;
-          if (v.scope === 'global') return true;
-          return false;
-        }
-
-        if (variableScope === 'group') {
-          if (v.scope === 'local' && v.flowId && groupFlowIds.includes(v.flowId)) return true;
-          if (v.scope === 'group' && effectiveGroupId && v.groupId === effectiveGroupId) return true;
-          if (v.scope === 'global') return true;
-          return false;
-        }
-
-        if (variableScope === 'global') {
-          return true;
-        }
-
-        return true;
-      })
-      .map(v => v.name);
-  }, [state.variables, state.groups, variableScope, flowId, groupId, currentVariableName]);
+  const allVariables = React.useMemo(
+    () => ruleTargetNames(state.variables, state.groups, { variableScope, currentVariableName, flowId, groupId }),
+    [state.variables, state.groups, variableScope, flowId, groupId, currentVariableName],
+  );
 
   const filteredVars = allVariables.filter(v => v.toLowerCase().includes(filter.toLowerCase()));
 
@@ -111,13 +78,13 @@ export const ConditionalRulesTab: React.FC<ConditionalRulesTabProps> = ({
     onChange(newRules);
   };
 
-  const handleUpdateRule = (index: number, field: keyof ConditionalRule, val: any) => {
+  const handleUpdateRule = <K extends keyof ConditionalRule>(index: number, field: K, val: ConditionalRule[K]) => {
     const newRules = [...rules];
     newRules[index] = { ...newRules[index], [field]: val };
     onChange(newRules);
   };
 
-  const handleOverrideChange = (index: number, newOverrides: Partial<any>) => {
+  const handleOverrideChange = (index: number, newOverrides: Record<string, unknown>) => {
     const newRules = [...rules];
     const currentOverrides = typeof newRules[index].overrides === 'object' && newRules[index].overrides !== null 
       ? newRules[index].overrides 
@@ -177,7 +144,7 @@ export const ConditionalRulesTab: React.FC<ConditionalRulesTabProps> = ({
         );
       case 'point':
         return (
-          <PointConfigPanel
+          <LazyPointConfigPanel
             config={cfg as PointVariableConfig}
             onChange={(newCfg) => handleOverrideChange(idx, newCfg)}
           />
@@ -259,7 +226,7 @@ export const ConditionalRulesTab: React.FC<ConditionalRulesTabProps> = ({
                 
                 <Select
                   value={rule.operator}
-                  onValueChange={(val: any) => handleUpdateRule(idx, 'operator', val)}
+                  onValueChange={(val) => handleUpdateRule(idx, 'operator', val as ConditionalRule['operator'])}
                 >
                   <SelectTrigger className="h-7 text-[10px] bg-[var(--c-bg2)] border-[var(--c-br1)] uppercase font-medium">
                     <SelectValue placeholder="Op" />
@@ -275,7 +242,7 @@ export const ConditionalRulesTab: React.FC<ConditionalRulesTabProps> = ({
 
                 <Input
                   placeholder="Value"
-                  value={rule.value}
+                  value={rule.value as string | number | undefined}
                   onChange={(e) => handleUpdateRule(idx, 'value', e.target.value)}
                   className="h-7 text-[11px] bg-[var(--c-bg2)] border-[var(--c-br1)] font-mono"
                 />

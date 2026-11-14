@@ -117,7 +117,7 @@ public class CliShell {
     private final Path workingDir;
     private final Path userHome;
     private final String version;
-    private CliTheme theme = CliTheme.plain();
+    private CliTheme theme = CliTheme.noColors();
     private IDesktopLauncher desktop;
     /** Without a terminal the lines are printed once, as they are now. */
     private Screen screen;
@@ -616,11 +616,7 @@ public class CliShell {
         char quote = 0;
         for (char c : line.toCharArray()) {
             if (quote != 0) {
-                if (c == quote) {
-                    quote = 0;
-                } else {
-                    current.append(c);
-                }
+                quote = continueQuote(c, quote, current);
             } else if (c == '"' || c == '\'') {
                 quote = c;
                 inToken = true;
@@ -642,5 +638,22 @@ public class CliShell {
             tokens.add(current.toString());
         }
         return tokens;
+    }
+
+    /**
+     * Reads a character inside quotes: the closing quote ends them, any other character is part
+     * of the word.
+     *
+     * @param c     the character
+     * @param quote the quote that opened the quoted text
+     * @param word  the word being read
+     * @return the quote still open, or 0 when {@code c} closes it
+     */
+    static char continueQuote(char c, char quote, StringBuilder word) {
+        if (c == quote) {
+            return 0;
+        }
+        word.append(c);
+        return quote;
     }
 }

@@ -39,7 +39,7 @@ public class SettingsCommandHandler implements CommandHandler {
     }
 
     @Override
-    public void handle(WebSocket conn, JsonNode payload, String commandId) throws Exception {
+    public void handle(WebSocket conn, JsonNode payload, String commandId) throws IOException {
         // Methods are routed individually by UiBridgeWebSocketServer.
     }
 

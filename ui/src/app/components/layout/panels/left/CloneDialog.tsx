@@ -32,7 +32,7 @@ export function CloneDialog({
   title,
   itemName,
   existingNames,
-}: CloneDialogProps) {
+}: Readonly<CloneDialogProps>) {
   const [count, setCount] = useState('1');
   const [namingPattern, setNamingPattern] = useState('${name} (Clone ${index})');
 

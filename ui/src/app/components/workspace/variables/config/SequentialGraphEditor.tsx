@@ -15,6 +15,33 @@ interface SequentialGraphEditorProps {
   onChange: (points: Point[]) => void;
 }
 
+type PresetType = 'sine' | 'ramp' | 'triangle' | 'constant';
+
+/** Points of a preset shape over ticks 0..maxTicks between min and max (y rounded to 2 decimals). */
+function presetPoints(type: PresetType, min: number, max: number, maxTicks: number): Point[] {
+  const newPoints: Point[] = [];
+  const range = max - min;
+  const mid = min + range / 2;
+
+  // The cycle plays every point (maxTicks + 1 values), so periodic shapes span maxTicks + 1 steps
+  const period = maxTicks + 1;
+  for (let i = 0; i <= maxTicks; i++) {
+    let y = mid;
+    if (type === 'sine') {
+      y = mid + (range / 2) * Math.sin((i / period) * Math.PI * 2);
+    } else if (type === 'ramp') {
+      y = min + range * (i / maxTicks);
+    } else if (type === 'triangle') {
+      const factor = i / period;
+      y = min + range * (factor < 0.5 ? factor * 2 : (1 - factor) * 2);
+    }
+    // Round to 2 decimal places
+    y = Math.round(y * 100) / 100;
+    newPoints.push({ x: i, y });
+  }
+  return newPoints;
+}
+
 export const SequentialGraphEditor: React.FC<SequentialGraphEditorProps> = ({
   min = 0,
   max = 100,
@@ -23,16 +50,17 @@ export const SequentialGraphEditor: React.FC<SequentialGraphEditorProps> = ({
 }) => {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [activePointIndex, setActivePointIndex] = useState<number | null>(null);
-  const [maxTicks, setMaxTicks] = useState<number>(10);
+  // The tick count starts at the max X value of the points (at least 10)
+  const [maxTicks, setMaxTicks] = useState<number>(() => Math.max(...(points || []).map((p) => p.x), 10));
+
+  // The props the editor was mounted with: an empty sequence is only filled once, on mount
+  const initialPropsRef = useRef({ points, min, max, onChange });
 
   // Initialize default points if empty
   useEffect(() => {
-    if (!points || points.length === 0) {
-      generatePreset('sine');
-    } else {
-      // Set maxTicks to the max X value in points
-      const maxX = Math.max(...points.map((p) => p.x), 10);
-      setMaxTicks(maxX);
+    const initial = initialPropsRef.current;
+    if (!initial.points || initial.points.length === 0) {
+      initial.onChange(presetPoints('sine', initial.min, initial.max, 10));
     }
   }, []);
 
@@ -47,30 +75,8 @@ export const SequentialGraphEditor: React.FC<SequentialGraphEditorProps> = ({
     };
   }, []);
 
-  const generatePreset = (type: 'sine' | 'ramp' | 'triangle' | 'constant') => {
-    const newPoints: Point[] = [];
-    const range = max - min;
-    const mid = min + range / 2;
-
-    // The cycle plays every point (maxTicks + 1 values), so periodic shapes span maxTicks + 1 steps
-    const period = maxTicks + 1;
-    for (let i = 0; i <= maxTicks; i++) {
-      let y = mid;
-      if (type === 'sine') {
-        y = mid + (range / 2) * Math.sin((i / period) * Math.PI * 2);
-      } else if (type === 'ramp') {
-        y = min + range * (i / maxTicks);
-      } else if (type === 'triangle') {
-        const factor = i / period;
-        y = min + range * (factor < 0.5 ? factor * 2 : (1 - factor) * 2);
-      } else if (type === 'constant') {
-        y = mid;
-      }
-      // Round to 2 decimal places
-      y = Math.round(y * 100) / 100;
-      newPoints.push({ x: i, y });
-    }
-    onChange(newPoints);
+  const generatePreset = (type: PresetType) => {
+    onChange(presetPoints(type, min, max, maxTicks));
   };
 
   const handlePointerDown = (e: React.PointerEvent<SVGCircleElement>, index: number) => {
@@ -141,9 +147,8 @@ export const SequentialGraphEditor: React.FC<SequentialGraphEditorProps> = ({
   };
 
   // SVG coordinate mapper
+  // In viewBox units, so it does not depend on the rendered size of the svg
   const getSvgCoordinates = (pt: Point) => {
-    if (!svgRef.current) return { x: 0, y: 0 };
-    
     const paddingX = 40;
     const paddingY = 20;
 
@@ -196,7 +201,8 @@ export const SequentialGraphEditor: React.FC<SequentialGraphEditorProps> = ({
   }
 
   // Generate points coordinates for rendering
-  const svgPoints = points.map((p) => getSvgCoordinates(p));
+  // `tick` (the x of the point, one point per tick) identifies each node
+  const svgPoints = points.map((p) => ({ ...getSvgCoordinates(p), tick: p.x }));
   const pathD = svgPoints.reduce((acc, pt, idx) => {
     return acc + (idx === 0 ? `M ${pt.x} ${pt.y}` : ` L ${pt.x} ${pt.y}`);
   }, '');
@@ -284,7 +290,7 @@ export const SequentialGraphEditor: React.FC<SequentialGraphEditorProps> = ({
           {svgPoints.map((pt, idx) => {
             const isHovered = activePointIndex === idx;
             return (
-              <g key={`node-${idx}`} className="cursor-ns-resize group">
+              <g key={`node-${pt.tick}`} className="cursor-ns-resize group">
                 <circle
                   cx={pt.x}
                   cy={pt.y}

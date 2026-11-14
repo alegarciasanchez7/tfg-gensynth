@@ -394,7 +394,8 @@ public class BooleanVariableConfig extends VariableConfiguration {
 
     @Override
     public Map<String, Object> toMap() {
-        Map<String, Object> map = new HashMap<>(16);
+        // Same table size as before, so the keys keep their order
+        Map<String, Object> map = HashMap.newHashMap(12);
         map.put("identifier", identifier);
         map.put("type", type.toString());
         map.put("pattern", pattern.toString());
@@ -507,6 +508,7 @@ public class BooleanVariableConfig extends VariableConfiguration {
         return offDurationTicks;
     }
 
+    @Override
     public GenerationPattern getPattern() {
         return pattern;
     }

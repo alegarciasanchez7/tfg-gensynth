@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Button } from '../../../ui/button';
 import { Label } from '../../../ui/label';
 import { CustomDropdown } from '../../../ui/custom-dropdown';
@@ -11,13 +11,54 @@ interface WeightedValue {
   weight: number;
 }
 
+/** Interval that takes the values that fall on a boundary between two bars. */
+type BoundaryMode = 'LEFT' | 'RIGHT' | 'SPLIT';
+
 interface DistributionGraphEditorProps {
   min: number;
   max: number;
   points: WeightedValue[];
   onChange: (points: WeightedValue[]) => void;
-  boundaryMode?: 'LEFT' | 'RIGHT' | 'SPLIT';
-  onBoundaryModeChange?: (mode: 'LEFT' | 'RIGHT' | 'SPLIT') => void;
+  boundaryMode?: BoundaryMode;
+  onBoundaryModeChange?: (mode: BoundaryMode) => void;
+}
+
+type PresetType = 'uniform' | 'normal' | 'exponential' | 'skewed';
+
+/** Weight (0..100) of bar i of numBars for a preset shape (fraction = middle of the bar, 0..1). */
+function presetWeight(type: PresetType, i: number, fraction: number): number {
+  if (type === 'normal') {
+    // Gaussian curve centered at 0.5
+    const x = fraction - 0.5;
+    return Math.round(100 * Math.exp(-(x * x) / (2 * 0.15 * 0.15)));
+  }
+  if (type === 'exponential') {
+    // Exponential decay starting at min
+    return Math.round(100 * Math.exp(-i * 0.8));
+  }
+  if (type === 'skewed') {
+    // Skewed towards max
+    return Math.round(100 * fraction);
+  }
+  // A uniform preset keeps the same weight on every bar
+  return 50;
+}
+
+/** numBars equal intervals between min and max with the weights of a preset shape. */
+function presetBars(type: PresetType, min: number, max: number, numBars: number): WeightedValue[] {
+  const newPoints: WeightedValue[] = [];
+  const range = max - min;
+  for (let i = 0; i < numBars; i++) {
+    const fromVal = min + range * (i / numBars);
+    const toVal = min + range * ((i + 1) / numBars);
+    const fraction = (i + 0.5) / numBars; // middle of the interval
+    newPoints.push({
+      from: Math.round(fromVal * 100) / 100,
+      to: Math.round(toVal * 100) / 100,
+      weight: Math.max(0, Math.min(100, presetWeight(type, i, fraction))),
+    });
+  }
+  return newPoints;
 }
 
 export const DistributionGraphEditor: React.FC<DistributionGraphEditorProps> = ({
@@ -29,44 +70,18 @@ export const DistributionGraphEditor: React.FC<DistributionGraphEditorProps> = (
   onBoundaryModeChange,
 }) => {
 
-  const generatePreset = (type: 'uniform' | 'normal' | 'exponential' | 'skewed', overrideCount?: number) => {
-    const newPoints: WeightedValue[] = [];
-    const range = max - min;
-    const numBars = overrideCount ?? points.length ?? 5;
-
-    for (let i = 0; i < numBars; i++) {
-      const fromVal = min + range * (i / numBars);
-      const toVal = min + range * ((i + 1) / numBars);
-      const fraction = (i + 0.5) / numBars; // middle of the interval
-      let weight = 50;
-
-      if (type === 'uniform') {
-        weight = 50;
-      } else if (type === 'normal') {
-        // Gaussian curve centered at 0.5
-        const x = fraction - 0.5;
-        weight = Math.round(100 * Math.exp(-(x * x) / (2 * 0.15 * 0.15)));
-      } else if (type === 'exponential') {
-        // Exponential decay starting at min
-        weight = Math.round(100 * Math.exp(-i * 0.8));
-      } else if (type === 'skewed') {
-        // Skewed towards max
-        weight = Math.round(100 * fraction);
-      }
-
-      newPoints.push({
-        from: Math.round(fromVal * 100) / 100,
-        to: Math.round(toVal * 100) / 100,
-        weight: Math.max(0, Math.min(100, weight)),
-      });
-    }
-    onChange(newPoints);
+  const generatePreset = (type: PresetType, overrideCount?: number) => {
+    onChange(presetBars(type, min, max, overrideCount ?? points.length));
   };
+
+  // The props the editor was mounted with: an empty or old-format graph is only replaced once, on mount
+  const initialPropsRef = useRef({ points, min, max, onChange });
 
   // Initialize defaults if empty or old format
   useEffect(() => {
-    if (!points || points.length === 0 || points[0]?.from === undefined) {
-      generatePreset('uniform', 5);
+    const initial = initialPropsRef.current;
+    if (!initial.points || initial.points.length === 0 || initial.points[0]?.from === undefined) {
+      initial.onChange(presetBars('uniform', initial.min, initial.max, 5));
     }
   }, []);
 
@@ -134,7 +149,7 @@ export const DistributionGraphEditor: React.FC<DistributionGraphEditorProps> = (
             <CustomDropdown
               triggerClassName="flex h-7 w-28 items-center justify-between rounded border border-[var(--c-br1)] bg-[var(--c-bg3)] px-2 py-0.5 text-[10px] text-[var(--c-tx1)] font-mono outline-none hover:bg-white/5 active:bg-white/10 transition-colors cursor-pointer"
               value={boundaryMode}
-              onChange={(val) => onBoundaryModeChange?.(val as 'LEFT' | 'RIGHT' | 'SPLIT')}
+              onChange={(val) => onBoundaryModeChange?.(val as BoundaryMode)}
               options={[
                 { value: 'RIGHT', label: 'Right [A, B)' },
                 { value: 'LEFT', label: 'Left (A, B]' },

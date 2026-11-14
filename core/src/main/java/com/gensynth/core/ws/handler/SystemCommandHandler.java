@@ -19,6 +19,7 @@ import com.gensynth.plugin.api.ConnectorConfig;
 import com.gensynth.plugin.api.ConnectorConfigException;
 import com.gensynth.core.ws.runtime.ThroughputMeter;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -50,7 +51,7 @@ public class SystemCommandHandler implements CommandHandler {
     }
 
     @Override
-    public void handle(WebSocket conn, JsonNode payload, String commandId) throws Exception {
+    public void handle(WebSocket conn, JsonNode payload, String commandId) throws IOException {
         // Methods are routed individually by UiBridgeWebSocketServer.
     }
 
@@ -301,8 +302,8 @@ public class SystemCommandHandler implements CommandHandler {
      */
     public void emitMetricsTick() {
         try {
-            ctx.setMessagesPerSecond(ctx.getMessagesLastWindow().getAndSet(0));
-            ctx.setNetworkUpPerSecond(ctx.getBytesSentLastWindow().getAndSet(0));
+            ctx.setMessagesPerSecond((double) ctx.getMessagesLastWindow().getAndSet(0));
+            ctx.setNetworkUpPerSecond((double) ctx.getBytesSentLastWindow().getAndSet(0));
             ctx.setTicksPerSecond(ctx.getTickClock().sampleTicksPerSecond());
             updateFlowRates();
             if (ctx.isSystemRunning()) {

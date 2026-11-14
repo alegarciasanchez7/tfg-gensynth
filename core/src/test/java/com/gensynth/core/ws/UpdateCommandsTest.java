@@ -106,7 +106,7 @@ public class UpdateCommandsTest {
         conn = mock(WebSocket.class);
         when(conn.isOpen()).thenReturn(true);
         // Broadcasts reach the desktop socket too: use the same mock to capture them
-        server.desktopSocket = conn;
+        server.desktopSocket.set(conn);
         service = new FakeUpdateService();
         executor = Executors.newSingleThreadExecutor();
         handler = new UpdateCommandHandler(server.bridgeContext, service, executor);

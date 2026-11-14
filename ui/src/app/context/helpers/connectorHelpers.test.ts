@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeConnectorState } from './connectorHelpers';
+import { buildConnectorHealthSummary, normalizeConnectorState } from './connectorHelpers';
 import type { ConnectorPluginDescriptor } from '../../core/types';
 import type { Flow, Group } from '../../types';
 
@@ -64,5 +64,22 @@ describe('normalizeConnectorState', () => {
   it('keeps the configuration already being edited', () => {
     const { configs } = normalizeConnectorState([group([flow({ host: 'saved' })])], [rabbit], {}, { f1: { host: 'editing' } });
     expect(configs.f1).toEqual({ host: 'editing' });
+  });
+});
+
+describe('buildConnectorHealthSummary', () => {
+  const statusOf = (...flows: Flow[]) => buildConnectorHealthSummary([group(flows)], [rabbit], {})[0].status;
+
+  it('is healthy when every flow is connected', () => {
+    expect(statusOf({ ...flow(), connectionStatus: 'connected' })).toBe('healthy');
+  });
+
+  it('is degraded when a flow reports a warning or an error', () => {
+    expect(statusOf({ ...flow(), connectionStatus: 'connected' }, { ...flow(), id: 'f2', connectionStatus: 'warning' })).toBe('degraded');
+    expect(statusOf({ ...flow(), hasError: true })).toBe('degraded');
+  });
+
+  it('is offline when no flow is connected and none reports problems', () => {
+    expect(statusOf(flow())).toBe('offline');
   });
 });

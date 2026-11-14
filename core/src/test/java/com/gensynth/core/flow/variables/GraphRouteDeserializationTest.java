@@ -56,10 +56,10 @@ public class GraphRouteDeserializationTest {
         VariableConfiguration config = VariableFactory.createFromMap("position", "POINT", configMap);
         assertTrue(config instanceof PointVariableConfig);
 
-        Variable var = new Variable("var-pos-1", "position", "GLOBAL", "point", "default", configMap, null, null);
+        Variable variable = new Variable("var-pos-1", "position", "GLOBAL", "point", "default", configMap, null, null);
 
         DataGenerator generator = new DataGenerator();
-        Object value = generator.generateValue(var);
+        Object value = generator.generateValue(variable);
 
         assertTrue("Generated value should be a Map", value instanceof Map<?, ?>);
         Map<?, ?> resultMap = (Map<?, ?>) value;
@@ -93,10 +93,10 @@ public class GraphRouteDeserializationTest {
 
         configMap.put("nodes", nodes);
 
-        Variable var = new Variable("var-pos-coords-only", "position", "GLOBAL", "point", "default", configMap, null, null);
+        Variable variable = new Variable("var-pos-coords-only", "position", "GLOBAL", "point", "default", configMap, null, null);
 
         DataGenerator generator = new DataGenerator();
-        Object value = generator.generateValue(var);
+        Object value = generator.generateValue(variable);
 
         assertTrue("Generated value should be a Map", value instanceof Map<?, ?>);
         Map<?, ?> resultMap = (Map<?, ?>) value;

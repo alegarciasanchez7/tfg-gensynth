@@ -8,6 +8,7 @@ import { normalizeProjectSettings } from './tickSettings';
 import { normalizeOutputMode, normalizeSequentialOrder } from './outputMode';
 import { randomUUID } from './randomId';
 import { normalizeConnectionStatus, normalizeGroupStatus } from './entityStatus';
+import { legacyFlowFields, legacyGroupFields } from './legacyFields';
 
 /** Extension of GenSynth project files. Must match ProjectFileFormat.EXTENSION in the Core. */
 export const PROJECT_FILE_EXTENSION = '.gsynth';
@@ -86,16 +87,17 @@ function isTickCount(value: unknown): value is number {
  * Normalize a Flow to ensure all required fields have valid values
  */
 export function normalizeFlowFromSnapshot(flow: Partial<Flow>): Flow {
+  const legacy = legacyFlowFields(flow);
   return {
     id: flow.id ?? randomUUID(),
     name: flow.name ?? 'Unnamed Flow',
     technology: flow.technology ?? 'unknown',
     connectionStatus: normalizeConnectionStatus(flow.connectionStatus),
-    throughput: flow.throughput ?? '0 msg/s',
+    throughput: legacy.throughput ?? '0 msg/s',
     hasError: flow.hasError ?? false,
     errorMessage: flow.errorMessage,
-    interval: typeof flow.interval === 'number' ? flow.interval : 1000,
-    burst: typeof flow.burst === 'number' ? flow.burst : 1,
+    interval: typeof legacy.interval === 'number' ? legacy.interval : 1000,
+    burst: typeof legacy.burst === 'number' ? legacy.burst : 1,
     everyTicks: Number.isInteger(flow.everyTicks) && (flow.everyTicks as number) >= 1 ? (flow.everyTicks as number) : 1,
     lossPercent: isLossPercent(flow.lossPercent) ? flow.lossPercent : 0,
     outageEveryTicks: isTickCount(flow.outageEveryTicks) ? flow.outageEveryTicks : 0,
@@ -116,13 +118,14 @@ export function normalizeFlowFromSnapshot(flow: Partial<Flow>): Flow {
  * Normalize a Group to ensure all required fields have valid values
  */
 export function normalizeGroupFromSnapshot(group: Partial<Group>): Group {
+  const legacy = legacyGroupFields(group);
   return {
     id: group.id ?? randomUUID(),
     name: group.name ?? 'Unnamed Group',
     status: normalizeGroupStatus(group.status),
-    throughput: group.throughput ?? '0 msg/s',
+    throughput: legacy.throughput ?? '0 msg/s',
     description: group.description ?? '',
-    threads: typeof group.threads === 'number' ? group.threads : 1,
+    threads: typeof legacy.threads === 'number' ? legacy.threads : 1,
     outputMode: normalizeOutputMode(group.outputMode),
     sequentialOrder: normalizeSequentialOrder(group.sequentialOrder),
     expanded: group.expanded ?? false,
@@ -181,7 +184,7 @@ export function downloadProjectSnapshot(
   try {
     link.click();
   } finally {
-    document.body.removeChild(link);
+    link.remove();
     URL.revokeObjectURL(url);
   }
 }
@@ -195,58 +198,49 @@ export async function loadProjectSnapshotFromFile(file: File): Promise<ProjectSn
     throw new Error(`Not a GenSynth project file: expected a ${PROJECT_FILE_EXTENSION} file`);
   }
 
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
+  let content: string;
+  try {
+    content = await file.text();
+  } catch {
+    throw new Error('Failed to read file');
+  }
+  return parseProjectSnapshot(content);
+}
 
-    reader.onload = (e) => {
-      try {
-        const content = e.target?.result;
-        if (typeof content !== 'string') {
-          throw new Error('File content is not text');
-        }
+/**
+ * Parse and normalize the text of a project file.
+ * Rejects text that is not a GenSynth project (invalid JSON or missing format marker).
+ */
+function parseProjectSnapshot(content: string): ProjectSnapshot {
+  let snapshot: ProjectSnapshot;
+  try {
+    snapshot = JSON.parse(content) as ProjectSnapshot;
+  } catch {
+    throw new Error('Not a GenSynth project file: invalid JSON content');
+  }
 
-        let snapshot: ProjectSnapshot;
-        try {
-          snapshot = JSON.parse(content) as ProjectSnapshot;
-        } catch {
-          throw new Error('Not a GenSynth project file: invalid JSON content');
-        }
+  if (!snapshot || typeof snapshot !== 'object' || snapshot.format !== PROJECT_FORMAT_ID) {
+    throw new Error("Not a GenSynth project file: missing or unknown 'format' marker");
+  }
 
-        if (!snapshot || typeof snapshot !== 'object' || snapshot.format !== PROJECT_FORMAT_ID) {
-          throw new Error("Not a GenSynth project file: missing or unknown 'format' marker");
-        }
+  // Validate snapshot structure
+  if (!snapshot.version || !snapshot.groups || !snapshot.variables) {
+    throw new Error('Invalid snapshot: missing required fields (version, groups, variables)');
+  }
 
-        // Validate snapshot structure
-        if (!snapshot.version || !snapshot.groups || !snapshot.variables) {
-          throw new Error('Invalid snapshot: missing required fields (version, groups, variables)');
-        }
+  if (!Array.isArray(snapshot.groups) || !Array.isArray(snapshot.variables)) {
+    throw new TypeError('Invalid snapshot: groups and variables must be arrays');
+  }
 
-        if (!Array.isArray(snapshot.groups) || !Array.isArray(snapshot.variables)) {
-          throw new Error('Invalid snapshot: groups and variables must be arrays');
-        }
-
-        // Normalize groups and variables to ensure all fields are present and valid
-        const normalizedSnapshot: ProjectSnapshot = {
-          format: PROJECT_FORMAT_ID,
-          version: snapshot.version,
-          exportedAt: snapshot.exportedAt,
-          groups: snapshot.groups.map(normalizeGroupFromSnapshot),
-          variables: snapshot.variables.map(normalizeVariableFromSnapshot),
-          settings: normalizeProjectSettings((snapshot as { settings?: unknown }).settings),
-        };
-
-        resolve(normalizedSnapshot);
-      } catch (error) {
-        reject(error);
-      }
-    };
-
-    reader.onerror = () => {
-      reject(new Error('Failed to read file'));
-    };
-
-    reader.readAsText(file);
-  });
+  // Normalize groups and variables to ensure all fields are present and valid
+  return {
+    format: PROJECT_FORMAT_ID,
+    version: snapshot.version,
+    exportedAt: snapshot.exportedAt,
+    groups: snapshot.groups.map(normalizeGroupFromSnapshot),
+    variables: snapshot.variables.map(normalizeVariableFromSnapshot),
+    settings: normalizeProjectSettings((snapshot as { settings?: unknown }).settings),
+  };
 }
 
 /**

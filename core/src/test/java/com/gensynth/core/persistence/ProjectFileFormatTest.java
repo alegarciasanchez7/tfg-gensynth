@@ -1,5 +1,6 @@
 package com.gensynth.core.persistence;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.Test;
@@ -79,7 +80,8 @@ public class ProjectFileFormatTest {
 
     @Test
     public void validateRejectsNonObjectRoot() {
-        assertThrows(IllegalArgumentException.class, () -> ProjectFileFormat.validate(mapper.createArrayNode()));
+        JsonNode arrayRoot = mapper.createArrayNode();
+        assertThrows(IllegalArgumentException.class, () -> ProjectFileFormat.validate(arrayRoot));
         assertThrows(IllegalArgumentException.class, () -> ProjectFileFormat.validate(null));
     }
 

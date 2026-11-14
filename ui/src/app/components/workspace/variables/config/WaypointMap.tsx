@@ -19,6 +19,7 @@ import type { MoveCheck, PathIssues } from '../../../../core/waypointPath';
 import { MapAutoFit, OfflineGridOverlay } from './mapShared';
 import { useCanvasPalette } from './canvasPalette';
 import { cachedDivIcon } from './mapIcons';
+import { flaggedSegments } from './waypointCanvasHelpers';
 
 interface WaypointMapProps {
   waypoints: FullPoint[];
@@ -70,14 +71,21 @@ const clamp = (v: number, limit: number) => Math.max(-limit, Math.min(limit, v))
 
 type MarkerState = 'normal' | 'selected' | 'invalid';
 
+const MARKER_DOT_STYLES: Record<MarkerState, string> = {
+  selected: 'background:#22d3ee; color:#0f172a; border:1.5px solid #ffffff; box-shadow:0 0 10px rgba(34,211,238,0.9);',
+  invalid: `background:#0f172a; color:#fecdd3; border:2px solid ${INVALID_COLOR};`,
+  normal: 'background:#0f172a; color:#a5f3fc; border:1.5px solid #22d3ee;',
+};
+
+/** State of a waypoint marker: the selected one wins over an invalid one. */
+const markerState = (isSelected: boolean, isInvalid: boolean): MarkerState => {
+  if (isSelected) return 'selected';
+  return isInvalid ? 'invalid' : 'normal';
+};
+
 /** Numbered marker icon, cached per (number, state) so a drag is never interrupted by setIcon. */
 const waypointIcon = (index: number, state: MarkerState): L.DivIcon => {
-  const dot =
-    state === 'selected'
-      ? 'background:#22d3ee; color:#0f172a; border:1.5px solid #ffffff; box-shadow:0 0 10px rgba(34,211,238,0.9);'
-      : state === 'invalid'
-        ? `background:#0f172a; color:#fecdd3; border:2px solid ${INVALID_COLOR};`
-        : 'background:#0f172a; color:#a5f3fc; border:1.5px solid #22d3ee;';
+  const dot = MARKER_DOT_STYLES[state];
   return cachedDivIcon(
     `waypoint-${index}-${state}`,
     `<div style="display:flex; align-items:center; justify-content:center; width:22px; height:22px; cursor:grab;"><div data-waypoint-dot style="display:flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:9999px; box-sizing:border-box; font:700 8px monospace; ${dot}">${index + 1}</div></div>`,
@@ -96,8 +104,8 @@ const paintRejected = (marker: L.Marker, rejected: boolean) => {
   if (!el || !dot) return;
   if (dot.dataset.baseStyle === undefined) dot.dataset.baseStyle = dot.style.cssText;
   dot.style.cssText = rejected ? `${dot.dataset.baseStyle} ${REJECTED_DOT_CSS}` : dot.dataset.baseStyle;
-  if (rejected) el.setAttribute('data-state', 'rejected');
-  else el.removeAttribute('data-state');
+  if (rejected) el.dataset.state = 'rejected';
+  else delete el.dataset.state;
 };
 
 /** Map click → append a waypoint; also reports the pixel distance between two positions for snapping. */
@@ -236,7 +244,7 @@ export const WaypointMap: React.FC<WaypointMapProps> = ({
   // Live drag: kept until the updated waypoints come back, so the path does not flicker back
   const waypointsKey = JSON.stringify(waypoints);
   const [liveDrag, setLiveDrag] = useState<LiveDrag | null>(null);
-  const live = liveDrag && liveDrag.baseKey === waypointsKey ? liveDrag : null;
+  const live = liveDrag?.baseKey === waypointsKey ? liveDrag : null;
 
   useEffect(() => {
     const handleOnline = () => setIsOffline(false);
@@ -285,12 +293,12 @@ export const WaypointMap: React.FC<WaypointMapProps> = ({
     setSelected(index);
     const p = h.placeInRegion(lat, lon);
     const stored = h.waypoints[index];
-    if (stored && stored.x === p.x && stored.y === p.y) {
+    if (stored?.x === p.x && stored.y === p.y) {
       setLiveDrag(null);
       return true;
     }
     const accepted = h.onMove(index, p.x, p.y);
-    if (accepted) setLiveDrag((prev) => (prev && prev.index === index ? { ...prev, lat: p.x, lon: p.y } : prev));
+    if (accepted) setLiveDrag((prev) => (prev?.index === index ? { ...prev, lat: p.x, lon: p.y } : prev));
     else setLiveDrag(null);
     return accepted;
   }, []);
@@ -321,25 +329,10 @@ export const WaypointMap: React.FC<WaypointMapProps> = ({
   const pathPositions = displayWaypoints.map((p): [number, number] => [p.x, p.y]);
 
   // Segment colours: the live check replaces the stored issues around the dragged waypoint
-  const liveAdjacent = new Set<number>();
-  if (live && n >= 2) {
-    if (live.index > 0) liveAdjacent.add(live.index - 1);
-    if (live.index < n - 1) liveAdjacent.add(live.index);
-    if (loopPath && n >= 3 && (live.index === 0 || live.index === n - 1)) liveAdjacent.add(n - 1);
-  }
-  const flaggedSegments: { index: number; color: string }[] = [];
-  for (let i = 0; i < n; i++) {
-    if (i === n - 1 && !(loopPath && n >= 3)) continue;
-    if (liveAdjacent.has(i)) {
-      // A rejected waypoint position marks all its segments; otherwise only the failing ones
-      const check = live?.check;
-      if (check?.error && (check.badSegments.length === 0 || check.badSegments.includes(i))) {
-        flaggedSegments.push({ index: i, color: REJECTED_COLOR });
-      }
-    } else if (issues.segments[i]) {
-      flaggedSegments.push({ index: i, color: INVALID_COLOR });
-    }
-  }
+  const flagged = flaggedSegments(n, loopPath, live, issues.segments).map(({ index, flag }) => ({
+    index,
+    color: flag === 'rejected' ? REJECTED_COLOR : INVALID_COLOR,
+  }));
 
   return (
     <div
@@ -415,7 +408,7 @@ export const WaypointMap: React.FC<WaypointMapProps> = ({
         {n >= 2 && <LeafletPolyline positions={pathPositions} pathOptions={PATH_STYLE} interactive={false} />}
         {loopPath && n >= 3 && <LeafletPolyline positions={[pathPositions[n - 1], pathPositions[0]]} pathOptions={CLOSING_STYLE} interactive={false} />}
         {/* Segments that leave the region or cross an obstacle, drawn over the path */}
-        {flaggedSegments.map(({ index, color }) => (
+        {flagged.map(({ index, color }) => (
           <LeafletPolyline
             key={`bad-${index}-${color}`}
             positions={[pathPositions[index], pathPositions[(index + 1) % n]]}
@@ -430,7 +423,7 @@ export const WaypointMap: React.FC<WaypointMapProps> = ({
             index={i}
             lat={wp.x}
             lon={wp.y}
-            state={selectedIndex === i ? 'selected' : issues.points[i] ? 'invalid' : 'normal'}
+            state={markerState(selectedIndex === i, Boolean(issues.points[i]))}
             onSelect={setSelected}
             onDrag={handleDrag}
             onDragEnd={handleDragEnd}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { useApp } from '../../../../context';
 import { StringVariableConfig, StringFormattedMaskType, StringCorruptionMode, VariableScope } from '../../../../types';
 import { Input } from '../../../ui/input';
@@ -13,6 +13,7 @@ import { ShieldAlert, Sparkles, Braces, Code } from 'lucide-react';
 import { ListReferenceSelector } from './ListReferenceSelector';
 import { findTemplatePlaceholders } from '../../../../core/templatePlaceholders';
 import { DEFAULT_STRING_MASKS, stringModeDefaults } from './defaultConfigs';
+import { autocompleteKeyAction, cycleIndex, opensVariableAutocomplete, type AutocompleteKeyAction } from './autocompleteKeys';
 
 interface StringConfigPanelProps {
   config: StringVariableConfig;
@@ -37,7 +38,7 @@ const CORRUPTION_OPTIONS = [
   { value: 'TRUNCATE', label: 'Truncate end of string' },
   { value: 'INJECT_ANOMALOUS', label: 'Inject anomalous characters' },
   { value: 'REPLACE_CHAR', label: 'Replace characters randomly' },
-  { value: 'NULL_BYTE', label: 'Inject Null Byte (\\0)' },
+  { value: 'NULL_BYTE', label: String.raw`Inject Null Byte (\0)` },
   { value: 'MIXED', label: 'Mixed / Random corruption' },
 ];
 
@@ -49,6 +50,15 @@ const STRING_MODES: readonly { value: string; label: string; description: string
   { value: 'TEMPLATE', label: 'Template', description: 'Text built from other variables, e.g. DEV-{{sensor_id}} gives DEV-42.' },
   { value: 'FORMATTED_MASK', label: 'Mask/IoT', description: 'Formatted identifiers: MAC, IPv4, IPv6, UUID, or your own pattern with # @ $ ?.' },
 ];
+
+const VALID_VARIABLE_TOKEN_CLASS = 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 rounded ring-1 ring-inset ring-emerald-500/40 px-0.5 -mx-0.5';
+const INVALID_VARIABLE_TOKEN_CLASS = 'bg-red-500/20 text-red-600 dark:text-red-400 rounded ring-1 ring-inset ring-red-500/40 px-0.5 -mx-0.5';
+
+/** Overlay class of a template token: a valid or invalid variable reference, or plain text. */
+function templateTokenClass(token: { isVariable?: boolean; isValid?: boolean }): string {
+  if (!token.isVariable) return 'text-[var(--c-tx2)]';
+  return token.isValid ? VALID_VARIABLE_TOKEN_CLASS : INVALID_VARIABLE_TOKEN_CLASS;
+}
 
 export const StringConfigPanel: React.FC<StringConfigPanelProps> = ({ 
   config, 
@@ -76,12 +86,13 @@ export const StringConfigPanel: React.FC<StringConfigPanelProps> = ({
 
   // Tokenize the template for inline validation overlay
   const templateTokens = useMemo(() => {
-    const parts: Array<{ text: string; isValid?: boolean; isVariable?: boolean }> = [];
+    // `start` is the offset of the token in the template, unique and used as its key
+    const parts: Array<{ start: number; text: string; isValid?: boolean; isVariable?: boolean }> = [];
     let lastIndex = 0;
  
     for (const reference of findTemplatePlaceholders(templateValue)) {
       if (reference.start > lastIndex) {
-        parts.push({ text: templateValue.substring(lastIndex, reference.start) });
+        parts.push({ start: lastIndex, text: templateValue.substring(lastIndex, reference.start) });
       }
  
       const rawToken = templateValue.substring(reference.start, reference.end);
@@ -96,6 +107,7 @@ export const StringConfigPanel: React.FC<StringConfigPanelProps> = ({
       });
 
       parts.push({
+        start: reference.start,
         text: rawToken,
         isValid: !!variable,
         isVariable: true
@@ -105,7 +117,7 @@ export const StringConfigPanel: React.FC<StringConfigPanelProps> = ({
     }
  
     if (lastIndex < templateValue.length) {
-      parts.push({ text: templateValue.substring(lastIndex) });
+      parts.push({ start: lastIndex, text: templateValue.substring(lastIndex) });
     }
  
     return parts;
@@ -142,7 +154,7 @@ export const StringConfigPanel: React.FC<StringConfigPanelProps> = ({
   const autocompleteOptions = useMemo(() => {
     if (!showAutocomplete || !state.variables) return [];
 
-    const value = inputRef.current ? inputRef.current.value : (config.template ?? '');
+    const value = templateValue;
     const textBeforeCursor = cursorPos > 0 ? value.substring(0, cursorPos) : value;
     const lastOpen = textBeforeCursor.lastIndexOf('{{');
     if (lastOpen === -1) return [];
@@ -157,17 +169,20 @@ export const StringConfigPanel: React.FC<StringConfigPanelProps> = ({
         if (v.scope === 'local') return v.flowId === flowId;
         return false;
       })
-      .map(v => ({ name: v.name, scope: v.scope }));
+      .map(v => ({ id: v.id, name: v.name, scope: v.scope }));
 
     return options.filter(o => {
       const full = `${o.scope}.${o.name}`.toLowerCase();
       return full.includes(query) || o.name.toLowerCase().includes(query);
     });
-  }, [showAutocomplete, config.template, cursorPos, state.variables, flowId, groupId]);
+  }, [showAutocomplete, templateValue, cursorPos, state.variables, flowId, groupId]);
 
-  useEffect(() => {
+  // A new list of options starts again from the first one
+  const [optionCount, setOptionCount] = useState(autocompleteOptions.length);
+  if (optionCount !== autocompleteOptions.length) {
+    setOptionCount(autocompleteOptions.length);
     setSelectedIndex(0);
-  }, [autocompleteOptions.length]);
+  }
 
   const insertAtCursor = (varName: string) => {
     const ta = inputRef.current;
@@ -204,40 +219,30 @@ export const StringConfigPanel: React.FC<StringConfigPanelProps> = ({
     setShowAutocomplete(false);
   };
 
+  const applyAutocompleteAction = (action: AutocompleteKeyAction) => {
+    if (action === 'next') {
+      setSelectedIndex(prev => cycleIndex(prev, 1, autocompleteOptions.length));
+    } else if (action === 'previous') {
+      setSelectedIndex(prev => cycleIndex(prev, -1, autocompleteOptions.length));
+    } else if (action === 'insert') {
+      insertOption(autocompleteOptions[selectedIndex]);
+    } else {
+      setShowAutocomplete(false);
+    }
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (showAutocomplete && autocompleteOptions.length > 0) {
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        setSelectedIndex(prev => (prev + 1) % autocompleteOptions.length);
-        return;
-      }
-      if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        setSelectedIndex(prev => (prev - 1 + autocompleteOptions.length) % autocompleteOptions.length);
-        return;
-      }
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        insertOption(autocompleteOptions[selectedIndex]);
-        return;
-      }
-      if (e.key === 'Tab') {
-        e.preventDefault();
-        insertOption(autocompleteOptions[selectedIndex]);
-        return;
-      }
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        setShowAutocomplete(false);
-        return;
-      }
+    const action = showAutocomplete && autocompleteOptions.length > 0 ? autocompleteKeyAction(e.key) : null;
+    if (action) {
+      e.preventDefault();
+      applyAutocompleteAction(action);
+      return;
     }
 
     if (e.key === '{') {
       const start = inputRef.current?.selectionStart || 0;
       const value = inputRef.current ? inputRef.current.value : (config.template ?? '');
-      const textBefore = value.substring(0, start);
-      if (textBefore.endsWith('{')) {
+      if (opensVariableAutocomplete(value, start)) {
         setShowAutocomplete(true);
         setCursorPos(start + 1);
       }
@@ -344,10 +349,10 @@ export const StringConfigPanel: React.FC<StringConfigPanelProps> = ({
                   ref={overlayRef}
                   className="absolute left-0 right-0 top-0 bottom-0 pointer-events-none whitespace-pre overflow-hidden flex items-center pl-9 pr-3 bg-transparent text-transparent text-[11px] font-mono border border-transparent h-8"
                 >
-                  {templateTokens.map((t, i) => (
+                  {templateTokens.map((t) => (
                     <span 
-                      key={i} 
-                      className={t.isVariable ? (t.isValid ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 rounded ring-1 ring-inset ring-emerald-500/40 px-0.5 -mx-0.5' : 'bg-red-500/20 text-red-600 dark:text-red-400 rounded ring-1 ring-inset ring-red-500/40 px-0.5 -mx-0.5') : 'text-[var(--c-tx2)]'}
+                      key={t.start} 
+                      className={templateTokenClass(t)}
                     >
                       {t.text}
                     </span>
@@ -404,7 +409,7 @@ export const StringConfigPanel: React.FC<StringConfigPanelProps> = ({
                   >
                     {autocompleteOptions.map((opt, i) => (
                       <div
-                        key={i}
+                        key={opt.id}
                         role="option"
                         aria-selected={i === selectedIndex}
                         tabIndex={-1}
@@ -434,9 +439,9 @@ export const StringConfigPanel: React.FC<StringConfigPanelProps> = ({
               {/* Validation Badges */}
               {templateVariables.length > 0 && (
                 <div data-testid="formula-badges" className="flex flex-wrap gap-1.5 pt-1">
-                  {templateVariables.map((v, idx) => (
+                  {templateVariables.map((v) => (
                     <span
-                      key={idx}
+                      key={v.name}
                       className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono border transition-all ${
                         v.isValid
                           ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
@@ -502,7 +507,7 @@ export const StringConfigPanel: React.FC<StringConfigPanelProps> = ({
                    <Label htmlFor="alpha-case" className="mb-1 block text-[9px] uppercase text-[var(--c-tx4)]">Case Formatting</Label>
                    <Select
                      value={config.alphanumericCase ?? 'MIXED'}
-                     onValueChange={(val: any) => onChange({ alphanumericCase: val })}
+                     onValueChange={(val) => onChange({ alphanumericCase: val as StringVariableConfig['alphanumericCase'] })}
                    >
                      <SelectTrigger className="bg-[var(--c-bg2)] border-[var(--c-br1)] h-7 text-[10px]">
                        <SelectValue placeholder="Mixed Case" />

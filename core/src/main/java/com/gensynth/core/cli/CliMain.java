@@ -49,12 +49,12 @@ public final class CliMain {
         }
         for (String arg : args) {
             if ("--version".equals(arg)) {
-                System.out.println("GenSynth " + version);
+                standardOutput().println("GenSynth " + version);
                 return;
             }
             if ("--help".equals(arg)) {
-                System.out.println("Usage: gensynth");
-                System.out.println("Opens the GenSynth command line. Type 'help' inside it for the list of commands.");
+                standardOutput().println("Usage: gensynth");
+                standardOutput().println("Opens the GenSynth command line. Type 'help' inside it for the list of commands.");
                 return;
             }
         }
@@ -73,15 +73,15 @@ public final class CliMain {
         Set<String> commands = CliShell.commands(!cliEdition);
         if (systemTerminal != null) {
             // NO_COLOR (https://no-color.org) keeps line editing and Tab, without colors
-            CliTheme theme = System.getenv("NO_COLOR") == null ? CliTheme.forTerminal(systemTerminal) : CliTheme.plain();
+            CliTheme theme = System.getenv("NO_COLOR") == null ? CliTheme.forTerminal(systemTerminal) : CliTheme.noColors();
             ProjectFileCheck projects = new ProjectFileCheck();
             terminal = new TerminalInput(systemTerminal,
                 new CliCompleter(manager, workingDir, userHome, theme, projects, commands),
                 theme.isColored() ? new CliHighlighter(manager, projects, workingDir, userHome, commands) : null);
-            shell = new CliShell(manager, terminal, System.out, workingDir, userHome, version);
+            shell = new CliShell(manager, terminal, standardOutput(), workingDir, userHome, version);
             shell.useTerminal(theme, terminal);
         } else {
-            shell = new CliShell(manager, CliShell.plainInput(plainReader(), System.out), System.out,
+            shell = new CliShell(manager, CliShell.plainInput(plainReader(), standardOutput()), standardOutput(),
                 workingDir, userHome, version);
         }
         if (!cliEdition) {
@@ -102,6 +102,13 @@ public final class CliMain {
         }
         // Plugin client libraries may leave non-daemon threads behind
         System.exit(exitCode);
+    }
+
+    /**
+     * @return the standard output: the shell's own output for the user, which is not a log
+     */
+    private static PrintStream standardOutput() {
+        return System.out;
     }
 
     /**
@@ -150,6 +157,7 @@ public final class CliMain {
      * @return the original standard error, for the messages meant for the user
      */
     private static PrintStream redirectLogToFile() {
+        // Kept for the messages meant for the user: the log takes over the standard error below
         PrintStream console = System.err;
         if (System.getProperty(LOG_FILE_PROPERTY) != null) {
             return console;

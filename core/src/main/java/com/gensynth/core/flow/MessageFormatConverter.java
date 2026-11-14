@@ -1,5 +1,6 @@
 package com.gensynth.core.flow;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -7,7 +8,11 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.xml.parsers.ParserConfigurationException;
+import org.xml.sax.SAXException;
+
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.StringReader;
 import java.util.*;
 
@@ -58,7 +63,8 @@ public class MessageFormatConverter {
     /**
      * Parses content of specified format into a Jackson JsonNode tree structure.
      */
-    private static JsonNode parseToTree(String content, String format) throws Exception {
+    private static JsonNode parseToTree(String content, String format)
+            throws IOException, ParserConfigurationException, SAXException {
         String trimmed = content.trim();
         switch (format) {
             case "JSON":
@@ -82,7 +88,7 @@ public class MessageFormatConverter {
     /**
      * Formats a JsonNode tree into the target text format.
      */
-    private static String formatTree(JsonNode node, String format) throws Exception {
+    private static String formatTree(JsonNode node, String format) throws JsonProcessingException {
         switch (format) {
             case "JSON":
                 return mapper.writerWithDefaultPrettyPrinter().writeValueAsString(node);
@@ -99,7 +105,8 @@ public class MessageFormatConverter {
     // XML Parsing & Formatting Helpers
     // ==========================================
 
-    private static JsonNode parseXmlToTree(String xmlContent) throws Exception {
+    private static JsonNode parseXmlToTree(String xmlContent)
+            throws ParserConfigurationException, SAXException, IOException {
         javax.xml.parsers.DocumentBuilderFactory factory = javax.xml.parsers.DocumentBuilderFactory.newInstance();
         factory.setNamespaceAware(false);
         // Security protections against XXE
@@ -113,32 +120,10 @@ public class MessageFormatConverter {
     }
 
     private static JsonNode elementToJsonNode(org.w3c.dom.Element element) {
-        org.w3c.dom.NodeList children = element.getChildNodes();
-        List<org.w3c.dom.Element> childElements = new ArrayList<>();
-        
-        for (int i = 0; i < children.getLength(); i++) {
-            org.w3c.dom.Node node = children.item(i);
-            if (node.getNodeType() == org.w3c.dom.Node.ELEMENT_NODE) {
-                childElements.add((org.w3c.dom.Element) node);
-            }
-        }
-
+        List<org.w3c.dom.Element> childElements = childElementsOf(element);
         if (childElements.isEmpty()) {
             String text = element.getTextContent();
-            if (text == null) return mapper.getNodeFactory().textNode("");
-            text = text.trim();
-            if (text.equalsIgnoreCase("true") || text.equalsIgnoreCase("false")) {
-                return mapper.getNodeFactory().booleanNode(Boolean.parseBoolean(text));
-            }
-            try {
-                if (text.contains(".")) {
-                    return mapper.getNodeFactory().numberNode(Double.parseDouble(text));
-                } else {
-                    return mapper.getNodeFactory().numberNode(Long.parseLong(text));
-                }
-            } catch (NumberFormatException ignored) {
-                return mapper.getNodeFactory().textNode(text);
-            }
+            return text == null ? mapper.getNodeFactory().textNode("") : typedValueNode(text.trim());
         }
 
         // Group children by tag name to check if we have arrays
@@ -148,23 +133,52 @@ public class MessageFormatConverter {
         }
 
         ObjectNode objNode = mapper.createObjectNode();
-
         for (Map.Entry<String, List<org.w3c.dom.Element>> entry : grouped.entrySet()) {
-            String tag = entry.getKey();
-            List<org.w3c.dom.Element> list = entry.getValue();
+            objNode.set(entry.getKey(), groupToJsonNode(entry.getKey(), entry.getValue()));
+        }
+        return objNode;
+    }
 
-            if (list.size() == 1 && !tag.equalsIgnoreCase("item")) {
-                objNode.set(tag, elementToJsonNode(list.get(0)));
-            } else {
-                ArrayNode arrNode = mapper.createArrayNode();
-                for (org.w3c.dom.Element itemEl : list) {
-                    arrNode.add(elementToJsonNode(itemEl));
-                }
-                objNode.set(tag, arrNode);
+    private static List<org.w3c.dom.Element> childElementsOf(org.w3c.dom.Element element) {
+        org.w3c.dom.NodeList children = element.getChildNodes();
+        List<org.w3c.dom.Element> childElements = new ArrayList<>();
+        for (int i = 0; i < children.getLength(); i++) {
+            org.w3c.dom.Node node = children.item(i);
+            if (node.getNodeType() == org.w3c.dom.Node.ELEMENT_NODE) {
+                childElements.add((org.w3c.dom.Element) node);
             }
         }
+        return childElements;
+    }
 
-        return objNode;
+    /** A single element becomes a value; repeated tags (and any {@code <item>}) become an array. */
+    private static JsonNode groupToJsonNode(String tag, List<org.w3c.dom.Element> elements) {
+        if (elements.size() == 1 && !tag.equalsIgnoreCase("item")) {
+            return elementToJsonNode(elements.get(0));
+        }
+        ArrayNode arrNode = mapper.createArrayNode();
+        for (org.w3c.dom.Element itemEl : elements) {
+            arrNode.add(elementToJsonNode(itemEl));
+        }
+        return arrNode;
+    }
+
+    /**
+     * Types a trimmed XML text or CSV field: booleans, then decimals (with a dot) or integers,
+     * else plain text.
+     */
+    private static JsonNode typedValueNode(String text) {
+        if (text.equalsIgnoreCase("true") || text.equalsIgnoreCase("false")) {
+            return mapper.getNodeFactory().booleanNode(Boolean.parseBoolean(text));
+        }
+        try {
+            if (text.contains(".")) {
+                return mapper.getNodeFactory().numberNode(Double.parseDouble(text));
+            }
+            return mapper.getNodeFactory().numberNode(Long.parseLong(text));
+        } catch (NumberFormatException notANumber) {
+            return mapper.getNodeFactory().textNode(text);
+        }
     }
 
     private static String treeToXml(JsonNode node) {
@@ -245,7 +259,7 @@ public class MessageFormatConverter {
     // CSV Parsing & Formatting Helpers
     // ==========================================
 
-    private static JsonNode parseCsvToTree(String csvContent) throws Exception {
+    private static JsonNode parseCsvToTree(String csvContent) throws IOException {
         BufferedReader reader = new BufferedReader(new StringReader(csvContent));
         String headerLine = reader.readLine();
         if (headerLine == null || headerLine.trim().isEmpty()) {
@@ -257,29 +271,9 @@ public class MessageFormatConverter {
 
         String line;
         while ((line = reader.readLine()) != null) {
-            if (line.trim().isEmpty()) continue;
-            List<String> values = parseCsvLine(line);
-            ObjectNode row = mapper.createObjectNode();
-
-            for (int i = 0; i < headers.size(); i++) {
-                String header = headers.get(i).trim();
-                String val = (i < values.size()) ? values.get(i).trim() : "";
-
-                if (val.equalsIgnoreCase("true") || val.equalsIgnoreCase("false")) {
-                    row.put(header, Boolean.parseBoolean(val));
-                } else {
-                    try {
-                        if (val.contains(".")) {
-                            row.put(header, Double.parseDouble(val));
-                        } else {
-                            row.put(header, Long.parseLong(val));
-                        }
-                    } catch (NumberFormatException ignored) {
-                        row.put(header, val);
-                    }
-                }
+            if (!line.trim().isEmpty()) {
+                rows.add(parseCsvRow(headers, line));
             }
-            rows.add(row);
         }
 
         if (rows.size() == 1) {
@@ -291,6 +285,18 @@ public class MessageFormatConverter {
             array.add(row);
         }
         return array;
+    }
+
+    /** Builds one object from a data line; missing trailing fields become empty text. */
+    private static ObjectNode parseCsvRow(List<String> headers, String line) {
+        List<String> values = parseCsvLine(line);
+        ObjectNode row = mapper.createObjectNode();
+        for (int i = 0; i < headers.size(); i++) {
+            String header = headers.get(i).trim();
+            String val = (i < values.size()) ? values.get(i).trim() : "";
+            row.set(header, typedValueNode(val));
+        }
+        return row;
     }
 
     private static List<String> parseCsvLine(String line) {
@@ -314,26 +320,7 @@ public class MessageFormatConverter {
     }
 
     private static String treeToCsv(JsonNode node) {
-        List<ObjectNode> rows = new ArrayList<>();
-
-        if (node.isObject()) {
-            rows.add((ObjectNode) node);
-        } else if (node.isArray()) {
-            for (JsonNode item : node) {
-                if (item.isObject()) {
-                    rows.add((ObjectNode) item);
-                } else {
-                    ObjectNode n = mapper.createObjectNode();
-                    n.put("value", item.asText());
-                    rows.add(n);
-                }
-            }
-        } else {
-            ObjectNode n = mapper.createObjectNode();
-            n.put("value", node.asText());
-            rows.add(n);
-        }
-
+        List<ObjectNode> rows = csvRowsOf(node);
         if (rows.isEmpty()) {
             return "";
         }
@@ -341,36 +328,54 @@ public class MessageFormatConverter {
         // Collect all distinct headers across rows while keeping ordering
         Set<String> headers = new LinkedHashSet<>();
         for (ObjectNode row : rows) {
-            Iterator<String> fieldNames = row.fieldNames();
-            while (fieldNames.hasNext()) {
-                headers.add(fieldNames.next());
-            }
+            row.fieldNames().forEachRemaining(headers::add);
         }
 
         StringBuilder sb = new StringBuilder();
-        // Print header line
-        int hCount = 0;
-        for (String header : headers) {
-            if (hCount > 0) sb.append(",");
-            sb.append(escapeCsvField(header));
-            hCount++;
-        }
-        sb.append("\n");
-
-        // Print data rows
+        appendCsvLine(sb, headers);
         for (ObjectNode row : rows) {
-            int rCount = 0;
-            for (String header : headers) {
-                if (rCount > 0) sb.append(",");
-                JsonNode valNode = row.get(header);
-                String valStr = (valNode != null && !valNode.isNull()) ? valNode.asText() : "";
-                sb.append(escapeCsvField(valStr));
-                rCount++;
-            }
-            sb.append("\n");
+            appendCsvLine(sb, csvValuesOf(row, headers));
         }
-
         return sb.toString().trim();
+    }
+
+    /** Objects are rows as they are; any other value becomes a one-column {@code value} row. */
+    private static List<ObjectNode> csvRowsOf(JsonNode node) {
+        List<ObjectNode> rows = new ArrayList<>();
+        if (node.isObject()) {
+            rows.add((ObjectNode) node);
+        } else if (node.isArray()) {
+            for (JsonNode item : node) {
+                rows.add(item.isObject() ? (ObjectNode) item : valueRow(item));
+            }
+        } else {
+            rows.add(valueRow(node));
+        }
+        return rows;
+    }
+
+    private static ObjectNode valueRow(JsonNode node) {
+        ObjectNode n = mapper.createObjectNode();
+        n.put("value", node.asText());
+        return n;
+    }
+
+    /** Values of a row in header order; missing and null fields are empty. */
+    private static List<String> csvValuesOf(ObjectNode row, Set<String> headers) {
+        List<String> values = new ArrayList<>();
+        for (String header : headers) {
+            JsonNode valNode = row.get(header);
+            values.add((valNode != null && !valNode.isNull()) ? valNode.asText() : "");
+        }
+        return values;
+    }
+
+    private static void appendCsvLine(StringBuilder sb, Collection<String> fields) {
+        StringJoiner line = new StringJoiner(",");
+        for (String field : fields) {
+            line.add(escapeCsvField(field));
+        }
+        sb.append(line).append("\n");
     }
 
     private static String escapeCsvField(String field) {

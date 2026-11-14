@@ -1,6 +1,6 @@
 import { bridge } from '../bridge';
 import type { OutputFolderResponsePayload, PluginValidationResultPayload, PluginInstallResultPayload, StateFileResponsePayload, UpdateCheckPayload } from '../types';
-import type { ProjectSettings } from '../../types';
+import type { Group, ProjectSettings, Variable } from '../../types';
 
 export const CoreCommands = {
   // System
@@ -53,7 +53,7 @@ export const CoreCommands = {
     bridge.send<'UNINSTALL_PLUGIN', PluginInstallResultPayload>('UNINSTALL_PLUGIN', { pluginId, pluginVersion }),
 
   // State management
-  importState: (groups: any[], variables: any[], settings?: ProjectSettings) =>
+  importState: (groups: Group[], variables: Variable[], settings?: ProjectSettings) =>
     bridge.send('IMPORT_STATE', settings ? { groups, variables, settings } : { groups, variables }),
   exportState: (filePath: string) =>
     bridge.send<'EXPORT_STATE', StateFileResponsePayload>('EXPORT_STATE', { filePath }),

@@ -5,7 +5,7 @@ interface SectionLabelProps extends React.HTMLAttributes<HTMLSpanElement> {
   children: React.ReactNode;
 }
 
-export function SectionLabel({ className, children, ...props }: SectionLabelProps) {
+export function SectionLabel({ className, children, ...props }: Readonly<SectionLabelProps>) {
   return (
     <span
       className={cn("text-[9px] text-[var(--c-tx5)] tracking-widest uppercase font-mono", className)}

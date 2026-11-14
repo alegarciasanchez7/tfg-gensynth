@@ -4,7 +4,8 @@ import type { FullPoint } from '../../../../core/pointDefaults';
 import { clampToRegion, isInsideRegion, roundIntoRegion } from '../../../../core/routeGeometry';
 import type { MoveCheck, PathIssues } from '../../../../core/waypointPath';
 import { fitWorldWindow, niceStep } from '../../../../core/worldWindow';
-import { useCanvasPalette } from './canvasPalette';
+import { useCanvasPalette, type CanvasPalette } from './canvasPalette';
+import { segmentsAround } from './waypointCanvasHelpers';
 
 interface WaypointCanvas2DProps {
   waypoints: FullPoint[];
@@ -38,6 +39,22 @@ const SNAP_PX = 6;
 const INVALID_COLOR = '#fb7185';
 /** The dragged waypoint and segments while the drop would be rejected. */
 const REJECTED_COLOR = '#ef4444';
+
+type WaypointState = 'rejected' | 'invalid' | null;
+
+/** Accent colour of a waypoint: red while a drop is rejected, pink when invalid, the path colour otherwise. */
+const waypointAccent = (state: WaypointState, palette: CanvasPalette): string => {
+  if (state === 'rejected') return REJECTED_COLOR;
+  if (state === 'invalid') return INVALID_COLOR;
+  return palette.path;
+};
+
+/** Colour of the number drawn inside a waypoint dot. */
+const waypointNumberColor = (state: WaypointState, isSelected: boolean, palette: CanvasPalette): string => {
+  if (isSelected) return palette.waypointDot;
+  if (state === 'rejected') return '#ffffff';
+  return state ? palette.invalidWaypointNumber : palette.waypointNumber;
+};
 
 interface DragState {
   index: number;
@@ -106,7 +123,7 @@ export const WaypointCanvas2D: React.FC<WaypointCanvas2DProps> = ({
   const suppressClickRef = useRef(false);
   const waypointsKey = JSON.stringify(waypoints);
   const [dragPos, setDragPos] = useState<DragView | null>(null);
-  const activeDrag = dragPos && dragPos.baseKey === waypointsKey ? dragPos : null;
+  const activeDrag = dragPos?.baseKey === waypointsKey ? dragPos : null;
   const displayWaypoints = activeDrag
     ? waypoints.map((p, i) => (i === activeDrag.index ? { ...p, x: activeDrag.x, y: activeDrag.y } : p))
     : waypoints;
@@ -189,14 +206,14 @@ export const WaypointCanvas2D: React.FC<WaypointCanvas2DProps> = ({
 
   const handlePointerMove = (e: React.PointerEvent<SVGGElement>) => {
     const drag = dragRef.current;
-    if (!drag || drag.pointerId !== e.pointerId) return;
+    if (drag?.pointerId !== e.pointerId) return;
     if (!drag.moved && Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) < DRAG_THRESHOLD_PX) return;
     const raw = clientToWorld(e.clientX, e.clientY);
     if (!raw) return;
     // The waypoint stops at the region border
     const p = roundInside(clampToRegion(raw, polygon, minPoint, maxPoint));
     drag.moved = true;
-    if (dragPos && dragPos.baseKey === waypointsKey && drag.x === p.x && drag.y === p.y) return;
+    if (dragPos?.baseKey === waypointsKey && drag.x === p.x && drag.y === p.y) return;
     drag.x = p.x;
     drag.y = p.y;
     setDragPos({ index: drag.index, x: p.x, y: p.y, baseKey: waypointsKey, check: checkMove(drag.index, p.x, p.y) });
@@ -204,13 +221,13 @@ export const WaypointCanvas2D: React.FC<WaypointCanvas2DProps> = ({
 
   const handlePointerUp = (e: React.PointerEvent<SVGGElement>) => {
     const drag = dragRef.current;
-    if (!drag || drag.pointerId !== e.pointerId) return;
+    if (drag?.pointerId !== e.pointerId) return;
     dragRef.current = null;
     if (!drag.moved) return; // A plain click: handled by onClick
     suppressClickRef.current = true;
     setSelected(drag.index);
     const wp = waypoints[drag.index];
-    if (wp && wp.x === drag.x && wp.y === drag.y) {
+    if (wp?.x === drag.x && wp.y === drag.y) {
       setDragPos(null);
       return;
     }
@@ -250,12 +267,7 @@ export const WaypointCanvas2D: React.FC<WaypointCanvas2DProps> = ({
 
   // Segment and waypoint states: the live check replaces the stored issues around the dragged waypoint
   const liveCheck = activeDrag?.check ?? null;
-  const liveAdjacent = new Set<number>();
-  if (activeDrag && n >= 2) {
-    if (activeDrag.index > 0) liveAdjacent.add(activeDrag.index - 1);
-    if (activeDrag.index < n - 1) liveAdjacent.add(activeDrag.index);
-    if (loopPath && n >= 3 && (activeDrag.index === 0 || activeDrag.index === n - 1)) liveAdjacent.add(n - 1);
-  }
+  const liveAdjacent = activeDrag ? segmentsAround(activeDrag.index, n, loopPath) : new Set<number>();
   const segmentColor = (index: number): string | null => {
     if (liveAdjacent.has(index)) {
       // A rejected waypoint position marks all its segments; otherwise only the failing ones
@@ -264,7 +276,7 @@ export const WaypointCanvas2D: React.FC<WaypointCanvas2DProps> = ({
     }
     return issues.segments[index] ? INVALID_COLOR : null;
   };
-  const pointState = (index: number): 'rejected' | 'invalid' | null => {
+  const pointState = (index: number): WaypointState => {
     if (activeDrag?.index === index) return liveCheck?.error ? 'rejected' : null;
     return issues.points[index] ? 'invalid' : null;
   };
@@ -405,7 +417,7 @@ export const WaypointCanvas2D: React.FC<WaypointCanvas2DProps> = ({
         {displayWaypoints.map((wp, i) => {
           const isSelected = selectedIndex === i;
           const state = pointState(i);
-          const accent = state === 'rejected' ? REJECTED_COLOR : state === 'invalid' ? INVALID_COLOR : palette.path;
+          const accent = waypointAccent(state, palette);
           return (
             <g
               key={i}
@@ -441,7 +453,7 @@ export const WaypointCanvas2D: React.FC<WaypointCanvas2DProps> = ({
                 fontSize={8}
                 fontWeight={700}
                 fontFamily="monospace"
-                fill={isSelected ? palette.waypointDot : state === 'rejected' ? '#ffffff' : state ? palette.invalidWaypointNumber : palette.waypointNumber}
+                fill={waypointNumberColor(state, isSelected, palette)}
                 pointerEvents="none"
               >
                 {i + 1}

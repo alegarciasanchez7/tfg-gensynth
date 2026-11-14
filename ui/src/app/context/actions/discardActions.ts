@@ -6,6 +6,7 @@ import type { Flow, Group, ProjectSettings, Variable } from '../../types';
 import type { AppAction, SavedStateSnapshot } from '../reducer';
 import { getFlowComparable, getGroupComparable, getVariableComparable } from '../helpers/dirtyStateHelper';
 import { tickSettingsEqual } from '../../core/tickSettings';
+import { legacyFlowFields, legacyGroupFields } from '../../core/legacyFields';
 
 export type DiscardItemType = 'group' | 'flow' | 'variable';
 
@@ -31,6 +32,7 @@ function isSame<T>(left: T, right: T): boolean {
 }
 
 function updateFlowCommand(groupId: string, flow: Flow): DiscardCommand {
+  const { interval, burst } = legacyFlowFields(flow);
   return {
     type: 'UPDATE_FLOW_CONFIG',
     payload: {
@@ -41,8 +43,8 @@ function updateFlowCommand(groupId: string, flow: Flow): DiscardCommand {
       host: flow.host,
       port: flow.port,
       topic: flow.topic,
-      interval: flow.interval,
-      burst: flow.burst,
+      interval,
+      burst,
       everyTicks: flow.everyTicks,
       lossPercent: flow.lossPercent ?? 0,
       outageEveryTicks: flow.outageEveryTicks ?? 0,
@@ -56,6 +58,7 @@ function updateFlowCommand(groupId: string, flow: Flow): DiscardCommand {
 }
 
 function restoreFlowCommands(groupId: string, flow: Flow): DiscardCommand[] {
+  const { interval, burst } = legacyFlowFields(flow);
   const commands: DiscardCommand[] = [
     {
       type: 'CREATE_FLOW',
@@ -67,8 +70,8 @@ function restoreFlowCommands(groupId: string, flow: Flow): DiscardCommand[] {
         host: flow.host,
         port: flow.port,
         topic: flow.topic,
-        interval: flow.interval,
-        burst: flow.burst,
+        interval,
+        burst,
         everyTicks: flow.everyTicks,
         lossPercent: flow.lossPercent ?? 0,
         outageEveryTicks: flow.outageEveryTicks ?? 0,
@@ -101,7 +104,7 @@ function groupCommands(savedGroup: Group | undefined, currentGroup: Group): Disc
         groupId: savedGroup.id,
         name: savedGroup.name,
         description: savedGroup.description,
-        threads: savedGroup.threads,
+        threads: legacyGroupFields(savedGroup).threads,
         outputMode: savedGroup.outputMode,
         sequentialOrder: savedGroup.sequentialOrder,
         enabled: savedGroup.enabled,

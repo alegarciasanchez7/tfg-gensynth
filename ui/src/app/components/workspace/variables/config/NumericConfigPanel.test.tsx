@@ -266,3 +266,59 @@ describe('NumericConfigPanel', () => {
     expect(handleChange).toHaveBeenCalledWith({ spikeEnabled: true });
   });
 });
+
+describe('NumericConfigPanel field drafts and autocomplete selection', () => {
+  const base: NumericVariableConfig = { min: 10, max: 50, pattern: 'RANDOM', prefix: 'a' };
+
+  beforeEach(() => {
+    mockUseApp.mockReturnValue({ state: { variables: [] } });
+  });
+
+  it('re-syncs the range drafts when the config changes from outside', () => {
+    const { rerender } = render(<NumericConfigPanel config={base} onChange={vi.fn()} />);
+    expect(screen.getByTestId('numeric-min-input')).toHaveValue('10');
+
+    rerender(<NumericConfigPanel config={{ ...base, min: 20, initialValue: 15 }} onChange={vi.fn()} />);
+    expect(screen.getByTestId('numeric-min-input')).toHaveValue('20');
+    expect(screen.getByTestId('numeric-initial-input')).toHaveValue('15');
+
+    rerender(<NumericConfigPanel config={{ ...base, min: 20 }} onChange={vi.fn()} />);
+    expect(screen.getByTestId('numeric-initial-input')).toHaveValue('');
+  });
+
+  it('keeps a typed draft that parses to the stored value', () => {
+    const Wrapper = () => {
+      const [cfg, setCfg] = useState<NumericVariableConfig>(base);
+      return <NumericConfigPanel config={cfg} onChange={(c) => setCfg(prev => ({ ...prev, ...c }))} />;
+    };
+    render(<Wrapper />);
+    const min = screen.getByTestId('numeric-min-input');
+    fireEvent.change(min, { target: { value: '12.' } });
+    expect(min).toHaveValue('12.');
+  });
+
+  it('starts again from the first option when the autocomplete options change', () => {
+    mockUseApp.mockReturnValue({
+      state: {
+        variables: [
+          { id: 'a', name: 'alpha', scope: 'global', type: 'numeric' },
+          { id: 'b', name: 'beta', scope: 'global', type: 'numeric' },
+        ],
+      },
+    });
+    const Wrapper = () => {
+      const [cfg, setCfg] = useState<NumericVariableConfig>({ pattern: 'FORMULA', formula: '' });
+      return <NumericConfigPanel config={cfg} onChange={(c) => setCfg(prev => ({ ...prev, ...c }))} />;
+    };
+    render(<Wrapper />);
+    const input = screen.getByTestId('numeric-formula-input');
+    fireEvent.change(input, { target: { value: '{{', selectionStart: 2 } });
+    fireEvent.keyDown(input, { key: '{' });
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    expect(screen.getAllByRole('option')[1]).toHaveAttribute('aria-selected', 'true');
+
+    // Typing narrows the options: the selection goes back to the first one
+    fireEvent.change(input, { target: { value: '{{al', selectionStart: 4 } });
+    expect(screen.getAllByRole('option')[0]).toHaveAttribute('aria-selected', 'true');
+  });
+});

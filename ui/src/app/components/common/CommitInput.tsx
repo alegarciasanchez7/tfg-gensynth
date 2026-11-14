@@ -20,7 +20,7 @@ interface CommitInputProps {
  * switch). The echo of this field's own commit is ignored, so text typed after committing and
  * before the Core answers is not overwritten.
  */
-export function CommitInput({ value, onCommit, ariaLabel, className, inputMode, placeholder, title }: CommitInputProps) {
+export function CommitInput({ value, onCommit, ariaLabel, className, inputMode, placeholder, title }: Readonly<CommitInputProps>) {
   const [draft, setDraft] = useState(value);
   // Last `value` seen, and the text this field committed and still waits to see echoed
   const [seenValue, setSeenValue] = useState(value);

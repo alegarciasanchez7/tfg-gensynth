@@ -17,6 +17,7 @@ import {
   type PickedProjectFile,
 } from '../../core/fileStorage';
 import { DEFAULT_PROJECT_SETTINGS } from '../../core/tickSettings';
+import { selectionExists } from '../helpers/selectionHelpers';
 
 type Dispatch = React.Dispatch<AppAction>;
 
@@ -117,7 +118,7 @@ export async function loadProjectState(
       const fileName = loadedPath ? fileNameFromPath(loadedPath) : null;
       dispatch({ type: 'SET_FILE_INFO', payload: { fileName, filePath: loadedPath, fileHandle: null } });
       dispatch({ type: 'SET_SELECTION', payload: { type: 'none' } });
-      toast.success(`Configuration loaded${fileName ? `: ${fileName}` : ''}`);
+      toast.success(fileName ? `Configuration loaded: ${fileName}` : 'Configuration loaded');
       return true;
     }
 
@@ -150,19 +151,7 @@ export async function loadProjectState(
       }
     }
 
-    const { selection } = ctx;
-    const selectionStillExists =
-      selection.type === 'group'
-        ? groups.some((group) => group.id === selection.groupId)
-        : selection.type === 'flow'
-          ? groups.some((group) =>
-              group.id === selection.groupId && group.flows.some((flow) => flow.id === selection.flowId),
-            )
-          : selection.type === 'variable'
-            ? variables.some((variable) => variable.id === selection.variableId)
-            : true;
-
-    if (!selectionStillExists) {
+    if (!selectionExists(ctx.selection, groups, variables)) {
       dispatch({ type: 'SET_SELECTION', payload: { type: 'none' } });
     }
 
@@ -231,6 +220,24 @@ export async function saveProjectStateAs(ctx: ProjectSaveContext): Promise<boole
 }
 
 /**
+ * Writes the project to the open file: through the Core on desktop, or to the file handle in a
+ * browser.
+ *
+ * @returns false when an auto-save is skipped because it has no write permission yet
+ */
+async function writeOpenFile(ctx: ProjectSaveContext, isDesktop: boolean, isAutoSave: boolean): Promise<boolean> {
+  const { file } = ctx;
+  if (isDesktop && file.filePath) {
+    await CoreCommands.exportState(file.filePath);
+  } else if (file.fileHandle) {
+    // Writing to a file opened for reading needs a user gesture the first time
+    if (isAutoSave && !(await hasWritePermission(file.fileHandle))) return false;
+    await writeProjectSnapshot(file.fileHandle, createProjectSnapshot(ctx.groups, ctx.variables, ctx.settings));
+  }
+  return true;
+}
+
+/**
  * Saves the project to the currently open file. Without an open file, a manual save behaves
  * as "Save as" while an auto-save is skipped (it must never open a dialog).
  *
@@ -247,13 +254,7 @@ export async function saveProjectState(ctx: ProjectSaveContext, isAutoSave = fal
   }
 
   try {
-    if (isDesktop && file.filePath) {
-      await CoreCommands.exportState(file.filePath);
-    } else if (file.fileHandle) {
-      // Writing to a file opened for reading needs a user gesture the first time
-      if (isAutoSave && !(await hasWritePermission(file.fileHandle))) return false;
-      await writeProjectSnapshot(file.fileHandle, createProjectSnapshot(ctx.groups, ctx.variables, ctx.settings));
-    }
+    if (!(await writeOpenFile(ctx, isDesktop, isAutoSave))) return false;
 
     markSaved(ctx, file);
     const fileName = file.fileName ?? 'configuration file';
