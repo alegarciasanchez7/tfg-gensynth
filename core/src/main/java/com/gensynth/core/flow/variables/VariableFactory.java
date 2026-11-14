@@ -449,13 +449,11 @@ public class VariableFactory {
     private static List<ListVariableConfig.ListItem> parseListItems(String listId, List<?> rawItems) {
         List<ListVariableConfig.ListItem> parsedItems = new ArrayList<>();
         for (Object rawItem : rawItems) {
-            if (rawItem instanceof Map<?, ?> itemMap) {
-                parsedItems.add(listItemFromMap(listId, itemMap));
-            } else if (rawItem instanceof ListVariableConfig.ListItem listItem) {
-                parsedItems.add(listItem);
-            } else {
-                parsedItems.add(new ListVariableConfig.ListItem(null, rawItem, 1.0));
-            }
+            parsedItems.add(switch (rawItem) {
+                case Map<?, ?> itemMap -> listItemFromMap(listId, itemMap);
+                case ListVariableConfig.ListItem listItem -> listItem;
+                case null, default -> new ListVariableConfig.ListItem(null, rawItem, 1.0);
+            });
         }
         return parsedItems;
     }

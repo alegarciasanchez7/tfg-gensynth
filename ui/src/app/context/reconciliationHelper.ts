@@ -121,8 +121,8 @@ function reconcileDelete<T extends { id: string; }>(
   result: ReconciliationResult,
   isFresh: boolean,
 ): T[] {
-  const serverEntity = spec.server.find(e => e && (e.id === op.entityId || (op.tempIdMapping?.realId === e.id)));
-  if (!serverEntity) {
+  const onServer = spec.server.some(e => e && (e.id === op.entityId || (op.tempIdMapping?.realId === e.id)));
+  if (!onServer) {
     result.operationsResolved.push({ commandId: op.commandId, success: true, reason: `${spec.label} deleted on server` });
     return toUpdate;
   }

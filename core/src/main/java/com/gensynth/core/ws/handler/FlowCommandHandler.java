@@ -51,6 +51,8 @@ import static com.gensynth.core.ws.BridgeProtocol.SOURCE_FLOWS;
  */
 public class FlowCommandHandler implements CommandHandler, ITickListener {
 
+    /** A {{tag}} of a flow template; group 1 is the expression inside the braces. */
+    private static final java.util.regex.Pattern TEMPLATE_TAG = java.util.regex.Pattern.compile("\\{\\{([^}]+)\\}\\}");
     private static final String CREATE_FLOW = "CREATE_FLOW";
     private static final String TECHNOLOGY = "technology";
     private static final String TOPIC = "topic";
@@ -464,20 +466,9 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
      */
     public void validateGroupForStart(GroupRuntime group) {
         // Validate all variables in the group and perform cycle detection fail-fast
-        Map<String, VariableConfiguration> configs = new HashMap<>();
-        for (Variable variable : ctx.getVariablesById().values()) {
-            if (isReachableFrom(group, variable)) {
-                VariableConfiguration vc = parseConfiguration(variable);
-                configs.put(variable.getName(), vc);
-                if (variable.getId() != null && !variable.getId().equals(variable.getName())) {
-                    configs.put(variable.getId(), vc);
-                }
-            }
-        }
-
         DependencyResolver resolver = new DependencyResolver();
         try {
-            resolver.resolve(configs);
+            resolver.resolve(reachableConfigurations(group));
         } catch (CyclicDependencyException e) {
             throw new IllegalStateException("Circular dependency detected", e);
         } catch (IllegalArgumentException e) {
@@ -485,16 +476,34 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
         }
 
         // Validate flow templates for invalid sub-item access on non-FIXED_SUBSET list strategies
-        java.util.regex.Pattern tagPattern = java.util.regex.Pattern.compile("\\{\\{([^}]+)\\}\\}");
         for (FlowRuntime flow : group.flows) {
             String template = flow.template;
             if (template != null && !template.isEmpty()) {
-                java.util.regex.Matcher matcher = tagPattern.matcher(template);
+                java.util.regex.Matcher matcher = TEMPLATE_TAG.matcher(template);
                 while (matcher.find()) {
                     checkItemReference(matcher.group(1).trim(), flow, group);
                 }
             }
         }
+    }
+
+    /**
+     * @return the parsed configuration of every variable the group can use, by name and also by
+     *         id when it differs (references may use either)
+     */
+    private Map<String, VariableConfiguration> reachableConfigurations(GroupRuntime group) {
+        Map<String, VariableConfiguration> configs = new HashMap<>();
+        for (Variable variable : ctx.getVariablesById().values()) {
+            if (!isReachableFrom(group, variable)) {
+                continue;
+            }
+            VariableConfiguration vc = parseConfiguration(variable);
+            configs.put(variable.getName(), vc);
+            if (variable.getId() != null && !variable.getId().equals(variable.getName())) {
+                configs.put(variable.getId(), vc);
+            }
+        }
+        return configs;
     }
 
     /** Whether a flow of the group can use the variable: a global one, one of the group or one of its flows. */

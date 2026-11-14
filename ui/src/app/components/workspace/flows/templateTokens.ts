@@ -20,7 +20,7 @@ export interface PlaceholderReference {
   isItemAccess: boolean;
 }
 
-const KNOWN_SCOPES: readonly string[] = ['local', 'group', 'global'];
+const KNOWN_SCOPES: ReadonlySet<string> = new Set(['local', 'group', 'global']);
 
 /** Sub-properties the Core resolves for each variable type (lower case). */
 const VALID_SUB_PROPERTIES: Partial<Record<VariableType, readonly string[]>> = {
@@ -63,7 +63,7 @@ export function parsePlaceholderReference(spec: string): PlaceholderReference {
   }
   const parts = spec.split('.');
   const head = parts[0].toLowerCase();
-  const hasScope = KNOWN_SCOPES.includes(head);
+  const hasScope = KNOWN_SCOPES.has(head);
   const name = hasScope ? parts[1] : parts[0];
   // A missing segment (e.g. `local.name`) is undefined at run time, hence the explicit type
   const subProperty: string | null = (hasScope ? parts[2] : parts[1]) ?? null;
