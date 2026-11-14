@@ -78,13 +78,13 @@ export const ConditionalRulesTab: React.FC<ConditionalRulesTabProps> = ({
     onChange(newRules);
   };
 
-  const handleUpdateRule = (index: number, field: keyof ConditionalRule, val: any) => {
+  const handleUpdateRule = <K extends keyof ConditionalRule>(index: number, field: K, val: ConditionalRule[K]) => {
     const newRules = [...rules];
     newRules[index] = { ...newRules[index], [field]: val };
     onChange(newRules);
   };
 
-  const handleOverrideChange = (index: number, newOverrides: Partial<any>) => {
+  const handleOverrideChange = (index: number, newOverrides: Record<string, unknown>) => {
     const newRules = [...rules];
     const currentOverrides = typeof newRules[index].overrides === 'object' && newRules[index].overrides !== null 
       ? newRules[index].overrides 
@@ -226,7 +226,7 @@ export const ConditionalRulesTab: React.FC<ConditionalRulesTabProps> = ({
                 
                 <Select
                   value={rule.operator}
-                  onValueChange={(val: any) => handleUpdateRule(idx, 'operator', val)}
+                  onValueChange={(val) => handleUpdateRule(idx, 'operator', val as ConditionalRule['operator'])}
                 >
                   <SelectTrigger className="h-7 text-[10px] bg-[var(--c-bg2)] border-[var(--c-br1)] uppercase font-medium">
                     <SelectValue placeholder="Op" />
@@ -242,7 +242,7 @@ export const ConditionalRulesTab: React.FC<ConditionalRulesTabProps> = ({
 
                 <Input
                   placeholder="Value"
-                  value={rule.value}
+                  value={rule.value as string | number | undefined}
                   onChange={(e) => handleUpdateRule(idx, 'value', e.target.value)}
                   className="h-7 text-[11px] bg-[var(--c-bg2)] border-[var(--c-br1)] font-mono"
                 />

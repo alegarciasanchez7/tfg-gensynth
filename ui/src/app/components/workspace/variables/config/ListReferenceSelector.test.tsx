@@ -11,7 +11,7 @@ vi.mock('../../../../context', () => ({
   useApp: () => mockUseApp(),
 }));
 
-const mockState: any = {
+const mockState = {
   variables: [
     {
       id: 'var_list_global_1',

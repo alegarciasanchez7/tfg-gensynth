@@ -73,7 +73,7 @@ export class CoreBridge {
     }
   }
 
-  send<T extends UICommandType, R = any>(
+  send<T extends UICommandType, R = unknown>(
     type: T,
     payload?: UICommandPayloadMap[T],
     onResponse?: (data: R) => void
@@ -94,13 +94,14 @@ export class CoreBridge {
         payload,
       };
 
+      // The pending table is untyped: the response payload is the R this command was sent for
       const pending: PendingCommand = {
-        resolve,
+        resolve: resolve as (value: unknown) => void,
         reject,
         timerId: 0,
         command,
         attempts: 0,
-        onResponse,
+        onResponse: onResponse as ((payload: unknown) => void) | undefined,
       };
 
       const scheduleAttempt = () => {

@@ -1,5 +1,10 @@
-import type { Flow, Group, Variable } from '../../types';
+import type { Flow, Group, NumericVariableConfig, Variable, VariableConfig } from '../../types';
 import { findTemplatePlaceholders, isSystemPlaceholder } from '../../core/templatePlaceholders';
+
+/** The formula of a variable config (only numeric FORMULA variables have one), if any. */
+export function formulaOf(config: VariableConfig | undefined): string | undefined {
+  return (config as NumericVariableConfig | undefined)?.formula;
+}
 
 /** Variable names referenced by a formula, as `[name]` or `{{name}}`, in order. */
 export function formulaDependencies(formula?: string): string[] {
@@ -23,8 +28,9 @@ function isFormulaConstant(dep: string): boolean {
 function variableReferenceErrors(variable: Variable, varNames: Set<string>): string[] {
   const errors: string[] = [];
   const config = variable.config || {};
-  if (variable.type === 'numeric' && config.pattern === 'FORMULA' && config.formula) {
-    for (const dep of formulaDependencies(config.formula)) {
+  const formula = formulaOf(config);
+  if (variable.type === 'numeric' && config.pattern === 'FORMULA' && formula) {
+    for (const dep of formulaDependencies(formula)) {
       if (!isFormulaConstant(dep) && !varNames.has(dep)) {
         errors.push(`Variable '${variable.name}' references nonexistent '${dep}' in its formula.`);
       }

@@ -17,7 +17,7 @@ import type { ConnectorPluginDescriptor } from '../../../../core/types';
 import { GroupItem } from './GroupItem';
 import { CreateFlowDialog } from './CreateFlowDialog';
 import { commandErrorMessage } from '../../../../core/errorMessage';
-import type { CreateFlowHandler } from '../../../../context/crudTypes';
+import type { CreateFlowHandler, FlowConfigUpdate, GroupConfigUpdate } from '../../../../context/crudTypes';
 
 interface LeftPanelProps {
   groups: Group[];
@@ -32,8 +32,8 @@ interface LeftPanelProps {
   onDeleteGroup: (groupId: string) => Promise<void>;
   onDeleteFlow: (groupId: string, flowId: string) => Promise<void>;
   onCreateFlow: CreateFlowHandler;
-  onUpdateGroupConfig: (groupId: string, config: any, name?: string) => Promise<void>;
-  onUpdateFlowConfig: (groupId: string, flowId: string, config: any, name?: string) => Promise<void>;
+  onUpdateGroupConfig: (groupId: string, config: GroupConfigUpdate, name?: string) => Promise<void>;
+  onUpdateFlowConfig: (groupId: string, flowId: string, config: FlowConfigUpdate, name?: string) => Promise<void>;
   onCloneGroup: (groupId: string, count: number, namingPattern?: string) => void;
   onCloneFlow: (groupId: string, flowId: string, count: number, namingPattern?: string) => void;
 }

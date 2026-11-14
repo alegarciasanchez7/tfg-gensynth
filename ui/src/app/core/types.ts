@@ -1,4 +1,4 @@
-import type { MessageFormat, OutputFolderInfo, ProjectSettings, TickSettings, VariableScope } from '../types';
+import type { Group, MessageFormat, OutputFolderInfo, ProjectSettings, TickSettings, Variable, VariableScope } from '../types';
 
 /**
  * Tipos para la comunicación con el Core Java
@@ -368,8 +368,10 @@ export interface GetLatestConnectorCommandPayload {
 }
 
 export interface ImportStateCommandPayload {
-  groups: any[];
-  variables: any[];
+  /** The groups of the project file, as the UI holds them. */
+  groups: Group[];
+  /** The variables of the project file, as the UI holds them. */
+  variables: Variable[];
   /** Project settings; the Core falls back to the defaults when omitted. */
   settings?: ProjectSettings;
 }
@@ -589,7 +591,7 @@ export interface FlowState {
   port: number;
   template?: string;
   format?: MessageFormat;
-  connectorConfig?: Record<string, any>;
+  connectorConfig?: Record<string, unknown>;
   enabled: boolean;
 }
 

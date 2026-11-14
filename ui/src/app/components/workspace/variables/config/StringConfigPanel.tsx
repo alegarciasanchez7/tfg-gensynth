@@ -504,7 +504,7 @@ export const StringConfigPanel: React.FC<StringConfigPanelProps> = ({
                    <Label htmlFor="alpha-case" className="mb-1 block text-[9px] uppercase text-[var(--c-tx4)]">Case Formatting</Label>
                    <Select
                      value={config.alphanumericCase ?? 'MIXED'}
-                     onValueChange={(val: any) => onChange({ alphanumericCase: val })}
+                     onValueChange={(val) => onChange({ alphanumericCase: val as StringVariableConfig['alphanumericCase'] })}
                    >
                      <SelectTrigger className="bg-[var(--c-bg2)] border-[var(--c-br1)] h-7 text-[10px]">
                        <SelectValue placeholder="Mixed Case" />

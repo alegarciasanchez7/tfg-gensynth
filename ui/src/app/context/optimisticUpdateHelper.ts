@@ -70,24 +70,32 @@ export async function executeOptimisticUpdate(
   }
 }
 
+/** Optimistic payload (the update) and rollback payload (the previous values) of an entity update. */
+export interface UpdatePayloads<T extends { id: string }> {
+  optimistic: Partial<T> & { id: string };
+  rollback: Partial<T> & { id: string };
+}
+
+/** Build the payloads of an update, keeping in the rollback only the fields that change. */
+function createUpdatePayloads<T extends { id: string }>(previousState: T, updates: Partial<T>): UpdatePayloads<T> {
+  const rollbackState: Partial<T> = {};
+  for (const key of Object.keys(updates) as Array<keyof T>) {
+    rollbackState[key] = previousState[key];
+  }
+  return {
+    optimistic: { id: previousState.id, ...updates },
+    rollback: { id: previousState.id, ...rollbackState },
+  };
+}
+
 /**
  * Helper to create optimistic update payload for group updates
  */
 export function createGroupUpdatePayload(
   previousState: Group,
   updates: Partial<Omit<Group, 'id' | 'flows'>>,
-): { optimistic: Partial<Group>; rollback: Partial<Group> } {
-  const rollbackState: Partial<Group> = {};
-  
-  // Only track fields that changed
-  for (const key of Object.keys(updates) as Array<keyof Omit<Group, 'id' | 'flows'>>) {
-    (rollbackState as any)[key] = previousState[key];
-  }
-
-  return {
-    optimistic: { id: previousState.id, ...updates },
-    rollback: { id: previousState.id, ...rollbackState },
-  };
+): UpdatePayloads<Group> {
+  return createUpdatePayloads<Group>(previousState, updates);
 }
 
 /**
@@ -96,18 +104,8 @@ export function createGroupUpdatePayload(
 export function createFlowUpdatePayload(
   previousState: Flow,
   updates: Partial<Omit<Flow, 'id' | 'connectionStatus' | 'throughput' | 'hasError' | 'errorMessage'>>,
-): { optimistic: Partial<Flow>; rollback: Partial<Flow> } {
-  const rollbackState: Partial<Flow> = {};
-  
-  // Only track fields that changed
-  for (const key of Object.keys(updates) as Array<keyof Omit<Flow, 'id' | 'connectionStatus' | 'throughput' | 'hasError' | 'errorMessage'>>) {
-    (rollbackState as any)[key] = previousState[key];
-  }
-
-  return {
-    optimistic: { id: previousState.id, ...updates },
-    rollback: { id: previousState.id, ...rollbackState },
-  };
+): UpdatePayloads<Flow> {
+  return createUpdatePayloads<Flow>(previousState, updates);
 }
 
 /**
@@ -116,16 +114,6 @@ export function createFlowUpdatePayload(
 export function createVariableUpdatePayload(
   previousState: Variable,
   updates: Partial<Omit<Variable, 'id'>>,
-): { optimistic: Partial<Variable>; rollback: Partial<Variable> } {
-  const rollbackState: Partial<Variable> = {};
-  
-  // Only track fields that changed
-  for (const key of Object.keys(updates) as Array<keyof Omit<Variable, 'id'>>) {
-    (rollbackState as any)[key] = previousState[key];
-  }
-
-  return {
-    optimistic: { id: previousState.id, ...updates },
-    rollback: { id: previousState.id, ...rollbackState },
-  };
+): UpdatePayloads<Variable> {
+  return createUpdatePayloads<Variable>(previousState, updates);
 }

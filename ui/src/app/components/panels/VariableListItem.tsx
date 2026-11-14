@@ -1,8 +1,8 @@
-import { Trash2, Binary, ListChecks, ALargeSmall, CalendarClock, MapPin, ToggleLeft, ArrowUpRight } from 'lucide-react';
+import { Trash2, Binary, ListChecks, ALargeSmall, CalendarClock, MapPin, ToggleLeft, ArrowUpRight, type LucideIcon } from 'lucide-react';
 import type { Variable } from '../../types';
 import { useApp } from '../../context';
 
-const typeConfig: Record<string, { icon: any; color: string; bg: string }> = {
+const typeConfig: Record<string, { icon: LucideIcon; color: string; bg: string }> = {
   numeric: { icon: Binary, color: 'text-cyan-500', bg: 'bg-cyan-500/10' },
   list: { icon: ListChecks, color: 'text-violet-500', bg: 'bg-violet-500/10' },
   string: { icon: ALargeSmall, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },

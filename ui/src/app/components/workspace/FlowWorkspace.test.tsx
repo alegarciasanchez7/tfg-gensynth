@@ -79,7 +79,7 @@ describe('FlowWorkspace', () => {
       <FlowWorkspace
         flow={flow}
         group={group}
-        template={undefined as any}
+        template={undefined as unknown as string}
         onTemplateChange={vi.fn()}
       />
     );
@@ -110,9 +110,9 @@ describe('FlowWorkspace', () => {
     
     render(
       <FlowWorkspace
-        flow={flowWithoutTemplate as any}
+        flow={flowWithoutTemplate}
         group={group}
-        template={undefined as any}
+        template={undefined as unknown as string}
         onTemplateChange={vi.fn()}
       />
     );

@@ -4,6 +4,7 @@ import { Input } from '../../../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../components/ui/tabs';
 import type { 
+  Group,
   Variable, 
   VariableConfig, 
   NumericVariableConfig, 
@@ -87,13 +88,13 @@ interface VariableEditorIdentityCardProps {
   draft: VariableDraft;
   setDraft: Dispatch<SetStateAction<VariableDraft>>;
   scopeOptions: VariableEditorScopeOption[];
-  groups: Variable['scope'] extends any ? any[] : any[]; // Simplified for props, but we'll use Group[]
+  groups: Group[];
 }
 
 export function VariableEditorIdentityCard({ draft, setDraft, scopeOptions, groups }: Readonly<VariableEditorIdentityCardProps>) {
   // Flatten flows with group name for the selector
   const allFlows = (groups || []).flatMap(g =>
-    (g.flows || []).map((f: any) => ({
+    (g.flows || []).map(f => ({
       id: f.id,
       name: f.name,
       groupName: g.name,

@@ -15,8 +15,8 @@ export type VariableType =
 export interface ConditionalRule {
   targetVariable: string;
   operator: 'EQUALS' | 'NOT_EQUALS' | 'GREATER_THAN' | 'LESS_THAN' | 'CONTAINS';
-  value: any;
-  overrides: Record<string, any>;
+  value: unknown;
+  overrides: Record<string, unknown>;
 }
 
 /** How a variable that is not a List takes its value from a list (a List cannot inherit from another list). */
@@ -28,7 +28,7 @@ export interface BaseVariableConfig {
   sourceListVariableId?: string;
   sourceListSelectionMode?: ListReferenceSelectionMode;
   selectedListItemId?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface NumericVariableConfig extends BaseVariableConfig {
@@ -102,7 +102,7 @@ export type ListSelectionStrategy = 'WEIGHTED_RANDOM' | 'SEQUENTIAL' | 'SHUFFLE'
 
 export interface ListItemConfig {
   id: string;
-  value?: any;
+  value?: unknown;
   weight?: number;
   isEmbedded?: boolean;
   embeddedType?: VariableType;
@@ -286,7 +286,7 @@ export interface Flow {
   port: number;
   template?: string;
   format?: MessageFormat;
-  connectorConfig?: Record<string, any>;
+  connectorConfig?: Record<string, unknown>;
   connectorVersion?: string;
   enabled: boolean;
 }

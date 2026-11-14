@@ -100,7 +100,7 @@ export async function executeCreateOptimistic<T>(
     const serverEntity = await handlers.send((response: T) => {
       // Synchronously update mapping in manager when response arrives
       if (response && typeof response === 'object' && 'id' in response) {
-        const realId = (response as any).id;
+        const realId = (response as { id?: string }).id;
         if (realId && realId !== context.optimisticId && context.optimisticManager) {
           context.optimisticManager.updateTempIdMapping(commandId, realId);
         }
@@ -109,7 +109,7 @@ export async function executeCreateOptimistic<T>(
 
     // 5. Reconcile UI: replace temp ID with real ID if different
     if (serverEntity && typeof serverEntity === 'object' && 'id' in serverEntity) {
-      const realId = (serverEntity as any).id;
+      const realId = (serverEntity as { id?: string }).id;
       if (realId && realId !== context.optimisticId) {
         // UI Reconcile (dispatch)
         handlers.reconcileId(serverEntity);

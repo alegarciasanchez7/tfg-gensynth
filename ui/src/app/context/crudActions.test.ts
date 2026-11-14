@@ -4,7 +4,7 @@ import type { CRUDActionContext } from './crudActions';
 const send = vi.fn();
 vi.mock('../core/bridge', () => ({ default: { send: (...args: unknown[]) => send(...args) } }));
 
-const { createFlow, createVariable } = await import('./crudActions');
+const { createFlow, createGroup, createVariable } = await import('./crudActions');
 const { createOptimisticFlow } = await import('./createOptimisticHelper');
 
 const context = (connectionMode: CRUDActionContext['connectionMode']): CRUDActionContext => ({
@@ -99,5 +99,33 @@ describe('createOptimisticFlow', () => {
   it('keeps the given values', () => {
     expect(createOptimisticFlow('tmp', { name: 'A', technology: 'file', host: 'h', port: 1, topic: 't', interval: 5, burst: 2, everyTicks: 3 }))
       .toMatchObject({ host: 'h', port: 1, topic: 't', interval: 5, burst: 2, everyTicks: 3 });
+  });
+});
+
+describe('createGroup in mock mode', () => {
+  beforeEach(() => send.mockReset());
+
+  it('stores the new group as a UI group (mapped from the Core shape)', async () => {
+    const ctx = context('mock');
+    const created = await createGroup(ctx, ' Sensors ', ' room 1 ');
+
+    expect(send).not.toHaveBeenCalled();
+    expect(created).toMatchObject({ name: 'Sensors', description: 'room 1', throughput: 0, flows: [] });
+    expect(ctx.dispatch).toHaveBeenCalledWith({
+      type: 'SET_GROUPS',
+      payload: [expect.objectContaining({
+        id: created.id,
+        name: 'Sensors',
+        description: 'room 1',
+        status: 'stopped',
+        throughput: '0 msg/s',
+        threads: 1,
+        outputMode: 'parallel',
+        sequentialOrder: 'flow',
+        enabled: true,
+        expanded: true,
+        flows: [],
+      })],
+    });
   });
 });

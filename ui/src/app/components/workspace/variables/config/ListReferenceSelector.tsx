@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../../../../context';
-import { BaseVariableConfig, ListReferenceSelectionMode, Variable, VariableScope, VariableType } from '../../../../types';
+import type { BaseVariableConfig, Group, ListItemConfig, ListVariableConfig, ListReferenceSelectionMode, Variable, VariableScope, VariableType } from '../../../../types';
 import { Label } from '../../../ui/label';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../../ui/tooltip';
 import { ChevronDown, ChevronRight } from 'lucide-react';
@@ -31,7 +31,8 @@ function itemModeHintFor(selectionMode: ListReferenceSelectionMode, sourceStrate
 
 interface ListReferenceSelectorProps {
   config: BaseVariableConfig;
-  onChange: (newConfig: Record<string, any>) => void;
+  /** Receives only the list reference fields that changed. */
+  onChange: (newConfig: Pick<BaseVariableConfig, 'sourceListVariableId' | 'sourceListSelectionMode' | 'selectedListItemId'>) => void;
   variableScope: VariableScope;
   /** A List variable cannot inherit from another list, so it never shows this selector. */
   variableType: Exclude<VariableType, 'list'>;
@@ -49,7 +50,7 @@ export const ListReferenceSelector: React.FC<ListReferenceSelectorProps> = ({
 }) => {
   const [isExpanded, setIsExpanded] = useState(true);
 
-  let state: any = { variables: [], groups: [], flows: [] };
+  let state: { variables: Variable[]; groups: Group[] } = { variables: [], groups: [] };
   try {
     const appCtx = useApp();
     if (appCtx?.state) {
@@ -61,11 +62,9 @@ export const ListReferenceSelector: React.FC<ListReferenceSelectorProps> = ({
 
   // Find effective groupId:
   // 1. Direct groupId parameter
-  // 2. Lookup flowId in state.flows or state.groups to resolve its groupId
-  const foundFlow = flowId ? (state.flows || []).find((f: any) => f.id === flowId) : undefined;
-  const flowGroupId = foundFlow?.groupId;
-  const groupFromFlows = flowId ? (state.groups || []).find((g: any) => (g.flows || []).some((f: any) => f.id === flowId))?.id : undefined;
-  const effectiveGroupId = groupId || flowGroupId || groupFromFlows;
+  // 2. Lookup flowId in state.groups to resolve its groupId
+  const groupFromFlows = flowId ? (state.groups || []).find(g => (g.flows || []).some(f => f.id === flowId))?.id : undefined;
+  const effectiveGroupId = groupId || groupFromFlows;
 
   // Compute list variables that are accessible based on scope hierarchy rules:
   // - Global lists: Accessible to any variable (Global, Group, Local)
@@ -97,12 +96,12 @@ export const ListReferenceSelector: React.FC<ListReferenceSelectorProps> = ({
   const selectedList = accessibleListVariables.find((v: Variable) => v.id === config.sourceListVariableId || v.name === config.sourceListVariableId);
 
   // Get items of selected list
-  const listItems: any[] = selectedList?.config?.items || [];
+  const listItems: ListItemConfig[] = (selectedList?.config as ListVariableConfig | undefined)?.items || [];
 
   // Filter items compatible with target variable type according to rules:
   // - Literal items (isEmbedded == false): Treated as string
   // - Dynamic items (isEmbedded == true): Classified by explicit embeddedType
-  const compatibleItems = listItems.filter((item: any) => {
+  const compatibleItems = listItems.filter(item => {
     if (variableType === 'string') {
       return !item.isEmbedded || item.embeddedType === 'string';
     }
@@ -111,7 +110,7 @@ export const ListReferenceSelector: React.FC<ListReferenceSelectorProps> = ({
 
   const selectionMode: ListReferenceSelectionMode = config.sourceListSelectionMode || 'RANDOM_ITEM';
   // Same default as the List editor and the Core
-  const sourceStrategy: string = selectedList?.config?.selectionStrategy || 'WEIGHTED_RANDOM';
+  const sourceStrategy: string = (selectedList?.config as ListVariableConfig | undefined)?.selectionStrategy || 'WEIGHTED_RANDOM';
   const itemModeHint = itemModeHintFor(selectionMode, sourceStrategy);
 
   const disableListReference = () => {
@@ -196,7 +195,7 @@ export const ListReferenceSelector: React.FC<ListReferenceSelectorProps> = ({
               <option value="" disabled>-- Select a list --</option>
               {accessibleListVariables.map((v: Variable) => (
                 <option key={v.id} value={v.id}>
-                  {v.name} ({v.scope.toUpperCase()}) - {v.config?.items?.length || 0} items
+                  {v.name} ({v.scope.toUpperCase()}) - {(v.config as ListVariableConfig).items?.length || 0} items
                 </option>
               ))}
             </select>
@@ -240,9 +239,9 @@ export const ListReferenceSelector: React.FC<ListReferenceSelectorProps> = ({
                     className="w-full h-8 rounded border border-[var(--c-br2)] bg-[var(--c-bg2)] px-2 py-1 text-xs text-[var(--c-tx1)] font-mono outline-none focus:border-violet-500"
                   >
                     <option value="" disabled>-- Select an item --</option>
-                    {compatibleItems.map((item: any) => (
+                    {compatibleItems.map(item => (
                       <option key={item.id} value={item.id}>
-                        {item.value || item.id} ({item.isEmbedded ? `Dynamic: ${item.embeddedType}` : 'Literal String'})
+                        {(item.value as string | number | undefined) || item.id} ({item.isEmbedded ? `Dynamic: ${item.embeddedType}` : 'Literal String'})
                       </option>
                     ))}
                   </select>

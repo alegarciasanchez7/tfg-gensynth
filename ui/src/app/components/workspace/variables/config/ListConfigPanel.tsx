@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback } from 'react';
-import { ListVariableConfig, ListItemConfig, ListSelectionStrategy, VariableType } from '../../../../types';
+import type { BooleanVariableConfig, ListVariableConfig, ListItemConfig, ListSelectionStrategy, NumericVariableConfig, StringVariableConfig, TemporalVariableConfig, VariableConfig, VariableType } from '../../../../types';
 import { Input } from '../../../ui/input';
 import { Label } from '../../../ui/label';
 import { Button } from '../../../ui/button';
@@ -108,7 +108,7 @@ const EmbeddedSubGeneratorPanel = React.memo<{
   const subType = item.embeddedType || 'numeric';
   const subConfig = item.embeddedConfig || {};
 
-  const handleSubConfigChange = useCallback((newSubConfig: any) => {
+  const handleSubConfigChange = useCallback((newSubConfig: Partial<VariableConfig>) => {
     onItemChange(index, {
       embeddedConfig: { ...subConfig, ...newSubConfig }
     });
@@ -116,15 +116,15 @@ const EmbeddedSubGeneratorPanel = React.memo<{
 
   switch (subType) {
     case 'numeric':
-      return <NumericConfigPanel config={subConfig as any} onChange={handleSubConfigChange} flowId={flowId} groupId={groupId} inListItem />;
+      return <NumericConfigPanel config={subConfig as NumericVariableConfig} onChange={handleSubConfigChange} flowId={flowId} groupId={groupId} inListItem />;
     case 'string':
-      return <StringConfigPanel config={subConfig as any} onChange={handleSubConfigChange} inListItem />;
+      return <StringConfigPanel config={subConfig as StringVariableConfig} onChange={handleSubConfigChange} inListItem />;
     case 'boolean':
-      return <BooleanConfigPanel config={subConfig as any} onChange={handleSubConfigChange} inListItem />;
+      return <BooleanConfigPanel config={subConfig as BooleanVariableConfig} onChange={handleSubConfigChange} inListItem />;
     case 'temporal':
-      return <TemporalConfigPanel config={subConfig as any} onChange={handleSubConfigChange} inListItem />;
+      return <TemporalConfigPanel config={subConfig as TemporalVariableConfig} onChange={handleSubConfigChange} inListItem />;
     default:
-      return <NumericConfigPanel config={subConfig as any} onChange={handleSubConfigChange} flowId={flowId} groupId={groupId} inListItem />;
+      return <NumericConfigPanel config={subConfig as NumericVariableConfig} onChange={handleSubConfigChange} flowId={flowId} groupId={groupId} inListItem />;
   }
 });
 EmbeddedSubGeneratorPanel.displayName = 'EmbeddedSubGeneratorPanel';
@@ -357,7 +357,7 @@ export const ListConfigPanel: React.FC<ListConfigPanelProps> = ({
                       <Input
                         className="flex-1 h-8 text-xs font-mono"
                         placeholder="Value (Literal)"
-                        value={val}
+                        value={val as string | number}
                         onChange={(e) => handleItemChange(localIdx, { value: e.target.value })}
                       />
                     ) : (

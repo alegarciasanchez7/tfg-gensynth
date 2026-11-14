@@ -329,7 +329,7 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
     if (config.integerFormat !== undefined && config.integerFormat !== integerFormatStr) setIntegerFormatStr(config.integerFormat ?? '');
   }, [config.integerFormat]);
 
-  const handlePatternChange = (newPattern: any) => {
+  const handlePatternChange = (newPattern: string) => {
     const updates: Partial<NumericVariableConfig> = { pattern: newPattern };
 
     if (newPattern === 'SEQUENTIAL' && (!config.sequentialGraph || config.sequentialGraph.length === 0)) {
@@ -455,7 +455,7 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
                 <CustomDropdown
                   id="numeric-precision"
                   value={precision === 'DOUBLE' ? 'FLOAT' : precision}
-                  onChange={(val) => onChange({ precision: val as any })}
+                  onChange={(val) => onChange({ precision: val as NumericVariableConfig['precision'] })}
                   options={[
                     { value: 'INTEGER', label: 'Integer' },
                     { value: 'FLOAT', label: 'Float' }
@@ -573,7 +573,7 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
           <CustomDropdown
             id="numeric-pattern"
             value={pattern}
-            onChange={(val) => handlePatternChange(val as any)}
+            onChange={(val) => handlePatternChange(val)}
             options={[
               { value: 'RANDOM', label: 'Random' },
               { value: 'CONSTANT', label: 'Constant' },
@@ -663,7 +663,7 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
                 <CustomDropdown
                   id="numeric-dist-type"
                   value={distributionType}
-                  onChange={(val) => onChange({ distributionType: val as any })}
+                  onChange={(val) => onChange({ distributionType: val as NumericVariableConfig['distributionType'] })}
                   options={[
                     { value: 'UNIFORM', label: 'Uniform' },
                     { value: 'NORMAL', label: 'Normal / Gaussian' },
@@ -945,7 +945,7 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
                 <CustomDropdown
                   id="drift-limit-mode"
                   value={config.driftLimitMode ?? 'CLAMP'}
-                  onChange={(val) => onChange({ driftLimitMode: val as any })}
+                  onChange={(val) => onChange({ driftLimitMode: val as NumericVariableConfig['driftLimitMode'] })}
                   options={[
                     { value: 'CLAMP', label: 'CLAMP (Freeze at min/max limit)' },
                     { value: 'WRAP', label: 'WRAP / RESET (Reset to opposite extreme)' },
@@ -1011,7 +1011,7 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
                   <CustomDropdown
                     id="noise-type"
                     value={config.noiseType ?? 'GAUSSIAN'}
-                    onChange={(val) => onChange({ noiseType: val as any })}
+                    onChange={(val) => onChange({ noiseType: val as NumericVariableConfig['noiseType'] })}
                     options={[
                       { value: 'GAUSSIAN', label: 'Gaussian Noise (N(0, σ²))' },
                       { value: 'UNIFORM', label: 'Uniform Jitter (± Noise)' }
@@ -1102,7 +1102,7 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
                   <CustomDropdown
                     id="spike-mode"
                     value={config.spikeMode ?? 'FIXED_OFFSET'}
-                    onChange={(val) => onChange({ spikeMode: val as any })}
+                    onChange={(val) => onChange({ spikeMode: val as NumericVariableConfig['spikeMode'] })}
                     options={[
                       { value: 'FIXED_OFFSET', label: 'Fixed Offset (± Mag)' },
                       { value: 'RANGE_SPIKE', label: 'Critical Range (Min..Max)' },

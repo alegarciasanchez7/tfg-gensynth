@@ -7,7 +7,7 @@ import type {
   Variable,
   VariableConfig,
 } from '../../types';
-import { formulaDependencies } from '../actions/startValidation';
+import { formulaDependencies, formulaOf } from '../actions/startValidation';
 
 export interface ValidationErrors {
   [field: string]: string;
@@ -94,7 +94,7 @@ function validateNumeric(config: NumericVariableConfig, errors: ValidationErrors
 function validateList(config: ListVariableConfig, errors: ValidationErrors): void {
   if (!config.items || config.items.length === 0) return;
   const hasNegativeWeight = config.items.some(
-    (item: any) => typeof item === 'object' && item !== null && item.weight < 0
+    item => typeof item === 'object' && item !== null && (item.weight ?? 0) < 0
   );
   if (hasNegativeWeight) {
     errors.items = 'Weights cannot be negative';
@@ -108,8 +108,8 @@ function validateString(config: StringVariableConfig, errors: ValidationErrors):
   if (config.regexPattern) {
     try {
       new RegExp(config.regexPattern);
-    } catch (e: any) {
-      errors.regexPattern = `Invalid regular expression: ${e.message}`;
+    } catch (e) {
+      errors.regexPattern = `Invalid regular expression: ${(e as Error).message}`;
     }
   }
 }
@@ -194,7 +194,7 @@ function detectCycle(
     if (v.id === currentVarId) {
       adjList.set(v.name, getDependencies(formula));
     } else {
-      adjList.set(v.name, getDependencies((v.config as any).formula));
+      adjList.set(v.name, getDependencies(formulaOf(v.config)));
     }
   }
 

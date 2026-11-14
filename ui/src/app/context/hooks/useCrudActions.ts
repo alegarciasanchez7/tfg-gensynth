@@ -2,12 +2,12 @@ import { useCallback, useMemo } from 'react';
 import { toast } from 'sonner';
 import { CoreCommands } from '../../core/bridge';
 import type { GroupState, FlowState, VariableState } from '../../core/types';
-import type { Group, Flow, Variable, VariableType, VariableScope } from '../../types';
+import type { Variable, VariableType, VariableScope } from '../../types';
 import type { AppState, AppAction } from '../reducer';
 import { mapFlowFromCore, mapGroupFromCore, reorderFlows } from '../helpers/groupHelpers';
 import * as CRUDActions from '../crudActions';
 import type { CRUDActionContext } from '../crudActions';
-import type { CreateFlowOptions } from '../crudTypes';
+import type { CreateFlowOptions, FlowConfigUpdate, GroupConfigUpdate } from '../crudTypes';
 import { normalizeVariableFromCore } from '../variableNormalization';
 import type { OptimisticManager } from '../optimisticManager';
 import { 
@@ -147,7 +147,7 @@ export function useCrudActions({
   }, [crudContext, state.groups, reportCommandError, dispatch, optimisticManager]);
 
   const updateGroupConfig = useCallback(
-    async (groupId: string, config: Partial<Omit<Group, 'id' | 'flows'>>, name?: string) => {
+    async (groupId: string, config: GroupConfigUpdate, name?: string) => {
       const previousGroup = state.groups.find(g => g.id === groupId);
       if (!previousGroup) {
         throw new Error(`Group ${groupId} not found`);
@@ -167,13 +167,13 @@ export function useCrudActions({
             applyOptimistic: () => {
               dispatch({
                 type: 'UPDATE_GROUP',
-                payload: optimisticPayload as any,
+                payload: optimisticPayload,
               });
             },
             rollback: () => {
               dispatch({
                 type: 'UPDATE_GROUP',
-                payload: rollbackPayload as any,
+                payload: rollbackPayload,
               });
             },
             send: () => CRUDActions.updateGroupConfig(crudContext, groupId, config, name),
@@ -352,7 +352,7 @@ export function useCrudActions({
   const updateFlowConfig = useCallback(async (
     groupId: string,
     flowId: string,
-    config: Partial<Omit<Flow, 'id' | 'connectionStatus' | 'throughput' | 'hasError' | 'errorMessage'>> & { template?: string },
+    config: FlowConfigUpdate,
   ) => {
     const group = state.groups.find(g => g.id === groupId);
     const flow = group?.flows.find(f => f.id === flowId);
@@ -362,7 +362,7 @@ export function useCrudActions({
     }
 
     const { optimistic: optimisticPayload, rollback: rollbackPayload } = 
-      createFlowUpdatePayload(flow, config as any);
+      createFlowUpdatePayload(flow, config);
 
     try {
       await executeOptimisticUpdate(

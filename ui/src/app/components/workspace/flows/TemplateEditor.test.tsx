@@ -63,7 +63,7 @@ describe('TemplateEditor', () => {
 
   it('replaces partial variable tag cleanly when registered editor callback is invoked', () => {
     let registeredCallback: ((name: string, scope?: string) => void) | null = null;
-    mockActions.registerTemplateEditor.mockImplementation((cb: any) => {
+    mockActions.registerTemplateEditor.mockImplementation((cb: (name: string, scope?: string) => void) => {
       registeredCallback = cb;
     });
 

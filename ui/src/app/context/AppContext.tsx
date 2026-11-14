@@ -17,7 +17,6 @@ import React, {
 import { CoreCommands } from '../core/bridge';
 import type {
   Group,
-  Flow,
   VariableType,
   VariableScope,
   Variable,
@@ -44,7 +43,7 @@ import { useCrudActions } from './hooks/useCrudActions';
 import { useBridgeSubscriptions } from './hooks/useBridgeSubscriptions';
 import { useAutoSave } from './hooks/useAutoSave';
 import { findInvalidItemReference } from './helpers/itemReferenceValidation';
-import type { CreateFlowHandler } from './crudTypes';
+import type { CreateFlowHandler, FlowConfigUpdate, GroupConfigUpdate } from './crudTypes';
 
 // ─────────────────────────────────────────────────────────────
 // Context Value Interface
@@ -99,7 +98,7 @@ interface AppContextValue {
     // Groups: CRUD
     createGroup: (name: string, description?: string) => Promise<Group>;
     deleteGroup: (groupId: string) => Promise<void>;
-    updateGroupConfig: (groupId: string, config: Partial<Omit<Group, 'id' | 'flows'>>, name?: string) => Promise<void>;
+    updateGroupConfig: (groupId: string, config: GroupConfigUpdate, name?: string) => Promise<void>;
     /** Changes the order of a group's flows (the order of the messages of a sequential group). */
     reorderGroupFlows: (groupId: string, flowIds: string[]) => Promise<void>;
     cloneGroup: (groupId: string, count: number, namingPattern?: string) => void;
@@ -110,7 +109,7 @@ interface AppContextValue {
     updateFlowConfig: (
       groupId: string,
       flowId: string,
-      config: Partial<Omit<Flow, 'id' | 'connectionStatus' | 'throughput' | 'hasError' | 'errorMessage'>> & { template?: string },
+      config: FlowConfigUpdate,
     ) => Promise<void>;
     cloneFlow: (groupId: string, flowId: string, count: number, namingPattern?: string) => void;
     

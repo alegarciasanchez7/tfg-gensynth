@@ -250,7 +250,14 @@ export interface BridgeError {
  * Normalize a backend error to the BridgeError schema.
  * Classify as TRANSPORT, TIMEOUT, VALIDATION, CONFLICT, BUSINESS, or UNKNOWN.
  */
-export function normalizeBridgeError(rawPayload: any): BridgeError {
+/** The error fields of a Core response payload (any of them may be missing). */
+export interface RawBridgeError {
+  code?: string;
+  message?: string;
+  details?: Record<string, unknown>;
+}
+
+export function normalizeBridgeError(rawPayload: RawBridgeError | null | undefined): BridgeError {
   const code = rawPayload?.code || 'UNKNOWN';
   const message = rawPayload?.message || 'Unknown error';
 

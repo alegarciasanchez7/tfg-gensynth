@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateActio
 import { Binary, ListChecks, ALargeSmall, CalendarClock, MapPin, ToggleLeft } from 'lucide-react';
 import { toast } from 'sonner';
 import { useApp } from '../../../context';
-import type { Variable } from '../../../types';
+import type { NumericVariableConfig, Variable } from '../../../types';
 import { useVariableValidation } from '../../../context/hooks/useVariableValidation';
 import { findVariableNameConflict } from '../../../core/variableNames';
 
@@ -272,8 +272,9 @@ export function useVariableEditor(variable: Variable) {
       if (identityIssue) errors.name = identityIssue;
       
       let cycle: string[] | null = null;
-      if (draft.type === 'numeric' && parsedConfig.formula) {
-        cycle = detectCycle(variablesList, variable.id, draft.name, parsedConfig.formula);
+      const formula = (parsedConfig as NumericVariableConfig).formula;
+      if (draft.type === 'numeric' && formula) {
+        cycle = detectCycle(variablesList, variable.id, draft.name, formula);
       }
       return { errors, cycle, isJsonValid: true };
     } catch {

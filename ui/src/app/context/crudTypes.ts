@@ -3,7 +3,13 @@
  * that call them (instead of long positional parameter lists).
  */
 
-import type { Flow, VariableScope, VariableType } from '../types';
+import type { Flow, Group, VariableScope, VariableType } from '../types';
+
+/** Fields of a group that an update may change. */
+export type GroupConfigUpdate = Partial<Omit<Group, 'id' | 'flows'>>;
+
+/** Fields of a flow that an update may change (runtime metrics are owned by the Core). */
+export type FlowConfigUpdate = Partial<Omit<Flow, 'id' | 'connectionStatus' | 'throughput' | 'hasError' | 'errorMessage'>> & { template?: string };
 
 /** What a new flow is created with. Only `name` and `technology` are validated as required. */
 export interface CreateFlowOptions {

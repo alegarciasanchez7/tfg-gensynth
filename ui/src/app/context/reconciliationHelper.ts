@@ -31,8 +31,8 @@ export interface ReconciliationResult {
   conflicts: Array<{
     resourceId: string;
     type: 'group' | 'variable';
-    localValue: any;
-    serverValue: any;
+    localValue: unknown;
+    serverValue: unknown;
   }>;
 }
 

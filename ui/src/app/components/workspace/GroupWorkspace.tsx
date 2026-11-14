@@ -9,6 +9,7 @@ import { Button } from '../ui/button';
 import { formatRate, groupRate } from '../../core/metricsFormat';
 import { commandErrorMessage } from '../../core/errorMessage';
 import { normalizeGroupStatus } from '../../core/entityStatus';
+import type { GroupConfigUpdate } from '../../context/crudTypes';
 
 function EditableField({
   label,
@@ -141,7 +142,7 @@ export function GroupWorkspace({ group }: Readonly<GroupWorkspaceProps>) {
     paused:  { color: 'text-amber-500',   bg: 'bg-amber-500/10 border-amber-500/40',    label: 'PAUSED' },
   }[normalizeGroupStatus(group.status)];
 
-  const handleUpdate = (updates: Partial<Omit<Group, 'id' | 'flows'>>) => {
+  const handleUpdate = (updates: GroupConfigUpdate) => {
     actions.updateGroupConfig(group.id, updates, group.name);
   };
 

@@ -41,7 +41,7 @@ import { CreateFlowDialog } from './CreateFlowDialog';
 import { formatRate, groupRate } from '../../../../core/metricsFormat';
 import { commandErrorMessage } from '../../../../core/errorMessage';
 import { normalizeGroupStatus } from '../../../../core/entityStatus';
-import type { CreateFlowHandler } from '../../../../context/crudTypes';
+import type { CreateFlowHandler, FlowConfigUpdate, GroupConfigUpdate } from '../../../../context/crudTypes';
 
 interface GroupItemProps {
   group: Group;
@@ -52,8 +52,8 @@ interface GroupItemProps {
   onToggleGroup: (id: string) => void;
   onDeleteGroup: (groupId: string) => Promise<void>;
   onCreateFlow: CreateFlowHandler;
-  onUpdateGroupConfig: (groupId: string, config: any, name?: string) => Promise<void>;
-  onUpdateFlowConfig: (groupId: string, flowId: string, config: any, name?: string) => Promise<void>;
+  onUpdateGroupConfig: (groupId: string, config: GroupConfigUpdate, name?: string) => Promise<void>;
+  onUpdateFlowConfig: (groupId: string, flowId: string, config: FlowConfigUpdate, name?: string) => Promise<void>;
   onCloneGroup: (groupId: string, count: number, namingPattern?: string) => void;
   onCloneFlow: (groupId: string, flowId: string, count: number, namingPattern?: string) => void;
   onDeleteFlow: (groupId: string, flowId: string) => Promise<void>;

@@ -1,4 +1,4 @@
-import type { ListItemConfig, Variable, VariableType } from '../../../types';
+import type { ListItemConfig, ListVariableConfig, PointVariableConfig, Variable, VariableType } from '../../../types';
 import { SYSTEM_PLACEHOLDERS } from '../../../core/templatePlaceholders';
 
 /** An entry of the template autocomplete. */
@@ -48,7 +48,7 @@ function itemOrderIndex(orderMap: Map<string, number>, item: { id: string; value
 
 /** Items of a list in the order it generates them (a list only has its own items). */
 export function getEffectiveListItems(v: Variable): Array<{ id: string; label: string }> {
-  const config = v.config || {};
+  const config: ListVariableConfig = v.config || {};
   const rawItems: readonly unknown[] = config.items || [];
   const combined = rawItems.map((item, idx) => {
     if (typeof item === 'object' && item !== null) {
@@ -191,7 +191,8 @@ function pointOptions(v: Variable): AutocompleteOption[] {
     { name: v.name, scope: v.scope, detail: 'Full Point Object' },
     ...propertyOptions(v, pointCoordinateProperties(v.config)),
   ];
-  if (v.config?.pattern === 'GRAPH_ROUTE' || (v.config?.graphNodes && v.config.graphNodes.length > 0)) {
+  const config: PointVariableConfig | undefined = v.config;
+  if (config?.pattern === 'GRAPH_ROUTE' || (config?.graphNodes && config.graphNodes.length > 0)) {
     options.push(...propertyOptions(v, GRAPH_PROPERTIES));
   }
   return options;

@@ -73,7 +73,7 @@ export function createOperationLog(
   return {
     id: `op_${operation.resourceId}_${Date.now()}`,
     timestamp,
-    level: levelMap[operation.state] as any,
+    level: levelMap[operation.state],
     source: operation.resourceType.toUpperCase(),
     message,
   };
@@ -164,13 +164,13 @@ export function createReconciliationLog(
   if (failureCount > 0) parts.push(`${failureCount} failed`);
   if (conflictCount > 0) parts.push(`${conflictCount} conflicts`);
 
-  const level = failureCount > 0 || conflictCount > 0 ? 'warn' : 'info';
+  const level: LogEntry['level'] = failureCount > 0 || conflictCount > 0 ? 'warn' : 'info';
   const message = `State reconciliation: ${parts.join(', ')}`;
 
   return {
     id: `reconcile_${Date.now()}`,
     timestamp,
-    level: level as any,
+    level,
     source: 'RECONCILIATION',
     message,
   };

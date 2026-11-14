@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Variable, VariableConfig } from '../../../types';
-import { formulaDependencies, hasFormulaCycleFrom, hasPreStartErrors } from './preStartCheck';
+import { hasFormulaCycleFrom, hasPreStartErrors } from './preStartCheck';
+import { formulaDependencies } from '../../../context/actions/startValidation';
 
 function numeric(name: string, config: VariableConfig = {}): Variable {
   return { id: `id-${name}`, name, type: 'numeric', scope: 'global', config };
