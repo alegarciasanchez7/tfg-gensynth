@@ -127,11 +127,12 @@ if defined PARSED_MAJOR for /f "delims=0123456789" %%x in ("%PARSED_MAJOR%") do 
 exit /b 0
 
 :find_jdk
-rem Looks for the newest JDK %MIN_JAVA% or newer in the folders where the usual installers put it
+rem Looks for the oldest JDK %MIN_JAVA% or newer (the closest to the JDK of the CI: a newer one may
+rem break tests, as JDK 25 does with Mockito) in the folders where the usual installers put it
 rem (Oracle, Adoptium/Temurin, Microsoft, Zulu, Corretto, Liberica, Semeru) and in the ones of
 rem IntelliJ IDEA and Scoop. Sets FOUND_JDK (empty when there is none) and FOUND_MAJOR.
 set "FOUND_JDK="
-set "FOUND_MAJOR=0"
+set "FOUND_MAJOR="
 for %%R in (
     "%ProgramFiles%\Java"
     "%ProgramFiles%\Eclipse Adoptium"
@@ -149,7 +150,7 @@ for %%R in (
 exit /b 0
 
 :jdk_candidate
-rem Keeps %1 in FOUND_JDK when it is a JDK (not a JRE) newer than the one found so far. Scoop
+rem Keeps %1 in FOUND_JDK when it is a JDK (not a JRE) older than the one found so far. Scoop
 rem keeps each JDK in apps\<name>\current. The version comes from the "release" file of the JDK.
 set "CANDIDATE=%~1"
 if not exist "%CANDIDATE%\bin\javac.exe" if exist "%CANDIDATE%\current\bin\javac.exe" set "CANDIDATE=%CANDIDATE%\current"
@@ -161,7 +162,7 @@ for /f "usebackq tokens=1,* delims==" %%k in ("%CANDIDATE%\release") do if "%%k"
 call :parse_major "%CANDIDATE_VERSION%"
 if not defined PARSED_MAJOR exit /b 0
 if %PARSED_MAJOR% LSS %MIN_JAVA% exit /b 0
-if %PARSED_MAJOR% LEQ %FOUND_MAJOR% exit /b 0
+if defined FOUND_MAJOR if %PARSED_MAJOR% GEQ %FOUND_MAJOR% exit /b 0
 set "FOUND_JDK=%CANDIDATE%"
 set "FOUND_MAJOR=%PARSED_MAJOR%"
 exit /b 0

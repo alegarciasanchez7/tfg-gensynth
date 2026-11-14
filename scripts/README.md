@@ -33,6 +33,13 @@ say where to get them). The `package` script also needs `rpmbuild`/`dpkg-deb` on
 WiX Toolset 3 on Windows, and the [GitHub CLI](https://cli.github.com) (`gh auth login`) to build
 for other systems.
 
+**Which JDK:** the one of `JAVA_HOME` when it is set (the same one the Maven Wrapper uses), else
+the `java` on the PATH. When neither is a JDK 21 or newer, the scripts look in the usual install
+folders (`/usr/lib/jvm`, `/Library/Java/JavaVirtualMachines`, Homebrew, SDKMAN!, `C:\Program Files`,
+the JDKs of IntelliJ IDEA, Scoop...) and use the oldest JDK 21 or newer they find, the closest to
+the JDK 21 of the CI (a newer one may break tests: JDK 25 does with Mockito). They say which one
+they took; set `JAVA_HOME` to choose another.
+
 ## Scripts
 
 | Script | What it asks (or its options) |
@@ -101,12 +108,19 @@ The `run-*` scripts start GenSynth from `core/`, where it keeps its state, logs,
 outputs in development (see `AppPaths`). Its classpath is the compiled classes of every module
 (`core`, `plugin-api`, `connectors/rabbitmq`) plus the external libraries, which every build copies
 again to `core/target/dev-lib`. So a change in the plugin API is picked up without `install`, and a
-stale or missing `core/target/dependency` (VS Code may rebuild `core/target` on its own) never
-breaks a run. The same short classpath works on every OS:
+stale or missing `core/target/dependency` never breaks a run. The same short classpath works on
+every OS (with `;` instead of `:` on Windows):
 
 ```text
 target/classes:../plugin-api/target/classes:../connectors/rabbitmq/target/classes:target/dev-lib/*
 ```
+
+VS Code (and Eclipse) compile into `target/ide` instead: the `ide` profile of the `pom.xml` files,
+active only inside the IDE (m2e sets `m2e.version`), moves their output there, because their
+automatic build empties its output folder while it rebuilds and a run from `target/classes` then
+failed with `NoClassDefFoundError`. So `target/classes` only changes with Maven or the scripts:
+after editing in the IDE, compile with a script (or let `run-*` compile, the default) before a
+`--no-build` run.
 
 In the command line started by `run-cli`, relative paths start at `core/` (absolute paths and `~`
 work anywhere). `run-desktop` turns a relative file passed to it into an absolute path.

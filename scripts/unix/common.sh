@@ -139,12 +139,13 @@ jdk_major() {
     version_major "$(tr -d '\r' < "$1/release" | sed -n 's/^JAVA_VERSION="\(.*\)"$/\1/p' | head -n 1)"
 }
 
-# Prints the newest JDK $MIN_JAVA or newer found in the folders where the usual installers put
-# it, or nothing. Linux: the system packages (/usr/lib/jvm), Oracle's RPM (/usr/java) and /opt.
+# Prints the oldest JDK $MIN_JAVA or newer found in the folders where the usual installers put
+# it (the closest to the JDK of the CI: a newer one may break tests, as JDK 25 does with Mockito),
+# or nothing. Linux: the system packages (/usr/lib/jvm), Oracle's RPM (/usr/java) and /opt.
 # macOS: java_home, the installers (/Library/Java/JavaVirtualMachines) and Homebrew. Both, and
 # Windows with Git Bash: SDKMAN!, asdf, mise and the JDKs downloaded by IntelliJ IDEA.
 find_jdk() {
-    local candidates=() root dir major best="" best_major=0
+    local candidates=() root dir major best="" best_major=
     if [ -x /usr/libexec/java_home ]; then
         dir="$(/usr/libexec/java_home -v "$MIN_JAVA+" 2>/dev/null || true)"
         [ -z "$dir" ] || candidates+=("$dir")
@@ -171,7 +172,8 @@ find_jdk() {
     fi
     for dir in ${candidates[@]+"${candidates[@]}"}; do
         major="$(jdk_major "$dir")"
-        [ -n "$major" ] && [ "$major" -ge "$MIN_JAVA" ] && [ "$major" -gt "$best_major" ] || continue
+        [ -n "$major" ] && [ "$major" -ge "$MIN_JAVA" ] || continue
+        [ -z "$best_major" ] || [ "$major" -lt "$best_major" ] || continue
         best="$dir"
         best_major="$major"
     done
