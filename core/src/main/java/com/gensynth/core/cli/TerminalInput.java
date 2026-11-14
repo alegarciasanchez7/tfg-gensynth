@@ -112,10 +112,8 @@ final class TerminalInput implements CliShell.LineSource, CliShell.Screen, Close
                 if (e.getPartialLine().isEmpty()) {
                     return null;
                 }
-            } catch (EndOfFileException e) {
-                return null;
-            } catch (IOError e) {
-                // The terminal went away (window closed, connection lost): end as with Ctrl + D
+            } catch (EndOfFileException | IOError e) {
+                // Ctrl + D, or the terminal went away (window closed, connection lost)
                 return null;
             }
         }

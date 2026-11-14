@@ -40,6 +40,7 @@ public class DesktopLauncher implements IDesktopLauncher {
 
     private static final long ANSWER_TIMEOUT_MILLIS = 2000;
     private static final String MAIN_CLASS = "com.gensynth.core.App";
+    private static final String WINDOWS = "windows";
     /** Where Linux distributions install setsid (util-linux). */
     private static final List<String> SETSID_PATHS = List.of("/usr/bin/setsid", "/bin/setsid");
 
@@ -125,7 +126,7 @@ public class DesktopLauncher implements IDesktopLauncher {
     static List<String> command(String cliLauncher, String osName, String javaHome, List<String> jvmArgs,
                                 String classPath, String setsid, String openFile) {
         String os = osName.toLowerCase(Locale.ROOT);
-        boolean windows = os.startsWith("windows");
+        boolean windows = os.startsWith(WINDOWS);
         List<String> args = new ArrayList<>();
         // It needs --desktop explicitly: any argument replaces the launcher's default ones
         args.add("--desktop");
@@ -186,7 +187,7 @@ public class DesktopLauncher implements IDesktopLauncher {
         } catch (IOException e) {
             // Not there (e.g. in the tests): use it as given
         }
-        boolean windows = osName.toLowerCase(Locale.ROOT).startsWith("windows");
+        boolean windows = osName.toLowerCase(Locale.ROOT).startsWith(WINDOWS);
         return cli.resolveSibling(windows ? "GenSynth.exe" : "GenSynth");
     }
 
@@ -195,7 +196,7 @@ public class DesktopLauncher implements IDesktopLauncher {
             .redirectOutput(ProcessBuilder.Redirect.DISCARD)
             .redirectError(ProcessBuilder.Redirect.DISCARD)
             .redirectInput(ProcessBuilder.Redirect.from(new File(
-                System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("windows") ? "NUL" : "/dev/null")));
+                System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith(WINDOWS) ? "NUL" : "/dev/null")));
         // Not waited for: the window lives on its own
         builder.start();
     }

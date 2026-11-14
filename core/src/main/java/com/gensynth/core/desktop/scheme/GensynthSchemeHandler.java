@@ -17,6 +17,8 @@ import java.net.URLConnection;
  */
 public class GensynthSchemeHandler extends CefResourceHandlerAdapter {
     private static final Logger logger = LoggerFactory.getLogger(GensynthSchemeHandler.class);
+    /** Classpath resource served for the root of the site and for folders. */
+    private static final String INDEX_RESOURCE = "/ui/index.html";
     
     private byte[] data;
     private String mimeType;
@@ -30,7 +32,7 @@ public class GensynthSchemeHandler extends CefResourceHandlerAdapter {
         // Normalize path: http://gensynth.local/index.html -> /ui/index.html
         String path = url.replace("http://gensynth.local/", "/ui/");
         if (url.equals("http://gensynth.local/") || url.equals("http://gensynth.local") || path.endsWith("/")) {
-            path = "/ui/index.html";
+            path = INDEX_RESOURCE;
         }
 
         try (InputStream is = getClass().getResourceAsStream(path)) {

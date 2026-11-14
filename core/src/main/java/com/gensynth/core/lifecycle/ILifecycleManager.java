@@ -37,9 +37,9 @@ public interface ILifecycleManager {
      * - Acquires state lock
      *
      * @throws IllegalStateException if not in CREATED state
-     * @throws Exception if any listener initialization fails
+     * @throws LifecycleException if any listener initialization fails
      */
-    void initialize() throws Exception;
+    void initialize() throws LifecycleException;
 
     /**
      * Start the application.
@@ -50,9 +50,9 @@ public interface ILifecycleManager {
      * - Calls onStart() for all listeners
      *
      * @throws IllegalStateException if not in INITIALIZED state
-     * @throws Exception if any listener startup fails
+     * @throws LifecycleException if any listener startup fails
      */
-    void start() throws Exception;
+    void start() throws LifecycleException;
 
     /**
      * Stop the application gracefully.
@@ -65,9 +65,9 @@ public interface ILifecycleManager {
      *
      * Status: Safe to call multiple times (idempotent)
      *
-     * @throws Exception if shutdown fails (non-blocking)
+     * @throws LifecycleException if shutdown fails (non-blocking)
      */
-    void stop() throws Exception;
+    void stop() throws LifecycleException;
 
     /**
      * Register a lifecycle listener.

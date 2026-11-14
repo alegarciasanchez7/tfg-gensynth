@@ -162,7 +162,7 @@ public class BridgeContext {
      * @param settings the settings to apply
      */
     public void applyProjectSettings(ProjectSettings settings) {
-        server.tickClock.applySettings(settings.getTick());
+        server.tickClock.applySettings(settings.tick());
     }
 
     public long getSystemStartedAt() {

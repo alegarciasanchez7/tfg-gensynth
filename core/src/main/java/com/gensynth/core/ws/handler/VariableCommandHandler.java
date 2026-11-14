@@ -10,6 +10,7 @@ import com.gensynth.core.flow.variables.InvalidVariableConfigException;
 import com.gensynth.core.flow.variables.VariableType;
 import org.java_websocket.WebSocket;
 
+import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -43,7 +44,7 @@ public class VariableCommandHandler implements CommandHandler {
     }
 
     @Override
-    public void handle(WebSocket conn, JsonNode payload, String commandId) throws Exception {
+    public void handle(WebSocket conn, JsonNode payload, String commandId) throws IOException {
         // Methods are routed individually by UiBridgeWebSocketServer.
     }
 
@@ -228,8 +229,8 @@ public class VariableCommandHandler implements CommandHandler {
             normalized.put("type", "temporal");
         }
         Object scope = normalized.get(SCOPE);
-        if (scope instanceof String) {
-            normalized.put(SCOPE, ((String) scope).toLowerCase());
+        if (scope instanceof String scopeName) {
+            normalized.put(SCOPE, scopeName.toLowerCase());
         }
         return normalized;
     }

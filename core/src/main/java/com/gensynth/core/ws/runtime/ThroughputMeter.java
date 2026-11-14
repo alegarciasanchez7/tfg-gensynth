@@ -67,10 +67,10 @@ public final class ThroughputMeter {
      * @return messages per second
      */
     public synchronized double rate(int windowSeconds, double periodSeconds, long nowNanos) {
-        int buckets = Math.min(Math.max(1, windowSeconds), completed);
-        if (buckets == 0) {
+        if (completed == 0) {
             return 0.0;
         }
+        int buckets = Math.clamp(windowSeconds, 1, completed);
 
         long total = 0;
         long first = Long.MAX_VALUE;
@@ -121,7 +121,7 @@ public final class ThroughputMeter {
      * @return the period, or 0 when the tick rate is not fixed (as fast as possible)
      */
     public static double periodSeconds(TickSettings tick, int everyTicks) {
-        if (tick.getMode() == TickSettings.Mode.AS_FAST_AS_POSSIBLE) {
+        if (tick.mode() == TickSettings.Mode.AS_FAST_AS_POSSIBLE) {
             return 0.0;
         }
         return tick.periodNanos() / NANOS_PER_SECOND * Math.max(1, everyTicks);
@@ -137,6 +137,6 @@ public final class ThroughputMeter {
     public static int windowFor(TickSettings tick, int everyTicks) {
         double period = periodSeconds(tick, everyTicks);
         int window = (int) Math.ceil(2 * period) + 1;
-        return Math.max(MIN_WINDOW_SECONDS, Math.min(MAX_WINDOW_SECONDS, window));
+        return Math.clamp(window, MIN_WINDOW_SECONDS, MAX_WINDOW_SECONDS);
     }
 }

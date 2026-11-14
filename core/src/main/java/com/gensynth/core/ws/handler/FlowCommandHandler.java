@@ -13,6 +13,7 @@ import com.gensynth.core.ws.runtime.FlowRuntime;
 import com.gensynth.core.ws.runtime.GroupRuntime;
 import org.java_websocket.WebSocket;
 
+import java.io.IOException;
 import java.util.*;
 import com.gensynth.core.api.IFlowMessageHandler;
 import com.gensynth.core.api.IGroupDispatcher;
@@ -75,7 +76,7 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
     }
 
     @Override
-    public void handle(WebSocket conn, JsonNode payload, String commandId) throws Exception {
+    public void handle(WebSocket conn, JsonNode payload, String commandId) throws IOException {
         // Routed directly by method references in UiBridgeWebSocketServer.
     }
 
@@ -348,20 +349,20 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
 
                 // Clone variables for this flow
                 List<Variable> flowVars = new ArrayList<>();
-                for (Variable var : ctx.getVariablesById().values()) {
-                    if (original.id.equals(var.getFlowId())) {
-                        flowVars.add(var);
+                for (Variable variable : ctx.getVariablesById().values()) {
+                    if (original.id.equals(variable.getFlowId())) {
+                        flowVars.add(variable);
                     }
                 }
-                for (Variable var : flowVars) {
+                for (Variable variable : flowVars) {
                     String newVarId = UUID.randomUUID().toString();
                     Variable varClone = new Variable(
                         newVarId,
-                        var.getName(),
-                        var.getScope(),
-                        var.getType(),
-                        var.getDefaultValue(),
-                        var.getConfig(),
+                        variable.getName(),
+                        variable.getScope(),
+                        variable.getType(),
+                        variable.getDefaultValue(),
+                        variable.getConfig(),
                         newFlowId,
                         groupId
                     );
@@ -436,12 +437,12 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
     public void validateGroupForStart(GroupRuntime group) {
         // Validate all variables in the group and perform cycle detection fail-fast
         Map<String, VariableConfiguration> configs = new HashMap<>();
-        for (Variable var : ctx.getVariablesById().values()) {
-            boolean isGlobal = "GLOBAL".equalsIgnoreCase(var.getScope());
-            boolean isGroupScope = "GROUP".equalsIgnoreCase(var.getScope()) && group.id.equals(var.getGroupId());
+        for (Variable variable : ctx.getVariablesById().values()) {
+            boolean isGlobal = "GLOBAL".equalsIgnoreCase(variable.getScope());
+            boolean isGroupScope = "GROUP".equalsIgnoreCase(variable.getScope()) && group.id.equals(variable.getGroupId());
             boolean isLocalScope = false;
             for (FlowRuntime flow : group.flows) {
-                if ("LOCAL".equalsIgnoreCase(var.getScope()) && flow.id.equals(var.getFlowId())) {
+                if ("LOCAL".equalsIgnoreCase(variable.getScope()) && flow.id.equals(variable.getFlowId())) {
                     isLocalScope = true;
                     break;
                 }
@@ -449,15 +450,15 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
             if (isGlobal || isGroupScope || isLocalScope) {
                 VariableConfiguration vc;
                 try {
-                    vc = VariableFactory.createFromMap(var.getId(), var.getType(), var.getConfig());
+                    vc = VariableFactory.createFromMap(variable.getId(), variable.getType(), variable.getConfig());
                 } catch (InvalidVariableConfigException e) {
                     // Name the variable as the user sees it, not by its internal id
-                    throw new IllegalStateException("Invalid configuration for variable '" + var.getName() + "': "
+                    throw new IllegalStateException("Invalid configuration for variable '" + variable.getName() + "': "
                         + String.join("; ", e.getErrors()), e);
                 }
-                configs.put(var.getName(), vc);
-                if (var.getId() != null && !var.getId().equals(var.getName())) {
-                    configs.put(var.getId(), vc);
+                configs.put(variable.getName(), vc);
+                if (variable.getId() != null && !variable.getId().equals(variable.getName())) {
+                    configs.put(variable.getId(), vc);
                 }
             }
         }

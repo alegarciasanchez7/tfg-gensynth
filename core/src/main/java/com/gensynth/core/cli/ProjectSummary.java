@@ -78,7 +78,7 @@ final class ProjectSummary {
     }
 
     private static String tickText(ProjectSettings settings) {
-        String tick = CliFormat.tick(settings.getTick());
+        String tick = CliFormat.tick(settings.tick());
         return "Tick: " + (tick.startsWith("as fast") ? tick : "every " + tick);
     }
 

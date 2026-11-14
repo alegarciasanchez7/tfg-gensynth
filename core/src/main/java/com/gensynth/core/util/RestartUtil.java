@@ -8,15 +8,19 @@ import java.io.File;
 import java.io.IOException;
 import java.lang.management.ManagementFactory;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /**
  * Utility to handle self-restarting of the Gen-Synth Core process.
  * Essential for applying plugin changes without manual intervention.
  */
-public class RestartUtil {
+public final class RestartUtil {
 
     private static final Logger logger = LoggerFactory.getLogger(RestartUtil.class);
+
+    private RestartUtil() {
+    }
 
     /**
      * Spawns a new instance of the current application and then terminates the current one.
@@ -66,13 +70,13 @@ public class RestartUtil {
                 // Add original application arguments (e.g., --desktop)
                 String[] args = com.gensynth.core.App.getOriginalArgs();
                 if (args != null) {
-                    for (String arg : args) {
-                        command.add(arg);
-                    }
+                    Collections.addAll(command, args);
                 }
             }
 
-            logger.info("Spawning new process: {}", String.join(" ", command));
+            if (logger.isInfoEnabled()) {
+                logger.info("Spawning new process: {}", String.join(" ", command));
+            }
 
             ProcessBuilder builder = new ProcessBuilder(command);
             // On Windows, if running Maven, we might need shell execution
@@ -107,7 +111,9 @@ public class RestartUtil {
         if (com.gensynth.core.App.getWsServer() != null) {
             try {
                 com.gensynth.core.App.getWsServer().shutdown();
-            } catch (Exception ignored) {}
+            } catch (Exception ignored) {
+                // Best effort: the restart goes ahead anyway
+            }
         }
 
         // 2. Mark restarting flag and close desktop frame

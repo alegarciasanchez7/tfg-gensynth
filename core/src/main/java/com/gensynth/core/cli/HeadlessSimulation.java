@@ -144,7 +144,9 @@ class HeadlessSimulation {
      */
     void changeTick(TickSettings tick) {
         engine.settingsCommandHandler.applyTick(tick);
-        logger.info("[CLI] Simulation {} tick set to {}", id, tick.describe());
+        if (logger.isInfoEnabled()) {
+            logger.info("[CLI] Simulation {} tick set to {}", id, tick.describe());
+        }
     }
 
     /**

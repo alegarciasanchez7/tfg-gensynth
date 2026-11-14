@@ -1,6 +1,9 @@
 package com.gensynth.core.lifecycle;
 
 import com.gensynth.core.config.AppConfig;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicReference;
@@ -17,6 +20,8 @@ import java.util.concurrent.atomic.AtomicInteger;
  * - Allows explicit configuration via application.yml/json
  */
 public class LifecycleManagerImpl implements ILifecycleManager {
+
+    private static final Logger logger = LoggerFactory.getLogger(LifecycleManagerImpl.class);
 
     // Constants for thread management
     private static final long SHUTDOWN_TIMEOUT_SECONDS = 30;
@@ -70,7 +75,7 @@ public class LifecycleManagerImpl implements ILifecycleManager {
     }
 
     @Override
-    public void initialize() throws Exception {
+    public void initialize() throws LifecycleException {
         // Lock to prevent concurrent initialization
         synchronized (stateLock) {
             LifecycleState currentState = state.get();
@@ -110,7 +115,7 @@ public class LifecycleManagerImpl implements ILifecycleManager {
     }
 
     @Override
-    public void start() throws Exception {
+    public void start() throws LifecycleException {
         synchronized (stateLock) {
             LifecycleState currentState = state.get();
 
@@ -138,7 +143,7 @@ public class LifecycleManagerImpl implements ILifecycleManager {
     }
 
     @Override
-    public void stop() throws Exception {
+    public void stop() throws LifecycleException {
         synchronized (stateLock) {
             LifecycleState currentState = state.get();
 
@@ -160,13 +165,7 @@ public class LifecycleManagerImpl implements ILifecycleManager {
                 callListenersSequentially(listeners, ILifecycleListener::onStop, "stop");
 
                 // Step 2: Shutdown executor with timeout
-                if (executor != null && !executor.isShutdown()) {
-                    executor.shutdown();
-                    if (!executor.awaitTermination(SHUTDOWN_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-                        // Force shutdown if timeout
-                        executor.shutdownNow();
-                    }
-                }
+                shutdownExecutor();
 
                 // Step 3: Update state
                 state.set(LifecycleState.STOPPED);
@@ -209,6 +208,23 @@ public class LifecycleManagerImpl implements ILifecycleManager {
     }
 
     // ============ Private Helper Methods ============
+
+    /** Shuts the thread pool down, forcing it when its tasks do not end within the timeout. */
+    private void shutdownExecutor() throws LifecycleException {
+        if (executor == null || executor.isShutdown()) {
+            return;
+        }
+        executor.shutdown();
+        try {
+            if (!executor.awaitTermination(SHUTDOWN_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                // Force shutdown if timeout
+                executor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new LifecycleException("Interrupted while waiting for the thread pool to stop", e);
+        }
+    }
 
     /**
      * Create thread pool with optimized settings.
@@ -262,12 +278,12 @@ public class LifecycleManagerImpl implements ILifecycleManager {
      * @param listeners List of listeners to call
      * @param action Action to call on each listener
      * @param actionName Name of action (for error messages)
-     * @throws Exception aggregated from all listener failures
+     * @throws LifecycleException aggregated from all listener failures
      */
     private void callListenersSequentially(
             List<ILifecycleListener> listeners,
             ListenerAction action,
-            String actionName) throws Exception {
+            String actionName) throws LifecycleException {
 
         List<Exception> failures = new ArrayList<>();
 
@@ -276,8 +292,10 @@ public class LifecycleManagerImpl implements ILifecycleManager {
                 action.execute(listener);
             } catch (Exception e) {
                 failures.add(e);
-                System.err.printf("Error during %s on listener %s: %s%n",
-                    actionName, listener.getClass().getSimpleName(), e.getMessage());
+                if (logger.isErrorEnabled()) {
+                    logger.error("Error during {} on listener {}: {}",
+                        actionName, listener.getClass().getSimpleName(), e.getMessage());
+                }
             }
         }
 
@@ -287,7 +305,11 @@ public class LifecycleManagerImpl implements ILifecycleManager {
             for (int i = 1; i < failures.size(); i++) {
                 first.addSuppressed(failures.get(i));
             }
-            throw first;
+            // A listener can only fail with a LifecycleException or an unchecked exception
+            if (first instanceof LifecycleException lifecycleException) {
+                throw lifecycleException;
+            }
+            throw (RuntimeException) first;
         }
     }
 
@@ -297,7 +319,7 @@ public class LifecycleManagerImpl implements ILifecycleManager {
      */
     @FunctionalInterface
     private interface ListenerAction {
-        void execute(ILifecycleListener listener) throws Exception;
+        void execute(ILifecycleListener listener) throws LifecycleException;
     }
 
 }

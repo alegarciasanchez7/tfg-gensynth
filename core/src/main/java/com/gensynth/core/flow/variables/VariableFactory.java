@@ -381,8 +381,8 @@ public class VariableFactory {
                                 item.setEmbeddedConfig(embeddedConfig);
                             }
                             parsedItems.add(item);
-                        } else if (rawItem instanceof ListVariableConfig.ListItem) {
-                            parsedItems.add((ListVariableConfig.ListItem) rawItem);
+                        } else if (rawItem instanceof ListVariableConfig.ListItem listItem) {
+                            parsedItems.add(listItem);
                         } else {
                             parsedItems.add(new ListVariableConfig.ListItem(null, rawItem, 1.0));
                         }
@@ -397,8 +397,8 @@ public class VariableFactory {
                         Map<String, Double> innerMap = new HashMap<>();
                         if (entry.getValue() != null) {
                             for (Map.Entry<String, Object> innerEntry : entry.getValue().entrySet()) {
-                                if (innerEntry.getValue() instanceof Number) {
-                                    innerMap.put(innerEntry.getKey(), ((Number) innerEntry.getValue()).doubleValue());
+                                if (innerEntry.getValue() instanceof Number number) {
+                                    innerMap.put(innerEntry.getKey(), number.doubleValue());
                                 }
                             }
                         }
@@ -428,7 +428,9 @@ public class VariableFactory {
                 if (configMap.containsKey(KEY_PATTERN) && configMap.get(KEY_PATTERN) != null) {
                     try {
                         boolConfig.pattern(GenerationPattern.valueOf(((String) configMap.get(KEY_PATTERN)).toUpperCase()));
-                    } catch (Exception ignored) {}
+                    } catch (Exception ignored) {
+                        // Invalid value: the default is kept
+                    }
                 }
                 if (configMap.containsKey(KEY_CURRENT_VALUE) && configMap.get(KEY_CURRENT_VALUE) != null)
                     boolConfig.constantValue((Boolean) configMap.get(KEY_CURRENT_VALUE));
@@ -477,12 +479,16 @@ public class VariableFactory {
                 if (configMap.containsKey(KEY_START_DATE) && configMap.get(KEY_START_DATE) != null) {
                     try {
                         dateConfig.startDate(java.time.Instant.parse(String.valueOf(configMap.get(KEY_START_DATE))));
-                    } catch (Exception ignored) {}
+                    } catch (Exception ignored) {
+                        // Invalid value: the default is kept
+                    }
                 }
                 if (configMap.containsKey(KEY_FIXED_DATE) && configMap.get(KEY_FIXED_DATE) != null) {
                     try {
                         dateConfig.fixedDate(java.time.Instant.parse(String.valueOf(configMap.get(KEY_FIXED_DATE))));
-                    } catch (Exception ignored) {}
+                    } catch (Exception ignored) {
+                        // Invalid value: the default is kept
+                    }
                 }
                 if (configMap.containsKey(KEY_RANGE_START) && configMap.get(KEY_RANGE_START) != null) {
                     try {
@@ -491,7 +497,9 @@ public class VariableFactory {
                             ? java.time.Instant.parse(String.valueOf(configMap.get(KEY_RANGE_END)))
                             : rStart.plusSeconds(3600);
                         dateConfig.range(rStart, rEnd);
-                    } catch (Exception ignored) {}
+                    } catch (Exception ignored) {
+                        // Invalid value: the default is kept
+                    }
                 }
                 return dateConfig;
 
@@ -500,31 +508,39 @@ public class VariableFactory {
                 if (configMap.containsKey(KEY_PATTERN)) {
                     try {
                         pointConfig.pattern(GenerationPattern.valueOf(configMap.get(KEY_PATTERN).toString().toUpperCase()));
-                    } catch (Exception ignored) {}
+                    } catch (Exception ignored) {
+                        // Invalid value: the default is kept
+                    }
                 }
                 if (configMap.containsKey("coordinateSystem")) {
                     try {
                         pointConfig.coordinateSystem(CoordinateSystem.valueOf(configMap.get("coordinateSystem").toString()));
-                    } catch (Exception ignored) {}
+                    } catch (Exception ignored) {
+                        // Invalid value: the default is kept
+                    }
                 }
                 if (configMap.containsKey("geospatialFormat")) {
                     try {
                         pointConfig.geospatialFormat(GeospatialFormat.valueOf(configMap.get("geospatialFormat").toString()));
-                    } catch (Exception ignored) {}
+                    } catch (Exception ignored) {
+                        // Invalid value: the default is kept
+                    }
                 }
                 if (configMap.containsKey("boundaryBehavior")) {
                     try {
                         pointConfig.boundaryBehavior(BoundaryBehavior.valueOf(configMap.get("boundaryBehavior").toString()));
-                    } catch (Exception ignored) {}
+                    } catch (Exception ignored) {
+                        // Invalid value: the default is kept
+                    }
                 }
                 if (configMap.get("fixedPoint") instanceof Map<?, ?> fpMap) {
-                    double fx = fpMap.containsKey("x") ? ((Number) fpMap.get("x")).doubleValue() : (fpMap.containsKey("lat") ? ((Number) fpMap.get("lat")).doubleValue() : 0.0);
-                    double fy = fpMap.containsKey("y") ? ((Number) fpMap.get("y")).doubleValue() : (fpMap.containsKey("lon") ? ((Number) fpMap.get("lon")).doubleValue() : 0.0);
-                    double fz = fpMap.containsKey("z") ? ((Number) fpMap.get("z")).doubleValue() : (fpMap.containsKey("alt") ? ((Number) fpMap.get("alt")).doubleValue() : 0.0);
+                    double fx = numberAt(fpMap, 0.0, "x", "lat");
+                    double fy = numberAt(fpMap, 0.0, "y", "lon");
+                    double fz = numberAt(fpMap, 0.0, "z", "alt");
                     pointConfig.fixedPoint(fx, fy, fz);
                 }
                 // The editor stores the route as "waypoints"; "path" is the legacy key
-                Object waypointsObj = configMap.containsKey("waypoints") ? configMap.get("waypoints") : configMap.get("path");
+                Object waypointsObj = configMap.get(configMap.containsKey("waypoints") ? "waypoints" : "path");
                 if (waypointsObj instanceof List<?> pathList) {
                     for (Object item : pathList) {
                         if (item instanceof Map<?, ?> ptMap) {
@@ -564,7 +580,9 @@ public class VariableFactory {
                     try {
                         pointConfig.shape3DType(PointVariableConfig.Shape3DType.valueOf(
                                 configMap.get("shape3DType").toString().trim().toUpperCase(java.util.Locale.ROOT)));
-                    } catch (IllegalArgumentException ignored) {}
+                    } catch (IllegalArgumentException ignored) {
+                        // Invalid value: the default is kept
+                    }
                 }
                 if (configMap.get("shape3DWidth") != null)
                     pointConfig.shape3DWidth(parseDoubleHelper(configMap.get("shape3DWidth"), 100.0));
@@ -578,17 +596,23 @@ public class VariableFactory {
                 if (configMap.containsKey("altitudeUnit")) {
                     try {
                         pointConfig.altitudeUnit(PointVariableConfig.AltitudeUnit.valueOf(configMap.get("altitudeUnit").toString().toUpperCase()));
-                    } catch (Exception ignored) {}
+                    } catch (Exception ignored) {
+                        // Invalid value: the default is kept
+                    }
                 }
                 if (configMap.containsKey("altitudeReference")) {
                     try {
                         pointConfig.altitudeReference(PointVariableConfig.AltitudeReference.valueOf(configMap.get("altitudeReference").toString().toUpperCase()));
-                    } catch (Exception ignored) {}
+                    } catch (Exception ignored) {
+                        // Invalid value: the default is kept
+                    }
                 }
                 if (configMap.containsKey("altitudePattern")) {
                     try {
                         pointConfig.altitudePattern(PointVariableConfig.AltitudePattern.valueOf(configMap.get("altitudePattern").toString().toUpperCase()));
-                    } catch (Exception ignored) {}
+                    } catch (Exception ignored) {
+                        // Invalid value: the default is kept
+                    }
                 }
                 if (configMap.containsKey(KEY_INITIAL_ALTITUDE) && configMap.get(KEY_INITIAL_ALTITUDE) != null) {
                     pointConfig.initialAltitude(((Number) configMap.get(KEY_INITIAL_ALTITUDE)).doubleValue());
@@ -601,17 +625,22 @@ public class VariableFactory {
                 }
 
                 // Deserialization of minPoint / maxPoint range bounds (defaults match the UI: 0..100 on every axis)
-                double minX = 0.0, maxX = 100.0, minY = 0.0, maxY = 100.0, minZ = 0.0, maxZ = 100.0;
+                double minX = 0.0;
+                double maxX = 100.0;
+                double minY = 0.0;
+                double maxY = 100.0;
+                double minZ = 0.0;
+                double maxZ = 100.0;
 
                 if (configMap.get("minPoint") instanceof Map<?, ?> minMap) {
-                    minX = minMap.containsKey("x") ? ((Number) minMap.get("x")).doubleValue() : (minMap.containsKey("lat") ? ((Number) minMap.get("lat")).doubleValue() : 0.0);
-                    minY = minMap.containsKey("y") ? ((Number) minMap.get("y")).doubleValue() : (minMap.containsKey("lon") ? ((Number) minMap.get("lon")).doubleValue() : 0.0);
-                    minZ = minMap.containsKey("z") ? ((Number) minMap.get("z")).doubleValue() : (minMap.containsKey("alt") ? ((Number) minMap.get("alt")).doubleValue() : 0.0);
+                    minX = numberAt(minMap, 0.0, "x", "lat");
+                    minY = numberAt(minMap, 0.0, "y", "lon");
+                    minZ = numberAt(minMap, 0.0, "z", "alt");
                 }
                 if (configMap.get("maxPoint") instanceof Map<?, ?> maxMap) {
-                    maxX = maxMap.containsKey("x") ? ((Number) maxMap.get("x")).doubleValue() : (maxMap.containsKey("lat") ? ((Number) maxMap.get("lat")).doubleValue() : 100.0);
-                    maxY = maxMap.containsKey("y") ? ((Number) maxMap.get("y")).doubleValue() : (maxMap.containsKey("lon") ? ((Number) maxMap.get("lon")).doubleValue() : 100.0);
-                    maxZ = maxMap.containsKey("z") ? ((Number) maxMap.get("z")).doubleValue() : (maxMap.containsKey("alt") ? ((Number) maxMap.get("alt")).doubleValue() : 100.0);
+                    maxX = numberAt(maxMap, 100.0, "x", "lat");
+                    maxY = numberAt(maxMap, 100.0, "y", "lon");
+                    maxZ = numberAt(maxMap, 100.0, "z", "alt");
                 }
 
                 if (configMap.containsKey("minLat")) { minX = ((Number) configMap.get("minLat")).doubleValue(); }
@@ -629,17 +658,19 @@ public class VariableFactory {
                 if (configMap.get("boundaryPolygon") instanceof List<?> polyList) {
                     for (Object item : polyList) {
                         if (item instanceof Map<?, ?> ptMap) {
-                            double px = ptMap.containsKey("x") ? ((Number) ptMap.get("x")).doubleValue() : (ptMap.containsKey("lat") ? ((Number) ptMap.get("lat")).doubleValue() : 0.0);
-                            double py = ptMap.containsKey("y") ? ((Number) ptMap.get("y")).doubleValue() : (ptMap.containsKey("lon") ? ((Number) ptMap.get("lon")).doubleValue() : 0.0);
-                            double pz = ptMap.containsKey("z") ? ((Number) ptMap.get("z")).doubleValue() : (ptMap.containsKey("alt") ? ((Number) ptMap.get("alt")).doubleValue() : 0.0);
+                            double px = numberAt(ptMap, 0.0, "x", "lat");
+                            double py = numberAt(ptMap, 0.0, "y", "lon");
+                            double pz = numberAt(ptMap, 0.0, "z", "alt");
                             pointConfig.addBoundaryPolygonPoint(px, py, pz);
                         }
                     }
                     // In 3D the shape is the region: the polygon does not re-range the bounding box
                     if (!pointConfig.getBoundaryPolygon().isEmpty()
                             && pointConfig.getCoordinateSystem() != CoordinateSystem.CARTESIAN_3D) {
-                        double pMinX = Double.MAX_VALUE, pMaxX = -Double.MAX_VALUE;
-                        double pMinY = Double.MAX_VALUE, pMaxY = -Double.MAX_VALUE;
+                        double pMinX = Double.MAX_VALUE;
+                        double pMaxX = -Double.MAX_VALUE;
+                        double pMinY = Double.MAX_VALUE;
+                        double pMaxY = -Double.MAX_VALUE;
                         for (PointVariableConfig.Point3D pt : pointConfig.getBoundaryPolygon()) {
                             pMinX = Math.min(pMinX, pt.x);
                             pMaxX = Math.max(pMaxX, pt.x);
@@ -685,7 +716,7 @@ public class VariableFactory {
                 }
 
                 // Deserialization of Graph Route Nodes (only coordinates strictly required; auto-assign id/name if omitted)
-                Object nodesObj = configMap.containsKey("graphNodes") ? configMap.get("graphNodes") : configMap.get("nodes");
+                Object nodesObj = configMap.get(configMap.containsKey("graphNodes") ? "graphNodes" : "nodes");
                 if (nodesObj instanceof List<?> gNodesList) {
                     int nodeIdx = 1;
                     for (Object item : gNodesList) {
@@ -693,9 +724,9 @@ public class VariableFactory {
                             String nId = nMap.containsKey("id") && nMap.get("id") != null ? nMap.get("id").toString() : "node-" + nodeIdx;
                             String nName = nMap.containsKey("name") && nMap.get("name") != null ? nMap.get("name").toString() : nId;
                             
-                            double nx = nMap.containsKey("x") ? ((Number) nMap.get("x")).doubleValue() : (nMap.containsKey("lat") ? ((Number) nMap.get("lat")).doubleValue() : (nMap.containsKey("latitude") ? ((Number) nMap.get("latitude")).doubleValue() : 0.0));
-                            double ny = nMap.containsKey("y") ? ((Number) nMap.get("y")).doubleValue() : (nMap.containsKey("lon") ? ((Number) nMap.get("lon")).doubleValue() : (nMap.containsKey("lng") ? ((Number) nMap.get("lng")).doubleValue() : (nMap.containsKey("longitude") ? ((Number) nMap.get("longitude")).doubleValue() : 0.0)));
-                            double nz = nMap.containsKey("z") ? ((Number) nMap.get("z")).doubleValue() : (nMap.containsKey("alt") ? ((Number) nMap.get("alt")).doubleValue() : (nMap.containsKey("altitude") ? ((Number) nMap.get("altitude")).doubleValue() : 0.0));
+                            double nx = numberAt(nMap, 0.0, "x", "lat", "latitude");
+                            double ny = numberAt(nMap, 0.0, "y", "lon", "lng", "longitude");
+                            double nz = numberAt(nMap, 0.0, "z", "alt", "altitude");
 
                             pointConfig.addGraphNode(new com.gensynth.core.flow.variables.config.GraphNode(nId, nName, nx, ny, nz));
                             nodeIdx++;
@@ -704,14 +735,14 @@ public class VariableFactory {
                 }
 
                 // Deserialization of Graph Route Edges
-                Object edgesObj = configMap.containsKey("graphEdges") ? configMap.get("graphEdges") : configMap.get("edges");
+                Object edgesObj = configMap.get(configMap.containsKey("graphEdges") ? "graphEdges" : "edges");
                 if (edgesObj instanceof List<?> gEdgesList) {
                     int edgeIdx = 1;
                     for (Object item : gEdgesList) {
                         if (item instanceof Map<?, ?> eMap) {
                             String eId = eMap.containsKey("id") && eMap.get("id") != null ? eMap.get("id").toString() : "edge-" + edgeIdx;
-                            String fromId = eMap.containsKey(KEY_FROM_NODE_ID) && eMap.get(KEY_FROM_NODE_ID) != null ? eMap.get(KEY_FROM_NODE_ID).toString() : (eMap.containsKey(KEY_SOURCE_ID) && eMap.get(KEY_SOURCE_ID) != null ? eMap.get(KEY_SOURCE_ID).toString() : (eMap.containsKey("from") && eMap.get("from") != null ? eMap.get("from").toString() : ""));
-                            String toId = eMap.containsKey(KEY_TO_NODE_ID) && eMap.get(KEY_TO_NODE_ID) != null ? eMap.get(KEY_TO_NODE_ID).toString() : (eMap.containsKey(KEY_TARGET_ID) && eMap.get(KEY_TARGET_ID) != null ? eMap.get(KEY_TARGET_ID).toString() : (eMap.containsKey("to") && eMap.get("to") != null ? eMap.get("to").toString() : ""));
+                            String fromId = textAt(eMap, "", KEY_FROM_NODE_ID, KEY_SOURCE_ID, "from");
+                            String toId = textAt(eMap, "", KEY_TO_NODE_ID, KEY_TARGET_ID, "to");
                             boolean bi = !eMap.containsKey("bidirectional") || Boolean.TRUE.equals(eMap.get("bidirectional"));
 
                             pointConfig.addGraphEdge(new com.gensynth.core.flow.variables.config.GraphEdge(eId, fromId, toId, bi));
@@ -724,14 +755,18 @@ public class VariableFactory {
                 if (configMap.containsKey(KEY_GRAPH_NAVIGATION_MODE) && configMap.get(KEY_GRAPH_NAVIGATION_MODE) != null) {
                     try {
                         pointConfig.graphNavigationMode(PointVariableConfig.GraphNavigationMode.valueOf(configMap.get(KEY_GRAPH_NAVIGATION_MODE).toString().toUpperCase()));
-                    } catch (Exception ignored) {}
+                    } catch (Exception ignored) {
+                        // Invalid value: the default is kept
+                    }
                 } else if (configMap.containsKey(KEY_NAVIGATION_MODE) && configMap.get(KEY_NAVIGATION_MODE) != null) {
                     try {
                         pointConfig.graphNavigationMode(PointVariableConfig.GraphNavigationMode.valueOf(configMap.get(KEY_NAVIGATION_MODE).toString().toUpperCase()));
-                    } catch (Exception ignored) {}
+                    } catch (Exception ignored) {
+                        // Invalid value: the default is kept
+                    }
                 }
 
-                Object seqObj = configMap.containsKey("graphSequence") ? configMap.get("graphSequence") : configMap.get("sequence");
+                Object seqObj = configMap.get(configMap.containsKey("graphSequence") ? "graphSequence" : "sequence");
                 if (seqObj instanceof List<?> seqList) {
                     List<String> sequence = new ArrayList<>();
                     for (Object item : seqList) {
@@ -740,31 +775,31 @@ public class VariableFactory {
                     pointConfig.graphSequence(sequence);
                 }
 
-                Object loopObj = configMap.containsKey("graphLoopSequence") ? configMap.get("graphLoopSequence") : configMap.get("loopSequence");
+                Object loopObj = configMap.get(configMap.containsKey("graphLoopSequence") ? "graphLoopSequence" : "loopSequence");
                 if (loopObj != null) {
                     pointConfig.graphLoopSequence(parseBooleanHelper(loopObj, false));
                 }
 
-                Object stopProbObj = configMap.containsKey("graphStopProbability") ? configMap.get("graphStopProbability") : configMap.get("stopProbability");
+                Object stopProbObj = configMap.get(configMap.containsKey("graphStopProbability") ? "graphStopProbability" : "stopProbability");
                 if (stopProbObj == null) stopProbObj = configMap.get("pauseProbability");
                 if (stopProbObj != null) {
                     pointConfig.graphStopProbability(parseDoubleHelper(stopProbObj, 0.0));
                 }
 
-                Object stopTicksObj = configMap.containsKey("graphStopTicks") ? configMap.get("graphStopTicks") : configMap.get("stopTicks");
+                Object stopTicksObj = configMap.get(configMap.containsKey("graphStopTicks") ? "graphStopTicks" : "stopTicks");
                 if (stopTicksObj == null) stopTicksObj = configMap.get("pauseTicks");
                 if (stopTicksObj == null) stopTicksObj = configMap.get("pauseDurationTicks");
                 if (stopTicksObj != null) {
                     pointConfig.graphStopTicks(parseIntHelper(stopTicksObj, 0));
                 }
 
-                Object preventCyclesObj = configMap.containsKey("graphPreventCycles") ? configMap.get("graphPreventCycles") : configMap.get("preventCycles");
+                Object preventCyclesObj = configMap.get(configMap.containsKey("graphPreventCycles") ? "graphPreventCycles" : "preventCycles");
                 if (preventCyclesObj == null) preventCyclesObj = configMap.get("antiBacktracking");
                 if (preventCyclesObj != null) {
                     pointConfig.graphPreventCycles(parseBooleanHelper(preventCyclesObj, true));
                 }
 
-                Object stepsObj = configMap.containsKey("graphInterpolationSteps") ? configMap.get("graphInterpolationSteps") : configMap.get("stepsPerEdge");
+                Object stepsObj = configMap.get(configMap.containsKey("graphInterpolationSteps") ? "graphInterpolationSteps" : "stepsPerEdge");
                 if (stepsObj != null) {
                     pointConfig.graphInterpolationSteps(parseIntHelper(stepsObj, 1));
                 } else if (configMap.get(KEY_INTERPOLATION_STEPS) != null) {
@@ -777,6 +812,35 @@ public class VariableFactory {
             default:
                 throw new IllegalArgumentException("Unknown variable type: " + type);
         }
+    }
+
+    /**
+     * Reads the number under the first of the keys the map contains.
+     *
+     * @return that number, or the default when the map has none of the keys
+     */
+    private static double numberAt(Map<?, ?> map, double defaultValue, String... keys) {
+        for (String key : keys) {
+            if (map.containsKey(key)) {
+                return ((Number) map.get(key)).doubleValue();
+            }
+        }
+        return defaultValue;
+    }
+
+    /**
+     * Reads the text under the first of the keys that has a value.
+     *
+     * @return that text, or the default when none of the keys has a value
+     */
+    private static String textAt(Map<?, ?> map, String defaultValue, String... keys) {
+        for (String key : keys) {
+            Object value = map.get(key);
+            if (value != null) {
+                return value.toString();
+            }
+        }
+        return defaultValue;
     }
 
     /**

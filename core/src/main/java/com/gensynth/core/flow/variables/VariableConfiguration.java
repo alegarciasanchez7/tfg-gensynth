@@ -14,7 +14,7 @@ public abstract class VariableConfiguration {
     protected Object defaultValue;
     protected long tickCounter;
 
-    public VariableConfiguration() {
+    protected VariableConfiguration() {
         this.anomalyConfig = new AnomalyConfig();
         this.tickCounter = 0;
     }
@@ -123,13 +123,12 @@ public abstract class VariableConfiguration {
         }
 
         com.gensynth.core.flow.variables.config.ListVariableConfig sourceListConfig = null;
-        if (varObj instanceof com.gensynth.core.flow.variables.ConfigurableVariable) {
-            VariableConfiguration cfg = ((com.gensynth.core.flow.variables.ConfigurableVariable) varObj).getConfiguration();
-            if (cfg instanceof com.gensynth.core.flow.variables.config.ListVariableConfig) {
-                sourceListConfig = (com.gensynth.core.flow.variables.config.ListVariableConfig) cfg;
+        if (varObj instanceof com.gensynth.core.flow.variables.ConfigurableVariable configurable) {
+            if (configurable.getConfiguration() instanceof com.gensynth.core.flow.variables.config.ListVariableConfig listConfig) {
+                sourceListConfig = listConfig;
             }
-        } else if (varObj instanceof com.gensynth.core.flow.variables.config.ListVariableConfig) {
-            sourceListConfig = (com.gensynth.core.flow.variables.config.ListVariableConfig) varObj;
+        } else if (varObj instanceof com.gensynth.core.flow.variables.config.ListVariableConfig listConfig) {
+            sourceListConfig = listConfig;
         }
 
         if (sourceListConfig != null && !sourceListConfig.getEffectiveItems().isEmpty()) {
@@ -300,8 +299,8 @@ public abstract class VariableConfiguration {
     }
 
     private Double tryParseDouble(Object obj) {
-        if (obj instanceof Number) {
-            return ((Number) obj).doubleValue();
+        if (obj instanceof Number number) {
+            return number.doubleValue();
         }
         try {
             return Double.parseDouble(obj.toString());

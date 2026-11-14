@@ -67,8 +67,7 @@ public class ListVariableConfig extends VariableConfiguration {
 
         public void setEmbeddedConfig(VariableConfiguration embeddedConfig) {
             // Enforcement: Max 1 level of embedded ListVariableConfig nesting
-            if (embeddedConfig instanceof ListVariableConfig) {
-                ListVariableConfig innerList = (ListVariableConfig) embeddedConfig;
+            if (embeddedConfig instanceof ListVariableConfig innerList) {
                 for (ListItem innerItem : innerList.getItems()) {
                     if (innerItem.getEmbeddedConfig() != null) {
                         throw new IllegalArgumentException("Maximum 1 level of nested list variable generators is supported.");
@@ -97,9 +96,6 @@ public class ListVariableConfig extends VariableConfiguration {
     private int currentShufflePointer = 0;
     private String currentMarkovStateId = null;
 
-    // Fast cache arrays for WEIGHTED_RANDOM
-    private double[] cachedWeights;
-
     // Anomaly state
     private long cachedWhenTicks = -1;
     private boolean isAnomalous;
@@ -116,15 +112,11 @@ public class ListVariableConfig extends VariableConfiguration {
 
     public ListVariableConfig selectionStrategy(SelectionStrategy strategy) {
         this.selectionStrategy = strategy;
-        if (strategy == SelectionStrategy.MARKOV_CHAIN) {
-            this.pattern = GenerationPattern.MARKOV_CHAIN;
-        } else if (strategy == SelectionStrategy.SEQUENTIAL) {
-            this.pattern = GenerationPattern.SEQUENTIAL_FROM_LIST;
-        } else if (strategy == SelectionStrategy.SHUFFLE) {
-            this.pattern = GenerationPattern.SEQUENTIAL_FROM_LIST;
-        } else {
-            this.pattern = GenerationPattern.RANDOM_FROM_LIST;
-        }
+        this.pattern = switch (strategy) {
+            case MARKOV_CHAIN -> GenerationPattern.MARKOV_CHAIN;
+            case SEQUENTIAL, SHUFFLE -> GenerationPattern.SEQUENTIAL_FROM_LIST;
+            case null, default -> GenerationPattern.RANDOM_FROM_LIST;
+        };
         return this;
     }
 
@@ -134,7 +126,7 @@ public class ListVariableConfig extends VariableConfiguration {
 
     public ListVariableConfig items(List<ListItem> newItems) {
         this.items = (newItems != null) ? new ArrayList<>(newItems) : new ArrayList<>();
-        rebuildCache();
+        resetRuntimeState();
         return this;
     }
 
@@ -173,13 +165,13 @@ public class ListVariableConfig extends VariableConfiguration {
             this.items = new ArrayList<>();
         }
         this.items.add(item);
-        rebuildCache();
+        resetRuntimeState();
         return this;
     }
 
     public ListVariableConfig addItem(Object item) {
-        if (item instanceof ListItem) {
-            return addItem((ListItem) item);
+        if (item instanceof ListItem listItem) {
+            return addItem(listItem);
         }
         return addItem(new ListItem(null, item, 1.0));
     }
@@ -193,13 +185,11 @@ public class ListVariableConfig extends VariableConfiguration {
         }
         List<ListItem> parsedItems = new ArrayList<>();
         for (Object obj : rawItems) {
-            if (obj instanceof ListItem) {
-                parsedItems.add((ListItem) obj);
-            } else if (obj instanceof WeightedItem) {
-                WeightedItem wi = (WeightedItem) obj;
+            if (obj instanceof ListItem listItem) {
+                parsedItems.add(listItem);
+            } else if (obj instanceof WeightedItem wi) {
                 parsedItems.add(new ListItem(null, wi.value, wi.weight));
-            } else if (obj instanceof Map) {
-                Map<?, ?> map = (Map<?, ?>) obj;
+            } else if (obj instanceof Map<?, ?> map) {
                 String itemId = map.containsKey("id") ? String.valueOf(map.get("id")) : null;
                 Object val = map.containsKey(VALUE) ? map.get(VALUE) : obj;
                 double w = map.containsKey(WEIGHT) ? ((Number) map.get(WEIGHT)).doubleValue() : 1.0;
@@ -218,15 +208,6 @@ public class ListVariableConfig extends VariableConfiguration {
     public ListVariableConfig transitionMatrix(Map<String, Map<String, Double>> matrix) {
         this.transitionMatrix = (matrix != null) ? new HashMap<>(matrix) : new HashMap<>();
         return this;
-    }
-
-    private void rebuildCache() {
-        int size = items.size();
-        cachedWeights = new double[size];
-        for (int i = 0; i < size; i++) {
-            cachedWeights[i] = items.get(i).getWeight();
-        }
-        resetRuntimeState();
     }
 
     private void resetRuntimeState() {
@@ -501,7 +482,8 @@ public class ListVariableConfig extends VariableConfiguration {
 
     @Override
     public Map<String, Object> toMap() {
-        Map<String, Object> map = new HashMap<>(10);
+        // Same table size as before, so the keys keep their order
+        Map<String, Object> map = HashMap.newHashMap(8);
         map.put("identifier", identifier);
         map.put("type", type.toString());
         map.put("pattern", pattern.toString());

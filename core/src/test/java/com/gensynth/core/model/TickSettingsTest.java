@@ -21,9 +21,9 @@ public class TickSettingsTest {
     @Test
     public void defaultsAreOneTickPerSecond() {
         TickSettings defaults = TickSettings.defaults();
-        assertEquals(TickSettings.Mode.FIXED_RATE, defaults.getMode());
-        assertEquals(1, defaults.getValue());
-        assertEquals(TickSettings.Unit.SECONDS, defaults.getUnit());
+        assertEquals(TickSettings.Mode.FIXED_RATE, defaults.mode());
+        assertEquals(1, defaults.value());
+        assertEquals(TickSettings.Unit.SECONDS, defaults.unit());
         assertEquals(TimeUnit.SECONDS.toNanos(1), defaults.periodNanos());
     }
 
@@ -48,8 +48,8 @@ public class TickSettingsTest {
 
     @Test
     public void fromPayloadAcceptsIntegerAndLongValues() {
-        assertEquals(10, TickSettings.fromPayload(payload("FIXED_RATE", 10, "SECONDS")).getValue());
-        assertEquals(10, TickSettings.fromPayload(payload("FIXED_RATE", 10L, "SECONDS")).getValue());
+        assertEquals(10, TickSettings.fromPayload(payload("FIXED_RATE", 10, "SECONDS")).value());
+        assertEquals(10, TickSettings.fromPayload(payload("FIXED_RATE", 10L, "SECONDS")).value());
     }
 
     @Test

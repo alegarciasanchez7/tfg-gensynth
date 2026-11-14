@@ -172,8 +172,8 @@ public class Variable {
         @SuppressWarnings("unchecked")
         Map<String, Object> config = (Map<String, Object>) payload.getOrDefault("config", Map.of());
 
-        if ((config == null || config.isEmpty()) && defaultValue instanceof String) {
-            String dfStr = ((String) defaultValue).trim();
+        if ((config == null || config.isEmpty()) && defaultValue instanceof String defaultText) {
+            String dfStr = defaultText.trim();
             if (dfStr.startsWith("{") && dfStr.endsWith("}")) {
                 try {
                     com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();

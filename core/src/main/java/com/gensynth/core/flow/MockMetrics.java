@@ -62,7 +62,7 @@ public class MockMetrics implements IMetrics {
 
         // Fall back to long metrics
         if (metrics.containsKey(name)) {
-            return metrics.get(name).get();
+            return (double) metrics.get(name).get();
         }
 
         return 0.0;  // Default if not found

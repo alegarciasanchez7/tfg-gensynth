@@ -264,9 +264,9 @@ public class GroupDefinition {
         String name = (String) payload.get("name");
         String description = (String) payload.get("description");
         Object threadsObj = payload.get("threads");
-        int threads = (threadsObj instanceof Number) ? ((Number) threadsObj).intValue() : 1;
+        int threads = threadsObj instanceof Number threadCount ? threadCount.intValue() : 1;
         Object outputModeObj = payload.get("outputMode");
-        String outputMode = outputModeObj instanceof String ? (String) outputModeObj : null;
+        String outputMode = outputModeObj instanceof String text ? text : null;
 
         GroupDefinition group = new GroupDefinition(groupId, name, description, threads, outputMode);
         Object sequentialOrderObj = payload.get("sequentialOrder");

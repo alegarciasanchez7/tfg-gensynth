@@ -106,7 +106,7 @@ public class MockPipeline implements IPipeline {
 
     @Override
     public long getBufferSize() {
-        return (long) buffer.size();
+        return buffer.size();
     }
 
     @Override

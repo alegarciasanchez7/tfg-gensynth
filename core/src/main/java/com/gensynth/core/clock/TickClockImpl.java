@@ -107,7 +107,7 @@ public class TickClockImpl implements ITickClock {
             if (task != null) {
                 cancelTask();
                 // Wait one period before the first tick so editing the settings does not emit an extra burst
-                schedule(newSettings.getMode() == TickSettings.Mode.FIXED_RATE ? newSettings.periodNanos() : 0);
+                schedule(newSettings.mode() == TickSettings.Mode.FIXED_RATE ? newSettings.periodNanos() : 0);
             }
         }
     }
@@ -145,7 +145,7 @@ public class TickClockImpl implements ITickClock {
     private void schedule(long initialDelayNanos) {
         long gen = generation.get();
         TickSettings current = settings.get();
-        if (current.getMode() == TickSettings.Mode.AS_FAST_AS_POSSIBLE) {
+        if (current.mode() == TickSettings.Mode.AS_FAST_AS_POSSIBLE) {
             task = executor.submit(() -> runAsFastAsPossible(gen));
         } else {
             task = executor.scheduleAtFixedRate(this::tickOnce, initialDelayNanos, current.periodNanos(), TimeUnit.NANOSECONDS);

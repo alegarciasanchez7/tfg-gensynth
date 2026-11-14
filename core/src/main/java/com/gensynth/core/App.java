@@ -12,6 +12,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.io.IOException;
@@ -92,7 +94,7 @@ public class App {
         }
     }
 
-    private void performRollback(Path markerPath, String content) throws Exception {
+    private void performRollback(Path markerPath, String content) throws IOException, InterruptedException {
         // Save the report immediately so UI knows what happened even if restart is
         // required
         saveRollbackReport(content);
@@ -214,12 +216,13 @@ public class App {
         boolean desktop = false;
         String openFile = null;
         List<String> restartArgs = new ArrayList<>();
-        for (int i = 0; i < args.length; i++) {
-            String arg = args[i];
+        Iterator<String> remaining = Arrays.asList(args).iterator();
+        while (remaining.hasNext()) {
+            String arg = remaining.next();
             if ("--desktop".equalsIgnoreCase(arg)) {
                 desktop = true;
-            } else if ("--open".equals(arg) && i + 1 < args.length) {
-                openFile = args[++i];
+            } else if ("--open".equals(arg) && remaining.hasNext()) {
+                openFile = remaining.next();
             } else if (!arg.startsWith("-")) {
                 openFile = arg;
             } else {
@@ -278,6 +281,8 @@ public class App {
 
             app.awaitShutdown();
         } catch (Throwable t) {
+            // Throwable on purpose: a broken plugin usually fails with an Error (e.g. a
+            // NoClassDefFoundError), and the rollback below is what recovers from it
             logger.error("\n[EMERGENCY] Critical startup failure detected!");
             logger.error("[EMERGENCY] Error: {}", t.getMessage());
             app.handleEmergencyRecovery();
@@ -325,6 +330,20 @@ public class App {
             .ifPresent(file -> server.requestOpenProject(file.getAbsolutePath())));
     }
 
+    /** Stops the WebSocket server before a restart, on a best-effort basis. */
+    private void releaseWebSocketPort() {
+        if (webSocketServer == null) {
+            return;
+        }
+        try {
+            webSocketServer.stop(1000);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (Exception ignored) {
+            // Best effort: the restart goes ahead anyway
+        }
+    }
+
     private void handleEmergencyRecovery() {
         Path markerPath = AppPaths.current().pendingInstallMarker();
         if (Files.exists(markerPath)) {
@@ -338,15 +357,7 @@ public class App {
                 Thread.sleep(2000);
 
                 // Release the port before spawning the new process to avoid collisions
-                if (webSocketServer != null) {
-                    try {
-                        webSocketServer.stop(1000);
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                    } catch (Exception ignored) {
-                        // Best effort: the restart goes ahead anyway
-                    }
-                }
+                releaseWebSocketPort();
 
                 com.gensynth.core.util.RestartUtil.restart();
             } catch (InterruptedException e) {

@@ -277,7 +277,7 @@ public class LifecycleManagerImplTest {
     public void testListenerExceptionAggregation() throws Exception {
         manager.addLifecycleListener(new ILifecycleListener() {
             @Override
-            public void onInitialize() throws Exception {
+            public void onInitialize() {
                 throw new RuntimeException("Error 1");
             }
             @Override
@@ -288,7 +288,7 @@ public class LifecycleManagerImplTest {
 
         manager.addLifecycleListener(new ILifecycleListener() {
             @Override
-            public void onInitialize() throws Exception {
+            public void onInitialize() {
                 throw new RuntimeException("Error 2");
             }
             @Override
@@ -316,7 +316,7 @@ public class LifecycleManagerImplTest {
             @Override
             public void onStart() {}
             @Override
-            public void onStop() throws Exception {
+            public void onStop() {
                 stopCount.incrementAndGet();
                 throw new RuntimeException("Stop failed");
             }

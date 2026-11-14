@@ -157,9 +157,9 @@ public class GensynthMessageRouter extends CefMessageRouterHandlerAdapter {
         String cancelResponse = String.format(
                 "{\"type\":\"%s\",\"commandId\":\"%s\",\"protocolVersion\":\"1.0.0\",\"payload\":{\"status\":\"cancelled\"}}",
                 type, commandId);
-        WebSocket desktopSocket = server.getDesktopSocket();
-        if (desktopSocket != null) {
-            desktopSocket.send(cancelResponse);
+        WebSocket uiSocket = server.getDesktopSocket();
+        if (uiSocket != null) {
+            uiSocket.send(cancelResponse);
         }
         callback.success(cancelResponse);
     }
@@ -183,10 +183,10 @@ public class GensynthMessageRouter extends CefMessageRouterHandlerAdapter {
         } catch (Exception e) {
             logger.error("[BRIDGE] Error loading file", e);
             // The UI only listens to the desktop socket, so report the error there too
-            WebSocket desktopSocket = server.getDesktopSocket();
-            if (desktopSocket != null) {
+            WebSocket uiSocket = server.getDesktopSocket();
+            if (uiSocket != null) {
                 String code = e instanceof IllegalArgumentException ? "INVALID_PROJECT_FILE" : "LOAD_FAILED";
-                server.sendError(desktopSocket, commandId, code, e.getMessage(), null);
+                server.sendError(uiSocket, commandId, code, e.getMessage(), null);
             }
             callback.failure(500, "Error loading file: " + e.getMessage());
         }

@@ -293,8 +293,8 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         this.stateRepository = stateRepository;
         this.pluginInstaller = pluginInstaller;
         this.devicePreferences = DevicePreferences.inFolder(stateRepository.getStateDirectory());
-        if (this.pluginInstaller instanceof PluginInstallerImpl) {
-            ((PluginInstallerImpl) this.pluginInstaller).setPluginManager(this.connectorCatalogService.getPluginManager());
+        if (this.pluginInstaller instanceof PluginInstallerImpl installer) {
+            installer.setPluginManager(this.connectorCatalogService.getPluginManager());
         }
         this.scheduler = Executors.newScheduledThreadPool(Math.max(4, Runtime.getRuntime().availableProcessors() * 2));
         initializeRuntime();
@@ -408,7 +408,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
      * @return the tick settings of the clock now in use
      */
     public TickSettings getTickSettings() {
-        return bridgeContext.getProjectSettings().getTick();
+        return bridgeContext.getProjectSettings().tick();
     }
 
     /**
@@ -529,46 +529,8 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                 return;
             }
 
-            switch (type) {
-                case "GET_INITIAL_STATE" -> stateCommandHandler.handleGetInitialState(conn, commandId);
-                case "LOAD_STATE" -> stateCommandHandler.handleLoadState(conn, commandId);
-                case "REQUEST_OPEN_PROJECT" -> stateCommandHandler.handleRequestOpenProject(conn, commandId, payload);
-                case "SAVE_STATE" -> stateCommandHandler.handleSaveState(conn, commandId);
-                case "SUBSCRIBE_METRICS" -> systemCommandHandler.handleSubscribeMetrics(conn, commandId);
-                case "UNSUBSCRIBE_METRICS" -> systemCommandHandler.handleUnsubscribeMetrics(conn, commandId);
-                case "GET_CONNECTOR_CATALOG" -> systemCommandHandler.handleGetConnectorCatalog(conn, commandId);
-                case "GET_LATEST_CONNECTOR" -> systemCommandHandler.handleGetLatestConnector(conn, payload, commandId);
-                case "START_SYSTEM" -> systemCommandHandler.handleStartSystem(conn, commandId);
-                case "STOP_SYSTEM" -> systemCommandHandler.handleStopSystem(conn, commandId);
-                case "PAUSE_GROUP" -> groupCommandHandler.handlePauseGroup(conn, payload, commandId);
-                case "CLONE_GROUP" -> groupCommandHandler.handleCloneGroup(conn, payload, commandId);
-                case "CLONE_FLOW" -> flowCommandHandler.handleCloneFlow(conn, payload, commandId);
-                case "START_GROUP" -> groupCommandHandler.handleStartGroup(conn, payload, commandId);
-                case "STOP_GROUP" -> groupCommandHandler.handleStopGroup(conn, payload, commandId);
-                case "UI_LOG" -> systemCommandHandler.handleUiLog(conn, payload, commandId);
-                case "CREATE_GROUP" -> groupCommandHandler.handleCreateGroup(conn, payload, commandId);
-                case "DELETE_GROUP" -> groupCommandHandler.handleDeleteGroup(conn, payload, commandId);
-                case "UPDATE_GROUP_CONFIG" -> groupCommandHandler.handleUpdateGroupConfig(conn, payload, commandId);
-                case "CREATE_FLOW" -> flowCommandHandler.handleCreateFlow(conn, payload, commandId);
-                case "DELETE_FLOW" -> flowCommandHandler.handleDeleteFlow(conn, payload, commandId);
-                case "UPDATE_FLOW_CONFIG" -> flowCommandHandler.handleUpdateFlowConfig(conn, payload, commandId);
-                case "CREATE_VARIABLE" -> variableCommandHandler.handleCreateVariable(conn, payload, commandId);
-                case "DELETE_VARIABLE" -> variableCommandHandler.handleDeleteVariable(conn, payload, commandId);
-                case "UPDATE_VARIABLE" -> variableCommandHandler.handleUpdateVariable(conn, payload, commandId);
-                case "VALIDATE_PLUGIN" -> pluginCommandHandler.handleValidatePlugin(conn, payload, commandId);
-                case "INSTALL_PLUGIN" -> pluginCommandHandler.handleInstallPlugin(conn, payload, commandId);
-                case "UNINSTALL_PLUGIN" -> pluginCommandHandler.handleUninstallPlugin(conn, payload, commandId);
-                case "EXPORT_STATE" -> stateCommandHandler.handleExportState(conn, commandId, payload);
-                case "IMPORT_STATE" -> stateCommandHandler.handleImportState(conn, commandId, payload);
-                case "CONVERT_MESSAGE_FORMAT" -> handleConvertMessageFormat(conn, payload, commandId);
-                case "UPDATE_SETTINGS" -> settingsCommandHandler.handleUpdateSettings(conn, payload, commandId);
-                case "UPDATE_OUTPUT_FOLDER" -> settingsCommandHandler.handleUpdateOutputFolder(conn, payload, commandId);
-                case "CHECK_FOR_UPDATES" -> updateCommandHandler.handleCheckForUpdates(conn, commandId);
-                case "INSTALL_UPDATE" -> updateCommandHandler.handleInstallUpdate(conn, payload, commandId);
-                case "CANCEL_UPDATE" -> updateCommandHandler.handleCancelUpdate(conn, commandId);
-                default -> sendError(conn, commandId, "UNSUPPORTED_COMMAND", "Unsupported command: " + type, Map.of(
-                    "command", type
-                ));
+            if (!dispatchProjectCommand(conn, type, payload, commandId)) {
+                dispatchApplicationCommand(conn, type, payload, commandId);
             }
             sendTrace(conn, commandId, "END", type, System.currentTimeMillis() - startTime, "ok");
         } catch (Exception ex) {
@@ -582,6 +544,65 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             }
         } finally {
             MDC.remove(COMMAND_ID);
+        }
+    }
+
+    /**
+     * Runs a command that edits or runs the project: its groups, flows and variables.
+     *
+     * @return false when the command is not one of them
+     */
+    private boolean dispatchProjectCommand(WebSocket conn, String type, JsonNode payload, String commandId) {
+        switch (type) {
+            case "PAUSE_GROUP" -> groupCommandHandler.handlePauseGroup(conn, payload, commandId);
+            case "CLONE_GROUP" -> groupCommandHandler.handleCloneGroup(conn, payload, commandId);
+            case "CLONE_FLOW" -> flowCommandHandler.handleCloneFlow(conn, payload, commandId);
+            case "START_GROUP" -> groupCommandHandler.handleStartGroup(conn, payload, commandId);
+            case "STOP_GROUP" -> groupCommandHandler.handleStopGroup(conn, payload, commandId);
+            case "CREATE_GROUP" -> groupCommandHandler.handleCreateGroup(conn, payload, commandId);
+            case "DELETE_GROUP" -> groupCommandHandler.handleDeleteGroup(conn, payload, commandId);
+            case "UPDATE_GROUP_CONFIG" -> groupCommandHandler.handleUpdateGroupConfig(conn, payload, commandId);
+            case "CREATE_FLOW" -> flowCommandHandler.handleCreateFlow(conn, payload, commandId);
+            case "DELETE_FLOW" -> flowCommandHandler.handleDeleteFlow(conn, payload, commandId);
+            case "UPDATE_FLOW_CONFIG" -> flowCommandHandler.handleUpdateFlowConfig(conn, payload, commandId);
+            case "CREATE_VARIABLE" -> variableCommandHandler.handleCreateVariable(conn, payload, commandId);
+            case "DELETE_VARIABLE" -> variableCommandHandler.handleDeleteVariable(conn, payload, commandId);
+            case "UPDATE_VARIABLE" -> variableCommandHandler.handleUpdateVariable(conn, payload, commandId);
+            default -> {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** Runs the commands about the state, the system, plugins, settings and updates. */
+    private void dispatchApplicationCommand(WebSocket conn, String type, JsonNode payload, String commandId) {
+        switch (type) {
+            case "GET_INITIAL_STATE" -> stateCommandHandler.handleGetInitialState(conn, commandId);
+            case "LOAD_STATE" -> stateCommandHandler.handleLoadState(conn, commandId);
+            case "REQUEST_OPEN_PROJECT" -> stateCommandHandler.handleRequestOpenProject(conn, commandId, payload);
+            case "SAVE_STATE" -> stateCommandHandler.handleSaveState(conn, commandId);
+            case "SUBSCRIBE_METRICS" -> systemCommandHandler.handleSubscribeMetrics(conn, commandId);
+            case "UNSUBSCRIBE_METRICS" -> systemCommandHandler.handleUnsubscribeMetrics(conn, commandId);
+            case "GET_CONNECTOR_CATALOG" -> systemCommandHandler.handleGetConnectorCatalog(conn, commandId);
+            case "GET_LATEST_CONNECTOR" -> systemCommandHandler.handleGetLatestConnector(conn, payload, commandId);
+            case "START_SYSTEM" -> systemCommandHandler.handleStartSystem(conn, commandId);
+            case "STOP_SYSTEM" -> systemCommandHandler.handleStopSystem(conn, commandId);
+            case "UI_LOG" -> systemCommandHandler.handleUiLog(conn, payload, commandId);
+            case "VALIDATE_PLUGIN" -> pluginCommandHandler.handleValidatePlugin(conn, payload, commandId);
+            case "INSTALL_PLUGIN" -> pluginCommandHandler.handleInstallPlugin(conn, payload, commandId);
+            case "UNINSTALL_PLUGIN" -> pluginCommandHandler.handleUninstallPlugin(conn, payload, commandId);
+            case "EXPORT_STATE" -> stateCommandHandler.handleExportState(conn, commandId, payload);
+            case "IMPORT_STATE" -> stateCommandHandler.handleImportState(conn, commandId, payload);
+            case "CONVERT_MESSAGE_FORMAT" -> handleConvertMessageFormat(conn, payload, commandId);
+            case "UPDATE_SETTINGS" -> settingsCommandHandler.handleUpdateSettings(conn, payload, commandId);
+            case "UPDATE_OUTPUT_FOLDER" -> settingsCommandHandler.handleUpdateOutputFolder(conn, payload, commandId);
+            case "CHECK_FOR_UPDATES" -> updateCommandHandler.handleCheckForUpdates(conn, commandId);
+            case "INSTALL_UPDATE" -> updateCommandHandler.handleInstallUpdate(conn, payload, commandId);
+            case "CANCEL_UPDATE" -> updateCommandHandler.handleCancelUpdate(conn, commandId);
+            default -> sendError(conn, commandId, "UNSUPPORTED_COMMAND", "Unsupported command: " + type, Map.of(
+                "command", type
+            ));
         }
     }
 

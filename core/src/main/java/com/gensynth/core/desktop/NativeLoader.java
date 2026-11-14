@@ -7,6 +7,7 @@ import me.friwi.jcefmaven.CefInitializationException;
 import me.friwi.jcefmaven.EnumProgress;
 import me.friwi.jcefmaven.IProgressHandler;
 import me.friwi.jcefmaven.MavenCefAppHandlerAdapter;
+import me.friwi.jcefmaven.UnsupportedPlatformException;
 import org.cef.CefApp;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,10 +20,13 @@ import java.nio.file.Path;
 /**
  * Orchestrates the initialization of native JCEF (Chromium) components.
  */
-public class NativeLoader {
+public final class NativeLoader {
     private static final Logger logger = LoggerFactory.getLogger(NativeLoader.class);
 
     private static CefApp instance;
+
+    private NativeLoader() {
+    }
 
     /**
      * Initializes the JCEF environment. On the first start the native browser is downloaded into
@@ -30,8 +34,13 @@ public class NativeLoader {
      * the user can retry instead of the application closing silently.
      *
      * @return The initialized CefApp instance.
+     * @throws IOException                  if the native browser cannot be downloaded or installed
+     * @throws UnsupportedPlatformException if there is no native browser for this platform
+     * @throws InterruptedException         if the setup is interrupted
+     * @throws CefInitializationException   if the native browser cannot be started
      */
-    public static synchronized CefApp initialize() throws Exception {
+    public static synchronized CefApp initialize()
+            throws IOException, UnsupportedPlatformException, InterruptedException, CefInitializationException {
         if (instance != null)
             return instance;
 
@@ -111,14 +120,7 @@ public class NativeLoader {
                 // This is 100% standard and natively recognized by every Chromium child process (including jcef_helper),
                 // avoiding all Mojo deserialization conflicts and custom protocol security sandboxing blocks.
                 CefApp.getInstance().registerSchemeHandlerFactory("http", "gensynth.local",
-                        new org.cef.callback.CefSchemeHandlerFactory() {
-                            @Override
-                            public org.cef.handler.CefResourceHandler create(org.cef.browser.CefBrowser browser,
-                                    org.cef.browser.CefFrame frame, String schemeName,
-                                    org.cef.network.CefRequest request) {
-                                return new GensynthSchemeHandler();
-                            }
-                        });
+                        (browser, frame, schemeName, request) -> new GensynthSchemeHandler());
             }
 
             @Override

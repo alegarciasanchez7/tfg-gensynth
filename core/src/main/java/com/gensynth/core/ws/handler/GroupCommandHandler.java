@@ -12,6 +12,7 @@ import com.gensynth.core.ws.runtime.FlowRuntime;
 import com.gensynth.core.ws.runtime.GroupRuntime;
 import org.java_websocket.WebSocket;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -45,7 +46,7 @@ public class GroupCommandHandler implements CommandHandler {
     }
 
     @Override
-    public void handle(WebSocket conn, JsonNode payload, String commandId) throws Exception {
+    public void handle(WebSocket conn, JsonNode payload, String commandId) throws IOException {
         // Will be routed by method references directly.
     }
 
@@ -391,20 +392,20 @@ public class GroupCommandHandler implements CommandHandler {
 
                     // Clone variables for this flow
                     List<Variable> flowVars = new ArrayList<>();
-                    for (Variable var : ctx.getVariablesById().values()) {
-                        if (originalFlow.id.equals(var.getFlowId())) {
-                            flowVars.add(var);
+                    for (Variable variable : ctx.getVariablesById().values()) {
+                        if (originalFlow.id.equals(variable.getFlowId())) {
+                            flowVars.add(variable);
                         }
                     }
-                    for (Variable var : flowVars) {
+                    for (Variable variable : flowVars) {
                         String newVarId = UUID.randomUUID().toString();
                         Variable varClone = new Variable(
                             newVarId,
-                            var.getName(),
-                            var.getScope(),
-                            var.getType(),
-                            var.getDefaultValue(),
-                            var.getConfig(),
+                            variable.getName(),
+                            variable.getScope(),
+                            variable.getType(),
+                            variable.getDefaultValue(),
+                            variable.getConfig(),
                             newFlowId,
                             newGroupId
                         );
@@ -414,20 +415,20 @@ public class GroupCommandHandler implements CommandHandler {
 
                 // Clone group-scoped variables
                 List<Variable> groupVars = new ArrayList<>();
-                for (Variable var : ctx.getVariablesById().values()) {
-                    if (groupId.equals(var.getGroupId()) && "GROUP".equals(var.getScope())) {
-                        groupVars.add(var);
+                for (Variable variable : ctx.getVariablesById().values()) {
+                    if (groupId.equals(variable.getGroupId()) && "GROUP".equals(variable.getScope())) {
+                        groupVars.add(variable);
                     }
                 }
-                for (Variable var : groupVars) {
+                for (Variable variable : groupVars) {
                     String newVarId = UUID.randomUUID().toString();
                     Variable varClone = new Variable(
                         newVarId,
-                        var.getName(),
-                        var.getScope(),
-                        var.getType(),
-                        var.getDefaultValue(),
-                        var.getConfig(),
+                        variable.getName(),
+                        variable.getScope(),
+                        variable.getType(),
+                        variable.getDefaultValue(),
+                        variable.getConfig(),
                         null,
                         newGroupId
                     );

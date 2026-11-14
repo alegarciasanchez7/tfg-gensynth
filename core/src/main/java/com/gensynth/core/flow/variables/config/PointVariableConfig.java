@@ -108,7 +108,7 @@ public class PointVariableConfig extends VariableConfiguration {
     /** Position in {@link #graphSequence} of the current node (a node may appear more than once). */
     private int graphSequenceIndex = 0;
     private int remainingStopTicks = 0;
-    private transient boolean hasPausedAtCurrentNode = false;
+    private boolean hasPausedAtCurrentNode = false;
     private final List<String> visitedNodeHistory = new ArrayList<>();
 
     private AltitudeUnit altitudeUnit = AltitudeUnit.METERS;
@@ -261,7 +261,7 @@ public class PointVariableConfig extends VariableConfiguration {
     }
 
     public PointVariableConfig inertia(double inertia) {
-        this.inertia = Math.max(0.0, Math.min(1.0, inertia));
+        this.inertia = Math.clamp(inertia, 0.0, 1.0);
         return this;
     }
 
@@ -291,7 +291,9 @@ public class PointVariableConfig extends VariableConfiguration {
     public PointVariableConfig orbitRadius(double radius) {
         this.orbitRadius = radius;
         if (this.orbitCenter != null) {
-            double cx = orbitCenter.x, cy = orbitCenter.y, cz = orbitCenter.z;
+            double cx = orbitCenter.x;
+            double cy = orbitCenter.y;
+            double cz = orbitCenter.z;
             double r = radius * 2.0;
             if (cx - r < minPoint.x || cx + r > maxPoint.x || cy - r < minPoint.y || cy + r > maxPoint.y) {
                 this.minPoint = new Point3D(Math.min(minPoint.x, cx - r), Math.min(minPoint.y, cy - r), Math.min(minPoint.z, cz));
@@ -360,12 +362,10 @@ public class PointVariableConfig extends VariableConfiguration {
             return false;
         }
         for (BoundaryObstacle obs : obstacles) {
-            if (obs != null && obs.isEnabled() && obs.getType() == BoundaryObstacle.ObstacleType.OBSTACLE_POLYGON) {
-                if (obs.getPoints() != null && obs.getPoints().size() >= 3) {
-                    if (isPointInsideSpecificPolygon(x, y, obs.getPoints())) {
-                        return true;
-                    }
-                }
+            if (obs != null && obs.isEnabled() && obs.getType() == BoundaryObstacle.ObstacleType.OBSTACLE_POLYGON
+                    && obs.getPoints() != null && obs.getPoints().size() >= 3
+                    && isPointInsideSpecificPolygon(x, y, obs.getPoints())) {
+                return true;
             }
         }
         return false;
@@ -375,8 +375,10 @@ public class PointVariableConfig extends VariableConfiguration {
         boolean inside = false;
         int n = poly.size();
         for (int i = 0, j = n - 1; i < n; j = i++) {
-            double xi = poly.get(i).x, yi = poly.get(i).y;
-            double xj = poly.get(j).x, yj = poly.get(j).y;
+            double xi = poly.get(i).x;
+            double yi = poly.get(i).y;
+            double xj = poly.get(j).x;
+            double yj = poly.get(j).y;
             if (((yi > y) != (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) {
                 inside = !inside;
             }
@@ -388,16 +390,16 @@ public class PointVariableConfig extends VariableConfiguration {
         return (cy - ay) * (bx - ax) - (by - ay) * (cx - ax);
     }
 
-    public boolean doLineSegmentsIntersect(double p0_x, double p0_y, double p1_x, double p1_y,
-                                          double p2_x, double p2_y, double p3_x, double p3_y) {
-        double ccw1 = ccwCross(p0_x, p0_y, p1_x, p1_y, p2_x, p2_y);
-        double ccw2 = ccwCross(p0_x, p0_y, p1_x, p1_y, p3_x, p3_y);
-        double ccw3 = ccwCross(p2_x, p2_y, p3_x, p3_y, p0_x, p0_y);
-        double ccw4 = ccwCross(p2_x, p2_y, p3_x, p3_y, p1_x, p1_y);
+    public boolean doLineSegmentsIntersect(double p0X, double p0Y, double p1X, double p1Y,
+                                          double p2X, double p2Y, double p3X, double p3Y) {
+        double ccw1 = ccwCross(p0X, p0Y, p1X, p1Y, p2X, p2Y);
+        double ccw2 = ccwCross(p0X, p0Y, p1X, p1Y, p3X, p3Y);
+        double ccw3 = ccwCross(p2X, p2Y, p3X, p3Y, p0X, p0Y);
+        double ccw4 = ccwCross(p2X, p2Y, p3X, p3Y, p1X, p1Y);
 
         return ((ccw1 * ccw2 <= 0.0) && (ccw3 * ccw4 <= 0.0)) &&
-               (Math.max(p0_x, p1_x) >= Math.min(p2_x, p3_x) && Math.max(p2_x, p3_x) >= Math.min(p0_x, p1_x)) &&
-               (Math.max(p0_y, p1_y) >= Math.min(p2_y, p3_y) && Math.max(p2_y, p3_y) >= Math.min(p0_y, p1_y));
+               (Math.max(p0X, p1X) >= Math.min(p2X, p3X) && Math.max(p2X, p3X) >= Math.min(p0X, p1X)) &&
+               (Math.max(p0Y, p1Y) >= Math.min(p2Y, p3Y) && Math.max(p2Y, p3Y) >= Math.min(p0Y, p1Y));
     }
 
     public boolean doesSegmentIntersectAnyWall(double x1, double y1, double x2, double y2) {
@@ -565,7 +567,9 @@ public class PointVariableConfig extends VariableConfiguration {
         Shape3DType shape = shape3DType != null ? shape3DType : Shape3DType.CUBE;
         if (shape == Shape3DType.SPHERE) {
             double r = getShape3DRadius();
-            double dx = x - cx, dy = y - cy, dz = z - (minPoint.z + r);
+            double dx = x - cx;
+            double dy = y - cy;
+            double dz = z - (minPoint.z + r);
             return dx * dx + dy * dy + dz * dz <= r * r + eps;
         }
         double normZ = normalizedShapeZ(z);
@@ -575,10 +579,11 @@ public class PointVariableConfig extends VariableConfiguration {
         if (Math.abs(getShape3DHeight()) < 1e-9 && Math.abs(z - shapeBaseZ()) > eps) {
             return false;
         }
-        double scale = (shape == Shape3DType.CUBE) ? 1.0 : 1.0 - Math.max(0.0, Math.min(1.0, normZ));
+        double scale = (shape == Shape3DType.CUBE) ? 1.0 : 1.0 - Math.clamp(normZ, 0.0, 1.0);
         if (shape == Shape3DType.CONE) {
             double rAtZ = getShape3DRadius() * scale;
-            double dx = x - cx, dy = y - cy;
+            double dx = x - cx;
+            double dy = y - cy;
             return dx * dx + dy * dy <= rAtZ * rAtZ + eps;
         }
         return Math.abs(x - cx) <= getShape3DWidth() / 2.0 * scale + eps
@@ -668,7 +673,7 @@ public class PointVariableConfig extends VariableConfiguration {
                 }
                 double step = (maxVerticalStep > 0) ? maxVerticalStep : 1.0;
                 double delta = (ThreadLocalRandom.current().nextDouble() * 2 - 1) * step;
-                lastZ = Math.max(minZ, Math.min(maxZ, lastZ + delta));
+                lastZ = Math.clamp(lastZ + delta, minZ, maxZ);
                 newZ = lastZ;
                 break;
 
@@ -676,7 +681,7 @@ public class PointVariableConfig extends VariableConfiguration {
                 double speed = (altitudeOscillationSpeed > 0) ? altitudeOscillationSpeed : 0.1;
                 newZ = midZ + (ampZ * Math.sin(currentAltitudeAngle));
                 currentAltitudeAngle += speed;
-                newZ = Math.max(minZ, Math.min(maxZ, newZ));
+                newZ = Math.clamp(newZ, minZ, maxZ);
                 break;
             case FOLLOW_XY:
                 break;
@@ -697,8 +702,10 @@ public class PointVariableConfig extends VariableConfiguration {
         boolean inside = false;
         int n = boundaryPolygon.size();
         for (int i = 0, j = n - 1; i < n; j = i++) {
-            double xi = boundaryPolygon.get(i).x, yi = boundaryPolygon.get(i).y;
-            double xj = boundaryPolygon.get(j).x, yj = boundaryPolygon.get(j).y;
+            double xi = boundaryPolygon.get(i).x;
+            double yi = boundaryPolygon.get(i).y;
+            double xj = boundaryPolygon.get(j).x;
+            double yj = boundaryPolygon.get(j).y;
             if (((yi > y) != (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) {
                 inside = !inside;
             }
@@ -734,8 +741,8 @@ public class PointVariableConfig extends VariableConfiguration {
 
         if (isAnomalous) {
             Object val = anomalyConfig.getAnomalousValue();
-            if (val instanceof Point3D) {
-                return formatPointOutput((Point3D) val);
+            if (val instanceof Point3D anomalousPoint) {
+                return formatPointOutput(anomalousPoint);
             }
             return val;
         }
@@ -743,8 +750,8 @@ public class PointVariableConfig extends VariableConfiguration {
         if (sourceListVariableId != null && !sourceListVariableId.trim().isEmpty()) {
             Object refVal = resolveListReferenceValue();
             if (refVal != null) {
-                if (refVal instanceof Point3D) {
-                    Point3D altitudePoint = applyAltitudePattern((Point3D) refVal);
+                if (refVal instanceof Point3D refPoint) {
+                    Point3D altitudePoint = applyAltitudePattern(refPoint);
                     Point3D finalPoint = applyJitter(altitudePoint);
                     return formatPointOutput(finalPoint);
                 }
@@ -762,12 +769,10 @@ public class PointVariableConfig extends VariableConfiguration {
                 Point3D rawRand = generateRandomPoint();
                 point = applyBoundaries(rawRand.x, rawRand.y, rawRand.z, 0, 0, 0);
                 break;
-            case PATH_INTERPOLATOR:
-            case WAYPOINT_NAVIGATION:
+            case PATH_INTERPOLATOR, WAYPOINT_NAVIGATION:
                 point = generatePathPoint();
                 break;
-            case CONTINUOUS_MOVEMENT:
-            case RANDOM_WALK:
+            case CONTINUOUS_MOVEMENT, RANDOM_WALK:
                 point = generateRandomWalkPoint();
                 break;
             case CIRCULAR_ORBIT:
@@ -823,7 +828,10 @@ public class PointVariableConfig extends VariableConfiguration {
         double cx = (minPoint.x + maxPoint.x) / 2.0;
         double cy = (minPoint.y + maxPoint.y) / 2.0;
         Shape3DType shape = shape3DType != null ? shape3DType : Shape3DType.CUBE;
-        double halfX, halfY, zLow, zHigh;
+        double halfX;
+        double halfY;
+        double zLow;
+        double zHigh;
         if (shape == Shape3DType.SPHERE) {
             double r = getShape3DRadius();
             halfX = r;
@@ -1010,7 +1018,7 @@ public class PointVariableConfig extends VariableConfiguration {
         double y = center.y + currentRadius * Math.sin(currentAngle);
         double z = center.z;
 
-        currentAngle += (angularSpeed != 0 ? angularSpeed : 0.05);
+        currentAngle += (angularSpeed == 0 ? 0.05 : angularSpeed);
         if (spiralRate != 0.0) {
             currentRadius += spiralRate;
         }
@@ -1036,9 +1044,9 @@ public class PointVariableConfig extends VariableConfiguration {
 
             switch (boundaryBehavior) {
                 case CLAMP:
-                    newX = Math.max(boundMinX, Math.min(boundMaxX, x));
-                    newY = Math.max(boundMinY, Math.min(boundMaxY, y));
-                    newZ = Math.max(boundMinZ, Math.min(boundMaxZ, z));
+                    newX = Math.clamp(x, boundMinX, boundMaxX);
+                    newY = Math.clamp(y, boundMinY, boundMaxY);
+                    newZ = Math.clamp(z, boundMinZ, boundMaxZ);
                     break;
 
                 case WRAP:
@@ -1050,15 +1058,15 @@ public class PointVariableConfig extends VariableConfiguration {
                 case BOUNCE:
                     if (x < boundMinX || x > boundMaxX) {
                         newVx = -vx;
-                        newX = Math.max(boundMinX, Math.min(boundMaxX, x < boundMinX ? boundMinX + (boundMinX - x) : boundMaxX - (x - boundMaxX)));
+                        newX = Math.clamp(x < boundMinX ? boundMinX + (boundMinX - x) : boundMaxX - (x - boundMaxX), boundMinX, boundMaxX);
                     }
                     if (y < boundMinY || y > boundMaxY) {
                         newVy = -vy;
-                        newY = Math.max(boundMinY, Math.min(boundMaxY, y < boundMinY ? boundMinY + (boundMinY - y) : boundMaxY - (y - boundMaxY)));
+                        newY = Math.clamp(y < boundMinY ? boundMinY + (boundMinY - y) : boundMaxY - (y - boundMaxY), boundMinY, boundMaxY);
                     }
                     if (z < boundMinZ || z > boundMaxZ) {
                         newVz = -vz;
-                        newZ = Math.max(boundMinZ, Math.min(boundMaxZ, z < boundMinZ ? boundMinZ + (boundMinZ - z) : boundMaxZ - (z - boundMaxZ)));
+                        newZ = Math.clamp(z < boundMinZ ? boundMinZ + (boundMinZ - z) : boundMaxZ - (z - boundMaxZ), boundMinZ, boundMaxZ);
                     }
                     break;
             }
@@ -1106,8 +1114,8 @@ public class PointVariableConfig extends VariableConfiguration {
                 }
             }
         } else if (shape3DType == Shape3DType.CONE || shape3DType == Shape3DType.PYRAMID) {
-            newZ = Math.max(zMin, Math.min(zMax, z));
-            double scale = 1.0 - Math.max(0.0, Math.min(1.0, normalizedShapeZ(newZ)));
+            newZ = Math.clamp(z, zMin, zMax);
+            double scale = 1.0 - Math.clamp(normalizedShapeZ(newZ), 0.0, 1.0);
 
             if (shape3DType == Shape3DType.CONE) {
                 double radiusAtZ = getShape3DRadius() * scale;
@@ -1128,8 +1136,8 @@ public class PointVariableConfig extends VariableConfiguration {
                 double halfX = getShape3DWidth() / 2.0 * scale;
                 double halfY = getShape3DLength() / 2.0 * scale;
 
-                newX = Math.max(cx - halfX, Math.min(cx + halfX, x));
-                newY = Math.max(cy - halfY, Math.min(cy + halfY, y));
+                newX = Math.clamp(x, cx - halfX, cx + halfX);
+                newY = Math.clamp(y, cy - halfY, cy + halfY);
                 if (boundaryBehavior == BoundaryBehavior.BOUNCE && (x != newX || y != newY)) {
                     newVx = -vx;
                     newVy = -vy;
@@ -1149,9 +1157,9 @@ public class PointVariableConfig extends VariableConfiguration {
 
             switch (boundaryBehavior) {
                 case CLAMP:
-                    newX = Math.max(boundMinX, Math.min(boundMaxX, x));
-                    newY = Math.max(boundMinY, Math.min(boundMaxY, y));
-                    newZ = Math.max(boundMinZ, Math.min(boundMaxZ, z));
+                    newX = Math.clamp(x, boundMinX, boundMaxX);
+                    newY = Math.clamp(y, boundMinY, boundMaxY);
+                    newZ = Math.clamp(z, boundMinZ, boundMaxZ);
                     break;
 
                 case WRAP:
@@ -1163,15 +1171,15 @@ public class PointVariableConfig extends VariableConfiguration {
                 case BOUNCE:
                     if (x < boundMinX || x > boundMaxX) {
                         newVx = -vx;
-                        newX = Math.max(boundMinX, Math.min(boundMaxX, x < boundMinX ? boundMinX + (boundMinX - x) : boundMaxX - (x - boundMaxX)));
+                        newX = Math.clamp(x < boundMinX ? boundMinX + (boundMinX - x) : boundMaxX - (x - boundMaxX), boundMinX, boundMaxX);
                     }
                     if (y < boundMinY || y > boundMaxY) {
                         newVy = -vy;
-                        newY = Math.max(boundMinY, Math.min(boundMaxY, y < boundMinY ? boundMinY + (boundMinY - y) : boundMaxY - (y - boundMaxY)));
+                        newY = Math.clamp(y < boundMinY ? boundMinY + (boundMinY - y) : boundMaxY - (y - boundMaxY), boundMinY, boundMaxY);
                     }
                     if (z < boundMinZ || z > boundMaxZ) {
                         newVz = -vz;
-                        newZ = Math.max(boundMinZ, Math.min(boundMaxZ, z < boundMinZ ? boundMinZ + (boundMinZ - z) : boundMaxZ - (z - boundMaxZ)));
+                        newZ = Math.clamp(z < boundMinZ ? boundMinZ + (boundMinZ - z) : boundMaxZ - (z - boundMaxZ), boundMinZ, boundMaxZ);
                     }
                     break;
             }
@@ -1201,7 +1209,7 @@ public class PointVariableConfig extends VariableConfiguration {
 
     private Map<String, Object> formatPointOutput(Point3D p) {
         // Insertion order is the order written in messages: x, y, z / latitude, longitude, altitude
-        Map<String, Object> map = new java.util.LinkedHashMap<>(12);
+        Map<String, Object> map = java.util.LinkedHashMap.newLinkedHashMap(12);
         switch (coordinateSystem) {
             case CARTESIAN_2D:
                 map.put("x", p.x);
@@ -1308,14 +1316,13 @@ public class PointVariableConfig extends VariableConfiguration {
         graphStepInEdge = 0;
         graphSequenceIndex = 0;
         remainingStopTicks = 0;
-        if (visitedNodeHistory != null) {
-            visitedNodeHistory.clear();
-        }
+        visitedNodeHistory.clear();
     }
 
     @Override
     public Map<String, Object> toMap() {
-        Map<String, Object> map = new HashMap<>(32);
+        // Same table size as before, so the keys keep their order
+        Map<String, Object> map = HashMap.newHashMap(24);
         map.put("identifier", identifier);
         map.put("type", type.toString());
         map.put("pattern", pattern.toString());
@@ -1723,10 +1730,9 @@ public class PointVariableConfig extends VariableConfiguration {
         for (GraphEdge edge : graphEdges) {
             if (edge != null && edge.connectsNode(nodeId)) {
                 String neighborId = edge.getNeighborId(nodeId);
-                if (neighborId != null && !neighborId.equals(nodeId) && findGraphNodeById(neighborId) != null) {
-                    if (!neighbors.contains(neighborId)) {
-                        neighbors.add(neighborId);
-                    }
+                if (neighborId != null && !neighborId.equals(nodeId) && findGraphNodeById(neighborId) != null
+                        && !neighbors.contains(neighborId)) {
+                    neighbors.add(neighborId);
                 }
             }
         }

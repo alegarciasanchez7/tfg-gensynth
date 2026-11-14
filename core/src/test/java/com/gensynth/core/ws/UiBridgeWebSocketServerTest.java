@@ -351,7 +351,7 @@ public class UiBridgeWebSocketServerTest {
         com.gensynth.core.model.TickSettings expected = new com.gensynth.core.model.TickSettings(
                 com.gensynth.core.model.TickSettings.Mode.FIXED_RATE, 250, com.gensynth.core.model.TickSettings.Unit.MILLISECONDS);
         assertEquals(expected, server.tickClock.getSettings());
-        assertEquals(expected, repository.loadSettings().getTick());
+        assertEquals(expected, repository.loadSettings().tick());
 
         // Desktop socket is null and the mock is not a registered connection, so only the ack reaches it
         List<JsonNode> messages = sentMessages(mockConn);
@@ -420,8 +420,8 @@ public class UiBridgeWebSocketServerTest {
                   }
                 }
                 """);
-        assertEquals(com.gensynth.core.model.TickSettings.Mode.AS_FAST_AS_POSSIBLE, server.tickClock.getSettings().getMode());
-        assertEquals(2, server.tickClock.getSettings().getValue());
+        assertEquals(com.gensynth.core.model.TickSettings.Mode.AS_FAST_AS_POSSIBLE, server.tickClock.getSettings().mode());
+        assertEquals(2, server.tickClock.getSettings().value());
 
         Path exportPath = tempDir.resolve("with-settings.gsynth");
         server.onMessage(mockConn, "{\"type\":\"EXPORT_STATE\",\"commandId\":\"cmd-export-settings\",\"protocolVersion\":\"1.0.0\","
@@ -447,8 +447,8 @@ public class UiBridgeWebSocketServerTest {
 
         server.onMessage(null, "{\"type\":\"LOAD_STATE\",\"commandId\":\"cmd-load\",\"protocolVersion\":\"1.0.0\",\"payload\":{}}");
 
-        assertEquals(5, server.tickClock.getSettings().getValue());
-        assertEquals(com.gensynth.core.model.TickSettings.Unit.SECONDS, server.tickClock.getSettings().getUnit());
+        assertEquals(5, server.tickClock.getSettings().value());
+        assertEquals(com.gensynth.core.model.TickSettings.Unit.SECONDS, server.tickClock.getSettings().unit());
         server.shutdown();
     }
 

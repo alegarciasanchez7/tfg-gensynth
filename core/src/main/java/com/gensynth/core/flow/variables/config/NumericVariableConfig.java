@@ -170,8 +170,8 @@ public class NumericVariableConfig extends VariableConfiguration {
             Object refVal = resolveListReferenceValue();
             if (refVal != null) {
                 try {
-                    if (refVal instanceof Number) {
-                        currentValue = ((Number) refVal).doubleValue();
+                    if (refVal instanceof Number number) {
+                        currentValue = number.doubleValue();
                     } else {
                         currentValue = Double.parseDouble(refVal.toString().trim());
                     }
@@ -204,7 +204,7 @@ public class NumericVariableConfig extends VariableConfiguration {
                         if (numSteps > 0) {
                             long randomStep = ThreadLocalRandom.current().nextLong(0, numSteps + 1);
                             baseValue = fromValue + (randomStep * step);
-                            baseValue = Math.min(Math.max(baseValue, fromValue), toValue);
+                            baseValue = Math.clamp(baseValue, fromValue, toValue);
                         } else {
                             baseValue = fromValue;
                         }
@@ -217,7 +217,7 @@ public class NumericVariableConfig extends VariableConfiguration {
                         double randomOffset = ThreadLocalRandom.current().nextDouble(-constantMargin, constantMargin);
                         baseValue = constantValue + randomOffset;
                         if (fromValue < toValue) {
-                            baseValue = Math.min(Math.max(baseValue, fromValue), toValue);
+                            baseValue = Math.clamp(baseValue, fromValue, toValue);
                         }
                     } else {
                         baseValue = constantValue;
@@ -269,7 +269,12 @@ public class NumericVariableConfig extends VariableConfiguration {
     }
 
     private double generateDrift() {
-        double startVal = driftInitialValue != null ? driftInitialValue : (initialValue != null ? initialValue : fromValue);
+        double startVal;
+        if (driftInitialValue != null) {
+            startVal = driftInitialValue;
+        } else {
+            startVal = initialValue != null ? initialValue : fromValue;
+        }
         double t = (tickCounter - 1) * simulationTimeStep;
         double rawVal = startVal + driftRate * t;
 
@@ -285,8 +290,7 @@ public class NumericVariableConfig extends VariableConfiguration {
                     }
                     return offset <= range ? fromValue + offset : toValue - (offset - range);
                 }
-                case "WRAP":
-                case "RESET":
+                case "WRAP", "RESET":
                     if (rawVal > toValue) {
                         double range = toValue - fromValue;
                         rawVal = fromValue + ((rawVal - fromValue) % range);
@@ -297,7 +301,7 @@ public class NumericVariableConfig extends VariableConfiguration {
                     return rawVal;
                 case CLAMP:
                 default:
-                    return Math.min(Math.max(rawVal, fromValue), toValue);
+                    return Math.clamp(rawVal, fromValue, toValue);
             }
         }
         return rawVal;
@@ -318,8 +322,7 @@ public class NumericVariableConfig extends VariableConfiguration {
         if (ThreadLocalRandom.current().nextDouble() < probThreshold) {
             String mode = spikeMode != null ? spikeMode.toUpperCase() : FIXED_OFFSET;
             switch (mode) {
-                case "RANGE_SPIKE":
-                case "OUT_OF_RANGE":
+                case "RANGE_SPIKE", "OUT_OF_RANGE":
                     if (spikeMin < spikeMax) {
                         return spikeMin + (spikeMax - spikeMin) * ThreadLocalRandom.current().nextDouble();
                     }
@@ -351,9 +354,17 @@ public class NumericVariableConfig extends VariableConfiguration {
             return sampleDistribution(distribution);
         }
         if ("INTEGER".equalsIgnoreCase(precision) && Math.ceil(fromValue) <= Math.floor(toValue)) {
-            return getRandomLongInRange((long) Math.ceil(fromValue), (long) Math.floor(toValue));
+            return (double) getRandomLongInRange((long) Math.ceil(fromValue), (long) Math.floor(toValue));
         }
         return fromValue + (toValue - fromValue) * ThreadLocalRandom.current().nextDouble();
+    }
+
+    /**
+     * Keeps the value in [min, max]. A range with min above max (rejected by {@link #validate()})
+     * gives max, as before {@link Math#clamp(double, double, double)} was used.
+     */
+    private double clampToRange(double value) {
+        return Double.compare(fromValue, toValue) <= 0 ? Math.clamp(value, fromValue, toValue) : toValue;
     }
 
     private double sampleDistribution(String dist) {
@@ -361,10 +372,10 @@ public class NumericVariableConfig extends VariableConfiguration {
             double mean = (fromValue + toValue) / 2.0;
             double stdDev = (toValue - fromValue) / 6.0; // 99.7% of values within range
             double val = mean + ThreadLocalRandom.current().nextGaussian() * stdDev;
-            return Math.min(Math.max(val, fromValue), toValue);
+            return clampToRange(val);
         } else if ("EXPONENTIAL".equalsIgnoreCase(dist)) {
             double val = fromValue - Math.log(ThreadLocalRandom.current().nextDouble()) * ((toValue - fromValue) / 5.0);
-            return Math.min(Math.max(val, fromValue), toValue);
+            return clampToRange(val);
         } else {
             // UNIFORM
             return fromValue + (toValue - fromValue) * ThreadLocalRandom.current().nextDouble();
@@ -537,15 +548,11 @@ public class NumericVariableConfig extends VariableConfiguration {
                 Number yNum = (Number) pt.get("y");
                 return yNum != null ? yNum.doubleValue() : fromValue;
             }
-            if (px < index) {
-                if (before == null || px > ((Number) before.get("x")).doubleValue()) {
-                    before = pt;
-                }
+            if (px < index && (before == null || px > ((Number) before.get("x")).doubleValue())) {
+                before = pt;
             }
-            if (px > index) {
-                if (after == null || px < ((Number) after.get("x")).doubleValue()) {
-                    after = pt;
-                }
+            if (px > index && (after == null || px < ((Number) after.get("x")).doubleValue())) {
+                after = pt;
             }
         }
 
@@ -639,6 +646,11 @@ public class NumericVariableConfig extends VariableConfiguration {
         return intervalMin + (intervalMax - intervalMin) * ThreadLocalRandom.current().nextDouble();
     }
 
+    /** Format of an integer padded with zeros to the given width (the width is not known in advance). */
+    private static String zeroPaddedFormat(int width) {
+        return "%0" + width + "d";
+    }
+
     private Object formatValue(double value) {
         String activePrefix = this.prefix != null ? this.prefix : "";
         String activeSuffix = this.suffix != null ? this.suffix : "";
@@ -669,7 +681,7 @@ public class NumericVariableConfig extends VariableConfiguration {
             if (hasFormatSpec && numberFormat.matches("0*1?")) {
                 int padLen = numberFormat.length();
                 if (padLen > 0) {
-                    formattedNum = String.format(Locale.ROOT, "%0" + padLen + "d", intVal);
+                    formattedNum = String.format(Locale.ROOT, zeroPaddedFormat(padLen), intVal);
                 } else {
                     formattedNum = String.valueOf(intVal);
                 }
@@ -704,8 +716,8 @@ public class NumericVariableConfig extends VariableConfiguration {
 
             if (hasFormatSpec || !activePrefix.isEmpty() || !activeSuffix.isEmpty()) {
                 String formattedNum;
-                String strValue = String.format(Locale.US,
-                        "%." + (activeDecimalPlaces >= 0 ? activeDecimalPlaces : 2) + "f", roundedValue);
+                String decimalsFormat = "%." + (activeDecimalPlaces >= 0 ? activeDecimalPlaces : 2) + "f";
+                String strValue = String.format(Locale.US, decimalsFormat, roundedValue);
                 int dotIdx = strValue.indexOf('.');
                 String intPartStr = dotIdx >= 0 ? strValue.substring(0, dotIdx) : strValue;
                 String decPartStr = dotIdx >= 0 ? strValue.substring(dotIdx) : "";
@@ -720,7 +732,7 @@ public class NumericVariableConfig extends VariableConfiguration {
                     if (padLen > 0) {
                         try {
                             long intPartVal = Long.parseLong(intPartStr);
-                            intPartStr = String.format(Locale.ROOT, "%0" + padLen + "d", intPartVal);
+                            intPartStr = String.format(Locale.ROOT, zeroPaddedFormat(padLen), intPartVal);
                         } catch (NumberFormatException e) {
                             // ignore, keep original
                         }
@@ -763,7 +775,8 @@ public class NumericVariableConfig extends VariableConfiguration {
 
     @Override
     public Map<String, Object> toMap() {
-        Map<String, Object> map = new HashMap<>(32);
+        // Same table size as before, so the keys keep their order
+        Map<String, Object> map = HashMap.newHashMap(24);
         map.put("identifier", identifier);
         map.put("type", type.name());
         map.put("pattern", pattern.name());

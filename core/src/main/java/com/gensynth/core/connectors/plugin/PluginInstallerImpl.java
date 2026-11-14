@@ -91,7 +91,7 @@ public class PluginInstallerImpl implements IPluginInstaller {
         String newVersion = validation.getPluginVersion();
 
         // Step 2: Handle Versioning (Backup existing versions)
-        handleVersioning(pluginId, newVersion);
+        handleVersioning(pluginId);
 
         // Step 3: Build target path
         String jarFileName = sanitizeFileName(pluginId) + "-" + sanitizeFileName(newVersion) + ".jar";
@@ -118,7 +118,7 @@ public class PluginInstallerImpl implements IPluginInstaller {
     /**
      * Finds existing versions of the same plugin and moves them to a backup folder.
      */
-    private void handleVersioning(String pluginId, String newVersion) {
+    private void handleVersioning(String pluginId) {
         Path backupDir = pluginsDirectory.resolve("backup");
         try {
             if (!Files.exists(backupDir)) {
@@ -128,12 +128,12 @@ public class PluginInstallerImpl implements IPluginInstaller {
             try (DirectoryStream<Path> stream = Files.newDirectoryStream(pluginsDirectory, JAR_GLOB)) {
                 for (Path jarPath : stream) {
                     InstalledPluginInfo info = loadPluginInfoFromJar(jarPath);
-                    if (info != null && info.getPluginId().equals(pluginId)) {
+                    if (info != null && info.pluginId().equals(pluginId)) {
                         // It's the same plugin. Move it to backup.
                         Path backupPath = backupDir.resolve(jarPath.getFileName() + ".bak_" + System.currentTimeMillis());
                         Files.move(jarPath, backupPath);
                         logger.info("Moved existing version of {} ({}) to backup: {}", 
-                                pluginId, info.getPluginVersion(), backupPath.getFileName());
+                                pluginId, info.pluginVersion(), backupPath.getFileName());
                     }
                 }
             }
@@ -159,7 +159,9 @@ public class PluginInstallerImpl implements IPluginInstaller {
     private void clearRollbackMarker() {
         try {
             Files.deleteIfExists(pluginsDirectory.resolve(AppPaths.PENDING_INSTALL_MARKER));
-        } catch (IOException ignored) {}
+        } catch (IOException ignored) {
+            // Best effort: a marker left behind is cleared on the next successful boot
+        }
     }
 
     @Override
@@ -176,9 +178,9 @@ public class PluginInstallerImpl implements IPluginInstaller {
                 
                 if (info != null) {
                     logger.info("Checking plugin: id={}, version={} against target: id={}, version={}", 
-                            info.getPluginId(), info.getPluginVersion(), pluginId, pluginVersion);
+                            info.pluginId(), info.pluginVersion(), pluginId, pluginVersion);
                     
-                    if (info.getPluginId().equals(pluginId) && info.getPluginVersion().equals(pluginVersion)) {
+                    if (info.pluginId().equals(pluginId) && info.pluginVersion().equals(pluginVersion)) {
                         // CRITICAL FOR WINDOWS: Unload the plugin from the manager to release file locks
                         if (pluginManager != null) {
                             pluginManager.unloadPlugin(pluginId, pluginVersion);
@@ -187,7 +189,7 @@ public class PluginInstallerImpl implements IPluginInstaller {
                         Files.delete(jarPath);
                         logger.info("Plugin uninstalled: {}@{} ({})", pluginId, pluginVersion, jarPath.getFileName());
                         return PluginInstallResult.success(
-                                "Plugin '" + info.getDisplayName() + "' removed. Restart required.",
+                                "Plugin '" + info.displayName() + "' removed. Restart required.",
                                 pluginId
                         );
                     }
@@ -270,7 +272,7 @@ public class PluginInstallerImpl implements IPluginInstaller {
 
         // External plugins
         for (InstalledPluginInfo info : listInstalledPlugins()) {
-            keys.add(info.getPluginId() + "@" + info.getPluginVersion());
+            keys.add(info.pluginId() + "@" + info.pluginVersion());
         }
 
         return keys;

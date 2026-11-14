@@ -1,5 +1,6 @@
 package com.gensynth.core.flow;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -7,7 +8,11 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.xml.parsers.ParserConfigurationException;
+import org.xml.sax.SAXException;
+
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.StringReader;
 import java.util.*;
 
@@ -58,7 +63,8 @@ public class MessageFormatConverter {
     /**
      * Parses content of specified format into a Jackson JsonNode tree structure.
      */
-    private static JsonNode parseToTree(String content, String format) throws Exception {
+    private static JsonNode parseToTree(String content, String format)
+            throws IOException, ParserConfigurationException, SAXException {
         String trimmed = content.trim();
         switch (format) {
             case "JSON":
@@ -82,7 +88,7 @@ public class MessageFormatConverter {
     /**
      * Formats a JsonNode tree into the target text format.
      */
-    private static String formatTree(JsonNode node, String format) throws Exception {
+    private static String formatTree(JsonNode node, String format) throws JsonProcessingException {
         switch (format) {
             case "JSON":
                 return mapper.writerWithDefaultPrettyPrinter().writeValueAsString(node);
@@ -99,7 +105,8 @@ public class MessageFormatConverter {
     // XML Parsing & Formatting Helpers
     // ==========================================
 
-    private static JsonNode parseXmlToTree(String xmlContent) throws Exception {
+    private static JsonNode parseXmlToTree(String xmlContent)
+            throws ParserConfigurationException, SAXException, IOException {
         javax.xml.parsers.DocumentBuilderFactory factory = javax.xml.parsers.DocumentBuilderFactory.newInstance();
         factory.setNamespaceAware(false);
         // Security protections against XXE
@@ -245,7 +252,7 @@ public class MessageFormatConverter {
     // CSV Parsing & Formatting Helpers
     // ==========================================
 
-    private static JsonNode parseCsvToTree(String csvContent) throws Exception {
+    private static JsonNode parseCsvToTree(String csvContent) throws IOException {
         BufferedReader reader = new BufferedReader(new StringReader(csvContent));
         String headerLine = reader.readLine();
         if (headerLine == null || headerLine.trim().isEmpty()) {

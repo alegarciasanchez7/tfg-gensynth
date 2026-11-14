@@ -225,29 +225,26 @@ public final class ConnectorField {
     // ── Helpers ──────────────────────────────────────────────────
 
     private Object normalizeDefault(Object value) {
-        switch (type) {
-            case TEXT, PASSWORD -> {
-                if (value instanceof String) return value;
-            }
-            case INTEGER -> {
-                if (value instanceof Integer || value instanceof Long || value instanceof Short || value instanceof Byte) {
-                    return ((Number) value).longValue();
-                }
-            }
-            case DECIMAL -> {
-                if (value instanceof Number number) return number.doubleValue();
-            }
-            case BOOLEAN -> {
-                if (value instanceof Boolean) return value;
-            }
+        Object normalized = switch (type) {
+            case TEXT, PASSWORD -> value instanceof String ? value : null;
+            case INTEGER -> isWholeNumberType(value) ? Long.valueOf(((Number) value).longValue()) : null;
+            case DECIMAL -> value instanceof Number number ? Double.valueOf(number.doubleValue()) : null;
+            case BOOLEAN -> value instanceof Boolean ? value : null;
             case SELECT -> {
                 if (value instanceof String text && options.stream().anyMatch(option -> option.value().equals(text))) {
-                    return value;
+                    yield value;
                 }
                 throw new IllegalArgumentException("Default of '" + key + "' must be one of its option values");
             }
+        };
+        if (normalized == null) {
+            throw new IllegalArgumentException("Default of '" + key + "' does not match its type " + type + ": " + value);
         }
-        throw new IllegalArgumentException("Default of '" + key + "' does not match its type " + type + ": " + value);
+        return normalized;
+    }
+
+    private static boolean isWholeNumberType(Object value) {
+        return value instanceof Integer || value instanceof Long || value instanceof Short || value instanceof Byte;
     }
 
     private void requireNumeric(String what) {

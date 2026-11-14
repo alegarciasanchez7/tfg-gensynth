@@ -92,15 +92,15 @@ final class CliFormat {
      *         {@code 1 min} or {@code as fast as possible}
      */
     static String tick(TickSettings tick) {
-        if (tick.getMode() == TickSettings.Mode.AS_FAST_AS_POSSIBLE) {
+        if (tick.mode() == TickSettings.Mode.AS_FAST_AS_POSSIBLE) {
             return "as fast as possible";
         }
-        String unit = switch (tick.getUnit()) {
+        String unit = switch (tick.unit()) {
             case MILLISECONDS -> "ms";
             case SECONDS -> "s";
             case MINUTES -> "min";
         };
-        return tick.getValue() + " " + unit;
+        return tick.value() + " " + unit;
     }
 
     /**
@@ -117,7 +117,7 @@ final class CliFormat {
     static TickSettings parseTick(String text, TickSettings current) {
         String value = text.trim().toLowerCase(Locale.ROOT);
         if (value.equals("fast")) {
-            return new TickSettings(TickSettings.Mode.AS_FAST_AS_POSSIBLE, current.getValue(), current.getUnit());
+            return new TickSettings(TickSettings.Mode.AS_FAST_AS_POSSIBLE, current.value(), current.unit());
         }
         Matcher matcher = TICK_PERIOD.matcher(value);
         if (!matcher.matches()) {
@@ -137,7 +137,9 @@ final class CliFormat {
         return new TickSettings(TickSettings.Mode.FIXED_RATE, period, unit);
     }
 
+    /** Formats the value with one decimal, or with two when {@code decimals} is 2. */
     private static String fixed(double value, int decimals) {
-        return String.format(Locale.ROOT, "%." + decimals + "f", value);
+        String pattern = decimals == 2 ? "%.2f" : "%.1f";
+        return String.format(Locale.ROOT, pattern, value);
     }
 }

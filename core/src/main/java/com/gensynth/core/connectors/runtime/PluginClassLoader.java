@@ -1,10 +1,8 @@
 package com.gensynth.core.connectors.runtime;
  
  
- import java.io.IOException;
  import java.net.URL;
  import java.net.URLClassLoader;
- import java.util.Enumeration;
  import java.util.List;
  
  /**
@@ -67,12 +65,6 @@ package com.gensynth.core.connectors.runtime;
              url = super.getResource(name);
          }
          return url;
-     }
- 
-     @Override
-     public Enumeration<URL> getResources(String name) throws IOException {
-         // This is more complex, but for now we just let the parent handle the combined view
-         return super.getResources(name);
      }
  
      private boolean shouldDelegateToParent(String className) {

@@ -15,6 +15,7 @@ import org.java_websocket.WebSocket;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -46,7 +47,7 @@ public class StateCommandHandler implements CommandHandler {
     }
 
     @Override
-    public void handle(WebSocket conn, JsonNode payload, String commandId) throws Exception {
+    public void handle(WebSocket conn, JsonNode payload, String commandId) throws IOException {
         // Methods are routed individually by UiBridgeWebSocketServer.
     }
 
@@ -88,7 +89,7 @@ public class StateCommandHandler implements CommandHandler {
             } catch (IllegalArgumentException e) {
                 server.sendError(conn, commandId, "INVALID_PROJECT_FILE", e.getMessage(), Map.of(FILE_PATH, filePath));
                 return;
-            } catch (java.io.IOException e) {
+            } catch (IOException e) {
                 server.sendError(conn, commandId, "LOAD_FAILED", "Cannot read " + filePath + ": " + e.getMessage(),
                     Map.of(FILE_PATH, filePath));
                 return;
@@ -226,8 +227,8 @@ public class StateCommandHandler implements CommandHandler {
             for (GroupDefinition def : newGroups) {
                 ctx.getGroupsById().put(def.getGroupId(), GroupRuntime.fromDefinition(def));
             }
-            for (Variable var : newVariables) {
-                ctx.getVariablesById().put(var.getId(), var);
+            for (Variable variable : newVariables) {
+                ctx.getVariablesById().put(variable.getId(), variable);
             }
             logDuplicateNames(ctx.getGroupsById().values());
 
@@ -407,7 +408,9 @@ public class StateCommandHandler implements CommandHandler {
             logger.error("Failed to include rollback report in initial state", e);
             try {
                 java.nio.file.Files.deleteIfExists(AppPaths.current().rollbackReport());
-            } catch (Exception ignored) {}
+            } catch (Exception ignored) {
+                // Best effort: a report left behind is shown again on the next start
+            }
         }
 
         return payload;

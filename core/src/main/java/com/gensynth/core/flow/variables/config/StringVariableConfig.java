@@ -360,7 +360,8 @@ public class StringVariableConfig extends VariableConfiguration {
 
     @Override
     public Map<String, Object> toMap() {
-        Map<String, Object> map = new HashMap<>(16);
+        // Same table size as before, so the keys keep their order
+        Map<String, Object> map = HashMap.newHashMap(12);
         map.put("identifier", identifier);
         map.put("type", type.name());
         map.put("pattern", pattern.name());

@@ -122,7 +122,9 @@ public class TemplateEngine {
                             if (sub.toLowerCase().startsWith("item")) {
                                 try {
                                     itemIndex = Integer.parseInt(sub.substring(4));
-                                } catch (NumberFormatException ignored) {}
+                                } catch (NumberFormatException ignored) {
+                                    // Not an item index (e.g. "items"): read as a property below
+                                }
                                 if (parts.length >= 4) {
                                     propertyPart = parts[3];
                                 }
@@ -138,7 +140,9 @@ public class TemplateEngine {
                             if (sub.toLowerCase().startsWith("item")) {
                                 try {
                                     itemIndex = Integer.parseInt(sub.substring(4));
-                                } catch (NumberFormatException ignored) {}
+                                } catch (NumberFormatException ignored) {
+                                    // Not an item index (e.g. "items"): read as a property below
+                                }
                                 if (parts.length >= 3) {
                                     propertyPart = parts[2];
                                 }
@@ -198,8 +202,7 @@ public class TemplateEngine {
                             targetObj = instant;
                         }
                     }
-                    if (itemIndex != null && targetObj instanceof java.util.List<?>) {
-                        java.util.List<?> list = (java.util.List<?>) targetObj;
+                    if (itemIndex != null && targetObj instanceof java.util.List<?> list) {
                         if (itemIndex >= 0 && itemIndex < list.size()) {
                             targetObj = list.get(itemIndex);
                         } else {
@@ -243,13 +246,7 @@ public class TemplateEngine {
             return false;
         }
         switch (propertyPart.toLowerCase(java.util.Locale.ROOT)) {
-            case "size":
-            case LENGTH:
-            case "count":
-            case "first":
-            case "firstitem":
-            case "last":
-            case "lastitem":
+            case "size", LENGTH, "count", "first", "firstitem", "last", "lastitem":
                 return true;
             default:
                 return false;
@@ -309,7 +306,9 @@ public class TemplateEngine {
                 } catch (Exception ignored) {
                     try {
                         instant = java.time.Instant.ofEpochMilli(Long.parseLong(str));
-                    } catch (Exception ignored2) {}
+                    } catch (Exception ignored2) {
+                        // Neither an ISO instant nor epoch millis: the current time is used below
+                    }
                 }
             }
 
@@ -326,51 +325,29 @@ public class TemplateEngine {
             java.time.ZonedDateTime zdt = instant.atZone(zone);
 
             switch (prop) {
-                case "month":
-                case "monthtext":
-                case "month_text":
-                case "monthname":
-                case "month_name":
+                case "month", "monthtext", "month_text", "monthname", "month_name":
                     return zdt.getMonth().getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.ENGLISH);
-                case "monthshort":
-                case "month_short":
+                case "monthshort", "month_short":
                     return zdt.getMonth().getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.ENGLISH);
-                case "monthnumber":
-                case "monthvalue":
-                case "month_number":
-                case "month_val":
+                case "monthnumber", "monthvalue", "month_number", "month_val":
                     return String.valueOf(zdt.getMonthValue());
                 case "year":
                     return String.valueOf(zdt.getYear());
-                case "day":
-                case "dayofmonth":
-                case "day_of_month":
+                case "day", "dayofmonth", "day_of_month":
                     return String.valueOf(zdt.getDayOfMonth());
-                case "dayofweek":
-                case "day_of_week":
-                case "dayofweekname":
+                case "dayofweek", "day_of_week", "dayofweekname":
                     return zdt.getDayOfWeek().getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.ENGLISH);
-                case "dayofweeknumber":
-                case "dayofweekvalue":
+                case "dayofweeknumber", "dayofweekvalue":
                     return String.valueOf(zdt.getDayOfWeek().getValue());
-                case "hour":
-                case "hours":
+                case "hour", "hours":
                     return String.valueOf(zdt.getHour());
-                case "minute":
-                case "minutes":
+                case "minute", "minutes":
                     return String.valueOf(zdt.getMinute());
-                case "second":
-                case "seconds":
+                case "second", "seconds":
                     return String.valueOf(zdt.getSecond());
-                case "millisecond":
-                case "millis":
-                case "timestamp":
-                case "epochmilli":
-                case "epoch_milli":
+                case "millisecond", "millis", "timestamp", "epochmilli", "epoch_milli":
                     return String.valueOf(instant.toEpochMilli());
-                case "timezone":
-                case "time_zone":
-                case "tz":
+                case "timezone", "time_zone", "tz":
                     return zone.getId();
                 default:
                     break;
@@ -385,20 +362,15 @@ public class TemplateEngine {
             } else if (targetObj != null) {
                 try {
                     val = Double.parseDouble(targetObj.toString());
-                } catch (NumberFormatException ignored) {}
+                } catch (NumberFormatException ignored) {
+                    // Not a number: the numeric properties read 0
+                }
             }
 
             switch (prop) {
-                case "integerpart":
-                case "int":
-                case "integer":
-                case "integer_part":
+                case "integerpart", "int", "integer", "integer_part":
                     return String.valueOf((long) val);
-                case "fractionalpart":
-                case "decimalpart":
-                case "fraction":
-                case "decimal":
-                case "fractional_part":
+                case "fractionalpart", "decimalpart", "fraction", "decimal", "fractional_part":
                     String s = String.format(java.util.Locale.US, "%f", val);
                     int idx = s.indexOf('.');
                     if (idx != -1) {
@@ -406,18 +378,15 @@ public class TemplateEngine {
                         return sub.isEmpty() ? "0" : sub;
                     }
                     return "0";
-                case "abs":
-                case "absolute":
+                case "abs", "absolute":
                     return val % 1 == 0 ? String.valueOf((long) Math.abs(val)) : String.valueOf(Math.abs(val));
                 case "round":
                     return String.valueOf(Math.round(val));
                 case "floor":
                     return String.valueOf((long) Math.floor(val));
-                case "ceil":
-                case "ceiling":
+                case "ceil", "ceiling":
                     return String.valueOf((long) Math.ceil(val));
-                case "sign":
-                case "signum":
+                case "sign", "signum":
                     return String.valueOf((int) Math.signum(val));
                 default:
                     break;
@@ -428,22 +397,17 @@ public class TemplateEngine {
         if (varType == VariableType.STRING || targetObj instanceof String) {
             String str = targetObj != null ? targetObj.toString() : "";
             switch (prop) {
-                case LENGTH:
-                case "size":
+                case LENGTH, "size":
                     return String.valueOf(str.length());
-                case "upper":
-                case "uppercase":
+                case "upper", "uppercase":
                     return str.toUpperCase(java.util.Locale.ROOT);
-                case "lower":
-                case "lowercase":
+                case "lower", "lowercase":
                     return str.toLowerCase(java.util.Locale.ROOT);
                 case "trim":
                     return str.trim();
-                case "firstchar":
-                case "first_char":
+                case "firstchar", "first_char":
                     return str.isEmpty() ? "" : String.valueOf(str.charAt(0));
-                case "lastchar":
-                case "last_char":
+                case "lastchar", "last_char":
                     return str.isEmpty() ? "" : String.valueOf(str.charAt(str.length() - 1));
                 default:
                     break;
@@ -460,19 +424,13 @@ public class TemplateEngine {
             }
 
             switch (prop) {
-                case "inverse":
-                case "negation":
-                case "not":
+                case "inverse", "negation", "not":
                     return String.valueOf(!bool);
-                case "asnumber":
-                case "binary":
-                case "int":
+                case "asnumber", "binary", "int":
                     return bool ? "1" : "0";
-                case "asstring":
-                case "text":
+                case "asstring", "text":
                     return String.valueOf(bool);
-                case "asupper":
-                case "upper":
+                case "asupper", "upper":
                     return bool ? "TRUE" : "FALSE";
                 default:
                     break;
@@ -480,22 +438,16 @@ public class TemplateEngine {
         }
 
         // 6. LIST Variable Attributes
-        if (varType == VariableType.LIST || targetObj instanceof java.util.List<?>) {
-            if (targetObj instanceof java.util.List<?> list) {
-                switch (prop) {
-                    case "size":
-                    case LENGTH:
-                    case "count":
-                        return String.valueOf(list.size());
-                    case "first":
-                    case "firstitem":
-                        return !list.isEmpty() && list.get(0) != null ? list.get(0).toString() : "";
-                    case "last":
-                    case "lastitem":
-                        return !list.isEmpty() && list.get(list.size() - 1) != null ? list.get(list.size() - 1).toString() : "";
-                    default:
-                        break;
-                }
+        if (targetObj instanceof java.util.List<?> list) {
+            switch (prop) {
+                case "size", LENGTH, "count":
+                    return String.valueOf(list.size());
+                case "first", "firstitem":
+                    return !list.isEmpty() && list.get(0) != null ? list.get(0).toString() : "";
+                case "last", "lastitem":
+                    return !list.isEmpty() && list.get(list.size() - 1) != null ? list.get(list.size() - 1).toString() : "";
+                default:
+                    break;
             }
         }
 
@@ -638,7 +590,9 @@ public class TemplateEngine {
                 varConfig = com.gensynth.core.flow.variables.VariableFactory.createFromMap(
                     variable.getName(), variable.getType(), variable.getConfig()
                 );
-            } catch (Exception ignored) {}
+            } catch (Exception ignored) {
+                // Invalid configuration: the dependencies are read from the raw rules below
+            }
 
             Set<String> deps = new HashSet<>();
             if (varConfig != null) {
