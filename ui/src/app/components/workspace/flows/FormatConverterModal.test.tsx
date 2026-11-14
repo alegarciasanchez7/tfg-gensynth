@@ -121,4 +121,23 @@ describe('FormatConverterModal', () => {
     fireEvent.click(apply);
     expect(handleApply).not.toHaveBeenCalled();
   });
+
+  it('picks the initial target format again when it is reopened', () => {
+    const modal = (isOpen: boolean, initialTargetFormat: TemplateFormat) => (
+      <FormatConverterModal
+        isOpen={isOpen}
+        onOpenChange={vi.fn()}
+        currentContent='{"id": 123}'
+        currentFormat="json"
+        initialTargetFormat={initialTargetFormat}
+        onApplyConversion={vi.fn()}
+      />
+    );
+    const { rerender } = render(modal(true, 'xml'));
+    expect(screen.getByText(/Converted Preview \(XML\)/)).toBeInTheDocument();
+
+    rerender(modal(false, 'csv'));
+    rerender(modal(true, 'csv'));
+    expect(screen.getByText(/Converted Preview \(CSV\)/)).toBeInTheDocument();
+  });
 });

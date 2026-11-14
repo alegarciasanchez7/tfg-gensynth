@@ -133,4 +133,17 @@ describe('StorageSettingsSection', () => {
 
     await waitFor(() => expect(actions.setOutputFolder).toHaveBeenCalledWith('/home/ana/picked'));
   });
+
+  it('shows a new stored interval in place of the draft', () => {
+    const { rerender } = renderWith({ autoSaveEnabled: true, currentFileHandle: {} });
+    const input = screen.getByLabelText('Auto-save interval in seconds');
+    fireEvent.change(input, { target: { value: '99' } });
+
+    mockUseApp.mockReturnValue({
+      state: { autoSaveEnabled: true, autoSaveIntervalSeconds: 60, connectionMode: 'websocket', currentFilePath: null, currentFileHandle: {}, outputFolder: defaultFolder },
+      actions,
+    });
+    rerender(<StorageSettingsSection />);
+    expect(screen.getByLabelText('Auto-save interval in seconds')).toHaveValue(60);
+  });
 });

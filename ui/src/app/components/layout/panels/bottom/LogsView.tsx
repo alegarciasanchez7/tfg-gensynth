@@ -94,9 +94,11 @@ export function LogsView({ entries, connectorHealthSummary, groups, onClear }: R
     return true;
   });
 
-  useEffect(() => {
+  // A new group filter shows all its flows again
+  const changeGroupFilter = (value: string) => {
+    setGroupFilter(value);
     setFlowFilter('all');
-  }, [groupFilter]);
+  };
 
   const handleScroll = () => {
     if (scrollRef.current) {
@@ -161,7 +163,7 @@ export function LogsView({ entries, connectorHealthSummary, groups, onClear }: R
         ))}
         <select
           value={groupFilter}
-          onChange={(event) => setGroupFilter(event.target.value)}
+          onChange={(event) => changeGroupFilter(event.target.value)}
           className="h-6 rounded border border-[var(--c-br1)] bg-[var(--c-bg1)] px-2 text-[10px] text-[var(--c-tx2)]"
           style={{ fontFamily: 'JetBrains Mono, monospace' }}
           aria-label="filter-group"

@@ -280,7 +280,7 @@ export function useVariableEditor(variable: Variable) {
     } catch {
       return { errors: {}, cycle: null, isJsonValid: false };
     }
-  }, [draft.configText, draft.type, draft.name, variable.id, variablesNow, identityIssue]);
+  }, [draft.configText, draft.type, draft.name, variable.id, variablesNow, identityIssue, validateConfig, detectCycle]);
 
   const hasValidationError = !validationResult.isJsonValid || Object.keys(validationResult.errors).length > 0 || validationResult.cycle !== null;
 

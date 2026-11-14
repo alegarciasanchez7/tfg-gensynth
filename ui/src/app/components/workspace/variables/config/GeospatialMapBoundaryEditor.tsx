@@ -12,7 +12,7 @@ import { Label } from '../../../ui/label';
 import { Button } from '../../../ui/button';
 import { Info, BoxSelect, AlertTriangle, WifiOff } from 'lucide-react';
 import { Tooltip, TooltipTrigger, TooltipContent } from '../../../ui/tooltip';
-import { useBoundaryModalContext } from './BoundaryExpandModal';
+import { useBoundaryModalContext } from './boundaryModalContext';
 import { centerOf, defaultBoundsFor } from '../../../../core/pointDefaults';
 import { formatDms } from '../../../../core/dms';
 import { OfflineGridOverlay } from './mapShared';

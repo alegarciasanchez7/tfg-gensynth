@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useMemo } from 'react';
 import { Point3DCoord, BoundaryObstacle } from '../../../../types';
 import { Button } from '../../../ui/button';
 import { AlertTriangle, Move, ShieldAlert, Square, Triangle, Circle, RefreshCw } from 'lucide-react';
@@ -295,12 +295,15 @@ function CanvasContextMenu({
   );
 }
 
+/** Default of the optional polygon prop: one shared instance, so it never looks like a new polygon. */
+const NO_POLYGON: Point3DCoord[] = [];
+
 export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
   minX,
   maxX,
   minY,
   maxY,
-  polygon = [],
+  polygon = NO_POLYGON,
   obstacles = [],
   selectedObstacleId,
   onSelectObstacle,
@@ -394,11 +397,15 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
     return () => observer.disconnect();
   }, [fillContainer, width, height]);
 
-  useEffect(() => {
-    if (polygon && polygon.length >= 3) {
+  // Follow a polygon changed from outside (a preset, a discard...) while keeping the local copy
+  // edited during a drag; adjusted during render instead of in an effect
+  const [seenPolygon, setSeenPolygon] = useState(polygon);
+  if (polygon !== seenPolygon) {
+    setSeenPolygon(polygon);
+    if (polygon.length >= 3) {
       setActivePolygon(polygon);
     }
-  }, [polygon]);
+  }
 
   const currentW = canvasSize.w;
   const currentH = canvasSize.h;
@@ -425,7 +432,7 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
   const roundCoord = (v: number) => roundTo(v, coordDecimals);
 
   // Coordinate projection math with Zoom & Pan (uniform scale, +Y upwards)
-  const view: CanvasView = {
+  const view: CanvasView = useMemo(() => ({
     width: currentW,
     height: currentH,
     pxPerUnit,
@@ -433,7 +440,7 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
     toCanvasY: (val: number) => currentH / 2 - (val - world.cy) * pxPerUnit + panOffset.y,
     fromCanvasX: (px: number) => world.cx + (px - panOffset.x - currentW / 2) / pxPerUnit,
     fromCanvasY: (py: number) => world.cy - (py - panOffset.y - currentH / 2) / pxPerUnit,
-  };
+  }), [currentW, currentH, pxPerUnit, world.cx, world.cy, panOffset]);
   const fromCanvasXPrecise = view.fromCanvasX;
   const fromCanvasYPrecise = view.fromCanvasY;
 
@@ -451,6 +458,11 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
   // Derived drag/hover flags used by the renderer
   const { draggingBoundaryVertexIndex, draggingObstacleTarget, draggingObstacleShapeIndex, hoveredBoundaryVertexIndex, hoveredObstacleTarget } =
     interactionFlags(drag, hovered);
+  // Primitive parts of the obstacle targets, so the renderer only redraws when they change
+  const draggingObstacleObsIndex = draggingObstacleTarget?.obsIndex;
+  const draggingObstaclePointIndex = draggingObstacleTarget?.pointIndex ?? null;
+  const hoveredObstacleObsIndex = hoveredObstacleTarget?.obsIndex;
+  const hoveredObstaclePointIndex = hoveredObstacleTarget?.pointIndex ?? null;
 
   // Render 2D grid, labeled coordinate axes (X, Y), boundary polygon & obstacles
   useEffect(() => {
@@ -470,11 +482,15 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
         editMode,
         isSelected: obs.id === activeSelectedObsId,
         isShapeDragging: draggingObstacleShapeIndex === obsIdx,
-        draggingPointIndex: draggingObstacleTarget?.obsIndex === obsIdx ? draggingObstacleTarget.pointIndex : null,
-        hoveredPointIndex: hoveredObstacleTarget?.obsIndex === obsIdx ? hoveredObstacleTarget.pointIndex : null,
+        draggingPointIndex: draggingObstacleObsIndex === obsIdx ? draggingObstaclePointIndex : null,
+        hoveredPointIndex: hoveredObstacleObsIndex === obsIdx ? hoveredObstaclePointIndex : null,
       }, palette);
     });
-  }, [activePolygon, displayObstacles, editMode, activeSelectedObsId, hovered, drag, zoom, panOffset, currentW, currentH, world.cx, world.cy, world.scale, palette]);
+  }, [
+    view, palette, activePolygon, displayObstacles, editMode, activeSelectedObsId,
+    hoveredBoundaryVertexIndex, draggingBoundaryVertexIndex, draggingObstacleShapeIndex,
+    draggingObstacleObsIndex, draggingObstaclePointIndex, hoveredObstacleObsIndex, hoveredObstaclePointIndex,
+  ]);
 
   const showTempFeedback = (msg: string) => {
     setFeedbackMsg(msg);

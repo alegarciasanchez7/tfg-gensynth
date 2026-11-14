@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useMemo, useCallback } from 'react';
 import { Point3DCoord, Shape3DType } from '../../../../types';
 import { Box, Circle, Triangle, Disc, Rotate3d, ZoomIn, ZoomOut, RefreshCw, Sliders } from 'lucide-react';
 import { Label } from '../../../ui/label';
@@ -81,6 +81,11 @@ const resolveShape = (p: Pick<Isometric3DBoundaryEditorProps,
   radius: p.shape3DRadius ?? 50,
   elev: baseElevationFor(p.shape3DType, p.minZ, p.maxZ, p.shape3DHeight),
 });
+
+/** Vertical midpoint of the shape, which the view is centred on. */
+function shapeMidZ(shape: Shape3DType, elevation: number, height: number, radius: number): number {
+  return shape === 'sphere' ? elevation + radius : elevation + height / 2;
+}
 
 export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps> = ({
   minX,
@@ -247,22 +252,22 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
   };
 
   // Calculate shape vertical midpoint to keep figure strictly centered in canvas panel
-  const getShapeCenterZ = () => {
-    if (frozenCenterZ !== null) return frozenCenterZ;
-    if (activeShape === 'sphere') {
-      return baseElevation + radius3D;
-    }
-    return baseElevation + height3D / 2;
-  };
+  const shapeCenterZ = frozenCenterZ ?? shapeMidZ(activeShape, baseElevation, height3D, radius3D);
 
   // 3D Projection math (Inverted Z: +Z increases upwards on canvas, centered at shape centroid)
-  const project = (x: number, y: number, z: number) =>
-    projectIsometric(x, y, z, { centerZ: getShapeCenterZ(), rotX, rotY, zoom, pan: panOffset, width, height });
+  const project = useCallback(
+    (x: number, y: number, z: number) =>
+      projectIsometric(x, y, z, { centerZ: shapeCenterZ, rotX, rotY, zoom, pan: panOffset, width, height }),
+    [shapeCenterZ, rotX, rotY, zoom, panOffset, width, height],
+  );
 
-  const dims = { width: width3D, length: length3D, height: height3D, radius: radius3D, elev: baseElevation };
+  const dims = useMemo(
+    () => ({ width: width3D, length: length3D, height: height3D, radius: radius3D, elev: baseElevation }),
+    [width3D, length3D, height3D, radius3D, baseElevation],
+  );
 
-  // Calculate 3D handle locations
-  const getHandleCoordinates = () => shapeHandles(activeShape, dims, project);
+  // 3D handle locations
+  const handleCoordinates = useMemo(() => shapeHandles(activeShape, dims, project), [activeShape, dims, project]);
 
   // Canvas Drawing Loop
   useEffect(() => {
@@ -278,28 +283,10 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
     // 3. 3D shape geometry
     drawShape(ctx, project, activeShape, dims);
     // 4. Interactive handles & visual controls
-    drawHandles(ctx, project, getHandleCoordinates(), { hovered: hoveredHandle, dragging: draggingHandle, dims }, palette);
+    drawHandles(ctx, project, handleCoordinates, { hovered: hoveredHandle, dragging: draggingHandle, dims }, palette);
     // 5. Canvas info overlay
     drawStatusText(ctx, orbitView, palette);
-  }, [
-    activeShape,
-    width3D,
-    length3D,
-    height3D,
-    radius3D,
-    baseElevation,
-    frozenCenterZ,
-    rotX,
-    rotY,
-    zoom,
-    panOffset,
-    orbitView,
-    hoveredHandle,
-    draggingHandle,
-    width,
-    height,
-    palette,
-  ]);
+  }, [project, dims, handleCoordinates, activeShape, baseElevation, zoom, orbitView, hoveredHandle, draggingHandle, width, height, palette]);
 
   // Pointer Interaction Handlers: handle drags stay local and are committed once, on release
   const getCanvasPos = (e: { clientX: number; clientY: number }) => {
@@ -312,7 +299,7 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
     };
   };
 
-  const handleAt = (x: number, y: number): HandleType => handleAtPoint(getHandleCoordinates(), x, y);
+  const handleAt = (x: number, y: number): HandleType => handleAtPoint(handleCoordinates, x, y);
 
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const { x: mouseX, y: mouseY } = getCanvasPos(e);
@@ -322,7 +309,7 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
       // Keep receiving pointer events when the cursor leaves the canvas mid-drag
       e.currentTarget.setPointerCapture?.(e.pointerId);
       dragMovedRef.current = false;
-      setFrozenCenterZ(getShapeCenterZ());
+      setFrozenCenterZ(shapeCenterZ);
       setDraggingHandle(handle);
       setDragStart({ x: mouseX, y: mouseY });
       setInitialShapeValues({ width: width3D, length: length3D, height: height3D, radius: radius3D });

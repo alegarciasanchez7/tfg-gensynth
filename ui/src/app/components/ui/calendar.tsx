@@ -5,7 +5,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { DayPicker, type StyledComponent } from "react-day-picker";
 
 import { cn } from "./utils";
-import { buttonVariants } from "./button";
+import { buttonVariants } from "./button-variants";
 
 function CalendarIconLeft({ className, ...props }: Readonly<StyledComponent>) {
   return <ChevronLeft className={cn("size-4", className)} {...props} />;

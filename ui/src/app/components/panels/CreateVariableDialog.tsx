@@ -80,7 +80,7 @@ export function CreateVariableDialog({
     } catch {
       return { errors: {}, cycle: null, jsonError: 'Invalid JSON structure' };
     }
-  }, [state.configText, state.type, state.name, state.scope, state.flowId, state.groupId, variablesList]);
+  }, [state, variablesList, validateConfig, detectCycle]);
   const { jsonError } = validationResult;
 
   const hasValidationError = Object.keys(validationResult.errors).length > 0 || jsonError !== null || validationResult.cycle !== null;

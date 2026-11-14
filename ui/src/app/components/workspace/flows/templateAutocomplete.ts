@@ -1,5 +1,6 @@
 import type { ListItemConfig, ListVariableConfig, PointVariableConfig, Variable, VariableType } from '../../../types';
 import { SYSTEM_PLACEHOLDERS } from '../../../core/templatePlaceholders';
+import { listItemText } from '../../../core/listItemText';
 
 /** An entry of the template autocomplete. */
 export interface AutocompleteOption {
@@ -35,7 +36,7 @@ type PropertySpec = readonly [property: string, detail: string];
 
 /** Text of a list item: its value, else its embedded type, else its position. */
 function listItemValue(item: Pick<ListItemConfig, 'value' | 'embeddedType'>, idx: number): string {
-  if (item.value !== undefined && item.value !== '') return String(item.value);
+  if (item.value !== undefined && item.value !== '') return listItemText(item.value);
   return item.embeddedType ? item.embeddedType : `Item ${idx + 1}`;
 }
 

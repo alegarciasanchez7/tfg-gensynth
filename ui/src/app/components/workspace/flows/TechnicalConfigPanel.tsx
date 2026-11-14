@@ -5,8 +5,6 @@ import { FieldRow } from '../../common/FieldRow';
 import { ConnectorConfigForm } from '../../common/ConnectorConfigForm';
 import { EventLossSection, type EventLossPatch } from './EventLossSection';
 
-export { compareVersions } from '../../../context/helpers/connectorHelpers';
-
 /** Badge colours of a connector health status (offline and unknown ones are grey). */
 function healthBadgeClass(status: ConnectorHealthSummary['status']): string {
   if (status === 'healthy') return 'border-emerald-500/30 text-emerald-500 bg-emerald-500/10';

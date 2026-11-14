@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Pause, Play } from 'lucide-react';
 import { useApp } from '../../../../context';
 
@@ -58,11 +58,10 @@ export function PreviewView({ running }: Readonly<PreviewViewProps>) {
 
   const allFlows = groups.flatMap(g => g.flows.map(f => ({ ...f, groupName: g.name })));
 
-  useEffect(() => {
-    if (!selectedFlowId && allFlows.length > 0) {
-      setSelectedFlowId(allFlows[0].id);
-    }
-  }, [allFlows, selectedFlowId]);
+  // Select the first flow once there is one (adjusting state while rendering)
+  if (!selectedFlowId && allFlows.length > 0) {
+    setSelectedFlowId(allFlows[0].id);
+  }
 
   const currentFlow = allFlows.find(f => f.id === selectedFlowId);
 

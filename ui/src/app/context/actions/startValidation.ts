@@ -1,4 +1,4 @@
-import type { Flow, Group, NumericVariableConfig, Variable, VariableConfig } from '../../types';
+import type { Flow, Group, ListVariableConfig, NumericVariableConfig, Variable, VariableConfig } from '../../types';
 import { findTemplatePlaceholders, isSystemPlaceholder } from '../../core/templatePlaceholders';
 
 /** The formula of a variable config (only numeric FORMULA variables have one), if any. */
@@ -98,7 +98,7 @@ export function findItemAccessTarget(
 /** The error of an item access to a list whose strategy cannot be read by item, or null. */
 function itemAccessError(target: Variable | undefined, flow: Flow): string | null {
   if (target?.type !== 'list') return null;
-  const strategy = target.config?.selectionStrategy;
+  const strategy = (target.config as ListVariableConfig | undefined)?.selectionStrategy;
   if (!strategy || strategy === 'FIXED_SUBSET') return null;
   return `Invalid item reference in flow '${flow.name}': Variable '${target.name}' uses strategy '${strategy}' (not 'FIXED_SUBSET') and cannot be referenced with sub-item index (.itemX).`;
 }

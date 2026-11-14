@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { 
   PointVariableConfig, 
   CoordinateSystem, 
@@ -35,6 +35,22 @@ const PATTERNS_WITH_SETTINGS = new Set([
   'WAYPOINT_NAVIGATION', 'PATH_INTERPOLATOR',
 ]);
 
+/**
+ * Text of a number input that follows the value when it is changed from outside the input
+ * (e.g. a coordinate system switch rescales it), keeping what the user is typing when it
+ * already means that value ("0." while typing "0.5"). The value is compared during render
+ * ("adjusting state when a prop changes"), so there is no extra render with the stale text.
+ */
+function useFollowedNumberText(value: number): [string, (text: string) => void] {
+  const [text, setText] = useState(String(value));
+  const [followedValue, setFollowedValue] = useState(value);
+  if (!Object.is(followedValue, value)) {
+    setFollowedValue(value);
+    setText(prev => (Number.parseFloat(prev) === value ? prev : String(value)));
+  }
+  return [text, setText];
+}
+
 export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onChange, flowId, groupId, variableScope }) => {
   const coordSystem: CoordinateSystem = config.coordinateSystem ?? 'CARTESIAN_3D';
   const geoFormat: GeospatialFormat = config.geospatialFormat ?? 'DECIMAL_DEGREES';
@@ -42,19 +58,12 @@ export const PointConfigPanel: React.FC<PointConfigPanelProps> = ({ config, onCh
   const boundaryBehavior: BoundaryBehavior = config.boundaryBehavior ?? 'CLAMP';
 
   // Local string state helpers for input fields
-  const [stepDistanceStr, setStepDistanceStr] = useState(String(config.maxStepDistance ?? 0.1));
+  const [stepDistanceStr, setStepDistanceStr] = useFollowedNumberText(config.maxStepDistance ?? 0.1);
   const [inertiaStr, setInertiaStr] = useState(String(config.inertia ?? 0.0));
-  const [orbitRadiusStr, setOrbitRadiusStr] = useState(String(config.orbitRadius ?? 10.0));
+  const [orbitRadiusStr, setOrbitRadiusStr] = useFollowedNumberText(config.orbitRadius ?? 10.0);
   const [angularSpeedStr, setAngularSpeedStr] = useState(String(config.angularSpeed ?? 0.1));
   const [spiralRateStr, setSpiralRateStr] = useState(String(config.spiralRate ?? 0.0));
-  const [jitterRadiusStr, setJitterRadiusStr] = useState(String(config.jitterRadius ?? 0.0));
-
-  // Follow values changed from outside these inputs (e.g. a coordinate system switch rescales them),
-  // keeping what the user is typing when it already means that value ("0." while typing "0.5")
-  const follow = (value: number) => (prev: string) => (Number.parseFloat(prev) === value ? prev : String(value));
-  useEffect(() => { setStepDistanceStr(follow(config.maxStepDistance ?? 0.1)); }, [config.maxStepDistance]);
-  useEffect(() => { setOrbitRadiusStr(follow(config.orbitRadius ?? 10.0)); }, [config.orbitRadius]);
-  useEffect(() => { setJitterRadiusStr(follow(config.jitterRadius ?? 0.0)); }, [config.jitterRadius]);
+  const [jitterRadiusStr, setJitterRadiusStr] = useFollowedNumberText(config.jitterRadius ?? 0.0);
 
   const isGeospatial = coordSystem === 'GEOSPATIAL';
   const is2D = coordSystem === 'CARTESIAN_2D';

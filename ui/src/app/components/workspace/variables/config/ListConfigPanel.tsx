@@ -12,6 +12,7 @@ import { StringConfigPanel } from './StringConfigPanel';
 import { BooleanConfigPanel } from './BooleanConfigPanel';
 import { TemporalConfigPanel } from './TemporalConfigPanel';
 import { defaultConfigForType } from './defaultConfigs';
+import { listItemText } from '../../../../core/listItemText';
 
 interface ListConfigPanelProps {
   config: ListVariableConfig;
@@ -57,7 +58,7 @@ const matrixKey = (item: { id?: string; value?: unknown }, index: number): strin
 /** Label of an item in the Markov matrix headers. */
 const matrixItemLabel = (item: ListItemConfig, index: number): string => {
   if (item.isEmbedded) return `Gen #${index + 1}`;
-  return item.value !== undefined && item.value !== '' ? String(item.value) : `Item ${index + 1}`;
+  return item.value !== undefined && item.value !== '' ? listItemText(item.value) : `Item ${index + 1}`;
 };
 
 /** Row of a state with no row in the matrix: the Core moves from it to any item with the same probability. */
@@ -106,7 +107,8 @@ const EmbeddedSubGeneratorPanel = React.memo<{
   onItemChange: (index: number, patch: Partial<ListItemConfig>) => void;
 }>(({ item, index, flowId, groupId, onItemChange }) => {
   const subType = item.embeddedType || 'numeric';
-  const subConfig = item.embeddedConfig || {};
+  // Memoized so the empty default keeps its identity and the change handler stays stable
+  const subConfig = useMemo(() => item.embeddedConfig || {}, [item.embeddedConfig]);
 
   const handleSubConfigChange = useCallback((newSubConfig: Partial<VariableConfig>) => {
     onItemChange(index, {

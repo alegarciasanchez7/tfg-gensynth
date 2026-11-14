@@ -212,6 +212,20 @@ describe('Canvas2DBoundaryEditor', () => {
     expect(status).toHaveTextContent('[MOVE OBSTACLES]');
   });
 
+  it('follows a polygon changed from outside and ignores one with fewer than three vertices', () => {
+    const props = { minX: 0, maxX: 100, minY: 0, maxY: 100, showToolbar: true, onChange: vi.fn() };
+    const { rerender } = render(<Canvas2DBoundaryEditor {...props} />);
+    const status = screen.getByTestId('canvas2d-status');
+    expect(status).toHaveTextContent('Verts: 4');
+
+    const pentagon = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 50, y: 120 }, { x: 0, y: 100 }];
+    rerender(<Canvas2DBoundaryEditor {...props} polygon={pentagon} />);
+    expect(status).toHaveTextContent('Verts: 5');
+
+    rerender(<Canvas2DBoundaryEditor {...props} polygon={[{ x: 0, y: 0 }]} />);
+    expect(status).toHaveTextContent('Verts: 5');
+  });
+
   describe('edge context menu picks the nearest edge', () => {
     // A wall parallel to the bottom region edge (y = 0), 8.8 units above it
     const wall: BoundaryObstacle[] = [

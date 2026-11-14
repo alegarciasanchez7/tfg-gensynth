@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { FolderOpen, FolderOutput, RotateCcw, Save, Timer } from 'lucide-react';
 import { useApp } from '../../../../context';
 import { AUTO_SAVE_MAX_SECONDS, AUTO_SAVE_MIN_SECONDS, clampAutoSaveInterval } from '../../../../context/reducer';
@@ -27,9 +27,12 @@ export function StorageSettingsSection() {
   // Text being typed in the folder field; null while not editing, so the field shows the folder in use
   const [folderDraft, setFolderDraft] = useState<string | null>(null);
 
-  useEffect(() => {
+  // Reset the draft when the interval changes elsewhere (adjusting state while rendering)
+  const [shownInterval, setShownInterval] = useState(state.autoSaveIntervalSeconds);
+  if (!Object.is(shownInterval, state.autoSaveIntervalSeconds)) {
+    setShownInterval(state.autoSaveIntervalSeconds);
     setIntervalDraft(String(state.autoSaveIntervalSeconds));
-  }, [state.autoSaveIntervalSeconds]);
+  }
 
   const changeOutputFolder = async (path: string | null) => {
     try {

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { BoundaryExpandModal, useBoundaryModalContext } from './BoundaryExpandModal';
+import { BoundaryExpandModal } from './BoundaryExpandModal';
+import { useBoundaryModalContext } from './boundaryModalContext';
 import { TooltipProvider } from '../../../ui/tooltip';
 import { Canvas2DBoundaryEditor } from './Canvas2DBoundaryEditor';
 

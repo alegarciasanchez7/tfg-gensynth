@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Radio, Globe, Wifi, Zap, Cpu, Layers, AlertTriangle,
   CheckCircle, Code2, Hash,
@@ -8,7 +8,8 @@ import { toast } from 'sonner';
 import type { Flow, Group, ConnectionStatus } from '../../types';
 import { useApp } from '../../context';
 import { TemplateEditor } from './flows/TemplateEditor';
-import { TechnicalConfigPanel, compareVersions } from './flows/TechnicalConfigPanel';
+import { TechnicalConfigPanel } from './flows/TechnicalConfigPanel';
+import { compareVersions } from '../../context/helpers/connectorHelpers';
 import { FormatConverterModal } from './flows/FormatConverterModal';
 import { resolveTemplateFormat, type TemplateFormat } from './flows/templateFormat';
 import { findFlowNameConflict } from '../../core/flowNames';
@@ -96,10 +97,13 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: Reado
   const [isConverterOpen, setIsConverterOpen] = useState(false);
   const [selectedTargetFormat, setSelectedTargetFormat] = useState<TemplateFormat>('xml');
 
-  useEffect(() => {
+  // Reset the drafts when the flow (or its saved name / ticks) changes (adjusting state while rendering)
+  const [syncedFlow, setSyncedFlow] = useState({ id: flow.id, name: flow.name, everyTicks: flow.everyTicks });
+  if (syncedFlow.id !== flow.id || syncedFlow.name !== flow.name || !Object.is(syncedFlow.everyTicks, flow.everyTicks)) {
+    setSyncedFlow({ id: flow.id, name: flow.name, everyTicks: flow.everyTicks });
     setDraftName(flow.name);
     setDraftEveryTicks(String(flow.everyTicks));
-  }, [flow.name, flow.everyTicks, flow.id]);
+  }
 
   // Like an invalid "every N ticks", an empty or duplicate name stays local (with a warning) and is
   // restored on blur: two flows of a group with the same name would write the same output file

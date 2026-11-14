@@ -91,6 +91,30 @@ describe('TemplateEditor', () => {
     expect(onChange).toHaveBeenCalledWith('{"veg": {{local.vegetables_7}}');
   });
 
+  it('registers the editor once and its callback uses the latest value and onChange', () => {
+    let registeredCallback: ((name: string, scope?: string) => void) | null = null;
+    mockActions.registerTemplateEditor.mockReset();
+    mockActions.registerTemplateEditor.mockImplementation((cb: ((name: string, scope?: string) => void) | null) => {
+      if (cb) registeredCallback = cb;
+    });
+
+    const firstOnChange = vi.fn();
+    const { rerender } = render(
+      <TemplateEditor value="old" onChange={firstOnChange} variables={mockVariables} flowId="f1" groupId="g1" />
+    );
+    const secondOnChange = vi.fn();
+    rerender(<TemplateEditor value="new " onChange={secondOnChange} variables={mockVariables} flowId="f1" groupId="g1" />);
+
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+    textarea.selectionStart = 4;
+    textarea.selectionEnd = 4;
+    registeredCallback!('vegetables_7', 'local');
+
+    expect(firstOnChange).not.toHaveBeenCalled();
+    expect(secondOnChange).toHaveBeenCalledWith('new {{local.vegetables_7}}');
+    expect(mockActions.registerTemplateEditor.mock.calls.filter(([cb]) => cb !== null)).toHaveLength(1);
+  });
+
   it('marks sub-item access tag as invalid when list variable uses WEIGHTED_RANDOM strategy', () => {
     const nonFixedVariables: Variable[] = [
       {

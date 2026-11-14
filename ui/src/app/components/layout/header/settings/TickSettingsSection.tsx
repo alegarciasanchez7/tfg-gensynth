@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { AlertTriangle, Gauge, Info, Loader2, Timer, Zap } from 'lucide-react';
 import { useApp } from '../../../../context';
 import type { TickMode, TickSettings, TickUnit } from '../../../../types';
@@ -40,10 +40,13 @@ export function TickSettingsSection() {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
-  useEffect(() => {
+  // Reset the draft and its error when the tick value changes (adjusting state while rendering)
+  const [shownValue, setShownValue] = useState(tick.value);
+  if (!Object.is(shownValue, tick.value)) {
+    setShownValue(tick.value);
     setValueDraft(String(tick.value));
     setError(null);
-  }, [tick.value]);
+  }
 
   const apply = async (next: TickSettings) => {
     const validationError = validateTickSettings(next);

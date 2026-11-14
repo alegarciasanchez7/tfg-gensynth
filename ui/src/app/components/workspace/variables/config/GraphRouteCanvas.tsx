@@ -568,8 +568,8 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
   );
 
   // Projection: Domain coordinate -> Canvas pixel (2D Mode)
-  const toCanvasX = (val: number) => canvasW / 2 + (val - worldCx) * worldScale;
-  const toCanvasY = (val: number) => canvasH / 2 - (val - worldCy) * worldScale;
+  const toCanvasX = useCallback((val: number) => canvasW / 2 + (val - worldCx) * worldScale, [canvasW, worldCx, worldScale]);
+  const toCanvasY = useCallback((val: number) => canvasH / 2 - (val - worldCy) * worldScale, [canvasH, worldCy, worldScale]);
 
   // Inverse projection: Canvas pixel -> Domain coordinate (2D Mode)
   const fromCanvasX = (px: number) => {
@@ -736,7 +736,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
         ctx.stroke();
       }
     });
-  }, [isGeo, canvasW, canvasH, worldCx, worldCy, worldScale, minX, minY, baseMinX, baseMaxX, baseMinY, baseMaxY, polygon, obstacles, palette]);
+  }, [isGeo, canvasW, canvasH, worldCx, worldCy, worldScale, toCanvasX, toCanvasY, minX, minY, baseMinX, baseMaxX, baseMinY, baseMaxY, polygon, obstacles, palette]);
 
   /** Converts a pointer position to canvas pixels, accounting for CSS scaling of the canvas. */
   const clientToCanvas = (clientX: number, clientY: number): { px: number; py: number } | null => {

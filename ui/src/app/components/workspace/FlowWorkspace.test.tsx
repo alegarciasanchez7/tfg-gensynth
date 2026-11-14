@@ -209,4 +209,14 @@ describe('FlowWorkspace', () => {
       { id: 'flow-config-error-f1' },
     ));
   });
+
+  it('resets the name draft when another flow is shown', () => {
+    const other: Flow = { ...flow, id: 'f2', name: 'Other Flow', everyTicks: 3 };
+    const groupWithFlows: Group = { ...group, flows: [flow, other] };
+    const { rerender } = render(<FlowWorkspace flow={flow} group={groupWithFlows} template="T" onTemplateChange={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText('Flow name'), { target: { value: '' } });
+
+    rerender(<FlowWorkspace flow={other} group={groupWithFlows} template="T" onTemplateChange={vi.fn()} />);
+    expect(screen.getByLabelText('Flow name')).toHaveValue('Other Flow');
+  });
 });

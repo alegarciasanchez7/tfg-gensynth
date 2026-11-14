@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
 import { Button } from '../../../ui/button';
 import {
@@ -36,6 +36,49 @@ function dialogDescription(repeat: boolean | undefined, groupId: string | undefi
   return `Create a new flow inside ${where}.`;
 }
 
+/** The props and the chosen connector that the form follows. */
+interface FormSyncInputs {
+  open: boolean;
+  groupId: string | undefined;
+  flowTechnology: string;
+  latestConnectors: ConnectorPluginDescriptor[];
+}
+
+/** What the form does when its inputs change. */
+interface FormSyncHandlers {
+  /** A new groupId was given: select that group. */
+  onGroupChange: (groupId: string) => void;
+  /** Another connector (or a new catalog) was chosen: its default configuration. */
+  onConnectorChange: (config: Record<string, unknown>) => void;
+  /** The dialog was closed: reset the form. */
+  onClose: () => void;
+}
+
+/**
+ * Keeps the form in sync with its inputs while rendering (instead of in effects): follows a new
+ * groupId, loads the defaults of the chosen connector and resets the form when the dialog closes.
+ */
+function useFormSync(inputs: FormSyncInputs, handlers: FormSyncHandlers): void {
+  const [synced, setSynced] = useState(inputs);
+  const dialogChanged = synced.open !== inputs.open || synced.groupId !== inputs.groupId;
+  const connectorChanged = synced.flowTechnology !== inputs.flowTechnology || synced.latestConnectors !== inputs.latestConnectors;
+  if (!dialogChanged && !connectorChanged) return;
+
+  setSynced(inputs);
+  if (inputs.groupId && synced.groupId !== inputs.groupId) {
+    handlers.onGroupChange(inputs.groupId);
+  }
+  if (connectorChanged) {
+    const descriptor = inputs.flowTechnology
+      ? inputs.latestConnectors.find((c) => c.pluginId === inputs.flowTechnology)
+      : undefined;
+    handlers.onConnectorChange(descriptor ? defaultConnectorConfig(descriptor.fields) : {});
+  }
+  if (dialogChanged && !inputs.open) {
+    handlers.onClose();
+  }
+}
+
 interface CreateFlowDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -71,15 +114,10 @@ export function CreateFlowDialog({
 
   const selectedConnector = latestConnectors.find((c) => c.pluginId === flowTechnology);
 
-  useEffect(() => {
-    if (groupId) {
-      setSelectedGroupId(groupId);
-    }
-  }, [groupId]);
-
-  useEffect(() => {
-    if (!open) {
-      // Reset form on close
+  useFormSync({ open, groupId, flowTechnology, latestConnectors }, {
+    onGroupChange: setSelectedGroupId,
+    onConnectorChange: setConnectorConfig,
+    onClose: () => {
       setFlowName('');
       setFlowTechnology('');
       setConnectorConfig({});
@@ -90,17 +128,8 @@ export function CreateFlowDialog({
       if (!groupId) {
         setSelectedGroupId('');
       }
-    }
-  }, [open, groupId]);
-
-  useEffect(() => {
-    if (!flowTechnology) {
-      setConnectorConfig({});
-      return;
-    }
-    const descriptor = latestConnectors.find((c) => c.pluginId === flowTechnology);
-    setConnectorConfig(descriptor ? defaultConnectorConfig(descriptor.fields) : {});
-  }, [flowTechnology, latestConnectors]);
+    },
+  });
 
   const everyTicksValid = isPositiveInteger(flowEveryTicks);
   const repeatValid = !repeat || (isPositiveInteger(repeatCount) && repeatPattern.trim() !== '');

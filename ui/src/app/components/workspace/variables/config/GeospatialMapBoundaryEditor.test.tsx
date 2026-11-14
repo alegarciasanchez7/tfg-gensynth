@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import editorSource from './GeospatialMapBoundaryEditor.tsx?raw';
 import { GeospatialMapBoundaryEditor } from './GeospatialMapBoundaryEditor';
 import { TooltipProvider } from '../../../ui/tooltip';
-import { BoundaryModalContext } from './BoundaryExpandModal';
+import { BoundaryModalContext } from './boundaryModalContext';
 import type { Point3DCoord } from '../../../../types';
 
 type Handler = (event: unknown) => void;

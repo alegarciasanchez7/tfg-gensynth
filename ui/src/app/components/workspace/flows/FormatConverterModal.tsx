@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { AlertTriangle, ArrowRightLeft, Info, RefreshCw } from 'lucide-react';
 import { Button } from '../../ui/button';
 import {
@@ -80,13 +80,15 @@ export function FormatConverterModal({
     initialTargetFormat || (sourceFormat === 'xml' ? 'json' : 'xml')
   );
 
-  useEffect(() => {
+  // Pick the default target again on every opening or source/initial format change (adjusting state while rendering)
+  const openKey = `${isOpen}|${sourceFormat}|${initialTargetFormat ?? ''}`;
+  const [syncedOpenKey, setSyncedOpenKey] = useState(openKey);
+  if (syncedOpenKey !== openKey) {
+    setSyncedOpenKey(openKey);
     if (isOpen) {
-      setTargetFormat(
-        initialTargetFormat || (sourceFormat === 'xml' ? 'json' : 'xml')
-      );
+      setTargetFormat(initialTargetFormat || (sourceFormat === 'xml' ? 'json' : 'xml'));
     }
-  }, [isOpen, sourceFormat, initialTargetFormat]);
+  }
 
   const { convertedPreview, kind, blockedReason } = useMemo(
     () => previewConversion(currentContent, sourceFormat, targetFormat),

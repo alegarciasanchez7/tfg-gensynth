@@ -236,4 +236,33 @@ describe('CreateFlowDialog', () => {
 
     expect(screen.getByLabelText(/^Output directory/)).toHaveValue('./out');
   });
+
+  it('resets the form when the dialog closes, and keeps it while the parent re-renders', async () => {
+    const user = userEvent.setup();
+    const connectors = [fileConnector, brokerConnector];
+    const dialog = (open: boolean) => (
+      <CreateFlowDialog
+        open={open}
+        onOpenChange={onOpenChange}
+        groupId="g1"
+        latestConnectors={connectors}
+        onCreateFlow={onCreateFlow}
+      />
+    );
+    const { rerender } = render(dialog(true));
+    await fillBasics(user, 'Sensor');
+    const outputDir = screen.getByLabelText(/^Output directory/);
+    await user.clear(outputDir);
+    await user.type(outputDir, './data');
+
+    // A parent re-render with the same catalog keeps what was typed
+    rerender(dialog(true));
+    expect(screen.getByLabelText(/^Output directory/)).toHaveValue('./data');
+
+    rerender(dialog(false));
+    rerender(dialog(true));
+    expect(screen.getByLabelText(/name/i)).toHaveValue('');
+    expect(screen.getByRole('combobox', { name: /connector/i })).toHaveValue('');
+  });
 });
+

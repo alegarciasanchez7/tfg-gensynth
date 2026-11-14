@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { useApp } from '../../../../context';
 import { StringVariableConfig, StringFormattedMaskType, StringCorruptionMode, VariableScope } from '../../../../types';
 import { Input } from '../../../ui/input';
@@ -154,7 +154,7 @@ export const StringConfigPanel: React.FC<StringConfigPanelProps> = ({
   const autocompleteOptions = useMemo(() => {
     if (!showAutocomplete || !state.variables) return [];
 
-    const value = inputRef.current ? inputRef.current.value : (config.template ?? '');
+    const value = templateValue;
     const textBeforeCursor = cursorPos > 0 ? value.substring(0, cursorPos) : value;
     const lastOpen = textBeforeCursor.lastIndexOf('{{');
     if (lastOpen === -1) return [];
@@ -175,11 +175,14 @@ export const StringConfigPanel: React.FC<StringConfigPanelProps> = ({
       const full = `${o.scope}.${o.name}`.toLowerCase();
       return full.includes(query) || o.name.toLowerCase().includes(query);
     });
-  }, [showAutocomplete, config.template, cursorPos, state.variables, flowId, groupId]);
+  }, [showAutocomplete, templateValue, cursorPos, state.variables, flowId, groupId]);
 
-  useEffect(() => {
+  // A new list of options starts again from the first one
+  const [optionCount, setOptionCount] = useState(autocompleteOptions.length);
+  if (optionCount !== autocompleteOptions.length) {
+    setOptionCount(autocompleteOptions.length);
     setSelectedIndex(0);
-  }, [autocompleteOptions.length]);
+  }
 
   const insertAtCursor = (varName: string) => {
     const ta = inputRef.current;

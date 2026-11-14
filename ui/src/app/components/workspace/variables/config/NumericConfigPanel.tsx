@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { useApp } from '../../../../context';
 import { NumericVariableConfig, VariableScope } from '../../../../types';
 import { Input } from '../../../ui/input';
@@ -13,6 +13,7 @@ import { ListReferenceSelector } from './ListReferenceSelector';
 import { findTemplatePlaceholders } from '../../../../core/templatePlaceholders';
 import { findFormulaMatches } from './formulaTokens';
 import { autocompleteKeyAction, cycleIndex, opensVariableAutocomplete, type AutocompleteKeyAction } from './autocompleteKeys';
+import { resyncNumber, resyncOptionalNumber, resyncText, useFieldDraft } from './useFieldDraft';
 
 interface NumericConfigPanelProps {
   config: NumericVariableConfig;
@@ -57,15 +58,16 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
   const distributionType = config.distributionType ?? 'UNIFORM';
 
   // Synchronized local string states to allow natural typing of negative numbers and empty states
-  const [minStr, setMinStr] = useState(String(config.min ?? ''));
-  const [maxStr, setMaxStr] = useState(String(config.max ?? ''));
-  const [initialStr, setInitialStr] = useState(String(config.initialValue ?? ''));
-  const [constValueStr, setConstValueStr] = useState(String(config.constantValue ?? ''));
-  const [constMarginStr, setConstMarginStr] = useState(String(config.constantMargin ?? ''));
-  const [stepStr, setStepStr] = useState(String(config.step ?? ''));
-  const [prefixStr, setPrefixStr] = useState(config.prefix ?? '');
-  const [suffixStr, setSuffixStr] = useState(config.suffix ?? '');
-  const [integerFormatStr, setIntegerFormatStr] = useState(config.integerFormat ?? '');
+  // Drafts of the fields, re-synced when the config changes from outside
+  const [minStr, setMinStr] = useFieldDraft(config.min, String(config.min ?? ''), resyncNumber);
+  const [maxStr, setMaxStr] = useFieldDraft(config.max, String(config.max ?? ''), resyncNumber);
+  const [initialStr, setInitialStr] = useFieldDraft(config.initialValue, String(config.initialValue ?? ''), resyncOptionalNumber);
+  const [constValueStr, setConstValueStr] = useFieldDraft(config.constantValue, String(config.constantValue ?? ''), resyncNumber);
+  const [constMarginStr, setConstMarginStr] = useFieldDraft(config.constantMargin, String(config.constantMargin ?? ''), resyncNumber);
+  const [stepStr, setStepStr] = useFieldDraft(config.step, String(config.step ?? ''), resyncNumber);
+  const [prefixStr, setPrefixStr] = useFieldDraft(config.prefix, config.prefix ?? '', resyncText);
+  const [suffixStr, setSuffixStr] = useFieldDraft(config.suffix, config.suffix ?? '', resyncText);
+  const [integerFormatStr, setIntegerFormatStr] = useFieldDraft(config.integerFormat, config.integerFormat ?? '', resyncText);
 
   // New fields local string states
   const [sineFreqStr, setSineFreqStr] = useState(String(config.sineFrequency ?? 0.05));
@@ -190,7 +192,7 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
   const autocompleteOptions = useMemo(() => {
     if (!showAutocomplete || !state.variables) return [];
 
-    const value = inputRef.current ? inputRef.current.value : (config.formula ?? '');
+    const value = formulaValue;
     const textBeforeCursor = cursorPos > 0 ? value.substring(0, cursorPos) : value;
     const lastOpen = textBeforeCursor.lastIndexOf('{{');
     if (lastOpen === -1) return [];
@@ -220,11 +222,14 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
       const full = `${o.scope}.${o.name}`.toLowerCase();
       return full.includes(query) || o.name.toLowerCase().includes(query);
     });
-  }, [showAutocomplete, config.formula, cursorPos, state.variables, flowId, groupId, variableId]);
+  }, [showAutocomplete, formulaValue, cursorPos, state.variables, flowId, groupId, variableId]);
 
-  useEffect(() => {
+  // A new list of options starts again from the first one
+  const [optionCount, setOptionCount] = useState(autocompleteOptions.length);
+  if (optionCount !== autocompleteOptions.length) {
+    setOptionCount(autocompleteOptions.length);
     setSelectedIndex(0);
-  }, [autocompleteOptions.length]);
+  }
 
   const insertAtCursor = (varName: string) => {
     const ta = inputRef.current;
@@ -290,44 +295,6 @@ export const NumericConfigPanel: React.FC<NumericConfigPanelProps> = ({
       }
     }
   };
-
-  // Sync state if props change externally
-  useEffect(() => {
-    if (config.min !== undefined && Number.parseFloat(minStr) !== config.min) setMinStr(String(config.min));
-  }, [config.min]);
-
-  useEffect(() => {
-    if (config.max !== undefined && Number.parseFloat(maxStr) !== config.max) setMaxStr(String(config.max));
-  }, [config.max]);
-
-  useEffect(() => {
-    if (config.initialValue === undefined || config.initialValue === null) setInitialStr('');
-    else if (Number.parseFloat(initialStr) !== config.initialValue) setInitialStr(String(config.initialValue));
-  }, [config.initialValue]);
-
-  useEffect(() => {
-    if (config.constantValue !== undefined && Number.parseFloat(constValueStr) !== config.constantValue) setConstValueStr(String(config.constantValue));
-  }, [config.constantValue]);
-
-  useEffect(() => {
-    if (config.constantMargin !== undefined && Number.parseFloat(constMarginStr) !== config.constantMargin) setConstMarginStr(String(config.constantMargin));
-  }, [config.constantMargin]);
-
-  useEffect(() => {
-    if (config.step !== undefined && Number.parseFloat(stepStr) !== config.step) setStepStr(String(config.step));
-  }, [config.step]);
-
-  useEffect(() => {
-    if (config.prefix !== undefined && config.prefix !== prefixStr) setPrefixStr(config.prefix ?? '');
-  }, [config.prefix]);
-
-  useEffect(() => {
-    if (config.suffix !== undefined && config.suffix !== suffixStr) setSuffixStr(config.suffix ?? '');
-  }, [config.suffix]);
-
-  useEffect(() => {
-    if (config.integerFormat !== undefined && config.integerFormat !== integerFormatStr) setIntegerFormatStr(config.integerFormat ?? '');
-  }, [config.integerFormat]);
 
   const handlePatternChange = (newPattern: string) => {
     const updates: Partial<NumericVariableConfig> = { pattern: newPattern };

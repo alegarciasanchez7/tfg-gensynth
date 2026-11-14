@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react';
 import { useApp } from '../../../context';
 import type { Variable } from '../../../types';
 import {
@@ -56,9 +56,12 @@ export function TemplateEditor({
     return filterAutocompleteOptions(buildAutocompleteOptions(variables, flowId, groupId), query);
   }, [showAutocomplete, value, cursorPos, variables, flowId, groupId]);
 
-  useEffect(() => {
+  // A new list of options selects its first one again (adjusting state while rendering)
+  const [optionCount, setOptionCount] = useState(autocompleteOptions.length);
+  if (optionCount !== autocompleteOptions.length) {
+    setOptionCount(autocompleteOptions.length);
     setSelectedIndex(0);
-  }, [autocompleteOptions.length]);
+  }
 
   const autocompleteOpen = showAutocomplete && autocompleteOptions.length > 0;
 
@@ -124,9 +127,6 @@ export function TemplateEditor({
     if (e.key === '{') openAutocompleteOnBraces();
   };
 
-  const valueRef = useRef(value);
-  valueRef.current = value;
-
   const insertOption = (opt: AutocompleteOption) => {
     insertAtCursor(optionReference(opt));
     setShowAutocomplete(false);
@@ -134,7 +134,7 @@ export function TemplateEditor({
 
   const insertAtCursor = (varRef: string) => {
     const ta = textareaRef.current;
-    const currentVal = valueRef.current;
+    const currentVal = value;
 
     const start = ta ? ta.selectionStart : currentVal.length;
     const end = ta ? ta.selectionEnd : currentVal.length;
@@ -172,10 +172,17 @@ export function TemplateEditor({
     }, 0);
   };
 
+  // The callback registered in the context always runs the latest insertAtCursor (current value,
+  // onChange and cursor), although it is registered only once per actions object
+  const insertAtCursorRef = useRef(insertAtCursor);
+  useLayoutEffect(() => {
+    insertAtCursorRef.current = insertAtCursor;
+  });
+
   useEffect(() => {
     actions?.registerTemplateEditor?.((name: string, scope?: string) => {
       const ref = scope ? `${scope}.${name}` : name;
-      insertAtCursor(ref);
+      insertAtCursorRef.current(ref);
     });
 
     return () => {

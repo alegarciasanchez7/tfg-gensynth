@@ -586,7 +586,8 @@ export function useCrudActions({
     }
   }, [crudContext, state.variables, reportCommandError, dispatch, optimisticManager]);
 
-  return {
+  // Memoized so the context actions only change when one of these actions changes
+  return useMemo(() => ({
     createGroup,
     deleteGroup,
     updateGroupConfig,
@@ -599,5 +600,8 @@ export function useCrudActions({
     createVariable,
     deleteVariable,
     updateVariable,
-  };
+  }), [
+    createGroup, deleteGroup, updateGroupConfig, reorderGroupFlows, createFlow, deleteFlow,
+    updateFlowConfig, cloneGroup, cloneFlow, createVariable, deleteVariable, updateVariable,
+  ]);
 }
