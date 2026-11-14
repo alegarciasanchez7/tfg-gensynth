@@ -12,6 +12,7 @@ set "COMMON=%~dp0common.bat"
 call "%COMMON%" :init
 set "SYSTEMS=this"
 set "OS_SET="
+set "OS_LAST="
 set "EDITION=both"
 set "ASKED="
 if not "%~1"=="" goto :args
@@ -33,8 +34,10 @@ if /i "%~1"=="--os" goto :os_option
 if /i "%~1"=="--edition" goto :edition_option
 if /i "%~1"=="--help" goto :usage
 if /i "%~1"=="-h" goto :usage
-rem cmd splits --os linux,macos at the comma: the systems after the first come as arguments
-for %%S in (this windows linux macos all) do if /i "%~1"=="%%S" goto :system_argument
+rem cmd splits --os linux,macos at the comma: the words after --os that are not options are
+rem more systems (checked later, so an unknown one says "Unknown system")
+set "ARG=%~1"
+if defined OS_LAST if not "%ARG:~0,1%"=="-" goto :system_argument
 echo Error: Unknown option: %~1
 goto :fail
 :os_option
@@ -43,9 +46,11 @@ shift
 :system_argument
 if defined OS_SET (set "SYSTEMS=%SYSTEMS%,%~1") else (set "SYSTEMS=%~1")
 set "OS_SET=yes"
+set "OS_LAST=yes"
 shift
 goto :args
 :edition_option
+set "OS_LAST="
 if "%~2"=="" (echo Error: --edition needs a value, see --help& goto :fail)
 set "EDITION=%~2"
 shift
