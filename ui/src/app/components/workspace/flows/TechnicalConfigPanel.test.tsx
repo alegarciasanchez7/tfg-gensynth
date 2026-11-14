@@ -109,4 +109,18 @@ describe('TechnicalConfigPanel', () => {
 
     expect(onEventLossChange).toHaveBeenCalledWith({ lossPercent: 10 });
   });
+
+  it.each([
+    ['healthy', 'text-emerald-500'],
+    ['degraded', 'text-amber-500'],
+    ['offline', 'text-slate-400'],
+  ] as const)('colours the %s connector health badge', (status, colour) => {
+    renderPanel({
+      selectedHealth: {
+        pluginId: 'file', pluginVersion: '1.0.0', displayName: 'File Output', status,
+        flowCount: 1, connectedCount: 0, warningCount: 0, errorCount: 0,
+      },
+    });
+    expect(screen.getByText(status).className).toContain(colour);
+  });
 });

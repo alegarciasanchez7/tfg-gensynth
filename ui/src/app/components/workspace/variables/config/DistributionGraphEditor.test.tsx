@@ -51,7 +51,7 @@ describe('DistributionGraphEditor', () => {
     );
 
     const sliders = screen.getAllByRole('slider');
-    expect(sliders.length).toBe(2);
+    expect(sliders).toHaveLength(2);
 
     fireEvent.change(sliders[0], { target: { value: '90' } });
     expect(mockOnChange).toHaveBeenCalledWith([

@@ -1,5 +1,12 @@
 import type { Variable } from '../types';
 
+/** Where a duplicate name clashes, by scope of the variable. */
+const NAME_CONFLICT_PLACE: Record<Variable['scope'], string> = {
+  local: 'in this flow',
+  group: 'in this group',
+  global: 'as a global variable',
+};
+
 type NameTarget = Pick<Variable, 'name' | 'scope' | 'flowId' | 'groupId'> & { id?: string };
 
 /**
@@ -10,7 +17,7 @@ type NameTarget = Pick<Variable, 'name' | 'scope' | 'flowId' | 'groupId'> & { id
 export function findVariableNameConflict(variables: Variable[], target: NameTarget): string | null {
   const name = target.name.trim();
   if (!name) return null;
-  const clash = variables.find(v =>
+  const clash = variables.some(v =>
     v.id !== target.id
     && v.name === name
     && v.scope === target.scope
@@ -18,6 +25,5 @@ export function findVariableNameConflict(variables: Variable[], target: NameTarg
       || (target.scope === 'group' && v.groupId === target.groupId)
       || (target.scope === 'local' && v.flowId === target.flowId)));
   if (!clash) return null;
-  const where = target.scope === 'local' ? 'in this flow' : target.scope === 'group' ? 'in this group' : 'as a global variable';
-  return `A variable named "${name}" already exists ${where}`;
+  return `A variable named "${name}" already exists ${NAME_CONFLICT_PLACE[target.scope]}`;
 }

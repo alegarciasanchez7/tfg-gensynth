@@ -9,6 +9,13 @@ import { Switch } from '../../../ui/switch';
 import { Input } from '../../../ui/input';
 import { SettingRow } from './SettingRow';
 
+/** Why auto-save cannot save yet (auto-save on), or null when it can. */
+function autoSaveHintFor(canSaveInPlace: boolean, hasOpenFile: boolean): string | null {
+  if (!canSaveInPlace) return 'Not supported by this browser. Use Save manually.';
+  if (!hasOpenFile) return 'Save the configuration to a file to start auto-saving.';
+  return null;
+}
+
 /**
  * Save & storage settings: auto-save switch and interval, and the folder of the generated files.
  * Stored on this device.
@@ -62,13 +69,7 @@ export function StorageSettingsSection() {
   const isDesktop = state.connectionMode === 'jcef';
   const canSaveInPlace = isDesktop || supportsFileSystemAccess();
   const hasOpenFile = isDesktop ? Boolean(state.currentFilePath) : Boolean(state.currentFileHandle);
-  const autoSaveHint = !state.autoSaveEnabled
-    ? null
-    : !canSaveInPlace
-      ? 'Not supported by this browser. Use Save manually.'
-      : !hasOpenFile
-        ? 'Save the configuration to a file to start auto-saving.'
-        : null;
+  const autoSaveHint = state.autoSaveEnabled ? autoSaveHintFor(canSaveInPlace, hasOpenFile) : null;
 
   return (
     <div className="flex flex-col gap-2">

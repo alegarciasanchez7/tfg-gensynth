@@ -196,7 +196,8 @@ export const SequentialGraphEditor: React.FC<SequentialGraphEditorProps> = ({
   }
 
   // Generate points coordinates for rendering
-  const svgPoints = points.map((p) => getSvgCoordinates(p));
+  // `tick` (the x of the point, one point per tick) identifies each node
+  const svgPoints = points.map((p) => ({ ...getSvgCoordinates(p), tick: p.x }));
   const pathD = svgPoints.reduce((acc, pt, idx) => {
     return acc + (idx === 0 ? `M ${pt.x} ${pt.y}` : ` L ${pt.x} ${pt.y}`);
   }, '');
@@ -284,7 +285,7 @@ export const SequentialGraphEditor: React.FC<SequentialGraphEditorProps> = ({
           {svgPoints.map((pt, idx) => {
             const isHovered = activePointIndex === idx;
             return (
-              <g key={`node-${idx}`} className="cursor-ns-resize group">
+              <g key={`node-${pt.tick}`} className="cursor-ns-resize group">
                 <circle
                   cx={pt.x}
                   cy={pt.y}

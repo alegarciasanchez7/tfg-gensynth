@@ -70,7 +70,7 @@ export function reconcileState(context: ReconciliationContext): ReconciliationRe
 
     if (isGroupOp) {
       const serverEntity = serverGroups.find(g => g && (g.id === op.entityId || (op.tempIdMapping?.realId === g.id)));
-      const localEntity = localGroups.find(g => g && g.id === op.entityId);
+      const localEntity = localGroups.find(g => g?.id === op.entityId);
 
       if (isCreate || isUpdate) {
         if (serverEntity) {
@@ -92,7 +92,7 @@ export function reconcileState(context: ReconciliationContext): ReconciliationRe
           }
         } else if (isFresh) {
           // Not yet on server, but still fresh: Keep the optimistic entity in the results
-          if (isCreate && localEntity && !result.groupsToUpdate.find(g => g.id === localEntity.id)) {
+          if (isCreate && localEntity && !result.groupsToUpdate.some(g => g.id === localEntity.id)) {
             result.groupsToUpdate.push(localEntity);
           }
         } else {
@@ -125,7 +125,7 @@ export function reconcileState(context: ReconciliationContext): ReconciliationRe
 
     if (isVariableOp) {
       const serverEntity = serverVariables.find(v => v && (v.id === op.entityId || (op.tempIdMapping?.realId === v.id)));
-      const localEntity = localVariables.find(v => v && v.id === op.entityId);
+      const localEntity = localVariables.find(v => v?.id === op.entityId);
 
       if (isCreate || isUpdate) {
         if (serverEntity) {
@@ -153,7 +153,7 @@ export function reconcileState(context: ReconciliationContext): ReconciliationRe
             });
           }
         } else if (isFresh) {
-          if (isCreate && localEntity && !result.variablesToUpdate.find(v => v.id === localEntity.id)) {
+          if (isCreate && localEntity && !result.variablesToUpdate.some(v => v.id === localEntity.id)) {
             result.variablesToUpdate.push(localEntity);
           }
         } else {
@@ -212,11 +212,13 @@ export function applyReconciliation(
 export function logReconciliationResults(result: ReconciliationResult): string {
   const lines: string[] = [];
   
-  lines.push(`Reconciliation Results:`);
-  lines.push(`  Resolved Operations: ${result.operationsResolved.length}`);
-  lines.push(`  - Success: ${result.operationsResolved.filter(r => r.success).length}`);
-  lines.push(`  - Failed: ${result.operationsResolved.filter(r => !r.success).length}`);
-  lines.push(`  Conflicts Detected: ${result.conflicts.length}`);
+  lines.push(
+    `Reconciliation Results:`,
+    `  Resolved Operations: ${result.operationsResolved.length}`,
+    `  - Success: ${result.operationsResolved.filter(r => r.success).length}`,
+    `  - Failed: ${result.operationsResolved.filter(r => !r.success).length}`,
+    `  Conflicts Detected: ${result.conflicts.length}`,
+  );
   
   if (result.conflicts.length > 0) {
     lines.push(`  Conflict Details:`);

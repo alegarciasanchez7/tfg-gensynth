@@ -11,7 +11,6 @@ interface WorkspaceProps {
   variables: Variable[];
   onSelectGroup: (groupId: string) => void;
   onSelectFlow: (groupId: string, flowId: string) => void;
-  onSelectVariable: (id: string) => void;
   formatTemplate: Record<string, string>;
   onFormatChange: (flowId: string, template: string) => void;
   onClearVariableSelection: () => void;
@@ -28,7 +27,7 @@ export function Workspace({
   onFormatChange,
   onClearVariableSelection,
   onClearSelection,
-}: WorkspaceProps) {
+}: Readonly<WorkspaceProps>) {
   const findGroup = (id?: string) => groups.find(g => g.id === id);
   const findFlow = (gId?: string, fId?: string) => groups.find(g => g.id === gId)?.flows.find(f => f.id === fId);
   const findVariable = (id?: string) => variables.find(v => v.id === (id || (selection.type === 'variable' ? selection.variableId : undefined)));

@@ -11,7 +11,6 @@ export interface CustomDropdownProps {
   value: string;
   onChange: (value: string) => void;
   options: CustomDropdownOption[];
-  label?: string;
   className?: string;
   /** Classes of the trigger button, replacing the default look (e.g. a compact trigger). */
   triggerClassName?: string;
@@ -146,6 +145,8 @@ export const CustomDropdown: React.FC<CustomDropdownProps> = ({ value, onChange,
     <div
       ref={menuRef}
       role="listbox"
+      // Focusable as the listbox role requires, but never in the tab order (the trigger keeps the focus)
+      tabIndex={-1}
       data-testid="custom-dropdown-menu"
       // Keep the focus on the trigger (inside dialogs, a focused portal would fight their focus trap)
       onMouseDown={event => event.preventDefault()}

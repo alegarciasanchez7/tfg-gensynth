@@ -1,5 +1,6 @@
 import type { Group, Variable, Flow, ProjectSettings } from '../../types';
 import { tickSettingsEqual } from '../../core/tickSettings';
+import { legacyFlowFields, legacyGroupFields } from '../../core/legacyFields';
 
 export interface DirtyItems {
   groupIds: Set<string>;
@@ -28,12 +29,13 @@ export interface DirtyStateResult {
  * the project as modified.
  */
 export function getFlowComparable(flow: Flow) {
+  const { interval, burst } = legacyFlowFields(flow);
   return {
     id: flow.id,
     name: flow.name,
     technology: flow.technology,
-    interval: flow.interval,
-    burst: flow.burst,
+    interval,
+    burst,
     everyTicks: flow.everyTicks,
     // Missing event loss fields mean "off", same as 0
     lossPercent: flow.lossPercent ?? 0,
@@ -58,7 +60,7 @@ export function getGroupComparable(group: Group) {
     id: group.id,
     name: group.name,
     description: group.description,
-    threads: group.threads,
+    threads: legacyGroupFields(group).threads,
     outputMode: group.outputMode,
     sequentialOrder: group.sequentialOrder,
     enabled: group.enabled,

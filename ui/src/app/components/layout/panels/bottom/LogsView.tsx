@@ -20,6 +20,22 @@ const levelIcon = {
   data:  <Send size={9} />,
 };
 
+/** Text colour of each connector health status (offline and unknown ones are grey). */
+const HEALTH_STATUS_CLASS: Partial<Record<ConnectorHealthSummary['status'], string>> = {
+  healthy: 'text-emerald-500',
+  degraded: 'text-amber-500',
+};
+
+/** Classes of the selected level filter button. */
+const ACTIVE_FILTER_CLASS: Record<'all' | keyof typeof levelCfg, string> = {
+  all: 'bg-[var(--c-bg7)] text-[var(--c-tx1)] border border-[var(--c-br3)]',
+  error: 'bg-red-500/15 text-red-500 border border-red-500/30',
+  warn: 'bg-amber-500/15 text-amber-500 border border-amber-500/30',
+  data: 'bg-emerald-500/15 text-emerald-500 border border-emerald-500/30',
+  debug: 'bg-[var(--c-bg7)] text-[var(--c-tx4)] border border-[var(--c-br3)]',
+  info: 'bg-sky-500/15 text-sky-500 border border-sky-500/30',
+};
+
 interface LogsViewProps {
   entries: Array<{ id: string; timestamp: string; level: 'info' | 'warn' | 'error' | 'debug' | 'data'; source: string; message: string }>;
   connectorHealthSummary: ConnectorHealthSummary[];
@@ -28,7 +44,7 @@ interface LogsViewProps {
   onClear?: () => void;
 }
 
-export function LogsView({ entries, connectorHealthSummary, groups, onClear }: LogsViewProps) {
+export function LogsView({ entries, connectorHealthSummary, groups, onClear }: Readonly<LogsViewProps>) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const [filter, setFilter] = useState<string>('all');
@@ -117,7 +133,7 @@ export function LogsView({ entries, connectorHealthSummary, groups, onClear }: L
             <div key={`${entry.pluginId}@${entry.pluginVersion}`} className="flex items-center gap-2 rounded border border-[var(--c-br1)] px-2 py-1 text-[9px]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
               <span className="text-[var(--c-tx2)]">{entry.displayName}</span>
               <span className="text-cyan-500">{entry.pluginVersion}</span>
-              <span className={`uppercase ${entry.status === 'healthy' ? 'text-emerald-500' : entry.status === 'degraded' ? 'text-amber-500' : 'text-slate-400'}`}>
+              <span className={`uppercase ${HEALTH_STATUS_CLASS[entry.status] ?? 'text-slate-400'}`}>
                 {entry.status}
               </span>
             </div>
@@ -136,14 +152,7 @@ export function LogsView({ entries, connectorHealthSummary, groups, onClear }: L
             key={f}
             onClick={() => setFilter(f)}
             className={`px-2 py-0.5 rounded text-[10px] transition-all ${
-              filter === f
-                ? f === 'all' ? 'bg-[var(--c-bg7)] text-[var(--c-tx1)] border border-[var(--c-br3)]'
-                  : f === 'error' ? 'bg-red-500/15 text-red-500 border border-red-500/30'
-                  : f === 'warn' ? 'bg-amber-500/15 text-amber-500 border border-amber-500/30'
-                  : f === 'data' ? 'bg-emerald-500/15 text-emerald-500 border border-emerald-500/30'
-                  : f === 'debug' ? 'bg-[var(--c-bg7)] text-[var(--c-tx4)] border border-[var(--c-br3)]'
-                  : 'bg-sky-500/15 text-sky-500 border border-sky-500/30'
-                : 'text-[var(--c-tx4)] hover:text-[var(--c-tx2)]'
+              filter === f ? ACTIVE_FILTER_CLASS[f] : 'text-[var(--c-tx4)] hover:text-[var(--c-tx2)]'
             }`}
             style={{ fontFamily: 'JetBrains Mono, monospace' }}
           >

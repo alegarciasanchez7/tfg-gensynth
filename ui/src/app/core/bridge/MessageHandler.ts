@@ -29,10 +29,10 @@ export interface MessageHandlerOptions {
 }
 
 export class MessageHandler {
-  private config: BridgeConfig;
-  private pendingCommands: Map<string, PendingCommand>;
-  private emit: <K extends keyof EventMap>(event: K, data: EventMap[K]) => void;
-  private sendRaw: (data: string) => void;
+  private readonly config: BridgeConfig;
+  private readonly pendingCommands: Map<string, PendingCommand>;
+  private readonly emit: <K extends keyof EventMap>(event: K, data: EventMap[K]) => void;
+  private readonly sendRaw: (data: string) => void;
 
   constructor(options: MessageHandlerOptions) {
     this.config = options.config;

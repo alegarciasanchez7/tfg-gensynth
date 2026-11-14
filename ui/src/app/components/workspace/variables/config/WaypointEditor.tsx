@@ -154,7 +154,10 @@ export const WaypointEditor: React.FC<WaypointEditorProps> = ({ config, onChange
   };
 
   /** Altitude / Z of a new waypoint: the last one's, or the bottom of the region. */
-  const newZ = () => (waypoints.length > 0 ? waypoints[waypoints.length - 1].z : is2D ? 0 : (minPoint.z ?? 0));
+  const newZ = () => {
+    if (waypoints.length > 0) return waypoints[waypoints.length - 1].z;
+    return is2D ? 0 : (minPoint.z ?? 0);
+  };
 
   const append = (x: number, y: number) => commit([...waypoints, { x, y, z: newZ() }]);
 
@@ -389,14 +392,13 @@ export const WaypointEditor: React.FC<WaypointEditorProps> = ({ config, onChange
       plural(badSegments, 'segment leaves the region or crosses an obstacle', 'segments leave the region or cross an obstacle'),
   ].filter(Boolean);
   const notice = problems.length > 0 && (
-    <div
-      role="status"
+    <output
       data-testid="waypoint-invalid-notice"
       className="flex items-start gap-1.5 text-[11px] leading-snug text-amber-700 dark:text-amber-300 bg-amber-500/10 border border-amber-500/40 rounded px-2 py-1"
     >
       <AlertTriangle size={12} className="text-amber-500 shrink-0 mt-px" />
       <span>{`${problems.join(' and ')} (in red). The generator follows the path anyway.`}</span>
-    </div>
+    </output>
   );
 
   const warningBanner = warning && (
@@ -419,15 +421,18 @@ export const WaypointEditor: React.FC<WaypointEditorProps> = ({ config, onChange
     </div>
   );
 
-  const visual = is2D ? (
-    <WaypointCanvas2D {...visualProps} />
-  ) : isGeo ? (
-    <WaypointMap {...visualProps} initialView={initialMapView} onViewChange={handleMapViewChange} />
-  ) : (
-    <p className="text-[11px] text-[var(--c-tx4)] bg-[var(--c-bg3)] border border-dashed border-[var(--c-br2)] rounded px-2 py-1.5">
-      {"Enter the coordinates in the table: 3D waypoints have no visual editor."}
-    </p>
-  );
+  let visual: React.ReactNode;
+  if (is2D) {
+    visual = <WaypointCanvas2D {...visualProps} />;
+  } else if (isGeo) {
+    visual = <WaypointMap {...visualProps} initialView={initialMapView} onViewChange={handleMapViewChange} />;
+  } else {
+    visual = (
+      <p className="text-[11px] text-[var(--c-tx4)] bg-[var(--c-bg3)] border border-dashed border-[var(--c-br2)] rounded px-2 py-1.5">
+        {"Enter the coordinates in the table: 3D waypoints have no visual editor."}
+      </p>
+    );
+  }
 
   const table = (
     <WaypointTable

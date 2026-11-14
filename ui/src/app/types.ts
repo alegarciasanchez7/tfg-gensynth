@@ -2,6 +2,8 @@ export type SystemStatus = 'running' | 'stopped' | 'processing';
 export type ConnectionStatus = 'connected' | 'disconnected' | 'error' | 'warning';
 export type GroupStatus = 'running' | 'stopped' | 'paused';
 export type VariableScope = 'local' | 'group' | 'global';
+/** Format of a flow template and of the messages it generates. */
+export type MessageFormat = 'json' | 'xml' | 'csv' | 'plain';
 export type VariableType =
   | 'numeric'
   | 'list'
@@ -283,7 +285,7 @@ export interface Flow {
   host: string;
   port: number;
   template?: string;
-  format?: 'json' | 'xml' | 'csv' | 'plain';
+  format?: MessageFormat;
   connectorConfig?: Record<string, any>;
   connectorVersion?: string;
   enabled: boolean;
@@ -410,8 +412,8 @@ export interface StartGroupErrorPayload {
 
 export interface FormatConversionPayload {
   content: string;
-  sourceFormat: 'json' | 'xml' | 'csv' | 'plain';
-  targetFormat: 'json' | 'xml' | 'csv' | 'plain';
+  sourceFormat: MessageFormat;
+  targetFormat: MessageFormat;
   clientRequestId?: string;
 }
 

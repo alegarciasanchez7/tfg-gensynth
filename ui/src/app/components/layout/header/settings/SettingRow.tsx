@@ -13,7 +13,7 @@ interface SettingRowProps {
 /**
  * One row of the settings dialog: icon, title and description on the left, control on the right.
  */
-export function SettingRow({ icon, title, description, htmlFor, children }: SettingRowProps) {
+export function SettingRow({ icon, title, description, htmlFor, children }: Readonly<SettingRowProps>) {
   return (
     <div className="flex items-center justify-between gap-4 rounded-lg border border-[var(--c-br2)] bg-[var(--c-bg1)] px-3 py-2.5">
       <div className="flex items-center gap-3 min-w-0">

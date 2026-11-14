@@ -26,7 +26,7 @@ import { executeDeleteOptimistic } from '../deleteOptimisticHelper';
 
 interface UseCrudActionsProps {
   state: AppState;
-  stateRef: React.MutableRefObject<AppState>;
+  stateRef: React.RefObject<AppState>;
   dispatch: React.Dispatch<AppAction>;
   optimisticManager: OptimisticManager | null;
   reportCommandError: (source: string, action: string, error: unknown) => void;

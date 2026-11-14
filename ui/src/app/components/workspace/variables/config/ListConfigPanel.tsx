@@ -46,9 +46,19 @@ const EMBEDDED_TYPE_OPTIONS = [
 
 type TransitionMatrix = Record<string, Record<string, number>>;
 
-/** Key of an item in the Markov matrix. */
-const matrixKey = (item: { id?: string; value?: unknown }, index: number): string =>
-  item.id || String(item.value || `item_${index + 1}`);
+/** Key of an item in the Markov matrix: its id (always set on normalized items), else its value or position. */
+const matrixKey = (item: { id?: string; value?: unknown }, index: number): string => {
+  if (item.id) return item.id;
+  const { value } = item;
+  const isPrimitive = typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean';
+  return isPrimitive && value ? String(value) : `item_${index + 1}`;
+};
+
+/** Label of an item in the Markov matrix headers. */
+const matrixItemLabel = (item: ListItemConfig, index: number): string => {
+  if (item.isEmbedded) return `Gen #${index + 1}`;
+  return item.value !== undefined && item.value !== '' ? String(item.value) : `Item ${index + 1}`;
+};
 
 /** Row of a state with no row in the matrix: the Core moves from it to any item with the same probability. */
 const evenRow = (keys: string[]): Record<string, number> =>
@@ -447,9 +457,7 @@ export const ListConfigPanel: React.FC<ListConfigPanelProps> = ({
                 <tr>
                   <th className="p-1 text-left text-[10px] text-[var(--c-tx4)]">From \ To</th>
                   {orderedItems.map((target, targetIdx: number) => {
-                    const label = target.isEmbedded
-                      ? `Gen #${targetIdx + 1}`
-                      : (target.value !== undefined && target.value !== '' ? String(target.value) : `Item ${targetIdx + 1}`);
+                    const label = matrixItemLabel(target, targetIdx);
                     return (
                       <th key={target.id || `target_${targetIdx}`} className="p-1 text-center text-[10px] text-[var(--c-tx2)]" title={String(label)}>
                         {String(label).length > 10 ? String(label).substring(0, 10) + '…' : String(label)}
@@ -462,9 +470,7 @@ export const ListConfigPanel: React.FC<ListConfigPanelProps> = ({
                 {orderedItems.map((source, sourceIdx: number) => {
                   const sourceId = matrixKey(source, sourceIdx);
                   const row = transitionMatrix[sourceId];
-                  const sourceLabel = source.isEmbedded
-                    ? `Gen #${sourceIdx + 1}`
-                    : (source.value !== undefined && source.value !== '' ? String(source.value) : `Item ${sourceIdx + 1}`);
+                  const sourceLabel = matrixItemLabel(source, sourceIdx);
 
                   return (
                     <tr key={sourceId || sourceIdx} className="border-t border-white/5">

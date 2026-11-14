@@ -15,12 +15,12 @@ function EditableField({
   value,
   onChange,
   wide,
-}: {
+}: Readonly<{
   label: string;
   value: string;
   onChange: (value: string) => void;
   wide?: boolean;
-}) {
+}>) {
   return (
     <div className={`flex flex-col gap-1 ${wide ? 'col-span-2' : ''}`}>
       <label className="text-[10px] text-[var(--c-tx4)] tracking-wider uppercase"
@@ -130,7 +130,7 @@ interface GroupWorkspaceProps {
   group: Group;
 }
 
-export function GroupWorkspace({ group }: GroupWorkspaceProps) {
+export function GroupWorkspace({ group }: Readonly<GroupWorkspaceProps>) {
   const { state, actions } = useApp();
   const [isDeleting, setIsDeleting] = useState(false);
   const isDirty = state.dirtyItems.groupIds.has(group.id);

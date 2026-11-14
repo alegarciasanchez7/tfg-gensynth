@@ -111,7 +111,7 @@ export function useVariableValidation() {
     // Validate conditional rules targets exist
     if (config.conditionalRules && Array.isArray(config.conditionalRules)) {
       for (const rule of config.conditionalRules) {
-        if (rule.targetVariable && rule.targetVariable.trim()) {
+        if (rule.targetVariable?.trim()) {
           const exists = variablesList?.some(v => v.name === rule.targetVariable.trim());
           if (!exists) {
             errors.conditionalRuleTarget = `Reference error in rules: Variable '${rule.targetVariable}' does not exist`;

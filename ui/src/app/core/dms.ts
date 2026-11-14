@@ -11,6 +11,17 @@ export function formatDms(value: number, isLatitude: boolean): string {
   const degrees = Math.floor(hundredths / 360_000);
   const minutes = Math.floor((hundredths % 360_000) / 6_000);
   const seconds = (hundredths % 6_000) / 100;
-  const direction = isLatitude ? (value >= 0 ? 'N' : 'S') : (value >= 0 ? 'E' : 'W');
+  const positive = value >= 0;
+  const direction = isLatitude ? latitudeLetter(positive) : longitudeLetter(positive);
   return `${degrees}° ${minutes}' ${seconds.toFixed(2)}" ${direction}`;
+}
+
+/** Hemisphere letter of a latitude. */
+function latitudeLetter(positive: boolean): string {
+  return positive ? 'N' : 'S';
+}
+
+/** Hemisphere letter of a longitude. */
+function longitudeLetter(positive: boolean): string {
+  return positive ? 'E' : 'W';
 }

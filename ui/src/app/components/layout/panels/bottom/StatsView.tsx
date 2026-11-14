@@ -15,7 +15,7 @@ interface StatsViewProps {
   running: boolean;
 }
 
-export function StatsView({ running }: StatsViewProps) {
+export function StatsView({ running }: Readonly<StatsViewProps>) {
   const { state } = useApp();
   const { metrics, groups, flowMetrics } = state;
 

@@ -11,13 +11,16 @@ interface WeightedValue {
   weight: number;
 }
 
+/** Interval that takes the values that fall on a boundary between two bars. */
+type BoundaryMode = 'LEFT' | 'RIGHT' | 'SPLIT';
+
 interface DistributionGraphEditorProps {
   min: number;
   max: number;
   points: WeightedValue[];
   onChange: (points: WeightedValue[]) => void;
-  boundaryMode?: 'LEFT' | 'RIGHT' | 'SPLIT';
-  onBoundaryModeChange?: (mode: 'LEFT' | 'RIGHT' | 'SPLIT') => void;
+  boundaryMode?: BoundaryMode;
+  onBoundaryModeChange?: (mode: BoundaryMode) => void;
 }
 
 export const DistributionGraphEditor: React.FC<DistributionGraphEditorProps> = ({
@@ -38,11 +41,10 @@ export const DistributionGraphEditor: React.FC<DistributionGraphEditorProps> = (
       const fromVal = min + range * (i / numBars);
       const toVal = min + range * ((i + 1) / numBars);
       const fraction = (i + 0.5) / numBars; // middle of the interval
+      // A uniform preset keeps the same weight on every bar
       let weight = 50;
 
-      if (type === 'uniform') {
-        weight = 50;
-      } else if (type === 'normal') {
+      if (type === 'normal') {
         // Gaussian curve centered at 0.5
         const x = fraction - 0.5;
         weight = Math.round(100 * Math.exp(-(x * x) / (2 * 0.15 * 0.15)));
@@ -134,7 +136,7 @@ export const DistributionGraphEditor: React.FC<DistributionGraphEditorProps> = (
             <CustomDropdown
               triggerClassName="flex h-7 w-28 items-center justify-between rounded border border-[var(--c-br1)] bg-[var(--c-bg3)] px-2 py-0.5 text-[10px] text-[var(--c-tx1)] font-mono outline-none hover:bg-white/5 active:bg-white/10 transition-colors cursor-pointer"
               value={boundaryMode}
-              onChange={(val) => onBoundaryModeChange?.(val as 'LEFT' | 'RIGHT' | 'SPLIT')}
+              onChange={(val) => onBoundaryModeChange?.(val as BoundaryMode)}
               options={[
                 { value: 'RIGHT', label: 'Right [A, B)' },
                 { value: 'LEFT', label: 'Left (A, B]' },

@@ -27,7 +27,7 @@ export function ConfirmDeleteDialog({
   onConfirm,
   confirmLabel = "Delete",
   cancelLabel = "Cancel",
-}: ConfirmDeleteDialogProps) {
+}: Readonly<ConfirmDeleteDialogProps>) {
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent className="bg-[var(--c-bg2)] border-[var(--c-br1)] text-[var(--c-tx2)]">

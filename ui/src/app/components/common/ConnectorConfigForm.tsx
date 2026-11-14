@@ -23,7 +23,7 @@ interface ConnectorConfigFormProps {
  * Connection section of a flow: renders the fields declared by the connector plugin, in the
  * plugin's order, with their tooltips, required marks and validation errors.
  */
-export function ConnectorConfigForm({ connector, config, onChange, showAllErrors = false }: ConnectorConfigFormProps) {
+export function ConnectorConfigForm({ connector, config, onChange, showAllErrors = false }: Readonly<ConnectorConfigFormProps>) {
   const [touched, setTouched] = useState<Set<string>>(() => new Set());
   const errors = useMemo(() => validateConnectorConfig(connector.fields, config), [connector.fields, config]);
 
@@ -69,12 +69,19 @@ interface ConnectorFieldInputProps {
   onChange: (value: unknown) => void;
 }
 
-function ConnectorFieldInput({ field, value, error, onChange }: ConnectorFieldInputProps) {
+/** Text shown in an input for a connector config value (the values are scalars; objects are shown as JSON). */
+function toTextValue(value: unknown): string {
+  if (value === undefined || value === null) return '';
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value as string | number | boolean | bigint);
+}
+
+function ConnectorFieldInput({ field, value, error, onChange }: Readonly<ConnectorFieldInputProps>) {
   const [revealed, setRevealed] = useState(false);
   const id = `connector-field-${field.key}`;
   const errorId = `${id}-error`;
   const borderClass = error ? 'border-red-500/60' : 'border-[var(--c-br1)]';
-  const textValue = value === undefined || value === null ? '' : String(value);
+  const textValue = toTextValue(value);
   const isDirectoryField = field.type === 'TEXT' && /dir|path/i.test(field.key);
 
   const inputProps = {

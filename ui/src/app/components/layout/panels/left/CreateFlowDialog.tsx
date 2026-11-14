@@ -27,6 +27,14 @@ function isPositiveInteger(value: string): boolean {
   return value.trim() !== '' && Number.isInteger(parsed) && parsed >= 1;
 }
 
+/** Subtitle of the dialog: Repeater, add to a given group, or pick the group. */
+function dialogDescription(repeat: boolean | undefined, groupId: string | undefined, targetGroup: Group | undefined): string {
+  if (repeat) return 'Create several flows with the same initial configuration.';
+  if (!groupId) return 'Create a new flow. Select a group first.';
+  const where = targetGroup ? `"${targetGroup.name}"` : 'this group';
+  return `Create a new flow inside ${where}.`;
+}
+
 interface CreateFlowDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -63,7 +71,7 @@ export function CreateFlowDialog({
   onCreateFlow,
   onSelectFlow,
   repeat = false,
-}: CreateFlowDialogProps) {
+}: Readonly<CreateFlowDialogProps>) {
   const [selectedGroupId, setSelectedGroupId] = useState(groupId || '');
   const [flowName, setFlowName] = useState('');
   const [flowTechnology, setFlowTechnology] = useState('');
@@ -178,11 +186,7 @@ export function CreateFlowDialog({
           <DialogHeader className="shrink-0 mb-4">
             <DialogTitle className="text-[var(--c-tx1)]">{repeat ? 'Repeater' : 'Add flow'}</DialogTitle>
             <DialogDescription className="text-[var(--c-tx4)]">
-              {repeat
-                ? 'Create several flows with the same initial configuration.'
-                : groupId
-                  ? `Create a new flow inside ${targetGroup ? `"${targetGroup.name}"` : 'this group'}.`
-                  : 'Create a new flow. Select a group first.'}
+              {dialogDescription(repeat, groupId, targetGroup)}
             </DialogDescription>
           </DialogHeader>
 

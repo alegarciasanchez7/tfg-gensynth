@@ -60,8 +60,8 @@ export function OfflineGridOverlay() {
 
   return (
     <>
-      {gridItems.map((item, idx) => (
-        <Polyline key={idx} positions={item.positions} pathOptions={gridLineStyle} interactive={false} />
+      {gridItems.map((item) => (
+        <Polyline key={item.label} positions={item.positions} pathOptions={gridLineStyle} interactive={false} />
       ))}
     </>
   );

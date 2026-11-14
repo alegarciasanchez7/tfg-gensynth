@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { PointVariableConfig, BoundaryBehavior, CoordinateSystem, Point3DCoord, Shape3DType, type BoundaryObstacle } from '../../../../types';
+import { PointVariableConfig, BoundaryBehavior, CoordinateSystem, Point3DCoord, Shape3DType, type BoundaryObstacle, type AltitudeUnit, type AltitudeReference, type AltitudePattern } from '../../../../types';
 import { defaultBoundsFor, type FullPoint } from '../../../../core/pointDefaults';
 import { Input } from '../../../ui/input';
 import { Label } from '../../../ui/label';
@@ -11,6 +11,26 @@ import { Isometric3DBoundaryEditor } from './Isometric3DBoundaryEditor';
 import { GeospatialMapBoundaryEditor } from './GeospatialMapBoundaryEditor';
 import { BoundaryExpandModal } from './BoundaryExpandModal';
 import { BoundaryObstaclesEditor } from './BoundaryObstaclesEditor';
+
+/**
+ * Rows of the read-only vertex list, keyed by their coordinates plus how many earlier vertices share
+ * them, so every key is unique without using the position in the list.
+ */
+const vertexRows = (points: Point3DCoord[]): { pt: Point3DCoord; key: string }[] => {
+  const seen = new Map<string, number>();
+  return points.map((pt) => {
+    const coords = `${pt.x ?? 0},${pt.y ?? 0},${pt.z ?? 0}`;
+    const repeats = seen.get(coords) ?? 0;
+    seen.set(coords, repeats + 1);
+    return { pt, key: `${coords}#${repeats}` };
+  });
+};
+
+/** Title of the fullscreen editor for a coordinate system. */
+const modalTitleFor = (coordSystem: CoordinateSystem, is2D: boolean): string => {
+  if (coordSystem === 'GEOSPATIAL') return 'Geospatial Geofence Editor';
+  return is2D ? '2D Spatial Boundary Grid' : '3D Spatial Volume Editor';
+};
 
 interface SpatialBoundariesTabProps {
   config: PointVariableConfig;
@@ -25,9 +45,9 @@ interface BoundsUpdate {
   maxY?: number;
   minZ?: number;
   maxZ?: number;
-  altitudeUnit?: PointVariableConfig['altitudeUnit'];
-  altitudeReference?: PointVariableConfig['altitudeReference'];
-  altitudePattern?: PointVariableConfig['altitudePattern'];
+  altitudeUnit?: AltitudeUnit;
+  altitudeReference?: AltitudeReference;
+  altitudePattern?: AltitudePattern;
   /** An explicit `undefined` clears it (the geospatial editor sends it when the field is emptied). */
   initialAltitude?: number;
   maxVerticalStep?: number;
@@ -292,7 +312,6 @@ export const SpatialBoundariesTab: React.FC<SpatialBoundariesTabProps> = ({ conf
             maxVerticalStep={config.maxVerticalStep ?? 1.0}
             altitudeOscillationSpeed={config.altitudeOscillationSpeed ?? 0.1}
             polygon={polygon}
-            width={canvasW}
             height={canvasH}
             onChange={(b) =>
               updateBounds({
@@ -491,9 +510,9 @@ export const SpatialBoundariesTab: React.FC<SpatialBoundariesTabProps> = ({ conf
             </div>
 
             <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
-              {polygon.map((pt, i) => (
+              {vertexRows(polygon).map(({ pt, key }, i) => (
                 <div
-                  key={i}
+                  key={key}
                   className="flex items-center justify-between p-1.5 rounded border border-[var(--c-br1)] bg-[var(--c-bg2)] text-xs font-mono text-[var(--c-tx2)]"
                 >
                   <span className="text-[10px] font-semibold text-violet-600 dark:text-violet-300 w-16">Vertex {i + 1}:</span>
@@ -512,7 +531,7 @@ export const SpatialBoundariesTab: React.FC<SpatialBoundariesTabProps> = ({ conf
         <BoundaryExpandModal
           isOpen={isModalOpen}
           onClose={() => setIsModalOpen(false)}
-          title={coordSystem === 'GEOSPATIAL' ? 'Geospatial Geofence Editor' : (is2D ? '2D Spatial Boundary Grid' : '3D Spatial Volume Editor')}
+          title={modalTitleFor(coordSystem, is2D)}
         >
           {renderVisualEditor(true)}
         </BoundaryExpandModal>

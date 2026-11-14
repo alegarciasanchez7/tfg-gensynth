@@ -74,7 +74,7 @@ export function FormatConverterModal({
   currentFormat,
   initialTargetFormat,
   onApplyConversion,
-}: FormatConverterModalProps) {
+}: Readonly<FormatConverterModalProps>) {
   const sourceFormat = currentFormat || 'json';
   const [targetFormat, setTargetFormat] = useState<TemplateFormat>(
     initialTargetFormat || (sourceFormat === 'xml' ? 'json' : 'xml')
@@ -171,10 +171,10 @@ export function FormatConverterModal({
             </p>
           )}
           {!blocked && kind === 'label-only' && (
-            <p role="status" className="flex items-start gap-1.5 rounded border border-cyan-500/30 bg-cyan-500/10 px-2.5 py-1.5 text-[11px] text-cyan-500">
+            <output className="flex items-start gap-1.5 rounded border border-cyan-500/30 bg-cyan-500/10 px-2.5 py-1.5 text-[11px] text-cyan-500">
               <Info size={12} className="shrink-0 mt-0.5" />
               The template is already valid {targetFormat.toUpperCase()}: applying only changes the format label, the text stays the same.
-            </p>
+            </output>
           )}
         </div>
 

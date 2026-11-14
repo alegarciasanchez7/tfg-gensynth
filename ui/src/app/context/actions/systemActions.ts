@@ -50,7 +50,7 @@ export const startSystem = (
       }
       if (config.conditionalRules && Array.isArray(config.conditionalRules)) {
         for (const rule of config.conditionalRules) {
-          if (rule.targetVariable && rule.targetVariable.trim()) {
+          if (rule.targetVariable?.trim()) {
             const target = rule.targetVariable.trim();
             if (!varNames.has(target)) {
               errors.push(`Variable '${v.name}' references nonexistent '${target}' in conditional rules.`);
@@ -100,7 +100,7 @@ export const startSystem = (
                 return false;
               });
 
-              if (targetVar && targetVar.type === 'list') {
+              if (targetVar?.type === 'list') {
                 const strategy = targetVar.config?.selectionStrategy;
                 if (strategy && strategy !== 'FIXED_SUBSET') {
                   errors.push(

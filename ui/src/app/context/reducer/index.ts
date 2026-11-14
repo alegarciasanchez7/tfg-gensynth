@@ -15,7 +15,14 @@ import {
   latestConnectorsFromCatalog,
 } from '../helpers/connectorHelpers';
 import { computeDirtyState, createEmptyDirtyItems } from '../helpers/dirtyStateHelper';
+import { selectionExists } from '../helpers/selectionHelpers';
+import { legacyGroupFields } from '../../core/legacyFields';
 import type { LogEntry, Group, Flow } from '../../types';
+
+/** Runtime/UI fields (status, throughput, expanded) of a live group, kept when it is reverted. */
+function runtimeGroupFields(live: Group): Pick<Group, 'status' | 'throughput' | 'expanded'> {
+  return { status: live.status, throughput: legacyGroupFields(live).throughput, expanded: live.expanded };
+}
 
 /** Flow ids of a group both in the saved baseline and in the current state. */
 function collectGroupFlowIds(state: AppState, groupId: string): string[] {
@@ -70,17 +77,11 @@ function resetFlowEditorState(
   };
 }
 
-function selectionExists(selection: AppState['selection'], groups: Group[], variables: AppState['variables']): boolean {
-  switch (selection.type) {
-    case 'group':
-      return groups.some((group) => group.id === selection.groupId);
-    case 'flow':
-      return groups.some((group) => group.id === selection.groupId && group.flows.some((flow) => flow.id === selection.flowId));
-    case 'variable':
-      return variables.some((variable) => variable.id === selection.variableId);
-    default:
-      return true;
-  }
+/** Flow ids whose editor state is reset when an item is discarded. */
+function discardedFlowIds(state: AppState, itemType: 'group' | 'flow' | 'variable', itemId: string): string[] {
+  if (itemType === 'group') return collectGroupFlowIds(state, itemId);
+  if (itemType === 'flow') return [itemId];
+  return [];
 }
 
 export function rootReducer(state: AppState, action: AppAction): AppState {
@@ -164,7 +165,7 @@ export function rootReducer(state: AppState, action: AppAction): AppState {
     const nextGroups = saved.groups.map((savedGroup) => {
       const live = liveGroups.get(savedGroup.id);
       return live
-        ? { ...savedGroup, status: live.status, throughput: live.throughput, expanded: live.expanded }
+        ? { ...savedGroup, ...runtimeGroupFields(live) }
         : savedGroup;
     });
     const flowIds = [...state.groups, ...saved.groups].flatMap((group) => group.flows.map((flow) => flow.id));
@@ -195,7 +196,7 @@ export function rootReducer(state: AppState, action: AppAction): AppState {
         // Keep runtime/UI fields (status, throughput, expanded) from the live group
         nextGroups = state.groups.map((g) =>
           g.id === itemId
-            ? { ...savedGroup, status: g.status, throughput: g.throughput, expanded: g.expanded }
+            ? { ...savedGroup, ...runtimeGroupFields(g) }
             : g,
         );
       } else {
@@ -240,7 +241,7 @@ export function rootReducer(state: AppState, action: AppAction): AppState {
     }
 
     const { isDirty, dirtyItems } = computeDirtyState(state.savedState, nextGroups, nextVariables, state.settings);
-    const flowState = resetFlowEditorState(state, nextGroups, itemType === 'group' ? collectGroupFlowIds(state, itemId) : itemType === 'flow' ? [itemId] : []);
+    const flowState = resetFlowEditorState(state, nextGroups, discardedFlowIds(state, itemType, itemId));
 
     return {
       ...state,

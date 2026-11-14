@@ -17,6 +17,7 @@ import {
   type PickedProjectFile,
 } from '../../core/fileStorage';
 import { DEFAULT_PROJECT_SETTINGS } from '../../core/tickSettings';
+import { selectionExists } from '../helpers/selectionHelpers';
 
 type Dispatch = React.Dispatch<AppAction>;
 
@@ -117,7 +118,7 @@ export async function loadProjectState(
       const fileName = loadedPath ? fileNameFromPath(loadedPath) : null;
       dispatch({ type: 'SET_FILE_INFO', payload: { fileName, filePath: loadedPath, fileHandle: null } });
       dispatch({ type: 'SET_SELECTION', payload: { type: 'none' } });
-      toast.success(`Configuration loaded${fileName ? `: ${fileName}` : ''}`);
+      toast.success(fileName ? `Configuration loaded: ${fileName}` : 'Configuration loaded');
       return true;
     }
 
@@ -150,19 +151,7 @@ export async function loadProjectState(
       }
     }
 
-    const { selection } = ctx;
-    const selectionStillExists =
-      selection.type === 'group'
-        ? groups.some((group) => group.id === selection.groupId)
-        : selection.type === 'flow'
-          ? groups.some((group) =>
-              group.id === selection.groupId && group.flows.some((flow) => flow.id === selection.flowId),
-            )
-          : selection.type === 'variable'
-            ? variables.some((variable) => variable.id === selection.variableId)
-            : true;
-
-    if (!selectionStillExists) {
+    if (!selectionExists(ctx.selection, groups, variables)) {
       dispatch({ type: 'SET_SELECTION', payload: { type: 'none' } });
     }
 

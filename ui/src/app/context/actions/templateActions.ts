@@ -19,11 +19,11 @@ export const setFlowConnectorConfig = (dispatch: React.Dispatch<AppAction>) => (
   });
 };
 
-export const registerTemplateEditor = (activeEditorRef: React.MutableRefObject<((name: string, scope?: string) => void) | null>) => (insertFn: ((name: string, scope?: string) => void) | null) => {
+export const registerTemplateEditor = (activeEditorRef: React.RefObject<((name: string, scope?: string) => void) | null>) => (insertFn: ((name: string, scope?: string) => void) | null) => {
   activeEditorRef.current = insertFn;
 };
 
-export const insertVariable = (activeEditorRef: React.MutableRefObject<((name: string, scope?: string) => void) | null>) => (name: string, scope?: string) => {
+export const insertVariable = (activeEditorRef: React.RefObject<((name: string, scope?: string) => void) | null>) => (name: string, scope?: string) => {
   if (activeEditorRef.current) {
     activeEditorRef.current(name, scope);
   }

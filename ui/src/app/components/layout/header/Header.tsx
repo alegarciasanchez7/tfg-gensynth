@@ -54,6 +54,20 @@ const StatusBadge = ({ status }: { status: SystemStatus }) => {
   );
 };
 
+/** Tooltip of the START/STOP button. */
+function powerButtonTitle(isRunning: boolean, hasPreStartErrors: boolean): string {
+  if (isRunning) return 'Stop simulator';
+  if (hasPreStartErrors) return 'Warning: Validation errors or circular dependencies detected! Click to try starting anyway.';
+  return 'Start simulator';
+}
+
+/** Colour classes of the START/STOP button: red to stop, amber when the start has warnings, green otherwise. */
+function powerButtonToneClass(isRunning: boolean, hasPreStartErrors: boolean): string {
+  if (isRunning) return 'border-red-500/50 bg-red-500/10 text-red-400 hover:bg-red-500/20';
+  if (hasPreStartErrors) return 'border-amber-500/50 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20';
+  return 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20';
+}
+
 export function Header({
   systemStatus,
   onStatusToggle,
@@ -68,7 +82,7 @@ export function Header({
   variables = [],
   availableUpdateVersion = null,
   onShowUpdate,
-}: HeaderProps) {
+}: Readonly<HeaderProps>) {
   const [showSettings, setShowSettings] = useState(false);
   const [showCatalog, setShowCatalog] = useState(false);
   const [showPluginImport, setShowPluginImport] = useState(false);
@@ -109,7 +123,7 @@ export function Header({
       }
       if (config.conditionalRules && Array.isArray(config.conditionalRules)) {
         for (const rule of config.conditionalRules) {
-          if (rule.targetVariable && rule.targetVariable.trim()) {
+          if (rule.targetVariable?.trim()) {
             if (!varNames.has(rule.targetVariable.trim())) {
               return true;
             }
@@ -206,13 +220,8 @@ export function Header({
       <div className="flex items-center gap-1 shrink-0">
         <button
           onClick={onStatusToggle}
-          title={!isRunning && hasPreStartErrors ? 'Warning: Validation errors or circular dependencies detected! Click to try starting anyway.' : isRunning ? 'Stop simulator' : 'Start simulator'}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-xs transition-all ${isRunning
-              ? 'border-red-500/50 bg-red-500/10 text-red-400 hover:bg-red-500/20'
-              : hasPreStartErrors
-                ? 'border-amber-500/50 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20'
-                : 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
-            }`}
+          title={powerButtonTitle(isRunning, hasPreStartErrors)}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-xs transition-all ${powerButtonToneClass(isRunning, hasPreStartErrors)}`}
           style={{ fontFamily: 'JetBrains Mono, monospace' }}
         >
           {isRunning ? (

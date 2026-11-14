@@ -48,13 +48,13 @@ function CommitNumberInput({
   onCommit,
   ariaLabel,
   inputMode,
-}: {
+}: Readonly<{
   value: number;
   parse: (raw: string) => number | null;
   onCommit: (next: number) => void;
   ariaLabel: string;
   inputMode: 'decimal' | 'numeric';
-}) {
+}>) {
   const [draft, setDraft] = useState(String(value));
   const [shownValue, setShownValue] = useState(value);
   // A new value from the Core (another edit, discard, file load) replaces the draft
@@ -94,7 +94,7 @@ function CommitNumberInput({
  * "Event loss" section of a flow: a random loss percentage plus periodic outages.
  * Lost messages are still generated (they consume {{n}} and local generators) but never sent.
  */
-export function EventLossSection({ lossPercent, outageEveryTicks, outageDurationTicks, onChange }: EventLossSectionProps) {
+export function EventLossSection({ lossPercent, outageEveryTicks, outageDurationTicks, onChange }: Readonly<EventLossSectionProps>) {
   const losesEverything = outageEveryTicks > 0 && outageDurationTicks >= outageEveryTicks;
 
   return (
@@ -133,13 +133,12 @@ export function EventLossSection({ lossPercent, outageEveryTicks, outageDuration
         </FieldRow>
       </div>
       {losesEverything && (
-        <div
-          role="status"
+        <output
           className="flex items-center gap-1.5 rounded border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-[10px] text-amber-500"
           style={{ fontFamily: 'JetBrains Mono, monospace' }}
         >
           <AlertTriangle size={10} /> Outage length ≥ outage every N ticks: every message of the flow is lost
-        </div>
+        </output>
       )}
     </div>
   );

@@ -10,6 +10,7 @@ import React, {
   useReducer,
   useEffect,
   useCallback,
+  useMemo,
   useRef,
   type ReactNode,
 } from 'react';
@@ -167,7 +168,7 @@ interface AppProviderProps {
   useMockData?: boolean;
 }
 
-export function AppProvider({ children, useMockData = false }: AppProviderProps) {
+export function AppProvider({ children, useMockData = false }: Readonly<AppProviderProps>) {
   const [state, dispatch] = useReducer(rootReducer, initialState);
   const optimisticManager = useRef<OptimisticManager | null>(null);
   const stateRef = useRef(state);
@@ -303,7 +304,7 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
               return false;
             });
 
-            if (targetVar && targetVar.type === 'list') {
+            if (targetVar?.type === 'list') {
               const strategy = targetVar.config?.selectionStrategy;
               if (strategy && strategy !== 'FIXED_SUBSET') {
                 const errText = `Invalid item reference in flow '${flow.name}': Variable '${targetVar.name}' uses strategy '${strategy}' (not 'FIXED_SUBSET') and cannot be referenced with sub-item index (.itemX).`;
@@ -540,49 +541,61 @@ export function AppProvider({ children, useMockData = false }: AppProviderProps)
     return stateRef.current.variables;
   }, []);
 
-  const actions = {
-    startSystem,
-    stopSystem,
-    toggleSystem,
-    newProjectState,
-    loadProjectState,
-    saveProjectState,
-    saveProjectStateAs,
-    discardItemChanges,
-    discardAllChanges,
-    setAutoSave,
-    setAutoSaveInterval,
-    updateTickSettings,
-    setOutputFolder,
-    checkForUpdates,
-    installUpdate,
-    cancelUpdate,
-    setUpdateDialogOpen,
-    skipUpdateVersion,
-    setCheckUpdatesAtStartup,
-    clearUpdateStatus,
-    selectGroup,
-    selectFlow,
-    selectVariable,
-    clearVariableSelection,
-    clearSelection,
-    toggleGroupExpanded,
-    startGroup,
-    stopGroup,
-    ...crudActions,
-    getVariables,
-    setFormatTemplate,
-    setFlowConnectorSelection,
-    setFlowConnectorConfig,
-    insertVariable,
-    registerTemplateEditor,
-    setBottomTab,
-    toggleTheme,
-    clearLogs,
-  };
+  const actions = useMemo(() => ({
+      startSystem,
+      stopSystem,
+      toggleSystem,
+      newProjectState,
+      loadProjectState,
+      saveProjectState,
+      saveProjectStateAs,
+      discardItemChanges,
+      discardAllChanges,
+      setAutoSave,
+      setAutoSaveInterval,
+      updateTickSettings,
+      setOutputFolder,
+      checkForUpdates,
+      installUpdate,
+      cancelUpdate,
+      setUpdateDialogOpen,
+      skipUpdateVersion,
+      setCheckUpdatesAtStartup,
+      clearUpdateStatus,
+      selectGroup,
+      selectFlow,
+      selectVariable,
+      clearVariableSelection,
+      clearSelection,
+      toggleGroupExpanded,
+      startGroup,
+      stopGroup,
+      ...crudActions,
+      getVariables,
+      setFormatTemplate,
+      setFlowConnectorSelection,
+      setFlowConnectorConfig,
+      insertVariable,
+      registerTemplateEditor,
+      setBottomTab,
+      toggleTheme,
+      clearLogs,
+  }), [
+    startSystem, stopSystem, toggleSystem, newProjectState, loadProjectState, saveProjectState,
+    saveProjectStateAs, discardItemChanges, discardAllChanges, setAutoSave, setAutoSaveInterval,
+    updateTickSettings, setOutputFolder, checkForUpdates, installUpdate, cancelUpdate,
+    setUpdateDialogOpen, skipUpdateVersion, setCheckUpdatesAtStartup, clearUpdateStatus,
+    selectGroup, selectFlow, selectVariable, clearVariableSelection, clearSelection,
+    toggleGroupExpanded, startGroup, stopGroup, crudActions, getVariables, setFormatTemplate,
+    setFlowConnectorSelection, setFlowConnectorConfig, insertVariable, registerTemplateEditor,
+    setBottomTab, toggleTheme, clearLogs,
+  ]);
+
+  // Memoized so consumers only re-render when the state or an action changes
+  const contextValue = useMemo(() => ({ state, dispatch, actions }), [state, actions]);
 
   return (
-    <AppContext.Provider value={{ state, dispatch, actions }}>
+    <AppContext.Provider value={contextValue}>
       {children}
     </AppContext.Provider>
   );

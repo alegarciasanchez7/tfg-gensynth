@@ -5,7 +5,7 @@
  */
 
 import type { Group, Flow, Variable } from '../types';
-import { OptimisticManager, type OptimisticOperation } from './optimisticManager';
+import { OptimisticManager, entityTypeOfCommand, type OptimisticOperation } from './optimisticManager';
 
 export interface OptimisticUpdateContext {
   optimisticManager: OptimisticManager | null;
@@ -32,8 +32,7 @@ export async function executeOptimisticUpdate(
       const operation: OptimisticOperation = {
         commandId,
         kind: 'update',
-        entityType: (context.commandType.includes('GROUP') ? 'group' : 
-                    context.commandType.includes('FLOW') ? 'flow' : 'variable') as any,
+        entityType: entityTypeOfCommand(context.commandType),
         entityId: context.resourceId,
         createdAt: Date.now(),
         ttlMs: 5000, // 5 second TTL

@@ -8,11 +8,11 @@ import { MessageHandler } from './MessageHandler';
 import { validateCommand } from './CommandValidator';
 
 export class CoreBridge {
-  private config: BridgeConfig;
-  private emitter: BridgeEventEmitter;
-  private connectionManager: ConnectionManager;
-  private messageHandler: MessageHandler;
-  private pendingCommands: Map<string, PendingCommand> = new Map();
+  private readonly config: BridgeConfig;
+  private readonly emitter: BridgeEventEmitter;
+  private readonly connectionManager: ConnectionManager;
+  private readonly messageHandler: MessageHandler;
+  private readonly pendingCommands: Map<string, PendingCommand> = new Map();
   private commandIdCounter = 0;
 
   constructor(config: Partial<BridgeConfig> = {}) {

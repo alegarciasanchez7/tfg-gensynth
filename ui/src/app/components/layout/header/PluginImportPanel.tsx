@@ -1,15 +1,85 @@
 import { useState, useRef, useEffect, useCallback, useId } from 'react';
 import { Upload, X, Check, AlertTriangle, Loader2, FileArchive, ArrowRight, ShieldCheck } from 'lucide-react';
 import { CoreCommands, bridge } from '../../../core/bridge';
-import type { PluginValidationResultPayload } from '../../../core/types';
+import type { PluginValidationResultPayload, ValidationEntry } from '../../../core/types';
 
 type ValidationState = 'idle' | 'validating' | 'success' | 'error';
+
+/** Text colour of each validation log level (unknown levels from the Core fall back to cyan). */
+const LOG_LEVEL_CLASS: Record<ValidationEntry['level'], string> = {
+  ERROR: 'text-red-400',
+  WARN: 'text-amber-400',
+  INFO: 'text-cyan-400',
+};
+
+/** Pairs each log entry with a key derived from its content (repeated entries get an occurrence suffix). */
+function withUniqueKeys(logs: readonly ValidationEntry[]): Array<{ key: string; entry: ValidationEntry }> {
+  const seen = new Map<string, number>();
+  return logs.map((entry) => {
+    const base = `${entry.level}|${entry.message}|${entry.context ?? ''}`;
+    const occurrence = seen.get(base) ?? 0;
+    seen.set(base, occurrence + 1);
+    return { key: `${base}|${occurrence}`, entry };
+  });
+}
+
+/** Border and background of the drop zone for the current drag and validation state. */
+function dropZoneStateClass(isDragging: boolean, validationState: ValidationState, fileName: string | null): string {
+  if (isDragging) return 'border-cyan-400 bg-cyan-400/5 scale-[1.02]';
+  if (validationState === 'validating') return 'border-amber-400/50 bg-amber-400/5';
+  if (validationState === 'success') return 'border-emerald-500/40 bg-emerald-500/5';
+  if (fileName) return 'border-[var(--c-br2)] bg-[var(--c-bg1)]';
+  return 'border-[var(--c-br1)] hover:border-[var(--c-br3)] hover:bg-[var(--c-bg5)]';
+}
+
+/** Content of the drop zone: validating, validated, file picked or empty. */
+function DropZoneContent({ validationState, fileName }: Readonly<{ validationState: ValidationState; fileName: string | null }>) {
+  if (validationState === 'validating') {
+    return (
+      <div className="flex flex-col items-center gap-3 py-2">
+        <Loader2 size={24} className="text-amber-400 animate-spin" />
+        <span className="text-[11px] text-amber-600 dark:text-amber-300 font-medium animate-pulse">Verifying bytecode integrity...</span>
+      </div>
+    );
+  }
+  if (validationState === 'success') {
+    return (
+      <div className="flex flex-col items-center gap-2">
+        <div className="w-10 h-10 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-400">
+          <ShieldCheck size={24} />
+        </div>
+        <span className="text-[11px] text-emerald-600 dark:text-emerald-300 font-bold">{fileName}</span>
+        <span className="text-[9px] text-emerald-500/70 uppercase tracking-tighter">Integrity Verified</span>
+      </div>
+    );
+  }
+  if (fileName) {
+    return (
+      <>
+        <FileArchive size={24} className="text-cyan-400" />
+        <span className="text-[11px] text-[var(--c-tx2)] text-center font-medium">{fileName}</span>
+        <span className="text-[9px] text-[var(--c-tx5)] uppercase">Ready to Validate</span>
+      </>
+    );
+  }
+  return (
+    <>
+      <div className="w-10 h-10 rounded-full bg-[var(--c-bg4)] flex items-center justify-center text-[var(--c-tx4)] mb-1">
+        <Upload size={20} />
+      </div>
+      <div className="text-center">
+        <span className="text-[11px] text-[var(--c-tx4)] block font-medium">Drop plugin .jar here</span>
+        <span className="text-[9px] text-[var(--c-tx5)]">or click to browse filesystem</span>
+      </div>
+    </>
+  );
+}
 
 interface PluginImportPanelProps {
   onClose: () => void;
 }
 
-export function PluginImportPanel({ onClose }: PluginImportPanelProps) {
+export function PluginImportPanel({ onClose }: Readonly<PluginImportPanelProps>) {
   const ref = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const nameInputId = useId();
@@ -214,17 +284,7 @@ export function PluginImportPanel({ onClose }: PluginImportPanelProps) {
         {/* Drop zone */}
         <button
           type="button"
-          className={`relative w-full border-2 border-dashed rounded-xl p-6 flex flex-col items-center justify-center gap-3 cursor-pointer transition-all duration-300 ${
-            isDragging
-              ? 'border-cyan-400 bg-cyan-400/5 scale-[1.02]'
-              : validationState === 'validating'
-                ? 'border-amber-400/50 bg-amber-400/5'
-                : validationState === 'success'
-                  ? 'border-emerald-500/40 bg-emerald-500/5'
-                  : fileName
-                    ? 'border-[var(--c-br2)] bg-[var(--c-bg1)]'
-                    : 'border-[var(--c-br1)] hover:border-[var(--c-br3)] hover:bg-[var(--c-bg5)]'
-          }`}
+          className={`relative w-full border-2 border-dashed rounded-xl p-6 flex flex-col items-center justify-center gap-3 cursor-pointer transition-all duration-300 ${dropZoneStateClass(isDragging, validationState, fileName)}`}
           onDragOver={validationState !== 'validating' ? (e) => { e.preventDefault(); setIsDragging(true); } : undefined}
           onDragLeave={() => setIsDragging(false)}
           onDrop={(e) => {
@@ -234,36 +294,7 @@ export function PluginImportPanel({ onClose }: PluginImportPanelProps) {
           }}
           onClick={() => fileInputRef.current?.click()}
         >
-          {validationState === 'validating' ? (
-            <div className="flex flex-col items-center gap-3 py-2">
-              <Loader2 size={24} className="text-amber-400 animate-spin" />
-              <span className="text-[11px] text-amber-600 dark:text-amber-300 font-medium animate-pulse">Verifying bytecode integrity...</span>
-            </div>
-          ) : validationState === 'success' ? (
-            <div className="flex flex-col items-center gap-2">
-              <div className="w-10 h-10 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-400">
-                <ShieldCheck size={24} />
-              </div>
-              <span className="text-[11px] text-emerald-600 dark:text-emerald-300 font-bold">{fileName}</span>
-              <span className="text-[9px] text-emerald-500/70 uppercase tracking-tighter">Integrity Verified</span>
-            </div>
-          ) : fileName ? (
-            <>
-              <FileArchive size={24} className="text-cyan-400" />
-              <span className="text-[11px] text-[var(--c-tx2)] text-center font-medium">{fileName}</span>
-              <span className="text-[9px] text-[var(--c-tx5)] uppercase">Ready to Validate</span>
-            </>
-          ) : (
-            <>
-              <div className="w-10 h-10 rounded-full bg-[var(--c-bg4)] flex items-center justify-center text-[var(--c-tx4)] mb-1">
-                <Upload size={20} />
-              </div>
-              <div className="text-center">
-                <span className="text-[11px] text-[var(--c-tx4)] block font-medium">Drop plugin .jar here</span>
-                <span className="text-[9px] text-[var(--c-tx5)]">or click to browse filesystem</span>
-              </div>
-            </>
-          )}
+          <DropZoneContent validationState={validationState} fileName={fileName} />
         </button>
 
         {/* Summary of the validated plugin */}
@@ -291,14 +322,10 @@ export function PluginImportPanel({ onClose }: PluginImportPanelProps) {
             </div>
             <div className="bg-black/60 border border-[var(--c-br1)] rounded-lg p-2.5 font-mono text-[10px] max-h-40 overflow-y-auto custom-scrollbar shadow-inner">
               {validationResult.logs && validationResult.logs.length > 0 ? (
-                validationResult.logs.map((log, i) => (
-                  <div key={i} className="mb-2 last:mb-0 border-l border-white/5 pl-2">
+                withUniqueKeys(validationResult.logs).map(({ key, entry: log }) => (
+                  <div key={key} className="mb-2 last:mb-0 border-l border-white/5 pl-2">
                     <div className="flex items-center gap-2">
-                      <span className={
-                        log.level === 'ERROR' ? 'text-red-400' :
-                        log.level === 'WARN' ? 'text-amber-400' :
-                        'text-cyan-400'
-                      }>
+                      <span className={LOG_LEVEL_CLASS[log.level] ?? 'text-cyan-400'}>
                         [{log.level}]
                       </span>
                       <span className="text-[var(--c-tx3)]">{log.message}</span>

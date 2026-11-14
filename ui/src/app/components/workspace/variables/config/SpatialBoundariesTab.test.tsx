@@ -203,4 +203,25 @@ describe('SpatialBoundariesTab', () => {
       expect.objectContaining({ minPoint: { x: 30, y: 0, z: 0 }, maxPoint: { x: 70, y: 100, z: 100 }, shape3DWidth: 40 })
     );
   });
+  it('lists every polygon vertex, also when two vertices share the same coordinates', () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    render(
+      <SpatialBoundariesTab
+        config={{
+          ...defaultConfig,
+          coordinateSystem: 'CARTESIAN_2D',
+          boundaryPolygon: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 0 }, { x: 0, y: 10 }],
+        }}
+        onChange={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('Exact Individual Polygon Vertices (4 Points)')).toBeInTheDocument();
+    for (const n of [1, 2, 3, 4]) {
+      expect(screen.getByText(`Vertex ${n}:`)).toBeInTheDocument();
+    }
+    // Duplicate keys would make React log an error
+    expect(errorSpy.mock.calls.some((args) => args.join(' ').includes('same key'))).toBe(false);
+    errorSpy.mockRestore();
+  });
 });

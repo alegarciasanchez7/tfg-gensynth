@@ -50,7 +50,7 @@ function formatRange(field: ConnectorFieldDescriptor): string | null {
   return field.min !== undefined ? `≥ ${field.min}` : `≤ ${field.max}`;
 }
 
-function MetaChip({ label, value }: { label: string; value: string }) {
+function MetaChip({ label, value }: Readonly<{ label: string; value: string }>) {
   return (
     <span className="rounded border border-[var(--c-br2)] bg-[var(--c-bg1)] px-1.5 py-0.5 text-[10px] text-[var(--c-tx4)]">
       {label}: <span className="text-[var(--c-tx2)]">{value}</span>
@@ -58,7 +58,7 @@ function MetaChip({ label, value }: { label: string; value: string }) {
   );
 }
 
-function FieldRow({ field }: { field: ConnectorFieldDescriptor }) {
+function FieldRow({ field }: Readonly<{ field: ConnectorFieldDescriptor }>) {
   const defaultValue = formatDefault(field);
   const range = formatRange(field);
   return (
@@ -86,7 +86,7 @@ function FieldRow({ field }: { field: ConnectorFieldDescriptor }) {
   );
 }
 
-function UsageStat({ label, value, tone }: { label: string; value: number; tone?: string }) {
+function UsageStat({ label, value, tone }: Readonly<{ label: string; value: number; tone?: string }>) {
   return (
     <div className="flex-1 min-w-[90px] rounded-md border border-[var(--c-br2)] bg-[var(--c-bg1)] px-3 py-2">
       <div className={`text-base font-semibold ${tone ?? 'text-[var(--c-tx1)]'}`}>{value}</div>
@@ -105,7 +105,7 @@ export function ConnectorCatalogDialog({
   latestConnectors,
   connectorHealthSummary,
   onImportPlugin,
-}: ConnectorCatalogDialogProps) {
+}: Readonly<ConnectorCatalogDialogProps>) {
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [confirmUninstall, setConfirmUninstall] = useState(false);
   const [uninstalling, setUninstalling] = useState(false);

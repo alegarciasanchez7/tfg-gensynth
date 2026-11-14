@@ -139,14 +139,48 @@ function GraphMapViewTracker({ onViewChange }: { onViewChange: (view: MapView) =
 
 type NodeVisualState = 'normal' | 'selected' | 'origin';
 
+/** The node at the other end of an edge, or null when the edge does not touch the node. */
+const otherEndOf = (edge: GraphEdge, nodeId: string): string | null => {
+  if (edge.fromNodeId === nodeId) return edge.toNodeId;
+  if (edge.toNodeId === nodeId) return edge.fromNodeId;
+  return null;
+};
+
+/** Variant of a toolbar button: the active tool is highlighted (DELETE in red). */
+const toolButtonVariant = (tool: string, activeTool: string): 'destructive' | 'default' | 'outline' => {
+  if (activeTool !== tool) return 'outline';
+  return tool === 'DELETE' ? 'destructive' : 'default';
+};
+
+/** Cursor of a 2D node: grab handles while dragging is allowed, a pointer otherwise. */
+const nodeCursorClass = (canDrag: boolean, isDragging: boolean): string => {
+  if (!canDrag) return 'cursor-pointer';
+  return isDragging ? 'cursor-grabbing' : 'cursor-grab';
+};
+
+/** Dot classes of a 2D node by visual state. */
+const NODE_DOT_CLASSES: Record<NodeVisualState, string> = {
+  selected: 'bg-cyan-400 ring-2 ring-cyan-400/80 shadow-md scale-125',
+  origin: 'bg-amber-400 ring-2 ring-amber-400/80 scale-125',
+  normal: 'bg-[var(--c-bg2)] border-2 border-cyan-400 group-hover:bg-cyan-100 dark:group-hover:bg-cyan-950 group-hover:scale-110',
+};
+
+const NODE_DOT_STYLES: Record<NodeVisualState, string> = {
+  selected: 'background-color:#22d3ee; box-shadow:0 0 10px rgba(34,211,238,0.9); border:1.5px solid #ffffff; transform:scale(1.3);',
+  origin: 'background-color:#fbbf24; box-shadow:0 0 10px rgba(251,191,36,0.9); border:1.5px solid #ffffff; transform:scale(1.3);',
+  normal: 'background-color:#0f172a; border:1.5px solid #22d3ee;',
+};
+
+/** Visual state of a node: the selected one wins over the origin of a pending connection. */
+const nodeVisualState = (nodeId: string, selectedId: string | null, connectOriginId: string | null): NodeVisualState => {
+  if (selectedId === nodeId) return 'selected';
+  if (connectOriginId === nodeId) return 'origin';
+  return 'normal';
+};
+
 /** Builds a node marker icon: a 10 px dot centred in a 22 px transparent hit area. */
 const buildNodeIcon = (state: NodeVisualState): L.DivIcon => {
-  const dotStyle =
-    state === 'selected'
-      ? 'background-color:#22d3ee; box-shadow:0 0 10px rgba(34,211,238,0.9); border:1.5px solid #ffffff; transform:scale(1.3);'
-      : state === 'origin'
-      ? 'background-color:#fbbf24; box-shadow:0 0 10px rgba(251,191,36,0.9); border:1.5px solid #ffffff; transform:scale(1.3);'
-      : 'background-color:#0f172a; border:1.5px solid #22d3ee;';
+  const dotStyle = NODE_DOT_STYLES[state];
   return L.divIcon({
     html: `<div style="display:flex; align-items:center; justify-content:center; width:22px; height:22px; cursor:pointer;"><div style="width:10px; height:10px; border-radius:9999px; box-sizing:border-box; ${dotStyle}"></div></div>`,
     className: 'custom-graph-node-marker',
@@ -324,7 +358,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
   const dragRef = useRef<DragState | null>(null);
   const suppressClickRef = useRef(false);
   const [dragPos, setDragPos] = useState<{ nodeId: string; x: number; y: number; base: GraphNode[] } | null>(null);
-  const activeDrag = dragPos && dragPos.base === nodes ? dragPos : null;
+  const activeDrag = dragPos?.base === nodes ? dragPos : null;
   const displayNodes = activeDrag
     ? nodes.map((n) => (n.id === activeDrag.nodeId ? { ...n, x: activeDrag.x, y: activeDrag.y } : n))
     : nodes;
@@ -646,7 +680,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
     if (nodeError) return nodeError;
 
     for (const edge of edges) {
-      const otherId = edge.fromNodeId === nodeId ? edge.toNodeId : edge.toNodeId === nodeId ? edge.fromNodeId : null;
+      const otherId = otherEndOf(edge, nodeId);
       const other = otherId ? nodes.find((n) => n.id === otherId) : undefined;
       if (!other) continue;
       const edgeError = validateNodeAndEdge(other, target, obstacles, polygon, minPoint, maxPoint);
@@ -758,7 +792,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
 
   const handleNodePointerMove = (e: React.PointerEvent<HTMLButtonElement>) => {
     const drag = dragRef.current;
-    if (!drag || drag.pointerId !== e.pointerId) return;
+    if (drag?.pointerId !== e.pointerId) return;
     if (!drag.moved && Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) < DRAG_THRESHOLD_PX) return;
     const p = clientToCanvas(e.clientX, e.clientY);
     if (!p) return;
@@ -770,7 +804,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
 
   const handleNodePointerUp = (e: React.PointerEvent<HTMLButtonElement>) => {
     const drag = dragRef.current;
-    if (!drag || drag.pointerId !== e.pointerId) return;
+    if (drag?.pointerId !== e.pointerId) return;
     dragRef.current = null;
     if (!drag.moved) return; // A plain click: handled by onClick
 
@@ -934,7 +968,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
                   <span>
                     <Button
                       type="button"
-                      variant={activeTool === tool ? (tool === 'DELETE' ? 'destructive' : 'default') : 'outline'}
+                      variant={toolButtonVariant(tool, activeTool)}
                       size="sm"
                       className="h-7 px-2 text-xs gap-1"
                       aria-pressed={activeTool === tool}
@@ -1152,7 +1186,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
                   nodeId={node.id}
                   lat={node.x}
                   lon={node.y}
-                  visualState={selectedId === node.id ? 'selected' : connectOriginId === node.id ? 'origin' : 'normal'}
+                  visualState={nodeVisualState(node.id, selectedId, connectOriginId)}
                   draggable={canDrag}
                   showLabel={showCoordinateLabels}
                   onNodeClick={onMarkerClick}
@@ -1209,8 +1243,6 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
 
               {/* Render 2D Graph Nodes & Floating Coordinate Badges */}
               {displayNodes.map((node) => {
-                const isSelected = selectedId === node.id;
-                const isConnectOrigin = connectOriginId === node.id;
                 const isDragging = activeDrag?.nodeId === node.id;
                 const cx = toCanvasX(node.x);
                 const cy = toCanvasY(node.y);
@@ -1237,17 +1269,13 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
                       onPointerCancel={handleNodePointerCancel}
                       onClick={(e) => handleNodeElementClick(e, node)}
                       className={`group absolute -translate-x-1/2 -translate-y-1/2 w-[22px] h-[22px] flex items-center justify-center touch-none z-30 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80 ${
-                        canDrag ? (isDragging ? 'cursor-grabbing' : 'cursor-grab') : 'cursor-pointer'
+                        nodeCursorClass(canDrag, isDragging)
                       }`}
                       style={{ left: `${cx}px`, top: `${cy}px` }}
                     >
                       <span
                         className={`block w-2.5 h-2.5 rounded-full ${
-                          isSelected
-                            ? 'bg-cyan-400 ring-2 ring-cyan-400/80 shadow-md scale-125'
-                            : isConnectOrigin
-                            ? 'bg-amber-400 ring-2 ring-amber-400/80 scale-125'
-                            : 'bg-[var(--c-bg2)] border-2 border-cyan-400 group-hover:bg-cyan-100 dark:group-hover:bg-cyan-950 group-hover:scale-110'
+                          NODE_DOT_CLASSES[nodeVisualState(node.id, selectedId, connectOriginId)]
                         }`}
                       />
                       <span className="absolute left-full top-1/2 -translate-y-1/2 text-[10px] font-semibold text-cyan-600 dark:text-cyan-300 whitespace-nowrap pointer-events-none">

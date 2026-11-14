@@ -167,6 +167,23 @@ describe('TemplateEditor', () => {
     expect(screen.getByText('veg.item0')).toBeDefined();
   });
 
+  it('labels the list items in the list order (by id, then by value) and names empty ones', () => {
+    openAutocomplete('veg.item', listVariable({
+      selectionStrategy: 'FIXED_SUBSET',
+      items: [
+        { id: 'i1', value: 'A' },
+        { id: 'i2', value: '', embeddedType: 'numeric' },
+        { id: 'i3', value: 'C' },
+        { id: 'i4', value: '' },
+      ],
+      itemOrder: ['C', 'i2', 'i1'],
+    }));
+    expect(screen.getByText('item0 (C)', { exact: false })).toBeDefined();
+    expect(screen.getByText('item1 (numeric)', { exact: false })).toBeDefined();
+    expect(screen.getByText('item2 (A)', { exact: false })).toBeDefined();
+    expect(screen.getByText('item3 (Item 4)', { exact: false })).toBeDefined();
+  });
+
   it('does not offer .size/.first/.last for a Weighted Random list', () => {
     openAutocomplete('veg', listVariable({ selectionStrategy: 'WEIGHTED_RANDOM', items: [{ id: 'i1', value: 'A' }] }));
     expect(screen.getByText('veg')).toBeDefined();

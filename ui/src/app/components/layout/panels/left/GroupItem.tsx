@@ -96,7 +96,7 @@ export function GroupItem({
   onDeleteFlow,
   latestConnectors,
   groupNames,
-}: GroupItemProps) {
+}: Readonly<GroupItemProps>) {
   const { state } = useApp();
   const isDirty = state?.dirtyItems?.groupIds?.has(group.id) ?? false;
   // Normalised: an unknown status from the Core must not crash the whole panel

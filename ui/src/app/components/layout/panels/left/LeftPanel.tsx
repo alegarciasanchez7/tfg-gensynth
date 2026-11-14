@@ -67,7 +67,7 @@ export function LeftPanel({
   onCloneGroup,
   onCloneFlow,
   onDeleteFlow,
-}: LeftPanelProps) {
+}: Readonly<LeftPanelProps>) {
   const [width, setWidth] = useState(260);
   const [collapsed, setCollapsed] = useState(false);
   const [isResizing, setIsResizing] = useState(false);

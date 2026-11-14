@@ -5,7 +5,7 @@ interface MonoTextProps extends React.HTMLAttributes<HTMLSpanElement> {
   size?: "9px" | "10px" | "11px" | "xs" | "sm";
 }
 
-export function MonoText({ className, size = "xs", ...props }: MonoTextProps) {
+export function MonoText({ className, size = "xs", ...props }: Readonly<MonoTextProps>) {
   const sizeClass = {
     "9px": "text-[9px]",
     "10px": "text-[10px]",

@@ -36,7 +36,7 @@ interface FlowWorkspaceProps {
   onTemplateChange: (t: string) => void;
 }
 
-export function FlowWorkspace({ flow, group, template, onTemplateChange }: FlowWorkspaceProps) {
+export function FlowWorkspace({ flow, group, template, onTemplateChange }: Readonly<FlowWorkspaceProps>) {
   const conn = connCfg[normalizeConnectionStatus(flow.connectionStatus)];
   const [activeTab, setActiveTab] = useState<'technical' | 'format'>('technical');
   const { state, actions } = useApp();

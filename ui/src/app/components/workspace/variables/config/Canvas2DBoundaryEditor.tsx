@@ -86,6 +86,21 @@ const roundTo = (value: number, decimals: number) => Number(value.toFixed(decima
 
 const sameHitTarget = (a: HitTarget | null, b: HitTarget | null) => JSON.stringify(a) === JSON.stringify(b);
 
+/** Fill colour and radius of a boundary vertex handle. */
+const boundaryHandleStyle = (isDragging: boolean, isHovered: boolean, editingBoundaries: boolean) => {
+  if (isDragging) return { fill: '#f472b6', radius: 9 };
+  if (isHovered) return { fill: '#ffffff', radius: 9 };
+  return editingBoundaries ? { fill: '#e9d5ff', radius: 6 } : { fill: '#a855f7', radius: 4 };
+};
+
+/** Fill, radius, stroke colour and stroke width of an obstacle vertex handle. */
+const obstacleHandleStyle = (isDragging: boolean, isHovered: boolean, isSelected: boolean, selectionColor: string) => {
+  if (isDragging) return { fill: '#fef08a', radius: 9, stroke: '#ca8a04', lineWidth: 2.5 };
+  if (isHovered) return { fill: '#ffffff', radius: 9, stroke: '#f59e0b', lineWidth: 2.5 };
+  if (isSelected) return { fill: selectionColor, radius: 7, stroke: '#78350f', lineWidth: 2 };
+  return { fill: '#f87171', radius: 5, stroke: '#991b1b', lineWidth: 1.5 };
+};
+
 export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
   minX,
   maxX,
@@ -335,9 +350,10 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
         const isHovered = hoveredBoundaryVertexIndex === i;
         const isDragging = draggingBoundaryVertexIndex === i;
 
-        ctx.fillStyle = isDragging ? '#f472b6' : (isHovered ? '#ffffff' : (editMode === 'BOUNDARIES' ? '#e9d5ff' : '#a855f7'));
+        const handle = boundaryHandleStyle(isDragging, isHovered, editMode === 'BOUNDARIES');
+        ctx.fillStyle = handle.fill;
         ctx.beginPath();
-        ctx.arc(cx, cy, isDragging || isHovered ? 9 : (editMode === 'BOUNDARIES' ? 6 : 4), 0, Math.PI * 2);
+        ctx.arc(cx, cy, handle.radius, 0, Math.PI * 2);
         ctx.fill();
 
         ctx.strokeStyle = isHovered || isDragging ? '#ec4899' : '#a855f7';
@@ -426,13 +442,14 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
           const isDragging = draggingObstacleTarget?.obsIndex === obsIdx && draggingObstacleTarget?.pointIndex === ptIdx;
           const isHovered = hoveredObstacleTarget?.obsIndex === obsIdx && hoveredObstacleTarget?.pointIndex === ptIdx;
 
-          ctx.fillStyle = isDragging ? '#fef08a' : (isHovered ? '#ffffff' : (isSelected ? palette.selection : '#f87171'));
+          const handle = obstacleHandleStyle(isDragging, isHovered, isSelected, palette.selection);
+          ctx.fillStyle = handle.fill;
           ctx.beginPath();
-          ctx.arc(cx, cy, isDragging || isHovered ? 9 : (isSelected ? 7 : 5), 0, Math.PI * 2);
+          ctx.arc(cx, cy, handle.radius, 0, Math.PI * 2);
           ctx.fill();
 
-          ctx.strokeStyle = isDragging ? '#ca8a04' : (isHovered ? '#f59e0b' : (isSelected ? '#78350f' : '#991b1b'));
-          ctx.lineWidth = isDragging || isHovered ? 2.5 : (isSelected ? 2 : 1.5);
+          ctx.strokeStyle = handle.stroke;
+          ctx.lineWidth = handle.lineWidth;
           ctx.stroke();
 
           if (isSelected || isHovered || isDragging) {
@@ -514,13 +531,14 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
           const isDragging = draggingObstacleTarget?.obsIndex === obsIdx && draggingObstacleTarget?.pointIndex === ptIdx;
           const isHovered = hoveredObstacleTarget?.obsIndex === obsIdx && hoveredObstacleTarget?.pointIndex === ptIdx;
 
-          ctx.fillStyle = isDragging ? '#fef08a' : (isHovered ? '#ffffff' : (isSelected ? palette.selection : '#f87171'));
+          const handle = obstacleHandleStyle(isDragging, isHovered, isSelected, palette.selection);
+          ctx.fillStyle = handle.fill;
           ctx.beginPath();
-          ctx.arc(cx, cy, isDragging || isHovered ? 9 : (isSelected ? 7 : 5), 0, Math.PI * 2);
+          ctx.arc(cx, cy, handle.radius, 0, Math.PI * 2);
           ctx.fill();
 
-          ctx.strokeStyle = isDragging ? '#ca8a04' : (isHovered ? '#f59e0b' : (isSelected ? '#78350f' : '#991b1b'));
-          ctx.lineWidth = isDragging || isHovered ? 2.5 : (isSelected ? 2 : 1.5);
+          ctx.strokeStyle = handle.stroke;
+          ctx.lineWidth = handle.lineWidth;
           ctx.stroke();
 
           if (isSelected || isHovered || isDragging) {
@@ -942,7 +960,7 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
   };
 
   const handleInsertPointOnBoundaryEdge = () => {
-    if (!contextMenu || contextMenu.type !== 'boundary_edge' || contextMenu.boundaryIndex === undefined) return;
+    if (contextMenu?.type !== 'boundary_edge' || contextMenu.boundaryIndex === undefined) return;
     const edgeIndex = contextMenu.boundaryIndex;
     const newPt = contextMenu.clickCoord;
 
@@ -956,10 +974,10 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
   };
 
   const handleInsertPointOnObstacleEdge = () => {
-    if (!contextMenu || contextMenu.type !== 'obstacle_edge' || contextMenu.obstacleIndex === undefined || contextMenu.obstaclePointIndex === undefined) return;
+    if (contextMenu?.type !== 'obstacle_edge' || contextMenu.obstacleIndex === undefined || contextMenu.obstaclePointIndex === undefined) return;
     const { obstacleIndex, obstaclePointIndex, clickCoord } = contextMenu;
     const targetObs = obstacles[obstacleIndex];
-    if (!targetObs || !targetObs.points) return;
+    if (!targetObs?.points) return;
 
     const newPts = [...targetObs.points];
     newPts.splice(obstaclePointIndex + 1, 0, clickCoord);
@@ -971,7 +989,7 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
   };
 
   const handleDeleteBoundaryVertex = () => {
-    if (!contextMenu || contextMenu.type !== 'boundary_vertex' || contextMenu.boundaryIndex === undefined) return;
+    if (contextMenu?.type !== 'boundary_vertex' || contextMenu.boundaryIndex === undefined) return;
     if (activePolygon.length <= 3) {
       showTempFeedback('A spatial boundary polygon must have at least 3 vertices.');
       setContextMenu(null);
@@ -988,10 +1006,10 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
   };
 
   const handleDeleteObstacleVertex = () => {
-    if (!contextMenu || contextMenu.type !== 'obstacle_vertex' || contextMenu.obstacleIndex === undefined || contextMenu.obstaclePointIndex === undefined) return;
+    if (contextMenu?.type !== 'obstacle_vertex' || contextMenu.obstacleIndex === undefined || contextMenu.obstaclePointIndex === undefined) return;
     const { obstacleIndex, obstaclePointIndex } = contextMenu;
     const targetObs = obstacles[obstacleIndex];
-    if (!targetObs || !targetObs.points) return;
+    if (!targetObs?.points) return;
 
     if (targetObs.type === 'WALL_SEGMENT' && targetObs.points.length <= 2) {
       // Delete whole wall segment if < 2 points remain

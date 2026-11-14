@@ -11,7 +11,7 @@
  */
 
 import type { Group, Flow, Variable, VariableType, VariableScope } from '../types';
-import { OptimisticManager, type OptimisticOperation } from './optimisticManager';
+import { OptimisticManager, entityTypeOfCommand, type OptimisticOperation } from './optimisticManager';
 import { randomUUID } from '../core/randomId';
 
 export interface CreateOptimisticContext {
@@ -74,8 +74,7 @@ export async function executeCreateOptimistic<T>(
       const operation: OptimisticOperation = {
         commandId,
         kind: 'create',
-        entityType: (context.commandType.includes('GROUP') ? 'group' : 
-                    context.commandType.includes('FLOW') ? 'flow' : 'variable') as any,
+        entityType: entityTypeOfCommand(context.commandType),
         entityId: context.optimisticId,
         tempIdMapping: {
           tempId: context.optimisticId,

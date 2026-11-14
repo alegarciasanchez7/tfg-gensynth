@@ -42,6 +42,13 @@ function formatShortNumber(num: number): string {
   return num.toString();
 }
 
+/** Bar colour: red above 80 %, amber above 50 %, otherwise the colour of the metric. */
+function barColorClass(barPct: number, textColor: string): string {
+  if (barPct > 80) return 'bg-red-500';
+  if (barPct > 50) return 'bg-amber-500';
+  return textColor.replace('text-', 'bg-');
+}
+
 export function ResourceBar() {
   const systemStatus = useSystemStatus();
   const { metrics } = useMetrics();
@@ -128,8 +135,8 @@ export function ResourceBar() {
       style={{ height: 28 }}
       data-testid="resource-bar"
     >
-      {uiMetrics.map((m, i) => (
-        <div key={i} title={m.title} className="flex shrink-0 items-center gap-2 pr-2.5 mr-0.5 border-r border-[var(--c-br2)] last:border-r-0">
+      {uiMetrics.map((m) => (
+        <div key={m.label} title={m.title} className="flex shrink-0 items-center gap-2 pr-2.5 mr-0.5 border-r border-[var(--c-br2)] last:border-r-0">
           <div className="flex items-center gap-1">
             <span className={`${m.color} opacity-70`}>{m.icon}</span>
             <span className="text-[10px] text-[var(--c-tx4)] tracking-wider" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
@@ -149,9 +156,7 @@ export function ResourceBar() {
           {m.barPct !== undefined && (
             <div className="w-9 h-1 bg-[var(--c-br2)] rounded-full overflow-hidden">
               <div
-                className={`h-full rounded-full transition-all duration-1000 ${
-                  m.barPct > 80 ? 'bg-red-500' : m.barPct > 50 ? 'bg-amber-500' : m.color.replace('text-', 'bg-')
-                }`}
+                className={`h-full rounded-full transition-all duration-1000 ${barColorClass(m.barPct, m.color)}`}
                 style={{ width: `${m.barPct}%` }}
               />
             </div>

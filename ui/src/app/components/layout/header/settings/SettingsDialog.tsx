@@ -70,7 +70,7 @@ interface SettingsDialogProps {
  * Large centered settings dialog with a category navigation on the left
  * and the settings of the selected category on the right.
  */
-export function SettingsDialog({ open, onOpenChange, initialCategory = 'appearance' }: SettingsDialogProps) {
+export function SettingsDialog({ open, onOpenChange, initialCategory = 'appearance' }: Readonly<SettingsDialogProps>) {
   const [activeId, setActiveId] = useState<SettingsCategoryId>(initialCategory);
   const active = SETTINGS_CATEGORIES.find((category) => category.id === activeId) ?? SETTINGS_CATEGORIES[0];
   const ActiveSection = active.Section;

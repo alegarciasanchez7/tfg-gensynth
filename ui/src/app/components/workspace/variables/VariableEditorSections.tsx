@@ -45,7 +45,7 @@ interface VariableEditorHeaderProps {
   actions?: ReactNode;
 }
 
-export function VariableEditorHeader({ variable, theme, scopeBadgeClass, isDirty, actions }: VariableEditorHeaderProps) {
+export function VariableEditorHeader({ variable, theme, scopeBadgeClass, isDirty, actions }: Readonly<VariableEditorHeaderProps>) {
   const Icon = theme.icon;
 
   return (
@@ -90,7 +90,7 @@ interface VariableEditorIdentityCardProps {
   groups: Variable['scope'] extends any ? any[] : any[]; // Simplified for props, but we'll use Group[]
 }
 
-export function VariableEditorIdentityCard({ draft, setDraft, scopeOptions, groups }: VariableEditorIdentityCardProps) {
+export function VariableEditorIdentityCard({ draft, setDraft, scopeOptions, groups }: Readonly<VariableEditorIdentityCardProps>) {
   // Flatten flows with group name for the selector
   const allFlows = (groups || []).flatMap(g =>
     (g.flows || []).map((f: any) => ({
@@ -235,7 +235,7 @@ interface VariableEditorConfigCardProps {
   setDraft: Dispatch<SetStateAction<VariableDraft>>;
 }
 
-export function VariableEditorConfigCard({ typeLabel, variableId, theme, draft, setDraft }: VariableEditorConfigCardProps) {
+export function VariableEditorConfigCard({ typeLabel, variableId, theme, draft, setDraft }: Readonly<VariableEditorConfigCardProps>) {
   const Icon = theme.icon;
 
   let parsedConfig: VariableConfig = {};
@@ -325,16 +325,13 @@ export function VariableEditorConfigCard({ typeLabel, variableId, theme, draft, 
 }
 
 interface VariableEditorActionsProps {
-  isSaving?: boolean;
   isDeleting: boolean;
   isDirty?: boolean;
-  onSave?: () => void;
   onDiscard: () => void;
   onDelete: () => void;
-  saveButtonTitle?: string;
 }
 
-export function VariableEditorActions({ isDeleting, isDirty, onDiscard, onDelete }: VariableEditorActionsProps) {
+export function VariableEditorActions({ isDeleting, isDirty, onDiscard, onDelete }: Readonly<VariableEditorActionsProps>) {
   return (
     <div className="flex gap-1.5">
       <button

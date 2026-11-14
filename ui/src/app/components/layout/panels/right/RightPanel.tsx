@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Plus, ChevronDown, Binary, ListChecks, ALargeSmall, CalendarClock, MapPin, ToggleLeft, PanelRightClose, PanelRightOpen, type LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { useApp } from '../../../../context';
-import type { Variable, VariableScope, VariableType, Selection } from '../../../../types';
+import type { Group, Variable, VariableScope, VariableType, Selection } from '../../../../types';
 import { CreateVariableDialog } from '../../../panels/CreateVariableDialog';
 import { DeleteVariableDialog } from '../../../panels/DeleteVariableDialog';
 import { VariableListItem } from '../../../panels/VariableListItem';
@@ -46,7 +46,37 @@ const typeInfo: Record<VariableType, { icon: LucideIcon; color: string }> = {
   boolean: { icon: ToggleLeft, color: 'text-pink-500' },
 };
 
-export function RightPanel({ variables, selection, onSelectVariable, onInsertVariable }: RightPanelProps) {
+/** Group that contains the flow, if any. */
+function findGroupIdOfFlow(groups: readonly Group[], flowId: string): string | undefined {
+  return groups.find(g => g.flows.some(f => f.id === flowId))?.id;
+}
+
+/** Flow in context: the selected flow, or the flow of the selected local variable. */
+function resolveActiveFlowId(selection: Selection, selectedVariable: Variable | undefined): string | undefined {
+  if (selection.type === 'flow') return selection.flowId;
+  if (selectedVariable?.scope === 'local') return selectedVariable.flowId;
+  return undefined;
+}
+
+/** Group in context: the selected group, the group of the selected flow, or the group of the selected variable. */
+function resolveActiveGroupId(
+  selection: Selection,
+  selectedVariable: Variable | undefined,
+  activeFlowId: string | undefined,
+  groups: readonly Group[],
+): string | undefined {
+  if (selection.type === 'group') return selection.groupId;
+  if (selection.type === 'flow') {
+    return selection.groupId || (activeFlowId ? findGroupIdOfFlow(groups, activeFlowId) : undefined);
+  }
+  if (selectedVariable?.scope === 'group') return selectedVariable.groupId;
+  if (selectedVariable?.scope === 'local' && selectedVariable.flowId) {
+    return findGroupIdOfFlow(groups, selectedVariable.flowId);
+  }
+  return selection.groupId;
+}
+
+export function RightPanel({ variables, selection, onSelectVariable, onInsertVariable }: Readonly<RightPanelProps>) {
   const { state, actions } = useApp();
   const [width, setWidth] = useState(264);
   const [collapsed, setCollapsed] = useState(false);
@@ -116,21 +146,8 @@ export function RightPanel({ variables, selection, onSelectVariable, onInsertVar
     : undefined;
 
   // Determine active flowId & groupId context from selection or selected variable
-  const activeFlowId = isFlowSelected
-    ? selection.flowId
-    : selectedVariable?.scope === 'local'
-    ? selectedVariable.flowId
-    : undefined;
-
-  const activeGroupId = isGroupSelected
-    ? selection.groupId
-    : isFlowSelected
-    ? selection.groupId || (activeFlowId ? state.groups.find(g => g.flows.some(f => f.id === activeFlowId))?.id : undefined)
-    : selectedVariable?.scope === 'group'
-    ? selectedVariable.groupId
-    : selectedVariable?.scope === 'local' && selectedVariable.flowId
-    ? state.groups.find(g => g.flows.some(f => f.id === selectedVariable.flowId))?.id
-    : selection.groupId;
+  const activeFlowId = resolveActiveFlowId(selection, selectedVariable);
+  const activeGroupId = resolveActiveGroupId(selection, selectedVariable, activeFlowId, state.groups);
 
   // Auto-switch scope based on selection
   useEffect(() => {
@@ -371,7 +388,6 @@ export function RightPanel({ variables, selection, onSelectVariable, onInsertVar
       <CreateVariableDialog
         open={createDialogOpen}
         onOpenChange={setCreateDialogOpen}
-        activeScope={activeScope}
         groups={state.groups}
         state={createState}
         onStateChange={(updates) => setCreateState(prev => ({ ...prev, ...updates }))}

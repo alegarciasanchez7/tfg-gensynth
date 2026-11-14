@@ -21,6 +21,14 @@ const STRATEGY_NAMES: Record<string, string> = {
   FIXED_SUBSET: 'Fixed Subset',
 };
 
+/** Hint shown under the item selection modes, for the chosen mode and the source list strategy. */
+function itemModeHintFor(selectionMode: ListReferenceSelectionMode, sourceStrategy: string): string {
+  if (selectionMode === 'FIXED_ITEM') return 'Always the item chosen below.';
+  if (selectionMode !== 'INHERITED_GENERATION') return 'A random item of the list on every value.';
+  if (sourceStrategy === 'FIXED_SUBSET') return 'The list uses Fixed Subset, so a random item is picked on every value.';
+  return `Items are picked as the list picks them (${STRATEGY_NAMES[sourceStrategy] ?? sourceStrategy}), keeping their own position: the list's sequence is not moved.`;
+}
+
 interface ListReferenceSelectorProps {
   config: BaseVariableConfig;
   onChange: (newConfig: Record<string, any>) => void;
@@ -44,7 +52,7 @@ export const ListReferenceSelector: React.FC<ListReferenceSelectorProps> = ({
   let state: any = { variables: [], groups: [], flows: [] };
   try {
     const appCtx = useApp();
-    if (appCtx && appCtx.state) {
+    if (appCtx?.state) {
       state = appCtx.state;
     }
   } catch {
@@ -104,28 +112,22 @@ export const ListReferenceSelector: React.FC<ListReferenceSelectorProps> = ({
   const selectionMode: ListReferenceSelectionMode = config.sourceListSelectionMode || 'RANDOM_ITEM';
   // Same default as the List editor and the Core
   const sourceStrategy: string = selectedList?.config?.selectionStrategy || 'WEIGHTED_RANDOM';
-  const itemModeHint = selectionMode === 'FIXED_ITEM'
-    ? 'Always the item chosen below.'
-    : selectionMode === 'INHERITED_GENERATION'
-      ? (sourceStrategy === 'FIXED_SUBSET'
-        ? 'The list uses Fixed Subset, so a random item is picked on every value.'
-        : `Items are picked as the list picks them (${STRATEGY_NAMES[sourceStrategy] ?? sourceStrategy}), keeping their own position: the list's sequence is not moved.`)
-      : 'A random item of the list on every value.';
+  const itemModeHint = itemModeHintFor(selectionMode, sourceStrategy);
 
-  const handleToggle = (checked: boolean) => {
-    if (!checked) {
-      onChange({
-        sourceListVariableId: undefined,
-        sourceListSelectionMode: undefined,
-        selectedListItemId: undefined,
-      });
-    } else {
-      const firstAvailable = accessibleListVariables[0];
-      onChange({
-        sourceListVariableId: firstAvailable ? firstAvailable.id : '',
-        sourceListSelectionMode: 'RANDOM_ITEM',
-      });
-    }
+  const disableListReference = () => {
+    onChange({
+      sourceListVariableId: undefined,
+      sourceListSelectionMode: undefined,
+      selectedListItemId: undefined,
+    });
+  };
+
+  const enableListReference = () => {
+    const firstAvailable = accessibleListVariables[0];
+    onChange({
+      sourceListVariableId: firstAvailable ? firstAvailable.id : '',
+      sourceListSelectionMode: 'RANDOM_ITEM',
+    });
   };
 
   return (
@@ -151,7 +153,13 @@ export const ListReferenceSelector: React.FC<ListReferenceSelectorProps> = ({
                   id="enable-list-ref"
                   checked={isEnabled}
                   disabled={noListToInherit}
-                  onChange={(e) => handleToggle(e.target.checked)}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      enableListReference();
+                    } else {
+                      disableListReference();
+                    }
+                  }}
                   className="h-3.5 w-3.5 rounded border-[var(--c-br2)] bg-[var(--c-bg1)] text-violet-500 focus:ring-violet-500/30 disabled:cursor-not-allowed disabled:opacity-40"
                 />
                 <Label

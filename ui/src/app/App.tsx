@@ -22,6 +22,23 @@ import { UpdateProgressDialog } from './components/dialogs/UpdateProgressDialog'
 import { useUpdateCheck } from './context/hooks/useUpdateCheck';
 import { openExternalUrl } from './core/jcef';
 import { bridge } from './core/bridge';
+import type { Group, Variable } from './types';
+import type { DiscardItemType } from './context/actions/discardActions';
+
+/** Name of the variable, group or flow whose changes the discard shortcut discards. */
+function findDiscardTargetName(
+  target: { type: DiscardItemType; id: string },
+  variables: readonly Variable[],
+  groups: readonly Group[],
+): string | undefined {
+  if (target.type === 'variable') {
+    return variables.find((variable) => variable.id === target.id)?.name;
+  }
+  if (target.type === 'group') {
+    return groups.find((group) => group.id === target.id)?.name;
+  }
+  return groups.flatMap((group) => group.flows).find((flow) => flow.id === target.id)?.name;
+}
 
 /** Project switch waiting for the user to confirm closing the current configuration. */
 interface PendingProjectAction {
@@ -166,11 +183,7 @@ export default function App() {
       toast.info(selection.type === 'none' ? 'No unsaved changes to discard' : `No unsaved changes in the selected ${selection.type}`);
       return;
     }
-    const name = target.type === 'variable'
-      ? variables.find((variable) => variable.id === target.id)?.name
-      : target.type === 'group'
-        ? groups.find((group) => group.id === target.id)?.name
-        : groups.flatMap((group) => group.flows).find((flow) => flow.id === target.id)?.name;
+    const name = findDiscardTargetName(target, variables, groups);
     void actions.discardItemChanges(target.type, target.id);
     toast.info(`Changes discarded for ${target.type} "${name ?? target.id}"`);
   };
@@ -274,7 +287,6 @@ export default function App() {
           variables={variables}
           onSelectGroup={actions.selectGroup}
           onSelectFlow={actions.selectFlow}
-          onSelectVariable={actions.selectVariable}
           formatTemplate={mergedTemplates}
           onFormatChange={actions.setFormatTemplate}
           onClearVariableSelection={actions.clearVariableSelection}

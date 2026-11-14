@@ -17,6 +17,20 @@ interface BoundaryObstaclesEditorProps {
   onChange: (newObstacles: BoundaryObstacle[]) => void;
 }
 
+/** Classes of an obstacle row: selected, enabled or disabled. */
+const obstacleRowClass = (isSelected: boolean, enabled: boolean | undefined): string => {
+  if (isSelected) return 'border-amber-400 bg-amber-500/15 ring-1 ring-amber-400/40 text-amber-700 dark:text-amber-200 shadow-sm';
+  return enabled
+    ? 'border-amber-500/30 bg-amber-500/5 text-[var(--c-tx2)] hover:border-amber-400/50'
+    : 'border-[var(--c-br1)] bg-[var(--c-bg2)] text-[var(--c-tx4)] opacity-60';
+};
+
+/** Icon colour of an obstacle row: the selection colour, or red for walls and amber for zones. */
+const obstacleIconClass = (isSelected: boolean, type: ObstacleType): string => {
+  if (isSelected) return 'text-amber-600 dark:text-amber-300';
+  return type === 'WALL_SEGMENT' ? 'text-red-400' : 'text-amber-400';
+};
+
 export const BoundaryObstaclesEditor: React.FC<BoundaryObstaclesEditorProps> = ({
   obstacles = [],
   minPoint = { x: -50, y: -50 },
@@ -135,13 +149,7 @@ export const BoundaryObstaclesEditor: React.FC<BoundaryObstaclesEditorProps> = (
             return (
               <div
                 key={obs.id}
-                className={`flex items-center justify-between rounded border transition-all ${
-                  isSelected
-                    ? 'border-amber-400 bg-amber-500/15 ring-1 ring-amber-400/40 text-amber-700 dark:text-amber-200 shadow-sm'
-                    : obs.enabled
-                    ? 'border-amber-500/30 bg-amber-500/5 text-[var(--c-tx2)] hover:border-amber-400/50'
-                    : 'border-[var(--c-br1)] bg-[var(--c-bg2)] text-[var(--c-tx4)] opacity-60'
-                }`}
+                className={`flex items-center justify-between rounded border transition-all ${obstacleRowClass(isSelected, obs.enabled)}`}
               >
                 <button
                   type="button"
@@ -149,7 +157,7 @@ export const BoundaryObstaclesEditor: React.FC<BoundaryObstaclesEditorProps> = (
                   onClick={() => onSelectObstacle?.(isSelected ? null : obs.id)}
                   className="flex flex-1 min-w-0 items-center gap-2 p-2 text-xs text-left cursor-pointer"
                 >
-                  <Layers size={13} className={isSelected ? 'text-amber-600 dark:text-amber-300' : (obs.type === 'WALL_SEGMENT' ? 'text-red-400' : 'text-amber-400')} />
+                  <Layers size={13} className={obstacleIconClass(isSelected, obs.type)} />
                   <span>
                     <span className="font-semibold">{obs.name || 'Obstacle'}</span>
                     <span className="text-[10px] font-mono text-[var(--c-tx4)] ml-2">

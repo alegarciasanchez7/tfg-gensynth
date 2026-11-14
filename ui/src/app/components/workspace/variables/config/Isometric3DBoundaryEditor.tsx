@@ -54,6 +54,19 @@ const baseElevationFor = (shape: Shape3DType | undefined, minZ: number, maxZ: nu
 /** Side of an unset footprint dimension, like the Core: the bounds span, or 100 for a flat range. */
 const spanOr100 = (min: number, max: number) => Math.abs(max - min) || 100;
 
+/** Colour of a handle in its dragging, hovered or idle state. */
+const handleColor = (isDragging: boolean, isHovered: boolean, colors: { dragging: string; hovered: string; idle: string }) => {
+  if (isDragging) return colors.dragging;
+  return isHovered ? colors.hovered : colors.idle;
+};
+
+/** Canvas cursor: grabbing a handle, over a handle, orbiting the view, or the default one. */
+const canvasCursorClass = (draggingHandle: HandleType, hoveredHandle: HandleType, orbitView: boolean) => {
+  if (draggingHandle) return 'cursor-grabbing';
+  if (hoveredHandle) return 'cursor-grab';
+  return orbitView ? 'cursor-move' : 'cursor-default';
+};
+
 /** Shape as the Core sees it: the persisted dimensions, or the ones it derives from the bounds when unset. */
 const resolveShape = (p: Pick<Isometric3DBoundaryEditorProps,
   'minX' | 'maxX' | 'minY' | 'maxY' | 'minZ' | 'maxZ' | 'shape3DType' | 'shape3DWidth' | 'shape3DLength' | 'shape3DHeight' | 'shape3DRadius'>) => ({
@@ -520,7 +533,7 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
       const isHovered = hoveredHandle === 'corner';
       const isDragging = draggingHandle === 'corner';
 
-      ctx.fillStyle = isDragging ? '#facc15' : isHovered ? '#fbbf24' : '#eab308';
+      ctx.fillStyle = handleColor(isDragging, isHovered, { dragging: '#facc15', hovered: '#fbbf24', idle: '#eab308' });
       ctx.strokeStyle = '#ffffff';
       ctx.lineWidth = 2;
       ctx.beginPath();
@@ -541,7 +554,7 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
       const isHovered = hoveredHandle === 'radius';
       const isDragging = draggingHandle === 'radius';
 
-      ctx.fillStyle = isDragging ? '#38bdf8' : isHovered ? '#60a5fa' : '#3b82f6';
+      ctx.fillStyle = handleColor(isDragging, isHovered, { dragging: '#38bdf8', hovered: '#60a5fa', idle: '#3b82f6' });
       ctx.strokeStyle = '#ffffff';
       ctx.lineWidth = 2;
       ctx.beginPath();
@@ -574,7 +587,7 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
       ctx.setLineDash([]);
 
       // Top Arrowhead
-      ctx.fillStyle = isDragging ? '#e879f9' : isHovered ? '#d8b4fe' : '#c084fc';
+      ctx.fillStyle = handleColor(isDragging, isHovered, { dragging: '#e879f9', hovered: '#d8b4fe', idle: '#c084fc' });
       ctx.strokeStyle = '#ffffff';
       ctx.lineWidth = 2;
       ctx.beginPath();
@@ -881,15 +894,7 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
             onPointerUp={handlePointerUp}
             onPointerCancel={handlePointerUp}
             onPointerLeave={() => setHoveredHandle(null)}
-            className={`${fillContainer ? 'absolute inset-0' : ''} w-full h-full touch-none ${
-              draggingHandle
-                ? 'cursor-grabbing'
-                : hoveredHandle
-                ? 'cursor-grab'
-                : orbitView
-                ? 'cursor-move'
-                : 'cursor-default'
-            }`}
+            className={`${fillContainer ? 'absolute inset-0' : ''} w-full h-full touch-none ${canvasCursorClass(draggingHandle, hoveredHandle, orbitView)}`}
           />
         </div>
 

@@ -112,7 +112,6 @@ interface GeospatialMapBoundaryEditorProps {
     altitudeOscillationSpeed?: number;
     polygon?: Point3DCoord[];
   }) => void;
-  width?: number;
   height?: number;
 }
 
@@ -265,7 +264,7 @@ function MapResizeHandler() {
 }
 
 // Cursor / moving-vertex coordinates badge. Owns the cursor state so map mousemove only re-renders this badge.
-function CoordinatesHud({ movingPoint }: { movingPoint: DragPreview | null }) {
+function CoordinatesHud({ movingPoint }: Readonly<{ movingPoint: DragPreview | null }>) {
   const [cursorPos, setCursorPos] = useState<{ lat: number; lon: number } | null>(null);
   const handlers = useMemo<L.LeafletEventHandlerFnMap>(
     () => ({
@@ -280,28 +279,35 @@ function CoordinatesHud({ movingPoint }: { movingPoint: DragPreview | null }) {
   );
   useMapEvents(handlers);
 
+  let content: React.ReactNode;
+  if (movingPoint) {
+    content = (
+      <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-300">
+        <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+        <span className="font-semibold text-[9px] uppercase tracking-wider text-amber-400">MOVING POINT #{movingPoint.index + 1}:</span>
+        <span>{formatLatLon(movingPoint.lat, movingPoint.lon)}</span>
+      </div>
+    );
+  } else if (cursorPos) {
+    content = (
+      <>
+        <div className="flex items-center gap-1.5 text-cyan-600 dark:text-cyan-300">
+          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+          <span className="font-semibold text-[9px] uppercase tracking-wider text-cyan-400">CURSOR:</span>
+          <span>{formatLatLon(cursorPos.lat, cursorPos.lon)}</span>
+        </div>
+        <div className="text-[9px] text-[var(--c-tx4)] border-l border-[var(--c-br1)] pl-2">
+          {formatDms(cursorPos.lat, true)}, {formatDms(cursorPos.lon, false)}
+        </div>
+      </>
+    );
+  } else {
+    content = <div className="text-[var(--c-tx4)] italic text-[9px]">Hover or drag point markers for live coordinates</div>;
+  }
+
   return (
     <div className="absolute top-2 right-2 z-[1000] bg-[var(--c-bg2)]/90 backdrop-blur border border-[var(--c-br1)] text-[10px] font-mono px-2.5 py-1.5 rounded shadow-lg pointer-events-none text-[var(--c-tx1)] flex items-center gap-3">
-      {movingPoint ? (
-        <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-300">
-          <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
-          <span className="font-semibold text-[9px] uppercase tracking-wider text-amber-400">MOVING POINT #{movingPoint.index + 1}:</span>
-          <span>{formatLatLon(movingPoint.lat, movingPoint.lon)}</span>
-        </div>
-      ) : cursorPos ? (
-        <>
-          <div className="flex items-center gap-1.5 text-cyan-600 dark:text-cyan-300">
-            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
-            <span className="font-semibold text-[9px] uppercase tracking-wider text-cyan-400">CURSOR:</span>
-            <span>{formatLatLon(cursorPos.lat, cursorPos.lon)}</span>
-          </div>
-          <div className="text-[9px] text-[var(--c-tx4)] border-l border-[var(--c-br1)] pl-2">
-            {formatDms(cursorPos.lat, true)}, {formatDms(cursorPos.lon, false)}
-          </div>
-        </>
-      ) : (
-        <div className="text-[var(--c-tx4)] italic text-[9px]">Hover or drag point markers for live coordinates</div>
-      )}
+      {content}
     </div>
   );
 }
@@ -365,11 +371,11 @@ function GeofenceLayers({
   points,
   onVertexMove,
   onVertexDelete,
-}: {
+}: Readonly<{
   points: Point3DCoord[];
   onVertexMove: (index: number, lat: number, lon: number) => void;
   onVertexDelete: (index: number) => void;
-}) {
+}>) {
   const [preview, setPreview] = useState<DragPreview | null>(null);
   const handleDrag = useCallback((index: number, lat: number, lon: number) => setPreview({ index, lat, lon }), []);
   const handleDragEnd = useStableCallback((index: number, lat: number, lon: number) => {
@@ -381,7 +387,7 @@ function GeofenceLayers({
   const positions = useMemo(
     () =>
       points.map((p, i) =>
-        preview && preview.index === i ? ([preview.lat, preview.lon] as L.LatLngTuple) : ([latOf(p), lonOf(p)] as L.LatLngTuple)
+        preview?.index === i ? ([preview.lat, preview.lon] as L.LatLngTuple) : ([latOf(p), lonOf(p)] as L.LatLngTuple)
       ),
     [points, preview]
   );
@@ -417,13 +423,13 @@ function CommitNumberInput({
   value,
   onCommit,
   allowEmpty = false,
-}: {
+}: Readonly<{
   id: string;
   placeholder: string;
   value: number | undefined;
   onCommit: (value: number | undefined) => void;
   allowEmpty?: boolean;
-}) {
+}>) {
   const shown = value === undefined ? '' : String(value);
   const [draft, setDraft] = useState(shown);
   const [prevShown, setPrevShown] = useState(shown);

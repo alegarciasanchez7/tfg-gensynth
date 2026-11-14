@@ -14,7 +14,7 @@ interface BottomPanelProps {
   systemStatus: SystemStatus;
 }
 
-export function BottomPanel({ tab, onTabChange, systemStatus }: BottomPanelProps) {
+export function BottomPanel({ tab, onTabChange, systemStatus }: Readonly<BottomPanelProps>) {
   const { state, actions } = useApp();
   const [height, setHeight] = useState(220);
   const [collapsed, setCollapsed] = useState(false);

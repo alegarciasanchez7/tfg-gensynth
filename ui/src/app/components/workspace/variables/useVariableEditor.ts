@@ -113,7 +113,8 @@ function stableStringify(value: unknown): string {
     const entries = Object.entries(value as Record<string, unknown>)
       .filter(([, v]) => v !== undefined)
       .sort(([a], [b]) => a.localeCompare(b));
-    return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`).join(',')}}`;
+    const fields = entries.map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`);
+    return `{${fields.join(',')}}`;
   }
   return JSON.stringify(value ?? null);
 }
@@ -144,7 +145,7 @@ function parseConfig(text: string) {
 
 export function useVariableEditor(variable: Variable) {
   const { state, actions } = useApp();
-  const [draft, setDraftState] = useState<VariableDraft>(() => createDraft(variable));
+  const [draft, setDraft] = useState<VariableDraft>(() => createDraft(variable));
   const [isDeleting, setIsDeleting] = useState(false);
   const isDirty = state?.dirtyItems?.variableIds?.has(variable.id) ?? false;
   // Latest draft, so quick consecutive edits build on each other
@@ -165,7 +166,7 @@ export function useVariableEditor(variable: Variable) {
     appliedIdentity.current = identityOf(next);
     lastSentKey.current = null;
     draftRef.current = next;
-    setDraftState(next);
+    setDraft(next);
   };
 
   useEffect(() => {
@@ -207,10 +208,10 @@ export function useVariableEditor(variable: Variable) {
     actions.updateVariable(variable.id, update);
   };
 
-  const setDraft: Dispatch<SetStateAction<VariableDraft>> = (valueOrFn) => {
+  const editDraft: Dispatch<SetStateAction<VariableDraft>> = (valueOrFn) => {
     const next = typeof valueOrFn === 'function' ? valueOrFn(draftRef.current) : valueOrFn;
     draftRef.current = next;
-    setDraftState(next);
+    setDraft(next);
     // Auto-update context state
     sendDraft(next, currentVariables());
   };
@@ -284,7 +285,7 @@ export function useVariableEditor(variable: Variable) {
 
   return {
     draft,
-    setDraft,
+    setDraft: editDraft,
     isSaving: false,
     isDeleting,
     isDirty,

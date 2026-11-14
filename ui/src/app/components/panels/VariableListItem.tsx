@@ -35,7 +35,7 @@ export function VariableListItem({
   onSelect,
   onDelete,
   onInsert,
-}: VariableListItemProps) {
+}: Readonly<VariableListItemProps>) {
   const { state } = useApp();
   const isDirty = state?.dirtyItems?.variableIds?.has(variable.id) ?? false;
   const tc = typeConfig[variable.type] || typeConfig.string;
