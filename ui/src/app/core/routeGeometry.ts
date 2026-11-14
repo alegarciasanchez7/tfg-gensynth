@@ -154,6 +154,44 @@ const pieceMidpoints = (a: XY, b: XY, polygon: XY[]): XY[] => {
   return mids;
 };
 
+/** Whether the segment from -> to crosses the wall polyline (a piece, or through one of its inner vertices). */
+const edgeCrossesWall = (from: XY, to: XY, wall: XY[]): boolean => {
+  for (let i = 0; i < wall.length - 1; i++) {
+    if (segmentsIntersect(from, to, wall[i], wall[i + 1])) return true;
+    if (i > 0 && crossesAtVertex(from, to, wall[i - 1], wall[i], wall[i + 1])) return true;
+  }
+  return false;
+};
+
+/** Error of the edge from -> to against one active obstacle, or null when it does not collide. */
+const edgeObstacleCollision = (from: XY, to: XY, obs: BoundaryObstacle, name: string): string | null => {
+  const pts = obs.points;
+  if (obs.type === 'WALL_SEGMENT' && pts.length >= 2) {
+    return edgeCrossesWall(from, to, pts.map(toXY))
+      ? `Cannot draw route edge crossing forbidden wall barrier: "${name}"`
+      : null;
+  }
+  if (obs.type !== 'WALL_SEGMENT' && pts.length >= 3
+    && pieceMidpoints(from, to, pts.map(toXY)).some((m) => isStrictlyInside(m, pts))) {
+    return `Cannot draw route edge crossing forbidden obstacle region: "${name}"`;
+  }
+  return null;
+};
+
+/** Error of a candidate node (and its edge from fromNode) against one active obstacle, or null. */
+const obstacleCollision = (fromNode: XY | null, targetPoint: XY, obs: BoundaryObstacle): string | null => {
+  const pts = obs.points;
+  const name = obs.name || (obs.type === 'WALL_SEGMENT' ? 'Wall Segment' : 'Forbidden Zone');
+
+  // 1. Check if target node point lies inside forbidden region polygon (its border is allowed)
+  if (obs.type !== 'WALL_SEGMENT' && pts.length >= 3 && isStrictlyInside(targetPoint, pts)) {
+    return `Cannot place route node inside forbidden obstacle zone: "${name}"`;
+  }
+
+  // 2. Check if connecting edge crosses wall segments or enters the obstacle polygon
+  return fromNode ? edgeObstacleCollision(fromNode, targetPoint, obs, name) : null;
+};
+
 /** Evaluates collision between candidate node/edge and active forbidden obstacle zones or wall segments */
 export const checkObstacleCollision = (
   fromNode: { x: number; y: number } | null,
@@ -163,32 +201,8 @@ export const checkObstacleCollision = (
   const activeObstacles = (obstacles || []).filter((obs) => obs.enabled && obs.points && obs.points.length > 0);
 
   for (const obs of activeObstacles) {
-    const pts = obs.points;
-    const name = obs.name || (obs.type === 'WALL_SEGMENT' ? 'Wall Segment' : 'Forbidden Zone');
-
-    // 1. Check if target node point lies inside forbidden region polygon (its border is allowed)
-    if (obs.type !== 'WALL_SEGMENT' && pts.length >= 3) {
-      if (isStrictlyInside(targetPoint, pts)) {
-        return `Cannot place route node inside forbidden obstacle zone: "${name}"`;
-      }
-    }
-
-    // 2. Check if connecting edge crosses wall segments or enters the obstacle polygon
-    if (fromNode) {
-      if (obs.type === 'WALL_SEGMENT' && pts.length >= 2) {
-        const wall = pts.map(toXY);
-        for (let i = 0; i < wall.length - 1; i++) {
-          const crossesPiece = segmentsIntersect(fromNode, targetPoint, wall[i], wall[i + 1]);
-          if (crossesPiece || (i > 0 && crossesAtVertex(fromNode, targetPoint, wall[i - 1], wall[i], wall[i + 1]))) {
-            return `Cannot draw route edge crossing forbidden wall barrier: "${name}"`;
-          }
-        }
-      } else if (pts.length >= 3) {
-        if (pieceMidpoints(fromNode, targetPoint, pts.map(toXY)).some((m) => isStrictlyInside(m, pts))) {
-          return `Cannot draw route edge crossing forbidden obstacle region: "${name}"`;
-        }
-      }
-    }
+    const error = obstacleCollision(fromNode, targetPoint, obs);
+    if (error) return error;
   }
 
   return null;
@@ -205,6 +219,42 @@ const boxLimits = (minPoint: Point3DCoord, maxPoint: Point3DCoord) => {
   return { minX, maxX, minY, maxY, tol };
 };
 
+/** Error of a candidate node/edge against an allowed boundary polygon (>= 3 points), or null. */
+const polygonCompliance = (fromNode: XY | null, targetPoint: XY, polygon: Point3DCoord[]): string | null => {
+  const region = polygon.map((p) => ({ x: p.x ?? 0, y: p.y ?? (p.x ?? 0) }));
+  if (!isInsideOrOnBorder(targetPoint, region)) {
+    return 'Cannot place route node outside the allowed boundary region.';
+  }
+  if (!fromNode) return null;
+  if (!isInsideOrOnBorder(fromNode, region)) {
+    return 'Cannot draw route edge from an origin node located outside the allowed boundary region.';
+  }
+  // The segment may touch or follow the border, but no piece of it may lie outside
+  if (pieceMidpoints(fromNode, targetPoint, region).some((m) => !isInsideOrOnBorder(m, region))) {
+    return 'Cannot draw route edge exiting the allowed boundary region.';
+  }
+  return null;
+};
+
+/** Error of a candidate node/edge against the region box limits (an unset axis is not limited), or null. */
+const boxCompliance = (
+  fromNode: XY | null,
+  targetPoint: XY,
+  minPoint: Point3DCoord,
+  maxPoint: Point3DCoord,
+): string | null => {
+  const { minX, maxX, minY, maxY, tol } = boxLimits(minPoint, maxPoint);
+  const outside = (p: XY) => p.x < minX - tol || p.x > maxX + tol || p.y < minY - tol || p.y > maxY + tol;
+
+  if (outside(targetPoint)) {
+    return `Cannot place route node outside allowed boundary limits.`;
+  }
+  if (fromNode && outside(fromNode)) {
+    return `Cannot draw route edge from an origin node outside allowed boundary limits.`;
+  }
+  return null;
+};
+
 /** Evaluates compliance of candidate node/edge against allowed boundary polygon and bounding limits */
 export const checkBoundaryCompliance = (
   fromNode: { x: number; y: number } | null,
@@ -213,38 +263,13 @@ export const checkBoundaryCompliance = (
   minPoint?: Point3DCoord,
   maxPoint?: Point3DCoord
 ): string | null => {
-  const getPt = (p: Point3DCoord) => ({ x: p.x ?? 0, y: p.y ?? (p.x ?? 0) });
-
-  // 1. Check if allowed boundary polygon is defined (>= 3 points)
+  // The allowed boundary polygon when it is defined (>= 3 points), else the bounding box
   if (polygon && polygon.length >= 3) {
-    const region = polygon.map(getPt);
-    if (!isInsideOrOnBorder(targetPoint, region)) {
-      return 'Cannot place route node outside the allowed boundary region.';
-    }
-
-    if (fromNode) {
-      if (!isInsideOrOnBorder(fromNode, region)) {
-        return 'Cannot draw route edge from an origin node located outside the allowed boundary region.';
-      }
-      // The segment may touch or follow the border, but no piece of it may lie outside
-      if (pieceMidpoints(fromNode, targetPoint, region).some((m) => !isInsideOrOnBorder(m, region))) {
-        return 'Cannot draw route edge exiting the allowed boundary region.';
-      }
-    }
-  } else if (minPoint && maxPoint) {
-    // Bounding box check against the region limits (an unset axis is not limited)
-    const { minX, maxX, minY, maxY, tol } = boxLimits(minPoint, maxPoint);
-    const outside = (p: XY) => p.x < minX - tol || p.x > maxX + tol || p.y < minY - tol || p.y > maxY + tol;
-
-    if (outside(targetPoint)) {
-      return `Cannot place route node outside allowed boundary limits.`;
-    }
-
-    if (fromNode && outside(fromNode)) {
-      return `Cannot draw route edge from an origin node outside allowed boundary limits.`;
-    }
+    return polygonCompliance(fromNode, targetPoint, polygon);
   }
-
+  if (minPoint && maxPoint) {
+    return boxCompliance(fromNode, targetPoint, minPoint, maxPoint);
+  }
   return null;
 };
 

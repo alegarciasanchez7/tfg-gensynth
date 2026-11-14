@@ -10,6 +10,7 @@ import { FEEDBACK_FORM_URL, isFeedbackAvailable } from '../../../core/feedback';
 import { openExternalUrl } from '../../../core/jcef';
 import { PROJECT_FILE_EXTENSION } from '../../../core/fileStorage';
 import { APP_VERSION } from '../../../core/appInfo';
+import { hasPreStartErrors as checkPreStartErrors } from './preStartCheck';
 
 interface HeaderProps {
   systemStatus: SystemStatus;
@@ -96,86 +97,19 @@ export function Header({
     : displayName;
 
   // Perform a pre-start check to highlight interlock/cycle/broken-references errors
-  const hasPreStartErrors = useMemo(() => {
-    if (variables.length === 0) return false;
-    const varNames = new Set(variables.map(v => v.name));
-    const getDeps = (formula?: string): string[] => {
-      if (!formula) return [];
-      const deps: string[] = [];
-      const regex = /(?:\[|{{)([a-zA-Z0-9_-]+)(?:\]|}})/g;
-      let match;
-      while ((match = regex.exec(formula)) !== null) {
-        deps.push(match[1]);
-      }
-      return deps;
-    };
+  const hasPreStartErrors = useMemo(() => checkPreStartErrors(variables), [variables]);
 
-    // Check broken references
-    for (const v of variables) {
-      const config = v.config || {};
-      if (v.type === 'numeric' && config.pattern === 'FORMULA' && config.formula) {
-        const formulaDeps = getDeps(config.formula);
-        for (const dep of formulaDeps) {
-          if (dep.toLowerCase() !== 'pi' && dep.toLowerCase() !== 'e' && !varNames.has(dep)) {
-            return true;
-          }
-        }
-      }
-      if (config.conditionalRules && Array.isArray(config.conditionalRules)) {
-        for (const rule of config.conditionalRules) {
-          if (rule.targetVariable?.trim()) {
-            if (!varNames.has(rule.targetVariable.trim())) {
-              return true;
-            }
-          }
-        }
-      }
+  /** Runs a file action (load/save) with the file buttons disabled, logging its failure. */
+  const runFileAction = async (action: () => Promise<unknown>, label: string) => {
+    setLoadingState(true);
+    try {
+      await action();
+    } catch (error) {
+      console.error(`[Header] ${label} project error:`, error);
+    } finally {
+      setLoadingState(false);
     }
-
-    // Check cycles
-    const detectCycle = (
-      varsList: any[],
-      currentVarId: string,
-      currentVarName: string,
-      formula?: string
-    ): boolean => {
-      const adjList = new Map<string, string[]>();
-      for (const v of varsList) {
-        if (v.id === currentVarId) {
-          adjList.set(v.name, getDeps(formula));
-        } else {
-          adjList.set(v.name, getDeps(v.config?.formula));
-        }
-      }
-      const visited = new Set<string>();
-      const recStack = new Set<string>();
-      const dfs = (node: string): boolean => {
-        visited.add(node);
-        recStack.add(node);
-        const neighbors = adjList.get(node) || [];
-        for (const neighbor of neighbors) {
-          if (!visited.has(neighbor)) {
-            if (dfs(neighbor)) return true;
-          } else if (recStack.has(neighbor)) {
-            return true;
-          }
-        }
-        recStack.delete(node);
-        return false;
-      };
-      return dfs(currentVarName);
-    };
-
-    for (const v of variables) {
-      if (v.type === 'numeric' && v.config?.formula) {
-        if (detectCycle(variables, v.id, v.name, v.config.formula)) {
-          return true;
-        }
-      }
-    }
-
-    return false;
-  }, [variables]);
+  };
 
   return (
     <div
@@ -246,16 +180,7 @@ export function Header({
           <FilePlus size={12} /> New
         </button>
         <button
-          onClick={async () => {
-            setLoadingState(true);
-            try {
-              await onLoadProject();
-            } catch (error) {
-              console.error('[Header] Load project error:', error);
-            } finally {
-              setLoadingState(false);
-            }
-          }}
+          onClick={() => runFileAction(onLoadProject, 'Load')}
           disabled={loadingState}
           title="Load configuration from file"
           className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-[var(--c-br1)] text-xs text-[var(--c-tx3)] hover:text-[var(--c-tx1)] hover:border-[var(--c-br3)] hover:bg-[var(--c-bg5)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
@@ -263,16 +188,7 @@ export function Header({
           <FolderOpen size={12} /> Load
         </button>
         <button
-          onClick={async () => {
-            setLoadingState(true);
-            try {
-              await onSaveProject();
-            } catch (error) {
-              console.error('[Header] Save project error:', error);
-            } finally {
-              setLoadingState(false);
-            }
-          }}
+          onClick={() => runFileAction(onSaveProject, 'Save')}
           disabled={loadingState}
           title="Save changes to configuration file (Ctrl+S)"
           className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-[var(--c-br1)] text-xs text-[var(--c-tx3)] hover:text-[var(--c-tx1)] hover:border-[var(--c-br3)] hover:bg-[var(--c-bg5)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
@@ -280,16 +196,7 @@ export function Header({
           <Save size={12} /> Save
         </button>
         <button
-          onClick={async () => {
-            setLoadingState(true);
-            try {
-              await onSaveAsProject();
-            } catch (error) {
-              console.error('[Header] Save As project error:', error);
-            } finally {
-              setLoadingState(false);
-            }
-          }}
+          onClick={() => runFileAction(onSaveAsProject, 'Save As')}
           disabled={loadingState}
           title="Save configuration as a new file"
           className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-[var(--c-br1)] text-xs text-[var(--c-tx3)] hover:text-[var(--c-tx1)] hover:border-[var(--c-br3)] hover:bg-[var(--c-bg5)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"

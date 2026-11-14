@@ -220,6 +220,24 @@ export async function saveProjectStateAs(ctx: ProjectSaveContext): Promise<boole
 }
 
 /**
+ * Writes the project to the open file: through the Core on desktop, or to the file handle in a
+ * browser.
+ *
+ * @returns false when an auto-save is skipped because it has no write permission yet
+ */
+async function writeOpenFile(ctx: ProjectSaveContext, isDesktop: boolean, isAutoSave: boolean): Promise<boolean> {
+  const { file } = ctx;
+  if (isDesktop && file.filePath) {
+    await CoreCommands.exportState(file.filePath);
+  } else if (file.fileHandle) {
+    // Writing to a file opened for reading needs a user gesture the first time
+    if (isAutoSave && !(await hasWritePermission(file.fileHandle))) return false;
+    await writeProjectSnapshot(file.fileHandle, createProjectSnapshot(ctx.groups, ctx.variables, ctx.settings));
+  }
+  return true;
+}
+
+/**
  * Saves the project to the currently open file. Without an open file, a manual save behaves
  * as "Save as" while an auto-save is skipped (it must never open a dialog).
  *
@@ -236,13 +254,7 @@ export async function saveProjectState(ctx: ProjectSaveContext, isAutoSave = fal
   }
 
   try {
-    if (isDesktop && file.filePath) {
-      await CoreCommands.exportState(file.filePath);
-    } else if (file.fileHandle) {
-      // Writing to a file opened for reading needs a user gesture the first time
-      if (isAutoSave && !(await hasWritePermission(file.fileHandle))) return false;
-      await writeProjectSnapshot(file.fileHandle, createProjectSnapshot(ctx.groups, ctx.variables, ctx.settings));
-    }
+    if (!(await writeOpenFile(ctx, isDesktop, isAutoSave))) return false;
 
     markSaved(ctx, file);
     const fileName = file.fileName ?? 'configuration file';

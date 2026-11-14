@@ -65,4 +65,42 @@ describe('startSystem', () => {
     expect(toast.error).toHaveBeenCalledTimes(1);
     expect(vi.mocked(toast.error).mock.calls[0][0]).toMatch(/^Cannot start the simulation: /);
   });
+
+  it('rejects a template that reads one item of a list that is not FIXED_SUBSET', async () => {
+    const reportCommandError = vi.fn();
+    const action = startSystem(
+      vi.fn(),
+      'websocket',
+      reportCommandError,
+      () => [{ id: 'l1', name: 'colors', type: 'list', scope: 'group', groupId: 'g1', config: { selectionStrategy: 'SEQUENTIAL' } }],
+      () => [{ id: 'g1', name: 'G', flows: [{ id: 'f1', name: 'F', template: 'saved' }] }] as never,
+      () => ({ f1: '{"c": "{{group.colors.item1}}"}' }),
+    );
+
+    await action();
+
+    expect(startSystemCommand).not.toHaveBeenCalled();
+    expect(toast.error).toHaveBeenCalledWith(
+      "Cannot start the simulation: Invalid item reference in flow 'F': Variable 'colors' uses strategy 'SEQUENTIAL' (not 'FIXED_SUBSET') and cannot be referenced with sub-item index (.itemX).",
+    );
+  });
+
+  it('starts when every reference is valid', async () => {
+    startSystemCommand.mockResolvedValue({ status: 'ok' });
+    const dispatched: AppAction[] = [];
+    const action = startSystem(
+      (a) => dispatched.push(a),
+      'websocket',
+      vi.fn(),
+      () => [
+        { id: 'a', name: 'a', type: 'numeric', scope: 'global', config: { pattern: 'FORMULA', formula: '[b] * [pi]' } },
+        { id: 'b', name: 'b', type: 'numeric', scope: 'global', config: {} },
+      ],
+      () => [{ id: 'g1', name: 'G', flows: [{ id: 'f1', name: 'F', template: '{{a}} {{uuid}}' }] }] as never,
+    );
+
+    await action();
+
+    expect(dispatched).toEqual([{ type: 'SET_SYSTEM_STATUS', payload: 'running' }]);
+  });
 });

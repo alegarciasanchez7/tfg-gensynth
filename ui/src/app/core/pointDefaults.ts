@@ -69,19 +69,7 @@ export function coordinateSystemSwitch(
     return withMessage('Graph Route is not available in 3D Cartesian');
   }
 
-  const oldDefaults = defaultBoundsFor(source);
-  if ((config.boundaryPolygon?.length ?? 0) >= 3) lost.push('the region polygon');
-  if ((config.obstacles?.length ?? 0) > 0) lost.push(`${config.obstacles?.length} obstacle(s)`);
-  if ((config.minPoint && !sameCoords(config.minPoint, oldDefaults.minPoint))
-      || (config.maxPoint && !sameCoords(config.maxPoint, oldDefaults.maxPoint))) {
-    lost.push('the region bounds');
-  }
-  // The fixed point a previous switch placed at the centre of the defaults is not user data
-  if (config.fixedPoint && !sameCoords(config.fixedPoint, centerOf(oldDefaults.minPoint, oldDefaults.maxPoint))) {
-    lost.push('the fixed point');
-  }
-  if ((config.waypoints?.length ?? 0) > 0) lost.push('the waypoints');
-  if (config.orbitCenter) lost.push('the orbit centre');
+  lost.push(...unitSwitchLosses(config, source));
   clearGraph();
 
   const { minPoint, maxPoint } = defaultBoundsFor(target);
@@ -102,6 +90,31 @@ export function coordinateSystemSwitch(
   if (target === 'CARTESIAN_3D' && config.pattern === 'GRAPH_ROUTE') updates.pattern = 'RANDOM_POINT';
   return withMessage('The new coordinate system uses different units');
 }
+
+/**
+ * The user data (other than the route graph) that a switch between Cartesian and Geospatial
+ * resets, because the units are incompatible. Bounds and fixed point still at the defaults of
+ * the source system are not user data.
+ */
+export function unitSwitchLosses(config: PointVariableConfig, source: CoordinateSystem): string[] {
+  const lost: string[] = [];
+  const oldDefaults = defaultBoundsFor(source);
+  if ((config.boundaryPolygon?.length ?? 0) >= 3) lost.push('the region polygon');
+  if ((config.obstacles?.length ?? 0) > 0) lost.push(`${config.obstacles?.length} obstacle(s)`);
+  if (!isAt(config.minPoint, oldDefaults.minPoint) || !isAt(config.maxPoint, oldDefaults.maxPoint)) {
+    lost.push('the region bounds');
+  }
+  // The fixed point a previous switch placed at the centre of the defaults is not user data
+  if (!isAt(config.fixedPoint, centerOf(oldDefaults.minPoint, oldDefaults.maxPoint))) {
+    lost.push('the fixed point');
+  }
+  if ((config.waypoints?.length ?? 0) > 0) lost.push('the waypoints');
+  if (config.orbitCenter) lost.push('the orbit centre');
+  return lost;
+}
+
+/** Whether a point is unset or at the given coordinates. */
+const isAt = (point: Point3DCoord | undefined, coords: Point3DCoord) => !point || sameCoords(point, coords);
 
 /** "a", "a and b", "a, b and c". */
 function joinList(items: string[]): string {

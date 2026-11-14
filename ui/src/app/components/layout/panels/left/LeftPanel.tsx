@@ -12,11 +12,12 @@ import {
 } from '../../../ui/dialog';
 import { Input } from '../../../ui/input';
 import { Textarea } from '../../../ui/textarea';
-import type { Group, Flow, Selection, Variable } from '../../../../types';
+import type { Group, Selection, Variable } from '../../../../types';
 import type { ConnectorPluginDescriptor } from '../../../../core/types';
 import { GroupItem } from './GroupItem';
 import { CreateFlowDialog } from './CreateFlowDialog';
 import { commandErrorMessage } from '../../../../core/errorMessage';
+import type { CreateFlowHandler } from '../../../../context/crudTypes';
 
 interface LeftPanelProps {
   groups: Group[];
@@ -30,20 +31,7 @@ interface LeftPanelProps {
   onCreateGroup: (name: string, description?: string) => Promise<Group>;
   onDeleteGroup: (groupId: string) => Promise<void>;
   onDeleteFlow: (groupId: string, flowId: string) => Promise<void>;
-  onCreateFlow: (
-    groupId: string,
-    name: string,
-    technology: string,
-    host: string,
-    port: number,
-    topic?: string,
-    interval?: number,
-    burst?: number,
-    template?: string,
-    connectorConfig?: Record<string, unknown>,
-    everyTicks?: number,
-    autoRename?: boolean,
-  ) => Promise<Flow>;
+  onCreateFlow: CreateFlowHandler;
   onUpdateGroupConfig: (groupId: string, config: any, name?: string) => Promise<void>;
   onUpdateFlowConfig: (groupId: string, flowId: string, config: any, name?: string) => Promise<void>;
   onCloneGroup: (groupId: string, count: number, namingPattern?: string) => void;

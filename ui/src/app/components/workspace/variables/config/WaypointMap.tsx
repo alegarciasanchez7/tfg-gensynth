@@ -19,6 +19,7 @@ import type { MoveCheck, PathIssues } from '../../../../core/waypointPath';
 import { MapAutoFit, OfflineGridOverlay } from './mapShared';
 import { useCanvasPalette } from './canvasPalette';
 import { cachedDivIcon } from './mapIcons';
+import { flaggedSegments } from './waypointCanvasHelpers';
 
 interface WaypointMapProps {
   waypoints: FullPoint[];
@@ -328,25 +329,10 @@ export const WaypointMap: React.FC<WaypointMapProps> = ({
   const pathPositions = displayWaypoints.map((p): [number, number] => [p.x, p.y]);
 
   // Segment colours: the live check replaces the stored issues around the dragged waypoint
-  const liveAdjacent = new Set<number>();
-  if (live && n >= 2) {
-    if (live.index > 0) liveAdjacent.add(live.index - 1);
-    if (live.index < n - 1) liveAdjacent.add(live.index);
-    if (loopPath && n >= 3 && (live.index === 0 || live.index === n - 1)) liveAdjacent.add(n - 1);
-  }
-  const flaggedSegments: { index: number; color: string }[] = [];
-  for (let i = 0; i < n; i++) {
-    if (i === n - 1 && !(loopPath && n >= 3)) continue;
-    if (liveAdjacent.has(i)) {
-      // A rejected waypoint position marks all its segments; otherwise only the failing ones
-      const check = live?.check;
-      if (check?.error && (check.badSegments.length === 0 || check.badSegments.includes(i))) {
-        flaggedSegments.push({ index: i, color: REJECTED_COLOR });
-      }
-    } else if (issues.segments[i]) {
-      flaggedSegments.push({ index: i, color: INVALID_COLOR });
-    }
-  }
+  const flagged = flaggedSegments(n, loopPath, live, issues.segments).map(({ index, flag }) => ({
+    index,
+    color: flag === 'rejected' ? REJECTED_COLOR : INVALID_COLOR,
+  }));
 
   return (
     <div
@@ -422,7 +408,7 @@ export const WaypointMap: React.FC<WaypointMapProps> = ({
         {n >= 2 && <LeafletPolyline positions={pathPositions} pathOptions={PATH_STYLE} interactive={false} />}
         {loopPath && n >= 3 && <LeafletPolyline positions={[pathPositions[n - 1], pathPositions[0]]} pathOptions={CLOSING_STYLE} interactive={false} />}
         {/* Segments that leave the region or cross an obstacle, drawn over the path */}
-        {flaggedSegments.map(({ index, color }) => (
+        {flagged.map(({ index, color }) => (
           <LeafletPolyline
             key={`bad-${index}-${color}`}
             positions={[pathPositions[index], pathPositions[(index + 1) % n]]}

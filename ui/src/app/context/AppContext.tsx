@@ -15,7 +15,6 @@ import React, {
   type ReactNode,
 } from 'react';
 import { CoreCommands } from '../core/bridge';
-import { findTemplatePlaceholders, isSystemPlaceholder } from '../core/templatePlaceholders';
 import type {
   Group,
   Flow,
@@ -44,6 +43,8 @@ import * as updateActions from './actions/updateActions';
 import { useCrudActions } from './hooks/useCrudActions';
 import { useBridgeSubscriptions } from './hooks/useBridgeSubscriptions';
 import { useAutoSave } from './hooks/useAutoSave';
+import { findInvalidItemReference } from './helpers/itemReferenceValidation';
+import type { CreateFlowHandler } from './crudTypes';
 
 // ─────────────────────────────────────────────────────────────
 // Context Value Interface
@@ -104,21 +105,7 @@ interface AppContextValue {
     cloneGroup: (groupId: string, count: number, namingPattern?: string) => void;
     
     // Flows: CRUD
-    createFlow: (
-      groupId: string,
-      name: string,
-      technology: string,
-      host: string,
-      port: number,
-      topic?: string,
-      interval?: number,
-      burst?: number,
-      template?: string,
-      connectorConfig?: Record<string, unknown>,
-      everyTicks?: number,
-      /** Rename a name already used in the group instead of failing (Repeater). */
-      autoRename?: boolean,
-    ) => Promise<Flow>;
+    createFlow: CreateFlowHandler;
     deleteFlow: (groupId: string, flowId: string) => Promise<void>;
     updateFlowConfig: (
       groupId: string,
@@ -264,58 +251,16 @@ export function AppProvider({ children, useMockData = false }: Readonly<AppProvi
 
   const startGroup = useCallback(async (groupId: string) => {
     // Validate list strategy item access in group templates
-    const targetGroup = stateRef.current.groups.find(g => g.id === groupId);
-    const variables = stateRef.current.variables;
-    const formatTemplates = stateRef.current.formatTemplates;
-
-    if (targetGroup) {
-      for (const flow of targetGroup.flows || []) {
-        const template = formatTemplates[flow.id] ?? flow.template ?? '';
-        if (!template) continue;
-
-        for (const placeholder of findTemplatePlaceholders(template)) {
-          const fullSpec = placeholder.spec.trim();
-          if (isSystemPlaceholder(fullSpec)) continue;
-
-          let scope: string | null = null;
-          let name = fullSpec;
-          let isItemAccess = false;
-
-          if (fullSpec.includes('.')) {
-            const parts = fullSpec.split('.');
-            if (parts.length >= 3 && parts[parts.length - 1].toLowerCase().startsWith('item')) {
-              scope = parts[0].toLowerCase();
-              name = parts[1];
-              isItemAccess = true;
-            } else if (parts.length === 2 && parts[1].toLowerCase().startsWith('item')) {
-              scope = null;
-              name = parts[0];
-              isItemAccess = true;
-            }
-          }
-
-          if (isItemAccess) {
-            const targetVar = variables.find((v: any) => {
-              if (v.name !== name) return false;
-              if (scope && v.scope !== scope) return false;
-              if (v.scope === 'global') return true;
-              if (v.scope === 'group') return v.groupId === groupId;
-              if (v.scope === 'local') return v.flowId === flow.id;
-              return false;
-            });
-
-            if (targetVar?.type === 'list') {
-              const strategy = targetVar.config?.selectionStrategy;
-              if (strategy && strategy !== 'FIXED_SUBSET') {
-                const errText = `Invalid item reference in flow '${flow.name}': Variable '${targetVar.name}' uses strategy '${strategy}' (not 'FIXED_SUBSET') and cannot be referenced with sub-item index (.itemX).`;
-                toast.error(errText);
-                reportCommandError('GROUPS', `startGroup(${groupId})`, new Error(errText));
-                return;
-              }
-            }
-          }
-        }
-      }
+    const current = stateRef.current;
+    const errText = findInvalidItemReference(
+      current.groups.find(g => g.id === groupId),
+      current.variables,
+      current.formatTemplates,
+    );
+    if (errText) {
+      toast.error(errText);
+      reportCommandError('GROUPS', `startGroup(${groupId})`, new Error(errText));
+      return;
     }
 
     try {

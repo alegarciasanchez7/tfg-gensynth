@@ -5,6 +5,21 @@ import { Label } from '../../../ui/label';
 import { Input } from '../../../ui/input';
 import { Button } from '../../../ui/button';
 import { useCanvasPalette } from './canvasPalette';
+import {
+  drawAxes,
+  drawGroundGrid,
+  drawHandles,
+  drawShape,
+  drawStatusText,
+  growFactor,
+  handleAt as handleAtPoint,
+  heightDragDelta,
+  parseFieldValue,
+  projectIsometric,
+  shapeHandles,
+  type FieldKey,
+  type HandleType,
+} from './isometric3DHelpers';
 
 export interface Isometric3DBoundaryEditorProps {
   minX: number;
@@ -39,11 +54,6 @@ export interface Isometric3DBoundaryEditorProps {
   fillContainer?: boolean;
 }
 
-type HandleType = 'corner' | 'radius' | 'height' | null;
-
-/** Numeric inputs of the side panel; each keeps its own text while it is being typed. */
-type FieldKey = 'width' | 'length' | 'radius' | 'height' | 'elev';
-
 /**
  * Base elevation implied by a persisted Z range: with a negative height the shape hangs down
  * from its base, so the base is the top of the range.
@@ -53,12 +63,6 @@ const baseElevationFor = (shape: Shape3DType | undefined, minZ: number, maxZ: nu
 
 /** Side of an unset footprint dimension, like the Core: the bounds span, or 100 for a flat range. */
 const spanOr100 = (min: number, max: number) => Math.abs(max - min) || 100;
-
-/** Colour of a handle in its dragging, hovered or idle state. */
-const handleColor = (isDragging: boolean, isHovered: boolean, colors: { dragging: string; hovered: string; idle: string }) => {
-  if (isDragging) return colors.dragging;
-  return isHovered ? colors.hovered : colors.idle;
-};
 
 /** Canvas cursor: grabbing a handle, over a handle, orbiting the view, or the default one. */
 const canvasCursorClass = (draggingHandle: HandleType, hoveredHandle: HandleType, orbitView: boolean) => {
@@ -252,42 +256,13 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
   };
 
   // 3D Projection math (Inverted Z: +Z increases upwards on canvas, centered at shape centroid)
-  const project = (x: number, y: number, z: number) => {
-    const centerZ = getShapeCenterZ();
-    const nx = (x / 200) * 2;
-    const ny = (y / 200) * 2;
-    const nz = -(((z - centerZ) / 300) * 2);
+  const project = (x: number, y: number, z: number) =>
+    projectIsometric(x, y, z, { centerZ: getShapeCenterZ(), rotX, rotY, zoom, pan: panOffset, width, height });
 
-    const cosY = Math.cos(rotY), sinY = Math.sin(rotY);
-    const cosX = Math.cos(rotX), sinX = Math.sin(rotX);
-
-    const rx = nx * cosY - ny * sinY;
-    const ry = nx * sinY * sinX + ny * cosY * sinX + nz * cosX;
-
-    const scale = Math.min(width, height) / 3.0;
-    const px = width / 2 + rx * scale * zoom + panOffset.x;
-    const py = height / 2 + ry * (scale * 0.7) * zoom + panOffset.y;
-    return { x: px, y: py };
-  };
+  const dims = { width: width3D, length: length3D, height: height3D, radius: radius3D, elev: baseElevation };
 
   // Calculate 3D handle locations
-  const getHandleCoordinates = () => {
-    let cornerHandle: { x: number; y: number } | null = null;
-    let radiusHandle: { x: number; y: number } | null = null;
-    let heightHandle: { x: number; y: number } | null = null;
-
-    if (activeShape === 'cube' || activeShape === 'pyramid') {
-      cornerHandle = project(width3D / 2, length3D / 2, baseElevation);
-      heightHandle = project(0, 0, baseElevation + height3D);
-    } else if (activeShape === 'cone') {
-      radiusHandle = project(radius3D, 0, baseElevation);
-      heightHandle = project(0, 0, baseElevation + height3D);
-    } else if (activeShape === 'sphere') {
-      radiusHandle = project(radius3D, 0, baseElevation + radius3D);
-    }
-
-    return { cornerHandle, radiusHandle, heightHandle };
-  };
+  const getHandleCoordinates = () => shapeHandles(activeShape, dims, project);
 
   // Canvas Drawing Loop
   useEffect(() => {
@@ -296,320 +271,16 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    ctx.clearRect(0, 0, width, height);
-
-    // Background
-    ctx.fillStyle = palette.deepBackground;
-    ctx.fillRect(0, 0, width, height);
-
-    // 1. Grid Mesh on Ground Plane
-    const gridExtent = Math.max(200, Math.ceil(300 / Math.max(0.4, zoom)));
-    const step = 50;
-
-    ctx.strokeStyle = palette.grid3D;
-    ctx.lineWidth = 1;
-
-    for (let gx = -gridExtent; gx <= gridExtent; gx += step) {
-      const p1 = project(gx, -gridExtent, baseElevation);
-      const p2 = project(gx, gridExtent, baseElevation);
-      ctx.beginPath();
-      ctx.moveTo(p1.x, p1.y);
-      ctx.lineTo(p2.x, p2.y);
-      ctx.stroke();
-
-      if (gx >= -150 && gx <= 150) {
-        ctx.font = '8px monospace';
-        ctx.fillStyle = palette.gridLabel3D;
-        ctx.fillText(`${gx}`, p1.x + 2, p1.y + 8);
-      }
-    }
-
-    for (let gy = -gridExtent; gy <= gridExtent; gy += step) {
-      const p1 = project(-gridExtent, gy, baseElevation);
-      const p2 = project(gridExtent, gy, baseElevation);
-      ctx.beginPath();
-      ctx.moveTo(p1.x, p1.y);
-      ctx.lineTo(p2.x, p2.y);
-      ctx.stroke();
-    }
-
+    // 1. Background and grid mesh on the ground plane
+    drawGroundGrid(ctx, project, { width, height, zoom, elev: baseElevation }, palette);
     // 2. Axes
-    const origin = project(0, 0, baseElevation);
-    const xAxis = project(100, 0, baseElevation);
-    const yAxis = project(0, 100, baseElevation);
-    const zAxis = project(0, 0, baseElevation + 100);
-
-    ctx.strokeStyle = palette.axisX;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(origin.x, origin.y);
-    ctx.lineTo(xAxis.x, xAxis.y);
-    ctx.stroke();
-
-    ctx.strokeStyle = palette.axisY;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(origin.x, origin.y);
-    ctx.lineTo(yAxis.x, yAxis.y);
-    ctx.stroke();
-
-    // Z axis (+Z upwards)
-    ctx.strokeStyle = palette.axisZ;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(origin.x, origin.y);
-    ctx.lineTo(zAxis.x, zAxis.y);
-    ctx.stroke();
-
-    ctx.font = '9px monospace';
-    ctx.fillStyle = palette.axisX;
-    ctx.fillText('X', xAxis.x + 4, xAxis.y);
-    ctx.fillStyle = palette.axisY;
-    ctx.fillText('Y', yAxis.x + 4, yAxis.y);
-    ctx.fillStyle = palette.axisZ;
-    ctx.fillText('+Z', zAxis.x + 4, zAxis.y);
-
-    // 3. Render 3D Shape Geometry
-    const hw = width3D / 2;
-    const hl = length3D / 2;
-    const topZ = baseElevation + height3D;
-
-    if (activeShape === 'cube') {
-      const b0 = project(-hw, -hl, baseElevation);
-      const b1 = project(hw, -hl, baseElevation);
-      const b2 = project(hw, hl, baseElevation);
-      const b3 = project(-hw, hl, baseElevation);
-
-      const t0 = project(-hw, -hl, topZ);
-      const t1 = project(hw, -hl, topZ);
-      const t2 = project(hw, hl, topZ);
-      const t3 = project(-hw, hl, topZ);
-
-      // Base face
-      ctx.fillStyle = 'rgba(139, 92, 246, 0.15)';
-      ctx.beginPath();
-      ctx.moveTo(b0.x, b0.y);
-      ctx.lineTo(b1.x, b1.y);
-      ctx.lineTo(b2.x, b2.y);
-      ctx.lineTo(b3.x, b3.y);
-      ctx.closePath();
-      ctx.fill();
-
-      // Top face
-      ctx.fillStyle = 'rgba(139, 92, 246, 0.25)';
-      ctx.beginPath();
-      ctx.moveTo(t0.x, t0.y);
-      ctx.lineTo(t1.x, t1.y);
-      ctx.lineTo(t2.x, t2.y);
-      ctx.lineTo(t3.x, t3.y);
-      ctx.closePath();
-      ctx.fill();
-
-      // Side edges & faces
-      ctx.strokeStyle = '#8b5cf6';
-      ctx.lineWidth = 1.5;
-
-      const drawFace = (pA: any, pB: any, pC: any, pD: any) => {
-        ctx.beginPath();
-        ctx.moveTo(pA.x, pA.y);
-        ctx.lineTo(pB.x, pB.y);
-        ctx.lineTo(pC.x, pC.y);
-        ctx.lineTo(pD.x, pD.y);
-        ctx.closePath();
-        ctx.stroke();
-      };
-
-      drawFace(b0, b1, b2, b3);
-      drawFace(t0, t1, t2, t3);
-      ctx.beginPath();
-      ctx.moveTo(b0.x, b0.y); ctx.lineTo(t0.x, t0.y);
-      ctx.moveTo(b1.x, b1.y); ctx.lineTo(t1.x, t1.y);
-      ctx.moveTo(b2.x, b2.y); ctx.lineTo(t2.x, t2.y);
-      ctx.moveTo(b3.x, b3.y); ctx.lineTo(t3.x, t3.y);
-      ctx.stroke();
-
-    } else if (activeShape === 'pyramid') {
-      const b0 = project(-hw, -hl, baseElevation);
-      const b1 = project(hw, -hl, baseElevation);
-      const b2 = project(hw, hl, baseElevation);
-      const b3 = project(-hw, hl, baseElevation);
-      const apex = project(0, 0, topZ);
-
-      // Base face
-      ctx.fillStyle = 'rgba(16, 185, 129, 0.15)';
-      ctx.beginPath();
-      ctx.moveTo(b0.x, b0.y); ctx.lineTo(b1.x, b1.y);
-      ctx.lineTo(b2.x, b2.y); ctx.lineTo(b3.x, b3.y);
-      ctx.closePath();
-      ctx.fill();
-
-      // Side triangular faces
-      ctx.strokeStyle = '#10b981';
-      ctx.lineWidth = 1.5;
-
-      const drawTri = (pA: any, pB: any) => {
-        ctx.beginPath();
-        ctx.moveTo(pA.x, pA.y);
-        ctx.lineTo(pB.x, pB.y);
-        ctx.lineTo(apex.x, apex.y);
-        ctx.closePath();
-        ctx.stroke();
-      };
-
-      drawTri(b0, b1); drawTri(b1, b2); drawTri(b2, b3); drawTri(b3, b0);
-
-    } else if (activeShape === 'cone') {
-      const numPts = 16;
-      const basePts: any[] = [];
-      for (let i = 0; i < numPts; i++) {
-        const a = (i / numPts) * Math.PI * 2;
-        basePts.push(project(Math.cos(a) * radius3D, Math.sin(a) * radius3D, baseElevation));
-      }
-      const apex = project(0, 0, topZ);
-
-      // Base circle wireframe
-      ctx.strokeStyle = '#f59e0b';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      basePts.forEach((p, idx) => {
-        if (idx === 0) ctx.moveTo(p.x, p.y);
-        else ctx.lineTo(p.x, p.y);
-      });
-      ctx.closePath();
-      ctx.stroke();
-
-      // Cone rays to apex
-      ctx.strokeStyle = 'rgba(245, 158, 11, 0.6)';
-      [0, 4, 8, 12].forEach((idx) => {
-        if (basePts[idx]) {
-          ctx.beginPath();
-          ctx.moveTo(basePts[idx].x, basePts[idx].y);
-          ctx.lineTo(apex.x, apex.y);
-          ctx.stroke();
-        }
-      });
-
-    } else if (activeShape === 'sphere') {
-      const centerZ = baseElevation + radius3D;
-      const c = project(0, 0, centerZ);
-
-      // Equator & meridian rings
-      ctx.strokeStyle = '#ec4899';
-      ctx.lineWidth = 1.5;
-
-      const numPts = 16;
-      const eqPts: any[] = [];
-      for (let i = 0; i < numPts; i++) {
-        const a = (i / numPts) * Math.PI * 2;
-        eqPts.push(project(Math.cos(a) * radius3D, Math.sin(a) * radius3D, centerZ));
-      }
-
-      ctx.beginPath();
-      eqPts.forEach((p, idx) => {
-        if (idx === 0) ctx.moveTo(p.x, p.y);
-        else ctx.lineTo(p.x, p.y);
-      });
-      ctx.closePath();
-      ctx.stroke();
-
-      // Outer radius circle
-      const radP = project(radius3D, 0, centerZ);
-      const rPx = Math.hypot(radP.x - c.x, radP.y - c.y);
-
-      ctx.strokeStyle = 'rgba(236, 72, 153, 0.4)';
-      ctx.beginPath();
-      ctx.arc(c.x, c.y, rPx, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.fillStyle = 'rgba(236, 72, 153, 0.1)';
-      ctx.fill();
-    }
-
-    // 4. Draw Interactive Handles & Visual Controls
-    const handles = getHandleCoordinates();
-
-    // Corner handle (Cube / Pyramid)
-    if (handles.cornerHandle) {
-      const p = handles.cornerHandle;
-      const isHovered = hoveredHandle === 'corner';
-      const isDragging = draggingHandle === 'corner';
-
-      ctx.fillStyle = handleColor(isDragging, isHovered, { dragging: '#facc15', hovered: '#fbbf24', idle: '#eab308' });
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, isHovered || isDragging ? 7 : 5, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-
-      if (isHovered || isDragging) {
-        ctx.font = '10px sans-serif';
-        ctx.fillStyle = palette.cornerLabel;
-        ctx.fillText(`Base: ${width3D.toFixed(0)} × ${length3D.toFixed(0)}`, p.x + 10, p.y - 4);
-      }
-    }
-
-    // Radius handle (Cone / Sphere)
-    if (handles.radiusHandle) {
-      const p = handles.radiusHandle;
-      const isHovered = hoveredHandle === 'radius';
-      const isDragging = draggingHandle === 'radius';
-
-      ctx.fillStyle = handleColor(isDragging, isHovered, { dragging: '#38bdf8', hovered: '#60a5fa', idle: '#3b82f6' });
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, isHovered || isDragging ? 7 : 5, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-
-      if (isHovered || isDragging) {
-        ctx.font = '10px sans-serif';
-        ctx.fillStyle = palette.radiusLabel;
-        ctx.fillText(`Radius: ${radius3D.toFixed(0)}`, p.x + 10, p.y - 4);
-      }
-    }
-
-    // Perpendicular Height Top Arrow handle (Cube / Pyramid / Cone)
-    if (handles.heightHandle) {
-      const p = handles.heightHandle;
-      const isHovered = hoveredHandle === 'height';
-      const isDragging = draggingHandle === 'height';
-
-      // Height shaft line
-      const baseCenter = project(0, 0, baseElevation);
-      ctx.strokeStyle = isHovered || isDragging ? '#c084fc' : '#a855f7';
-      ctx.lineWidth = 2;
-      ctx.setLineDash([3, 3]);
-      ctx.beginPath();
-      ctx.moveTo(baseCenter.x, baseCenter.y);
-      ctx.lineTo(p.x, p.y);
-      ctx.stroke();
-      ctx.setLineDash([]);
-
-      // Top Arrowhead
-      ctx.fillStyle = handleColor(isDragging, isHovered, { dragging: '#e879f9', hovered: '#d8b4fe', idle: '#c084fc' });
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, isHovered || isDragging ? 7 : 5, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-
-      if (isHovered || isDragging) {
-        ctx.font = '10px sans-serif';
-        ctx.fillStyle = palette.heightLabel;
-        ctx.fillText(`Height: ${height3D.toFixed(0)}`, p.x + 10, p.y - 4);
-      }
-    }
-
-    // 5. Canvas Info Overlay
-    ctx.font = '10px sans-serif';
-    ctx.fillStyle = orbitView ? palette.orbitStatusText : palette.statusText;
-    ctx.fillText(
-      orbitView ? 'Orbit View Active: Drag canvas to rotate camera' : 'Handle Edit Mode: Drag corner/top handle',
-      10,
-      16
-    );
+    drawAxes(ctx, project, baseElevation, palette);
+    // 3. 3D shape geometry
+    drawShape(ctx, project, activeShape, dims);
+    // 4. Interactive handles & visual controls
+    drawHandles(ctx, project, getHandleCoordinates(), { hovered: hoveredHandle, dragging: draggingHandle, dims }, palette);
+    // 5. Canvas info overlay
+    drawStatusText(ctx, orbitView, palette);
   }, [
     activeShape,
     width3D,
@@ -641,13 +312,7 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
     };
   };
 
-  const handleAt = (x: number, y: number): HandleType => {
-    const handles = getHandleCoordinates();
-    if (handles.cornerHandle && Math.hypot(x - handles.cornerHandle.x, y - handles.cornerHandle.y) < 12) return 'corner';
-    if (handles.radiusHandle && Math.hypot(x - handles.radiusHandle.x, y - handles.radiusHandle.y) < 12) return 'radius';
-    if (handles.heightHandle && Math.hypot(x - handles.heightHandle.x, y - handles.heightHandle.y) < 12) return 'height';
-    return null;
-  };
+  const handleAt = (x: number, y: number): HandleType => handleAtPoint(getHandleCoordinates(), x, y);
 
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const { x: mouseX, y: mouseY } = getCanvasPos(e);
@@ -683,54 +348,53 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
 
     // Dragging Camera Orbit
     if (isOrbiting) {
-      const dx = e.clientX - dragStart.x;
-      const dy = e.clientY - dragStart.y;
-      setRotY((prev) => prev + dx * 0.01);
-      setRotX((prev) => Math.max(-1.4, Math.min(1.4, prev + dy * 0.01)));
-      setDragStart({ x: e.clientX, y: e.clientY });
+      orbitCamera(e.clientX, e.clientY);
       return;
     }
 
     // Dragging Shape Handles
     const dx = mouseX - dragStart.x;
     const dy = mouseY - dragStart.y;
+    if (draggingHandle === 'corner') dragCornerHandle(dx, dy);
+    else if (draggingHandle === 'radius') dragRadiusHandle(dx, dy);
+    else if (draggingHandle === 'height') dragHeightHandle(dy);
+  };
 
-    // Scale factor from the cursor movement along the screen direction centre → handle, so the
-    // handle follows the cursor whatever the camera rotation
-    const growFactor = (handle: { x: number; y: number }, center: { x: number; y: number }) => {
-      const vx = handle.x - center.x;
-      const vy = handle.y - center.y;
-      const len = Math.hypot(vx, vy);
-      if (len < 1e-3) return 1;
-      return Math.max(0, (len + (dx * vx + dy * vy) / len) / len);
-    };
+  const orbitCamera = (clientX: number, clientY: number) => {
+    const dx = clientX - dragStart.x;
+    const dy = clientY - dragStart.y;
+    setRotY((prev) => prev + dx * 0.01);
+    setRotX((prev) => Math.max(-1.4, Math.min(1.4, prev + dy * 0.01)));
+    setDragStart({ x: clientX, y: clientY });
+  };
 
-    if (draggingHandle === 'corner') {
-      const { width: w0, length: l0 } = initialShapeValues;
-      const factor = growFactor(project(w0 / 2, l0 / 2, baseElevation), project(0, 0, baseElevation));
-      const newW = Math.max(10, Math.round(w0 * factor));
-      const newL = Math.max(10, Math.round(l0 * factor));
-      if (newW === width3D && newL === length3D) return;
-      dragMovedRef.current = true;
-      setWidth3D(newW);
-      setLength3D(newL);
-    } else if (draggingHandle === 'radius') {
-      const r0 = initialShapeValues.radius;
-      const handleZ = activeShape === 'sphere' ? baseElevation + r0 : baseElevation;
-      const factor = growFactor(project(r0, 0, handleZ), project(0, 0, handleZ));
-      const newR = Math.max(5, Math.round(r0 * factor));
-      if (newR === radius3D) return;
-      dragMovedRef.current = true;
-      setRadius3D(newR);
-    } else if (draggingHandle === 'height') {
-      // Screen pixels per Z unit of the projection, so the top handle follows the cursor
-      const pxPerZ = (2 / 300) * Math.cos(rotX) * (Math.min(width, height) / 3.0) * 0.7 * zoom;
-      const deltaH = pxPerZ > 1e-3 ? -dy / pxPerZ : -dy * 1.2;
-      const newH = Math.round(initialShapeValues.height + deltaH);
-      if (newH === height3D) return;
-      dragMovedRef.current = true;
-      setHeight3D(newH);
-    }
+  const dragCornerHandle = (dx: number, dy: number) => {
+    const { width: w0, length: l0 } = initialShapeValues;
+    const factor = growFactor(project(w0 / 2, l0 / 2, baseElevation), project(0, 0, baseElevation), dx, dy);
+    const newW = Math.max(10, Math.round(w0 * factor));
+    const newL = Math.max(10, Math.round(l0 * factor));
+    if (newW === width3D && newL === length3D) return;
+    dragMovedRef.current = true;
+    setWidth3D(newW);
+    setLength3D(newL);
+  };
+
+  const dragRadiusHandle = (dx: number, dy: number) => {
+    const r0 = initialShapeValues.radius;
+    const handleZ = activeShape === 'sphere' ? baseElevation + r0 : baseElevation;
+    const factor = growFactor(project(r0, 0, handleZ), project(0, 0, handleZ), dx, dy);
+    const newR = Math.max(5, Math.round(r0 * factor));
+    if (newR === radius3D) return;
+    dragMovedRef.current = true;
+    setRadius3D(newR);
+  };
+
+  // The top handle follows the cursor: the height changes by the screen pixels per Z unit of the projection
+  const dragHeightHandle = (dy: number) => {
+    const newH = Math.round(initialShapeValues.height + heightDragDelta(dy, { rotX, zoom, width, height }));
+    if (newH === height3D) return;
+    dragMovedRef.current = true;
+    setHeight3D(newH);
   };
 
   const handlePointerUp = () => {
@@ -748,37 +412,22 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
 
   const setFieldDraft = (key: FieldKey, text: string) => setDrafts((prev) => ({ ...prev, [key]: text }));
 
+  // Current value and setter of each side panel field
+  const fieldState: Record<FieldKey, { value: number; set: (value: number) => void }> = {
+    width: { value: width3D, set: setWidth3D },
+    length: { value: length3D, set: setLength3D },
+    radius: { value: radius3D, set: setRadius3D },
+    height: { value: height3D, set: setHeight3D },
+    elev: { value: baseElevation, set: setBaseElevation },
+  };
+
   const commitField = (key: FieldKey) => {
     const raw = drafts[key];
     setDrafts(({ [key]: _committed, ...rest }) => rest);
-    if (raw === undefined || raw.trim() === '') return;
-    const parsed = Number(raw);
-    if (!Number.isFinite(parsed)) return;
-
-    if (key === 'width') {
-      const val = Math.max(1, parsed);
-      if (val === width3D) return;
-      setWidth3D(val);
-      emitChange({ width: val });
-    } else if (key === 'length') {
-      const val = Math.max(1, parsed);
-      if (val === length3D) return;
-      setLength3D(val);
-      emitChange({ length: val });
-    } else if (key === 'radius') {
-      const val = Math.max(1, parsed);
-      if (val === radius3D) return;
-      setRadius3D(val);
-      emitChange({ radius: val });
-    } else if (key === 'height') {
-      if (parsed === height3D) return;
-      setHeight3D(parsed);
-      emitChange({ height: parsed });
-    } else {
-      if (parsed === baseElevation) return;
-      setBaseElevation(parsed);
-      emitChange({ elev: parsed });
-    }
+    const val = parseFieldValue(key, raw);
+    if (val === null || val === fieldState[key].value) return;
+    fieldState[key].set(val);
+    emitChange({ [key]: val });
   };
 
   const fieldProps = (key: FieldKey, value: number) => ({

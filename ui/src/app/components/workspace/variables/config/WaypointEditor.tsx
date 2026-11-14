@@ -3,8 +3,7 @@ import { createPortal } from 'react-dom';
 import { AlertTriangle, Info, Maximize2, Minimize2, RotateCcw, X } from 'lucide-react';
 import type { BoundaryObstacle, CoordinateSystem, Point3DCoord, PointVariableConfig } from '../../../../types';
 import { defaultBoundsFor, type FullPoint } from '../../../../core/pointDefaults';
-import { polygonCentroid } from '../../../../core/routeGeometry';
-import { shape3DInteriorPoint, type Shape3DParams } from '../../../../core/shape3D';
+import type { Shape3DParams } from '../../../../core/shape3D';
 import {
   checkMove,
   findPathIssues,
@@ -21,6 +20,8 @@ import { WaypointCanvas2D } from './WaypointCanvas2D';
 import { WaypointMap, type MapView } from './WaypointMap';
 import { WaypointTable, type WaypointAxis } from './WaypointTable';
 import { useDialogEscape } from './useDialogEscape';
+import { regionBox } from './regionBox';
+import { newWaypointCandidates, pathProblemsNotice } from './waypointPlacement';
 
 interface WaypointEditorProps {
   config: PointVariableConfig;
@@ -29,9 +30,6 @@ interface WaypointEditorProps {
 
 /** Decimals worth keeping for a coordinate of a region `span` units wide (~1/1000 of it). */
 const decimalsForSpan = (span: number) => (span > 0 ? Math.min(6, Math.max(0, Math.ceil(-Math.log10(span / 1000)))) : 1);
-
-/** Cells per axis of the grid searched for a free position when adding a waypoint. */
-const ADD_GRID = 16;
 
 const infoButton = (
   <button type="button" className="text-[var(--c-tx4)] hover:text-cyan-400 cursor-help transition-colors">
@@ -131,14 +129,7 @@ export const WaypointEditor: React.FC<WaypointEditorProps> = ({ config, onChange
   }, [fullScreen]);
 
   // Region box used to place new waypoints: the polygon bounds when there is one
-  const box = useMemo(() => {
-    if (polygon.length >= 3) {
-      const xs = polygon.map((p) => p.x ?? 0);
-      const ys = polygon.map((p) => p.y ?? 0);
-      return { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
-    }
-    return { minX: minPoint.x ?? 0, maxX: maxPoint.x ?? 100, minY: minPoint.y ?? 0, maxY: maxPoint.y ?? 100 };
-  }, [polygon, minPoint.x, maxPoint.x, minPoint.y, maxPoint.y]);
+  const box = useMemo(() => regionBox(minPoint, maxPoint, polygon), [polygon, minPoint, maxPoint]);
 
   /** Validates and commits a new path; returns false and warns when rejected. */
   const commit = (next: FullPoint[], nextLoop = loopPath): boolean => {
@@ -204,48 +195,9 @@ export const WaypointEditor: React.FC<WaypointEditorProps> = ({ config, onChange
     const spanY = box.maxY - box.minY;
     const decimals = isGeo ? 5 : decimalsForSpan(Math.max(spanX, spanY));
     const round = (v: number) => Number(v.toFixed(decimals));
-    const fit = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
     const z = newZ();
-    const centre = { x: (box.minX + box.maxX) / 2, y: (box.minY + box.maxY) / 2, z };
     const last = waypoints.length > 0 ? waypoints[waypoints.length - 1] : null;
-
-    const candidates: FullPoint[] = [];
-    if (!last) {
-      candidates.push(centre);
-    } else {
-      const shift = (v: number, span: number, lo: number, hi: number) => {
-        const step = span * 0.05;
-        return fit(v + step <= hi ? v + step : v - step, lo, hi);
-      };
-      candidates.push({ x: shift(last.x, spanX, box.minX, box.maxX), y: shift(last.y, spanY, box.minY, box.maxY), z });
-      for (const factor of [0.05, 0.1, 0.2]) {
-        for (const sx of [1, -1]) {
-          for (const sy of [1, -1]) {
-            candidates.push({
-              x: fit(last.x + sx * factor * spanX, box.minX, box.maxX),
-              y: fit(last.y + sy * factor * spanY, box.minY, box.maxY),
-              z,
-            });
-          }
-        }
-      }
-    }
-    if (hasVisual) {
-      if (polygon.length >= 3) candidates.push({ ...polygonCentroid(polygon), z });
-      candidates.push(centre);
-      // A grid over the region, nearest to the last waypoint (or the centre) first
-      const anchor = last ?? centre;
-      const grid: FullPoint[] = [];
-      for (let i = 0; i < ADD_GRID; i++) {
-        for (let j = 0; j < ADD_GRID; j++) {
-          grid.push({ x: box.minX + ((i + 0.5) * spanX) / ADD_GRID, y: box.minY + ((j + 0.5) * spanY) / ADD_GRID, z });
-        }
-      }
-      grid.sort((a, b) => Math.hypot(a.x - anchor.x, a.y - anchor.y) - Math.hypot(b.x - anchor.x, b.y - anchor.y));
-      candidates.push(...grid);
-    } else {
-      candidates.push(shape3DInteriorPoint(shape));
-    }
+    const candidates = newWaypointCandidates({ box, last, z, hasVisual, polygon, shape });
 
     for (const c of candidates) {
       const next = [...waypoints, { x: round(c.x), y: round(c.y), z: hasVisual ? c.z : round(c.z) }];
@@ -296,7 +248,7 @@ export const WaypointEditor: React.FC<WaypointEditorProps> = ({ config, onChange
       <div className="flex items-center gap-2">
         <Label className="text-xs font-semibold text-cyan-400 uppercase tracking-wider">Waypoints</Label>
         <span className="text-[10px] font-mono text-[var(--c-tx4)]">
-          {waypoints.length} {waypoints.length === 1 ? 'waypoint' : 'waypoints'}
+          {plural(waypoints.length, 'waypoint', 'waypoints')}
         </span>
       </div>
 
@@ -385,19 +337,14 @@ export const WaypointEditor: React.FC<WaypointEditorProps> = ({ config, onChange
   );
 
   // Persistent notice of the stored waypoints / segments that break the rules
-  const problems = [
-    badPoints > 0 &&
-      `${plural(badPoints, 'waypoint is', 'waypoints are')} ${hasVisual ? 'outside the region or in a forbidden zone' : 'outside the 3D region'}`,
-    badSegments > 0 &&
-      plural(badSegments, 'segment leaves the region or crosses an obstacle', 'segments leave the region or cross an obstacle'),
-  ].filter(Boolean);
-  const notice = problems.length > 0 && (
+  const problemsText = pathProblemsNotice(badPoints, badSegments, hasVisual);
+  const notice = problemsText && (
     <output
       data-testid="waypoint-invalid-notice"
       className="flex items-start gap-1.5 text-[11px] leading-snug text-amber-700 dark:text-amber-300 bg-amber-500/10 border border-amber-500/40 rounded px-2 py-1"
     >
       <AlertTriangle size={12} className="text-amber-500 shrink-0 mt-px" />
-      <span>{`${problems.join(' and ')} (in red). The generator follows the path anyway.`}</span>
+      <span>{problemsText}</span>
     </output>
   );
 

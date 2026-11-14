@@ -84,6 +84,81 @@ export function getVariableComparable(variable: Variable) {
   };
 }
 
+/** Without a saved baseline, any group or variable makes the project dirty (all of them are marked). */
+function dirtyStateWithoutBaseline(currentGroups: Group[], currentVariables: Variable[]): DirtyStateResult {
+  const dirtyItems = createEmptyDirtyItems();
+  const isDirty = currentGroups.length > 0 || currentVariables.length > 0;
+  if (isDirty) {
+    currentGroups.forEach((g) => {
+      dirtyItems.groupIds.add(g.id);
+      (g.flows || []).forEach((f) => dirtyItems.flowIds.add(f.id));
+    });
+    currentVariables.forEach((v) => dirtyItems.variableIds.add(v.id));
+  }
+  return { isDirty, dirtyItems };
+}
+
+/** Whether both project settings are known and their tick clocks differ. */
+function settingsChanged(saved?: ProjectSettings, current?: ProjectSettings): boolean {
+  if (!saved || !current) return false;
+  return !tickSettingsEqual(saved.tick, current.tick);
+}
+
+/** Whether two values differ once serialized (the comparables keep a stable key order). */
+function differs(current: unknown, saved: unknown): boolean {
+  return JSON.stringify(current) !== JSON.stringify(saved);
+}
+
+/**
+ * Marks a group and its flows when they differ from the saved copy (a new group and all its
+ * flows are marked).
+ *
+ * @returns whether the group changed
+ */
+function markDirtyGroup(group: Group, savedGroup: Group | undefined, dirtyItems: DirtyItems): boolean {
+  if (!savedGroup) {
+    // New group created
+    dirtyItems.groupIds.add(group.id);
+    (group.flows || []).forEach((f) => dirtyItems.flowIds.add(f.id));
+    return true;
+  }
+
+  const savedFlowsMap = new Map<string, Flow>((savedGroup.flows || []).map((f) => [f.id, f]));
+
+  // Compare group top-level properties
+  const currGroupComp = { ...getGroupComparable(group), flows: undefined };
+  const savedGroupComp = { ...getGroupComparable(savedGroup), flows: undefined };
+  let groupIsDirty = differs(currGroupComp, savedGroupComp)
+    || (group.flows || []).length !== (savedGroup.flows || []).length;
+
+  // Compare flows within group
+  for (const flow of group.flows || []) {
+    const savedFlow = savedFlowsMap.get(flow.id);
+    if (!savedFlow || differs(getFlowComparable(flow), getFlowComparable(savedFlow))) {
+      groupIsDirty = true;
+      dirtyItems.flowIds.add(flow.id);
+    }
+  }
+
+  if (groupIsDirty) {
+    dirtyItems.groupIds.add(group.id);
+  }
+  return groupIsDirty;
+}
+
+/**
+ * Marks a variable when it is new or differs from the saved copy.
+ *
+ * @returns whether the variable changed
+ */
+function markDirtyVariable(variable: Variable, savedVar: Variable | undefined, dirtyItems: DirtyItems): boolean {
+  if (savedVar && !differs(getVariableComparable(variable), getVariableComparable(savedVar))) {
+    return false;
+  }
+  dirtyItems.variableIds.add(variable.id);
+  return true;
+}
+
 /**
  * Computes which specific entities (groups, flows, variables) are dirty
  * and whether the project overall has unsaved changes. Project settings only affect
@@ -95,100 +170,26 @@ export function computeDirtyState(
   currentVariables: Variable[],
   currentSettings?: ProjectSettings,
 ): DirtyStateResult {
-  const dirtyItems = createEmptyDirtyItems();
-
   if (!savedState) {
     // If no saved state exists yet, check if there's any non-empty configuration
-    const isDirty = currentGroups.length > 0 || currentVariables.length > 0;
-    if (isDirty) {
-      currentGroups.forEach((g) => {
-        dirtyItems.groupIds.add(g.id);
-        (g.flows || []).forEach((f) => dirtyItems.flowIds.add(f.id));
-      });
-      currentVariables.forEach((v) => dirtyItems.variableIds.add(v.id));
-    }
-    return { isDirty, dirtyItems };
+    return dirtyStateWithoutBaseline(currentGroups, currentVariables);
   }
 
+  const dirtyItems = createEmptyDirtyItems();
   const savedGroupsMap = new Map<string, Group>(savedState.groups.map((g) => [g.id, g]));
   const savedVarsMap = new Map<string, Variable>(savedState.variables.map((v) => [v.id, v]));
 
-  let isDirtyOverall = false;
-
-  if (savedState.settings && currentSettings && !tickSettingsEqual(savedState.settings.tick, currentSettings.tick)) {
-    isDirtyOverall = true;
-  }
-
   // Check deleted groups or variables
-  if (currentGroups.length !== savedState.groups.length) {
-    isDirtyOverall = true;
-  }
-  if (currentVariables.length !== savedState.variables.length) {
-    isDirtyOverall = true;
-  }
+  let isDirtyOverall = settingsChanged(savedState.settings, currentSettings)
+    || currentGroups.length !== savedState.groups.length
+    || currentVariables.length !== savedState.variables.length;
 
-  // Check current groups
+  // Check current groups, then current variables (every entity is checked to mark all of them)
   for (const group of currentGroups) {
-    const savedGroup = savedGroupsMap.get(group.id);
-    if (!savedGroup) {
-      // New group created
-      isDirtyOverall = true;
-      dirtyItems.groupIds.add(group.id);
-      (group.flows || []).forEach((f) => dirtyItems.flowIds.add(f.id));
-      continue;
-    }
-
-    const savedFlowsMap = new Map<string, Flow>((savedGroup.flows || []).map((f) => [f.id, f]));
-    let groupIsDirty = false;
-
-    // Compare group top-level properties
-    const currGroupComp = { ...getGroupComparable(group), flows: undefined };
-    const savedGroupComp = { ...getGroupComparable(savedGroup), flows: undefined };
-    if (JSON.stringify(currGroupComp) !== JSON.stringify(savedGroupComp)) {
-      groupIsDirty = true;
-      isDirtyOverall = true;
-    }
-
-    if ((group.flows || []).length !== (savedGroup.flows || []).length) {
-      groupIsDirty = true;
-      isDirtyOverall = true;
-    }
-
-    // Compare flows within group
-    for (const flow of group.flows || []) {
-      const savedFlow = savedFlowsMap.get(flow.id);
-      if (!savedFlow) {
-        groupIsDirty = true;
-        isDirtyOverall = true;
-        dirtyItems.flowIds.add(flow.id);
-        continue;
-      }
-
-      if (JSON.stringify(getFlowComparable(flow)) !== JSON.stringify(getFlowComparable(savedFlow))) {
-        groupIsDirty = true;
-        isDirtyOverall = true;
-        dirtyItems.flowIds.add(flow.id);
-      }
-    }
-
-    if (groupIsDirty) {
-      dirtyItems.groupIds.add(group.id);
-    }
+    isDirtyOverall = markDirtyGroup(group, savedGroupsMap.get(group.id), dirtyItems) || isDirtyOverall;
   }
-
-  // Check current variables
   for (const variable of currentVariables) {
-    const savedVar = savedVarsMap.get(variable.id);
-    if (!savedVar) {
-      isDirtyOverall = true;
-      dirtyItems.variableIds.add(variable.id);
-      continue;
-    }
-
-    if (JSON.stringify(getVariableComparable(variable)) !== JSON.stringify(getVariableComparable(savedVar))) {
-      isDirtyOverall = true;
-      dirtyItems.variableIds.add(variable.id);
-    }
+    isDirtyOverall = markDirtyVariable(variable, savedVarsMap.get(variable.id), dirtyItems) || isDirtyOverall;
   }
 
   return {

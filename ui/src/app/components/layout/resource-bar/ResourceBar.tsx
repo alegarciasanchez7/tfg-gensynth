@@ -1,133 +1,24 @@
 import { Cpu, MemoryStick, ArrowUpRight, ArrowDownLeft, Server, Clock4, Timer } from 'lucide-react';
 import { useSystemStatus, useMetrics } from '../../../context';
-import { formatTickRate } from '../../../core/tickSettings';
-import { formatRate } from '../../../core/metricsFormat';
+import { barColorClass, buildResourceMetrics, type MetricLabel } from './resourceMetrics';
 
-interface Metric {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  unit: string;
-  color: string;
-  barPct?: number;
-  title?: string;
-}
-
-function formatBytes(bytes: number): { value: string; unit: string } {
-  if (bytes === 0) return { value: '0.0', unit: 'B/s' };
-  const k = 1024;
-  const sizes = ['B/s', 'KB/s', 'MB/s', 'GB/s'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return {
-    value: Number.parseFloat((bytes / Math.pow(k, i)).toFixed(1)).toString(),
-    unit: sizes[i],
-  };
-}
-
-function formatUptime(seconds: number): string {
-  if (!seconds) return '--:--:--';
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = seconds % 60;
-  return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-}
-
-function formatShortNumber(num: number): string {
-  if (num >= 1000000) {
-    return (num / 1000000).toFixed(2) + ' M';
-  }
-  if (num >= 1000) {
-    return (num / 1000).toFixed(1) + ' K';
-  }
-  return num.toString();
-}
-
-/** Bar colour: red above 80 %, amber above 50 %, otherwise the colour of the metric. */
-function barColorClass(barPct: number, textColor: string): string {
-  if (barPct > 80) return 'bg-red-500';
-  if (barPct > 50) return 'bg-amber-500';
-  return textColor.replace('text-', 'bg-');
-}
+/** Icon of each metric. */
+const METRIC_ICONS: Record<MetricLabel, React.ReactNode> = {
+  CPU: <Cpu size={11} />,
+  RAM: <MemoryStick size={11} />,
+  'NET↑': <ArrowUpRight size={11} />,
+  'NET↓': <ArrowDownLeft size={11} />,
+  'MSG/S': <Server size={11} />,
+  TICK: <Timer size={11} />,
+  UPTIME: <Clock4 size={11} />,
+};
 
 export function ResourceBar() {
   const systemStatus = useSystemStatus();
   const { metrics } = useMetrics();
   const running = systemStatus === 'running';
 
-  const cpuValue = metrics?.cpu ?? 0;
-  const memoryValue = metrics?.memory ?? 0;
-  // The RAM bar is measured against the most the JVM may use, a fixed limit; the reserved heap
-  // (older cores) grows on demand, so a full bar against it says nothing
-  const memoryLimit = metrics?.maxHeap || metrics?.heap || 1;
-  const networkUp = metrics?.networkUp ?? 0;
-  const networkDown = metrics?.networkDown ?? 0;
-  const msgs = metrics?.messagesPerSecond ?? 0;
-  const totalMsgs = metrics?.totalMessages ?? 0;
-  const uptime = metrics?.uptime ?? 0;
-  const ticksPerSecond = metrics?.ticksPerSecond ?? 0;
-  const totalTicks = metrics?.totalTicks ?? 0;
-
-  const formattedNetUp = formatBytes(networkUp);
-  const formattedNetDown = formatBytes(networkDown);
-
-  const memoryPct = Math.min(100, (memoryValue / memoryLimit) * 100);
-
-  const uiMetrics: Metric[] = [
-    {
-      icon: <Cpu size={11} />,
-      label: 'CPU',
-      value: running ? cpuValue.toFixed(1) : '0.0',
-      unit: '%',
-      color: running ? 'text-cyan-500' : 'text-slate-400',
-      barPct: running ? Math.min(100, cpuValue) : 0,
-      title: "Share of the computer's whole CPU (all cores) used by GenSynth",
-    },
-    {
-      icon: <MemoryStick size={11} />,
-      label: 'RAM',
-      value: running ? memoryValue.toString() : '0',
-      unit: 'MB',
-      color: running ? 'text-violet-500' : 'text-slate-400',
-      barPct: running ? memoryPct : 0,
-      title: `Memory used by GenSynth out of the most it may use (${memoryLimit} MB)`,
-    },
-    {
-      icon: <ArrowUpRight size={11} />,
-      label: 'NET↑',
-      value: running ? formattedNetUp.value : '0.0',
-      unit: formattedNetUp.unit,
-      color: running ? 'text-emerald-500' : 'text-slate-400',
-    },
-    {
-      icon: <ArrowDownLeft size={11} />,
-      label: 'NET↓',
-      value: running ? formattedNetDown.value : '0.0',
-      unit: formattedNetDown.unit,
-      color: running ? 'text-sky-500' : 'text-slate-400',
-    },
-    {
-      icon: <Server size={11} />,
-      label: 'MSG/S',
-      // Compact like the flow rates (18.4K), never locale separators: "18.441" read as 18 msg/s
-      value: running ? formatRate(msgs) : '0',
-      unit: running ? `(${formatShortNumber(totalMsgs)} total)` : '',
-      color: running ? 'text-amber-500' : 'text-slate-400',
-    },
-    {
-      icon: <Timer size={11} />,
-      label: 'TICK',
-      value: running ? formatTickRate(ticksPerSecond) : '0',
-      unit: running ? `/s (${formatShortNumber(totalTicks)} total)` : '',
-      color: running ? 'text-fuchsia-500' : 'text-slate-400',
-    },
-    {
-      icon: <Clock4 size={11} />,
-      label: 'UPTIME',
-      value: running ? formatUptime(uptime) : '--:--:--',
-      unit: '',
-      color: running ? 'text-slate-500' : 'text-slate-400',
-    },
-  ];
+  const uiMetrics = buildResourceMetrics(metrics, running);
 
   return (
     <div
@@ -138,7 +29,7 @@ export function ResourceBar() {
       {uiMetrics.map((m) => (
         <div key={m.label} title={m.title} className="flex shrink-0 items-center gap-2 pr-2.5 mr-0.5 border-r border-[var(--c-br2)] last:border-r-0">
           <div className="flex items-center gap-1">
-            <span className={`${m.color} opacity-70`}>{m.icon}</span>
+            <span className={`${m.color} opacity-70`}>{METRIC_ICONS[m.label]}</span>
             <span className="text-[10px] text-[var(--c-tx4)] tracking-wider" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
               {m.label}
             </span>

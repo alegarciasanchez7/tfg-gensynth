@@ -13,6 +13,7 @@ import { ShieldAlert, Sparkles, Braces, Code } from 'lucide-react';
 import { ListReferenceSelector } from './ListReferenceSelector';
 import { findTemplatePlaceholders } from '../../../../core/templatePlaceholders';
 import { DEFAULT_STRING_MASKS, stringModeDefaults } from './defaultConfigs';
+import { autocompleteKeyAction, cycleIndex, opensVariableAutocomplete, type AutocompleteKeyAction } from './autocompleteKeys';
 
 interface StringConfigPanelProps {
   config: StringVariableConfig;
@@ -215,40 +216,30 @@ export const StringConfigPanel: React.FC<StringConfigPanelProps> = ({
     setShowAutocomplete(false);
   };
 
+  const applyAutocompleteAction = (action: AutocompleteKeyAction) => {
+    if (action === 'next') {
+      setSelectedIndex(prev => cycleIndex(prev, 1, autocompleteOptions.length));
+    } else if (action === 'previous') {
+      setSelectedIndex(prev => cycleIndex(prev, -1, autocompleteOptions.length));
+    } else if (action === 'insert') {
+      insertOption(autocompleteOptions[selectedIndex]);
+    } else {
+      setShowAutocomplete(false);
+    }
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (showAutocomplete && autocompleteOptions.length > 0) {
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        setSelectedIndex(prev => (prev + 1) % autocompleteOptions.length);
-        return;
-      }
-      if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        setSelectedIndex(prev => (prev - 1 + autocompleteOptions.length) % autocompleteOptions.length);
-        return;
-      }
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        insertOption(autocompleteOptions[selectedIndex]);
-        return;
-      }
-      if (e.key === 'Tab') {
-        e.preventDefault();
-        insertOption(autocompleteOptions[selectedIndex]);
-        return;
-      }
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        setShowAutocomplete(false);
-        return;
-      }
+    const action = showAutocomplete && autocompleteOptions.length > 0 ? autocompleteKeyAction(e.key) : null;
+    if (action) {
+      e.preventDefault();
+      applyAutocompleteAction(action);
+      return;
     }
 
     if (e.key === '{') {
       const start = inputRef.current?.selectionStart || 0;
       const value = inputRef.current ? inputRef.current.value : (config.template ?? '');
-      const textBefore = value.substring(0, start);
-      if (textBefore.endsWith('{')) {
+      if (opensVariableAutocomplete(value, start)) {
         setShowAutocomplete(true);
         setCursorPos(start + 1);
       }

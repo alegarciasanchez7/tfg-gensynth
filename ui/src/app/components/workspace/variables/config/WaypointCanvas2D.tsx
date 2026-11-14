@@ -5,6 +5,7 @@ import { clampToRegion, isInsideRegion, roundIntoRegion } from '../../../../core
 import type { MoveCheck, PathIssues } from '../../../../core/waypointPath';
 import { fitWorldWindow, niceStep } from '../../../../core/worldWindow';
 import { useCanvasPalette, type CanvasPalette } from './canvasPalette';
+import { segmentsAround } from './waypointCanvasHelpers';
 
 interface WaypointCanvas2DProps {
   waypoints: FullPoint[];
@@ -266,12 +267,7 @@ export const WaypointCanvas2D: React.FC<WaypointCanvas2DProps> = ({
 
   // Segment and waypoint states: the live check replaces the stored issues around the dragged waypoint
   const liveCheck = activeDrag?.check ?? null;
-  const liveAdjacent = new Set<number>();
-  if (activeDrag && n >= 2) {
-    if (activeDrag.index > 0) liveAdjacent.add(activeDrag.index - 1);
-    if (activeDrag.index < n - 1) liveAdjacent.add(activeDrag.index);
-    if (loopPath && n >= 3 && (activeDrag.index === 0 || activeDrag.index === n - 1)) liveAdjacent.add(n - 1);
-  }
+  const liveAdjacent = activeDrag ? segmentsAround(activeDrag.index, n, loopPath) : new Set<number>();
   const segmentColor = (index: number): string | null => {
     if (liveAdjacent.has(index)) {
       // A rejected waypoint position marks all its segments; otherwise only the failing ones

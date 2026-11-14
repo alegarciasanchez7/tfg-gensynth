@@ -32,7 +32,7 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from '../../../ui/dropdown-menu';
-import type { Group, Flow, Selection, GroupStatus } from '../../../../types';
+import type { Group, Selection, GroupStatus } from '../../../../types';
 import type { ConnectorPluginDescriptor } from '../../../../core/types';
 import { CloneDialog } from './CloneDialog';
 import { ConfirmDeleteDialog } from '../../../common/ConfirmDeleteDialog';
@@ -41,6 +41,7 @@ import { CreateFlowDialog } from './CreateFlowDialog';
 import { formatRate, groupRate } from '../../../../core/metricsFormat';
 import { commandErrorMessage } from '../../../../core/errorMessage';
 import { normalizeGroupStatus } from '../../../../core/entityStatus';
+import type { CreateFlowHandler } from '../../../../context/crudTypes';
 
 interface GroupItemProps {
   group: Group;
@@ -50,20 +51,7 @@ interface GroupItemProps {
   onSelectFlow: (gId: string, fId: string) => void;
   onToggleGroup: (id: string) => void;
   onDeleteGroup: (groupId: string) => Promise<void>;
-  onCreateFlow: (
-    groupId: string,
-    name: string,
-    technology: string,
-    host: string,
-    port: number,
-    topic?: string,
-    interval?: number,
-    burst?: number,
-    template?: string,
-    connectorConfig?: Record<string, unknown>,
-    everyTicks?: number,
-    autoRename?: boolean,
-  ) => Promise<Flow>;
+  onCreateFlow: CreateFlowHandler;
   onUpdateGroupConfig: (groupId: string, config: any, name?: string) => Promise<void>;
   onUpdateFlowConfig: (groupId: string, flowId: string, config: any, name?: string) => Promise<void>;
   onCloneGroup: (groupId: string, count: number, namingPattern?: string) => void;

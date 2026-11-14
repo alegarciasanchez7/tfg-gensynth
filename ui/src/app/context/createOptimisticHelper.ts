@@ -13,6 +13,7 @@
 import type { Group, Flow, Variable, VariableType, VariableScope } from '../types';
 import { OptimisticManager, entityTypeOfCommand, type OptimisticOperation } from './optimisticManager';
 import { randomUUID } from '../core/randomId';
+import type { CreateFlowOptions } from './crudTypes';
 
 export interface CreateOptimisticContext {
   optimisticManager: OptimisticManager | null;
@@ -163,15 +164,9 @@ export function createOptimisticGroup(
  */
 export function createOptimisticFlow(
   id: string,
-  name: string,
-  technology: string,
-  host: string,
-  port: number,
-  topic: string = '',
-  interval: number = 1000,
-  burst: number = 1,
-  everyTicks: number = 1,
+  options: Pick<CreateFlowOptions, 'name' | 'technology' | 'host' | 'port' | 'topic' | 'interval' | 'burst' | 'everyTicks'>,
 ): Flow {
+  const { name, technology, host, port, topic = '', interval = 1000, burst = 1, everyTicks = 1 } = options;
   return {
     id,
     name,

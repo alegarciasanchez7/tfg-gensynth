@@ -38,6 +38,23 @@ export function mergeWithDefaults(
   return merged;
 }
 
+/** Error of a numeric (INTEGER or DECIMAL) field value, or null when it is valid. */
+function validateNumberField(field: ConnectorFieldDescriptor, value: unknown): string | null {
+  const number = typeof value === 'number' ? value : Number(String(value).trim());
+  if (!Number.isFinite(number)) return `${field.label} must be ${field.type === 'INTEGER' ? 'a whole number' : 'a number'}`;
+  if (field.type === 'INTEGER' && !Number.isInteger(number)) return `${field.label} must be a whole number`;
+  if (field.min !== undefined && number < field.min) return `${field.label} must be at least ${field.min}`;
+  if (field.max !== undefined && number > field.max) return `${field.label} must be at most ${field.max}`;
+  return null;
+}
+
+/** Error of a SELECT field value, or null when it is one of the options. */
+function validateSelectField(field: ConnectorFieldDescriptor, value: unknown): string | null {
+  return field.options.some((option) => option.value === String(value))
+    ? null
+    : `${field.label} must be one of: ${field.options.map((option) => option.value).join(', ')}`;
+}
+
 /** Error of one field, or null when its value is valid. */
 export function validateConnectorField(field: ConnectorFieldDescriptor, rawValue: unknown): string | null {
   const value = isEmpty(rawValue) ? field.defaultValue : rawValue;
@@ -47,20 +64,12 @@ export function validateConnectorField(field: ConnectorFieldDescriptor, rawValue
 
   switch (field.type) {
     case 'INTEGER':
-    case 'DECIMAL': {
-      const number = typeof value === 'number' ? value : Number(String(value).trim());
-      if (!Number.isFinite(number)) return `${field.label} must be ${field.type === 'INTEGER' ? 'a whole number' : 'a number'}`;
-      if (field.type === 'INTEGER' && !Number.isInteger(number)) return `${field.label} must be a whole number`;
-      if (field.min !== undefined && number < field.min) return `${field.label} must be at least ${field.min}`;
-      if (field.max !== undefined && number > field.max) return `${field.label} must be at most ${field.max}`;
-      return null;
-    }
+    case 'DECIMAL':
+      return validateNumberField(field, value);
     case 'BOOLEAN':
       return typeof value === 'boolean' || value === 'true' || value === 'false' ? null : `${field.label} must be true or false`;
     case 'SELECT':
-      return field.options.some((option) => option.value === String(value))
-        ? null
-        : `${field.label} must be one of: ${field.options.map((option) => option.value).join(', ')}`;
+      return validateSelectField(field, value);
     default:
       return null;
   }

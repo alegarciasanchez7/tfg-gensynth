@@ -1,12 +1,14 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { GraphNode, GraphEdge, PointVariableConfig, BoundaryObstacle, Point3DCoord } from '../../../../types';
-import { defaultBoundsFor, centerOf } from '../../../../core/pointDefaults';
+import { defaultBoundsFor } from '../../../../core/pointDefaults';
 import { validateNodeAndEdge } from '../../../../core/routeGeometry';
 import { fitWorldWindow, niceStep } from '../../../../core/worldWindow';
 import { CommitInput } from '../../../common/CommitInput';
 import { OfflineGridOverlay, MapAutoFit } from './mapShared';
 import { useCanvasPalette } from './canvasPalette';
+import { edgeExistsBetween, geoCenterFor, removeNodeFromGraph } from './graphRouteHelpers';
+import { regionBox, regionPadding } from './regionBox';
 import { Button } from '../../../ui/button';
 import { Label } from '../../../ui/label';
 import { Info, Plus, Link as LinkIcon, Trash2, RotateCcw, Move, MapPin, AlertTriangle, X, WifiOff, Maximize2, Minimize2, Eye, EyeOff } from 'lucide-react';
@@ -285,6 +287,162 @@ interface DragState {
   y: number;
 }
 
+/** Tool buttons of the toolbar, in display order. */
+const TOOL_BUTTONS: { tool: GraphTool; label: string; tooltip: string; icon: React.ReactNode }[] = [
+  {
+    tool: 'ADD_EXTEND',
+    label: 'Add & Extend',
+    tooltip: 'Click empty space to add a node connected to the selected node',
+    icon: <Plus size={12} />,
+  },
+  {
+    tool: 'CONNECT',
+    label: 'Connect Nodes',
+    tooltip: 'Click two existing nodes sequentially to add a connecting edge between them',
+    icon: <LinkIcon size={12} />,
+  },
+  {
+    tool: 'SELECT',
+    label: 'Select / Move',
+    tooltip: 'Click a node to make it the origin for new nodes, or drag it to move it',
+    icon: <Move size={12} />,
+  },
+  {
+    tool: 'DELETE',
+    label: 'Delete',
+    tooltip: 'Click any node or edge line to remove it from the graph',
+    icon: <Trash2 size={12} />,
+  },
+];
+
+interface GraphToolbarProps {
+  isGeo: boolean;
+  activeTool: GraphTool;
+  onSelectTool: (tool: GraphTool) => void;
+  showCoordinateLabels: boolean;
+  onToggleCoordinateLabels: () => void;
+  isFullScreen: boolean;
+  onToggleFullScreen: () => void;
+  onClear: () => void;
+}
+
+/** Header of the route graph editor: title, instructions and the tool / view buttons. */
+function GraphToolbar({
+  isGeo,
+  activeTool,
+  onSelectTool,
+  showCoordinateLabels,
+  onToggleCoordinateLabels,
+  isFullScreen,
+  onToggleFullScreen,
+  onClear,
+}: Readonly<GraphToolbarProps>) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="flex items-center gap-2">
+        <Label className="text-xs font-semibold text-cyan-400 uppercase tracking-wider">
+          {isGeo ? 'Route Graph Editor (Geospatial Map Region)' : 'Route Graph Editor (2D Spatial Boundary Plane)'}
+        </Label>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button type="button" className="text-[var(--c-tx4)] hover:text-cyan-400 cursor-help transition-colors">
+              <Info size={12} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-[320px] space-y-1.5 text-[11px] leading-relaxed">
+            <p className="font-semibold text-cyan-400">{"Graph Route Instructions:"}</p>
+            <p>{"1. Add & Extend: click empty space to place a node; it is linked to the selected node."}</p>
+            <p>{"2. Select / Move: click a node to select it, drag it to move it (dragging also works in Add & Extend)."}</p>
+            <p>{"3. Connect Nodes: click the origin node, then the target node (Esc cancels)."}</p>
+            <p>{"4. Delete: click a node or an edge to remove it."}</p>
+            <p>{"Nodes and edges outside the region or crossing forbidden obstacle zones are blocked."}</p>
+          </TooltipContent>
+        </Tooltip>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-1">
+        {TOOL_BUTTONS.map(({ tool, label, tooltip, icon }) => (
+          <Tooltip key={tool}>
+            <TooltipTrigger asChild>
+              <span>
+                <Button
+                  type="button"
+                  variant={toolButtonVariant(tool, activeTool)}
+                  size="sm"
+                  className="h-7 px-2 text-xs gap-1"
+                  aria-pressed={activeTool === tool}
+                  onClick={() => onSelectTool(tool)}
+                >
+                  {icon}
+                  <span>{label}</span>
+                </Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent className="text-[11px]">{tooltip}</TooltipContent>
+          </Tooltip>
+        ))}
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span>
+              <Button
+                type="button"
+                variant={showCoordinateLabels ? 'default' : 'outline'}
+                size="sm"
+                className="h-7 px-2 text-xs gap-1"
+                onClick={onToggleCoordinateLabels}
+              >
+                {showCoordinateLabels ? <Eye size={12} /> : <EyeOff size={12} />}
+                <span>Labels</span>
+              </Button>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent className="text-[11px]">
+            {showCoordinateLabels ? 'Hide node coordinate labels' : 'Show node coordinate labels'}
+          </TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span>
+              <Button
+                type="button"
+                variant={isFullScreen ? 'secondary' : 'outline'}
+                size="sm"
+                className="h-7 px-2 text-xs gap-1"
+                onClick={onToggleFullScreen}
+              >
+                {isFullScreen ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
+                <span>{isFullScreen ? 'Exit Fullscreen' : 'Fullscreen'}</span>
+              </Button>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent className="text-[11px]">
+            {isFullScreen ? 'Exit fullscreen editor view (Esc)' : 'Expand route graph editor to full screen'}
+          </TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs text-rose-400 hover:text-rose-600 dark:hover:text-rose-300"
+                onClick={onClear}
+              >
+                <RotateCcw size={12} />
+              </Button>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent className="text-[11px]">{"Clear all graph nodes and edges"}</TooltipContent>
+        </Tooltip>
+      </div>
+    </div>
+  );
+}
+
 export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onChange }) => {
   const nodes = useMemo<GraphNode[]>(() => config.graphNodes ?? [], [config.graphNodes]);
   const edges = useMemo<GraphEdge[]>(() => config.graphEdges ?? [], [config.graphEdges]);
@@ -389,25 +547,11 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
   const margin = 36;
 
   // Region box: the boundary polygon bounds when there is one, else the min/max bounds
-  let baseMinX = minPoint.x ?? 0;
-  let baseMaxX = maxPoint.x ?? 100;
-  let baseMinY = minPoint.y ?? 0;
-  let baseMaxY = maxPoint.y ?? 100;
-
-  if (polygon && polygon.length >= 3) {
-    const xs = polygon.map((p) => p.x ?? 0);
-    const ys = polygon.map((p) => p.y ?? 0);
-    baseMinX = Math.min(...xs);
-    baseMaxX = Math.max(...xs);
-    baseMinY = Math.min(...ys);
-    baseMaxY = Math.max(...ys);
-  }
+  const { minX: baseMinX, maxX: baseMaxX, minY: baseMinY, maxY: baseMaxY } = regionBox(minPoint, maxPoint, polygon);
 
   // Clicks and drags are clamped to the region plus 5% padding (so boundary handles stay usable)
-  const spanXRaw = Math.abs(baseMaxX - baseMinX);
-  const spanYRaw = Math.abs(baseMaxY - baseMinY);
-  const padX = spanXRaw > 0 ? spanXRaw * 0.05 : 10;
-  const padY = spanYRaw > 0 ? spanYRaw * 0.05 : 10;
+  const padX = regionPadding(baseMinX, baseMaxX);
+  const padY = regionPadding(baseMinY, baseMaxY);
 
   const minX = baseMinX - padX;
   const maxX = baseMaxX + padX;
@@ -705,19 +849,40 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
     return true;
   };
 
+  /** Connect tool, second click: joins the pending origin to the node when the edge is valid and new. */
+  const connectFromOrigin = (originId: string, node: GraphNode) => {
+    const originNode = nodes.find((n) => n.id === originId);
+    if (originNode) {
+      const valError = validateNodeAndEdge(originNode, node, obstacles, polygon, minPoint, maxPoint);
+      if (valError) {
+        setWarningMsg(valError);
+        setConnectOriginId(null);
+        return;
+      }
+    }
+    setWarningMsg(null);
+
+    if (!edgeExistsBetween(edges, originId, node.id)) {
+      const newEdge: GraphEdge = {
+        id: newGraphId('edge'),
+        fromNodeId: originId,
+        toNodeId: node.id,
+        bidirectional: true,
+      };
+      onChange({
+        graphEdges: [...edges, newEdge],
+      });
+    }
+    setConnectOriginId(null);
+  };
+
   const handleNodeClick = (node: GraphNode) => {
     if (activeTool === 'DELETE') {
-      const updatedNodes = nodes.filter((n) => n.id !== node.id);
-      const updatedEdges = edges.filter((edge) => edge.fromNodeId !== node.id && edge.toNodeId !== node.id);
-      const updatedSeq = sequence.filter((id) => id !== node.id);
+      const updated = removeNodeFromGraph(nodes, edges, sequence, node.id);
       if (selectedId === node.id) {
-        setSelectedNodeId(updatedNodes[0]?.id ?? null);
+        setSelectedNodeId(updated.graphNodes[0]?.id ?? null);
       }
-      onChange({
-        graphNodes: updatedNodes,
-        graphEdges: updatedEdges,
-        graphSequence: updatedSeq,
-      });
+      onChange(updated);
       return;
     }
 
@@ -725,35 +890,7 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
       if (!connectOriginId) {
         setConnectOriginId(node.id);
       } else if (connectOriginId !== node.id) {
-        const originNode = nodes.find((n) => n.id === connectOriginId);
-        if (originNode) {
-          const valError = validateNodeAndEdge(originNode, node, obstacles, polygon, minPoint, maxPoint);
-          if (valError) {
-            setWarningMsg(valError);
-            setConnectOriginId(null);
-            return;
-          }
-        }
-        setWarningMsg(null);
-
-        const edgeExists = edges.some(
-          (edge) =>
-            (edge.fromNodeId === connectOriginId && edge.toNodeId === node.id) ||
-            (edge.toNodeId === connectOriginId && edge.fromNodeId === node.id)
-        );
-
-        if (!edgeExists) {
-          const newEdge: GraphEdge = {
-            id: newGraphId('edge'),
-            fromNodeId: connectOriginId,
-            toNodeId: node.id,
-            bidirectional: true,
-          };
-          onChange({
-            graphEdges: [...edges, newEdge],
-          });
-        }
-        setConnectOriginId(null);
+        connectFromOrigin(connectOriginId, node);
       }
       return;
     }
@@ -889,46 +1026,9 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
   };
 
   // Initial centre for the Leaflet map (the auto-fit or the remembered view refines it)
-  let geoCenter: [number, number];
-  if (polygon.length >= 3) {
-    const lats = polygon.map((p) => p.x ?? 0);
-    const lons = polygon.map((p) => p.y ?? p.x ?? 0);
-    geoCenter = [(Math.min(...lats) + Math.max(...lats)) / 2, (Math.min(...lons) + Math.max(...lons)) / 2];
-  } else if (nodes.length > 0) {
-    geoCenter = [nodes[0].x, nodes[0].y];
-  } else {
-    const c = centerOf(minPoint, maxPoint);
-    geoCenter = [c.x, c.y];
-  }
+  const geoCenter = geoCenterFor(polygon, nodes, minPoint, maxPoint);
 
   const inputClass = 'h-6 px-1.5 bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded text-cyan-600 dark:text-cyan-300 text-xs';
-
-  const toolButtons: { tool: GraphTool; label: string; tooltip: string; icon: React.ReactNode }[] = [
-    {
-      tool: 'ADD_EXTEND',
-      label: 'Add & Extend',
-      tooltip: 'Click empty space to add a node connected to the selected node',
-      icon: <Plus size={12} />,
-    },
-    {
-      tool: 'CONNECT',
-      label: 'Connect Nodes',
-      tooltip: 'Click two existing nodes sequentially to add a connecting edge between them',
-      icon: <LinkIcon size={12} />,
-    },
-    {
-      tool: 'SELECT',
-      label: 'Select / Move',
-      tooltip: 'Click a node to make it the origin for new nodes, or drag it to move it',
-      icon: <Move size={12} />,
-    },
-    {
-      tool: 'DELETE',
-      label: 'Delete',
-      tooltip: 'Click any node or edge line to remove it from the graph',
-      icon: <Trash2 size={12} />,
-    },
-  ];
 
   const editor = (
       <div
@@ -939,108 +1039,16 @@ export const GraphRouteCanvas: React.FC<GraphRouteCanvasProps> = ({ config, onCh
         }
       >
         {/* Header & Tool Bar */}
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <Label className="text-xs font-semibold text-cyan-400 uppercase tracking-wider">
-              {isGeo ? 'Route Graph Editor (Geospatial Map Region)' : 'Route Graph Editor (2D Spatial Boundary Plane)'}
-            </Label>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button type="button" className="text-[var(--c-tx4)] hover:text-cyan-400 cursor-help transition-colors">
-                  <Info size={12} />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent className="max-w-[320px] space-y-1.5 text-[11px] leading-relaxed">
-                <p className="font-semibold text-cyan-400">{"Graph Route Instructions:"}</p>
-                <p>{"1. Add & Extend: click empty space to place a node; it is linked to the selected node."}</p>
-                <p>{"2. Select / Move: click a node to select it, drag it to move it (dragging also works in Add & Extend)."}</p>
-                <p>{"3. Connect Nodes: click the origin node, then the target node (Esc cancels)."}</p>
-                <p>{"4. Delete: click a node or an edge to remove it."}</p>
-                <p>{"Nodes and edges outside the region or crossing forbidden obstacle zones are blocked."}</p>
-              </TooltipContent>
-            </Tooltip>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-1">
-            {toolButtons.map(({ tool, label, tooltip, icon }) => (
-              <Tooltip key={tool}>
-                <TooltipTrigger asChild>
-                  <span>
-                    <Button
-                      type="button"
-                      variant={toolButtonVariant(tool, activeTool)}
-                      size="sm"
-                      className="h-7 px-2 text-xs gap-1"
-                      aria-pressed={activeTool === tool}
-                      onClick={() => selectTool(tool)}
-                    >
-                      {icon}
-                      <span>{label}</span>
-                    </Button>
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent className="text-[11px]">{tooltip}</TooltipContent>
-              </Tooltip>
-            ))}
-
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span>
-                  <Button
-                    type="button"
-                    variant={showCoordinateLabels ? 'default' : 'outline'}
-                    size="sm"
-                    className="h-7 px-2 text-xs gap-1"
-                    onClick={() => setShowCoordinateLabels(!showCoordinateLabels)}
-                  >
-                    {showCoordinateLabels ? <Eye size={12} /> : <EyeOff size={12} />}
-                    <span>Labels</span>
-                  </Button>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent className="text-[11px]">
-                {showCoordinateLabels ? 'Hide node coordinate labels' : 'Show node coordinate labels'}
-              </TooltipContent>
-            </Tooltip>
-
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span>
-                  <Button
-                    type="button"
-                    variant={isFullScreen ? 'secondary' : 'outline'}
-                    size="sm"
-                    className="h-7 px-2 text-xs gap-1"
-                    onClick={() => toggleFullScreen(!isFullScreen)}
-                  >
-                    {isFullScreen ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
-                    <span>{isFullScreen ? 'Exit Fullscreen' : 'Fullscreen'}</span>
-                  </Button>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent className="text-[11px]">
-                {isFullScreen ? 'Exit fullscreen editor view (Esc)' : 'Expand route graph editor to full screen'}
-              </TooltipContent>
-            </Tooltip>
-
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 px-2 text-xs text-rose-400 hover:text-rose-600 dark:hover:text-rose-300"
-                    onClick={clearGraph}
-                  >
-                    <RotateCcw size={12} />
-                  </Button>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent className="text-[11px]">{"Clear all graph nodes and edges"}</TooltipContent>
-            </Tooltip>
-          </div>
-        </div>
+        <GraphToolbar
+          isGeo={isGeo}
+          activeTool={activeTool}
+          onSelectTool={selectTool}
+          showCoordinateLabels={showCoordinateLabels}
+          onToggleCoordinateLabels={() => setShowCoordinateLabels(!showCoordinateLabels)}
+          isFullScreen={isFullScreen}
+          onToggleFullScreen={() => toggleFullScreen(!isFullScreen)}
+          onClear={clearGraph}
+        />
 
         {/* Editor Area (Geospatial OpenStreetMap or 2D Plane Canvas) */}
         <div

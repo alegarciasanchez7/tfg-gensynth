@@ -2,9 +2,33 @@ import React, { useRef, useState, useEffect } from 'react';
 import { Point3DCoord, BoundaryObstacle } from '../../../../types';
 import { Button } from '../../../ui/button';
 import { AlertTriangle, Move, ShieldAlert, Square, Triangle, Circle, RefreshCw } from 'lucide-react';
-import { fitWorldWindow, niceStep, type WorldWindow } from '../../../../core/worldWindow';
+import { fitWorldWindow, type WorldWindow } from '../../../../core/worldWindow';
 import { useDialogEscape } from './useDialogEscape';
 import { useCanvasPalette } from './canvasPalette';
+import {
+  VERTEX_HIT_PX,
+  canvasCursorFor,
+  decimalsFor,
+  drawBoundaryPolygon,
+  drawGridAndAxes,
+  drawObstacle,
+  edgeMenuTarget,
+  interactionFlags,
+  nearestObstacleEdge,
+  nearestObstacleVertex,
+  nearestPointIndex,
+  nearestPolygonEdge,
+  obstacleShapeAt,
+  presetShapePoints,
+  roundTo,
+  sameHitTarget,
+  vertexMenuTarget,
+  type CanvasView,
+  type ContextMenuTarget,
+  type DragState,
+  type EditMode,
+  type HitTarget,
+} from './canvas2DBoundaryHelpers';
 
 interface Canvas2DBoundaryEditorProps {
   minX: number;
@@ -22,84 +46,254 @@ interface Canvas2DBoundaryEditorProps {
   showToolbar?: boolean;
 }
 
-interface ContextMenuState {
+interface ContextMenuState extends ContextMenuTarget {
   x: number;
   y: number;
-  type: 'boundary_vertex' | 'boundary_edge' | 'obstacle_vertex' | 'obstacle_edge';
-  boundaryIndex?: number;
-  obstacleIndex?: number;
-  obstaclePointIndex?: number;
   clickCoord: { x: number; y: number };
 }
 
-interface XY {
-  x: number;
-  y: number;
-}
-
-/** Element under the pointer that a press would grab. */
-type HitTarget =
-  | { kind: 'boundary'; index: number }
-  | { kind: 'obstacleVertex'; obsIndex: number; pointIndex: number }
-  | { kind: 'obstacleShape'; obsIndex: number };
-
-/** Active pointer gesture. Vertex drags keep the offset between the vertex and the pointer so it does not jump. */
-type DragState =
-  | { kind: 'boundary'; index: number; offset: XY }
-  | { kind: 'obstacleVertex'; obsIndex: number; pointIndex: number; offset: XY }
-  | { kind: 'obstacleShape'; obsIndex: number; startMouse: XY; startPoints: Point3DCoord[] }
-  | { kind: 'pan'; start: XY };
-
 const MARGIN = 25; // Margin for axes labels
-const VERTEX_HIT_PX = 18;
-const SEGMENT_HIT_PX = 14;
-const EDGE_MENU_HIT_PX = 10;
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 20;
 
-// Ray-casting helper for obstacle polygon interior click detection
-const isPointInsidePolygonHelper = (px: number, py: number, poly: Point3DCoord[]) => {
-  let inside = false;
-  const n = poly.length;
-  for (let i = 0, j = n - 1; i < n; j = i++) {
-    const xi = poly[i].x ?? 0, yi = poly[i].y ?? 0;
-    const xj = poly[j].x ?? 0, yj = poly[j].y ?? 0;
-    if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi) + xi)) {
-      inside = !inside;
-    }
-  }
-  return inside;
-};
+/** The +/- zoom buttons and the zoom factor between them. */
+function ZoomButtons({ zoom, setZoom }: Readonly<{ zoom: number; setZoom: React.Dispatch<React.SetStateAction<number>> }>) {
+  return (
+    <>
+      <button type="button" onClick={() => setZoom((z) => Math.min(20, z * 1.5))} className="px-2 py-0.5 hover:bg-[var(--c-bg5)] text-[var(--c-tx1)] font-bold" title="Zoom In">+</button>
+      <span className="px-1.5 font-mono text-[var(--c-tx3)]">{zoom.toFixed(1)}x</span>
+      <button type="button" onClick={() => setZoom((z) => Math.max(0.5, z / 1.5))} className="px-2 py-0.5 hover:bg-[var(--c-bg5)] text-[var(--c-tx1)] font-bold" title="Zoom Out">-</button>
+    </>
+  );
+}
 
-const pointToSegmentDistance = (px: number, py: number, x1: number, y1: number, x2: number, y2: number) => {
-  const l2 = (x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1);
-  if (l2 === 0) return Math.hypot(px - x1, py - y1);
-  let t = ((px - x1) * (x2 - x1) + (py - y1) * (y2 - y1)) / l2;
-  t = Math.max(0, Math.min(1, t));
-  return Math.hypot(px - (x1 + t * (x2 - x1)), py - (y1 + t * (y2 - y1)));
-};
+interface EditorToolbarProps {
+  editMode: EditMode;
+  onEditModeChange: (mode: EditMode) => void;
+  onPreset: (shape: 'square' | 'triangle' | 'circle') => void;
+  onNewRegion: () => void;
+  zoom: number;
+  setZoom: React.Dispatch<React.SetStateAction<number>>;
+  onResetView: () => void;
+}
 
-/** Decimals worth keeping for a value whose resolution is `unit` (e.g. 0.2 → 1 decimal, 5 → 0). */
-const decimalsFor = (unit: number) => (unit > 0 ? Math.min(6, Math.max(0, Math.ceil(-Math.log10(unit)))) : 1);
+/** Full toolbar: edit mode switcher, shape presets, new region and zoom controls. */
+function EditorToolbar({ editMode, onEditModeChange, onPreset, onNewRegion, zoom, setZoom, onResetView }: Readonly<EditorToolbarProps>) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 text-xs bg-[var(--c-bg3)] p-2 rounded border border-[var(--c-br1)] shrink-0">
+      {/* Selection Mode Switcher */}
+      <div className="flex items-center gap-1 border border-[var(--c-br1)] p-0.5 rounded bg-[var(--c-bg1)]">
+        <button
+          type="button"
+          aria-pressed={editMode === 'BOUNDARIES'}
+          onClick={() => onEditModeChange('BOUNDARIES')}
+          className={`px-2.5 py-1 rounded font-medium text-[11px] flex items-center gap-1.5 transition-colors cursor-pointer ${
+            editMode === 'BOUNDARIES'
+              ? 'bg-purple-600 text-white shadow-sm font-semibold'
+              : 'text-[var(--c-tx3)] hover:text-[var(--c-tx1)] hover:bg-[var(--c-bg5)]'
+          }`}
+        >
+          <Move size={12} />
+          <span>Move Boundaries (Purple)</span>
+        </button>
+        <button
+          type="button"
+          aria-pressed={editMode === 'OBSTACLES'}
+          onClick={() => onEditModeChange('OBSTACLES')}
+          className={`px-2.5 py-1 rounded font-medium text-[11px] flex items-center gap-1.5 transition-colors cursor-pointer ${
+            editMode === 'OBSTACLES'
+              ? 'bg-rose-600 text-white shadow-sm font-semibold'
+              : 'text-[var(--c-tx3)] hover:text-[var(--c-tx1)] hover:bg-[var(--c-bg5)]'
+          }`}
+        >
+          <ShieldAlert size={12} />
+          <span>Move Obstacles (Red)</span>
+        </button>
+      </div>
 
-const roundTo = (value: number, decimals: number) => Number(value.toFixed(decimals));
+      {/* Quick Shape Presets */}
+      <div className="flex items-center gap-1">
+        <span className="text-[10px] text-[var(--c-tx4)] mr-0.5 uppercase">Presets:</span>
+        <button
+          type="button"
+          onClick={() => onPreset('square')}
+          className="px-2 py-0.5 text-[10px] rounded border border-[var(--c-br1)] bg-[var(--c-bg4)] hover:bg-[var(--c-bg5)] text-[var(--c-tx1)] flex items-center gap-1 cursor-pointer"
+          title="Apply Square Geometry"
+        >
+          <Square size={10} className="text-violet-400" />
+          <span>Square</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => onPreset('triangle')}
+          className="px-2 py-0.5 text-[10px] rounded border border-[var(--c-br1)] bg-[var(--c-bg4)] hover:bg-[var(--c-bg5)] text-[var(--c-tx1)] flex items-center gap-1 cursor-pointer"
+          title="Apply Triangle Geometry"
+        >
+          <Triangle size={10} className="text-violet-400" />
+          <span>Triangle</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => onPreset('circle')}
+          className="px-2 py-0.5 text-[10px] rounded border border-[var(--c-br1)] bg-[var(--c-bg4)] hover:bg-[var(--c-bg5)] text-[var(--c-tx1)] flex items-center gap-1 cursor-pointer"
+          title="Apply Circle Geometry"
+        >
+          <Circle size={10} className="text-violet-400" />
+          <span>Circle</span>
+        </button>
+      </div>
 
-const sameHitTarget = (a: HitTarget | null, b: HitTarget | null) => JSON.stringify(a) === JSON.stringify(b);
+      {/* Reset / New Region & Zoom Controls */}
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onNewRegion}
+          className="px-2 py-0.5 text-[10px] rounded border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-300 flex items-center gap-1 font-semibold cursor-pointer"
+          title="Reset and clear all regions & obstacles"
+        >
+          <RefreshCw size={10} />
+          <span>New Region</span>
+        </button>
+        <div className="flex items-center border border-[var(--c-br1)] rounded overflow-hidden bg-[var(--c-bg4)] text-[9px]">
+          <ZoomButtons zoom={zoom} setZoom={setZoom} />
+        </div>
+        <button type="button" onClick={onResetView} className="px-1.5 py-0.5 text-[9px] rounded border border-[var(--c-br1)] bg-[var(--c-bg4)] hover:bg-[var(--c-bg5)]">Reset View</button>
+      </div>
+    </div>
+  );
+}
 
-/** Fill colour and radius of a boundary vertex handle. */
-const boundaryHandleStyle = (isDragging: boolean, isHovered: boolean, editingBoundaries: boolean) => {
-  if (isDragging) return { fill: '#f472b6', radius: 9 };
-  if (isHovered) return { fill: '#ffffff', radius: 9 };
-  return editingBoundaries ? { fill: '#e9d5ff', radius: 6 } : { fill: '#a855f7', radius: 4 };
-};
+/** Compact header shown without the toolbar: vertex count and zoom controls. */
+function CompactHeader({ vertexCount, zoom, setZoom, onResetView }: Readonly<{
+  vertexCount: number;
+  zoom: number;
+  setZoom: React.Dispatch<React.SetStateAction<number>>;
+  onResetView: () => void;
+}>) {
+  return (
+    <div className="flex items-center justify-between text-[11px] text-[var(--c-tx4)] shrink-0">
+      <span>2D Cartesian Grid ({vertexCount} Vertices)</span>
+      <div className="flex items-center gap-1 text-[9px]">
+        <div className="flex items-center border border-[var(--c-br1)] rounded overflow-hidden bg-[var(--c-bg4)]">
+          <ZoomButtons zoom={zoom} setZoom={setZoom} />
+        </div>
+        <button type="button" onClick={onResetView} className="px-1.5 py-0.5 text-[9px] rounded border border-[var(--c-br1)] bg-[var(--c-bg4)] hover:bg-[var(--c-bg5)]">Fit/Reset</button>
+      </div>
+    </div>
+  );
+}
 
-/** Fill, radius, stroke colour and stroke width of an obstacle vertex handle. */
-const obstacleHandleStyle = (isDragging: boolean, isHovered: boolean, isSelected: boolean, selectionColor: string) => {
-  if (isDragging) return { fill: '#fef08a', radius: 9, stroke: '#ca8a04', lineWidth: 2.5 };
-  if (isHovered) return { fill: '#ffffff', radius: 9, stroke: '#f59e0b', lineWidth: 2.5 };
-  if (isSelected) return { fill: selectionColor, radius: 7, stroke: '#78350f', lineWidth: 2 };
-  return { fill: '#f87171', radius: 5, stroke: '#991b1b', lineWidth: 1.5 };
-};
+/** Confirmation dialog of "New Region", which also deletes every obstacle. */
+function ResetConfirmDialog({ onCancel, onConfirm }: Readonly<{ onCancel: () => void; onConfirm: () => void }>) {
+  return (
+    <div
+      role="alertdialog"
+      aria-modal="true"
+      aria-labelledby="boundary-reset-confirm-title"
+      className="fixed inset-0 z-[999999] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4"
+    >
+      <div className="bg-[var(--c-bg2)] border border-[var(--c-br1)] rounded-lg p-5 max-w-md w-full shadow-2xl space-y-4 text-[var(--c-tx1)]">
+        <div className="flex items-center gap-3 text-amber-400">
+          <AlertTriangle size={22} className="shrink-0" />
+          <h3 id="boundary-reset-confirm-title" className="font-semibold text-sm">Draw New Region & Clear All Obstacles?</h3>
+        </div>
+        <p className="text-xs text-[var(--c-tx2)] leading-relaxed">
+          Creating a new region will reset your custom boundary polygon to default rectangle bounds and <strong>permanently delete all defined wall barriers and forbidden interior obstacle zones</strong>.
+          <br /><br />
+          Are you sure you want to proceed and start a clean new region?
+        </p>
+        <div className="flex items-center justify-end gap-2.5 pt-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onCancel}
+            className="text-xs cursor-pointer"
+            autoFocus
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            variant="destructive"
+            size="sm"
+            onClick={onConfirm}
+            className="text-xs bg-rose-600 hover:bg-rose-700 text-white cursor-pointer font-medium"
+          >
+            Proceed & Reset All
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface CanvasContextMenuProps {
+  menu: ContextMenuState;
+  polygonLength: number;
+  onInsertOnBoundaryEdge: () => void;
+  onInsertOnObstacleEdge: () => void;
+  onDeleteBoundaryVertex: () => void;
+  onDeleteObstacleVertex: () => void;
+}
+
+/** Right-click menu: insert a vertex on an edge, or delete a vertex. */
+function CanvasContextMenu({
+  menu,
+  polygonLength,
+  onInsertOnBoundaryEdge,
+  onInsertOnObstacleEdge,
+  onDeleteBoundaryVertex,
+  onDeleteObstacleVertex,
+}: Readonly<CanvasContextMenuProps>) {
+  return (
+    <div
+      style={{ left: menu.x, top: menu.y }}
+      className="absolute z-50 bg-[var(--c-bg4)] border border-[var(--c-br1)] rounded shadow-xl py-1 text-xs text-[var(--c-tx1)] animate-in fade-in duration-100"
+    >
+      {menu.type === 'boundary_edge' && (
+        <button
+          type="button"
+          onClick={onInsertOnBoundaryEdge}
+          className="w-full text-left px-3 py-1.5 hover:bg-violet-500/20 hover:text-violet-600 dark:hover:text-violet-300 transition-colors flex items-center gap-2 cursor-pointer"
+        >
+          <span>+ Insert Vertex Here on Boundary Edge</span>
+        </button>
+      )}
+      {menu.type === 'obstacle_edge' && (
+        <button
+          type="button"
+          onClick={onInsertOnObstacleEdge}
+          className="w-full text-left px-3 py-1.5 hover:bg-rose-500/20 hover:text-rose-600 dark:hover:text-rose-300 transition-colors flex items-center gap-2 cursor-pointer"
+        >
+          <span>+ Insert Vertex Here on Obstacle</span>
+        </button>
+      )}
+      {menu.type === 'boundary_vertex' && (
+        <button
+          type="button"
+          onClick={onDeleteBoundaryVertex}
+          className={`w-full text-left px-3 py-1.5 transition-colors flex items-center gap-2 cursor-pointer ${
+            polygonLength <= 3
+              ? 'opacity-50 text-[var(--c-tx4)] cursor-not-allowed'
+              : 'hover:bg-red-500/20 hover:text-red-400'
+          }`}
+        >
+          <span>✕ Delete Boundary Vertex (Min 3 required)</span>
+        </button>
+      )}
+      {menu.type === 'obstacle_vertex' && (
+        <button
+          type="button"
+          onClick={onDeleteObstacleVertex}
+          className="w-full text-left px-3 py-1.5 hover:bg-rose-500/20 hover:text-rose-400 transition-colors flex items-center gap-2 cursor-pointer"
+        >
+          <span>✕ Delete Obstacle Vertex</span>
+        </button>
+      )}
+    </div>
+  );
+}
 
 export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
   minX,
@@ -122,7 +316,7 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
   const [canvasSize, setCanvasSize] = useState<{ w: number; h: number }>({ w: width, h: height });
 
   // Selection mode: MOVE BOUNDARIES vs MOVE OBSTACLES
-  const [editMode, setEditMode] = useState<'BOUNDARIES' | 'OBSTACLES'>('BOUNDARIES');
+  const [editMode, setEditMode] = useState<EditMode>('BOUNDARIES');
 
   // Obstacle selection state
   const [internalSelectedObsId, setInternalSelectedObsId] = useState<string | null>(null);
@@ -231,10 +425,17 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
   const roundCoord = (v: number) => roundTo(v, coordDecimals);
 
   // Coordinate projection math with Zoom & Pan (uniform scale, +Y upwards)
-  const toCanvasX = (val: number) => currentW / 2 + (val - world.cx) * pxPerUnit + panOffset.x;
-  const toCanvasY = (val: number) => currentH / 2 - (val - world.cy) * pxPerUnit + panOffset.y;
-  const fromCanvasXPrecise = (px: number) => world.cx + (px - panOffset.x - currentW / 2) / pxPerUnit;
-  const fromCanvasYPrecise = (py: number) => world.cy - (py - panOffset.y - currentH / 2) / pxPerUnit;
+  const view: CanvasView = {
+    width: currentW,
+    height: currentH,
+    pxPerUnit,
+    toCanvasX: (val: number) => currentW / 2 + (val - world.cx) * pxPerUnit + panOffset.x,
+    toCanvasY: (val: number) => currentH / 2 - (val - world.cy) * pxPerUnit + panOffset.y,
+    fromCanvasX: (px: number) => world.cx + (px - panOffset.x - currentW / 2) / pxPerUnit,
+    fromCanvasY: (py: number) => world.cy - (py - panOffset.y - currentH / 2) / pxPerUnit,
+  };
+  const fromCanvasXPrecise = view.fromCanvasX;
+  const fromCanvasYPrecise = view.fromCanvasY;
 
   const getCanvasMousePos = (e: { clientX: number; clientY: number }) => {
     const canvas = canvasRef.current;
@@ -248,12 +449,8 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
   };
 
   // Derived drag/hover flags used by the renderer
-  const draggingBoundaryVertexIndex = drag?.kind === 'boundary' ? drag.index : null;
-  const draggingObstacleTarget = drag?.kind === 'obstacleVertex' ? drag : null;
-  const draggingObstacleShapeIndex = drag?.kind === 'obstacleShape' ? drag.obsIndex : null;
-  const hoveredBoundaryVertexIndex = hovered?.kind === 'boundary' ? hovered.index : null;
-  const hoveredObstacleTarget = hovered?.kind === 'obstacleVertex' ? hovered : null;
-  const hoveredObstacleShape = hovered?.kind === 'obstacleShape' ? hovered.obsIndex : null;
+  const { draggingBoundaryVertexIndex, draggingObstacleTarget, draggingObstacleShapeIndex, hoveredBoundaryVertexIndex, hoveredObstacleTarget } =
+    interactionFlags(drag, hovered);
 
   // Render 2D grid, labeled coordinate axes (X, Y), boundary polygon & obstacles
   useEffect(() => {
@@ -262,326 +459,20 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    ctx.clearRect(0, 0, currentW, currentH);
+    drawGridAndAxes(ctx, view, palette);
 
-    ctx.fillStyle = palette.background;
-    ctx.fillRect(0, 0, currentW, currentH);
+    // 1. Multi-vertex boundary polygon
+    drawBoundaryPolygon(ctx, view, activePolygon, { editMode, hoveredIndex: hoveredBoundaryVertexIndex, draggingIndex: draggingBoundaryVertexIndex }, palette);
 
-    // Grid lines with a "nice" step for the visible world area
-    const visLeft = fromCanvasXPrecise(0);
-    const visRight = fromCanvasXPrecise(currentW);
-    const visBottom = fromCanvasYPrecise(currentH);
-    const visTop = fromCanvasYPrecise(0);
-    const step = niceStep((visRight - visLeft) / 8);
-    const stepDecimals = decimalsFor(step);
-    const labelEvery = step * pxPerUnit < 40 ? 2 : 1;
-
-    ctx.strokeStyle = palette.grid;
-    ctx.lineWidth = 1;
-    ctx.fillStyle = palette.gridLabel;
-    ctx.font = '9px monospace';
-    for (let i = Math.ceil(visLeft / step); i * step <= visRight; i++) {
-      const x = toCanvasX(i * step);
-      ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, currentH);
-      ctx.stroke();
-      if (i % labelEvery === 0) ctx.fillText(`${roundTo(i * step, stepDecimals)}`, x - 10, currentH - 5); // X scale
-    }
-    for (let i = Math.ceil(visBottom / step); i * step <= visTop; i++) {
-      const y = toCanvasY(i * step);
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(currentW, y);
-      ctx.stroke();
-      if (i % labelEvery === 0) ctx.fillText(`${roundTo(i * step, stepDecimals)}`, 4, y + 3); // Y scale
-    }
-
-    // Labeled X & Y Axes (Origin lines)
-    const originX = toCanvasX(0);
-    const originY = toCanvasY(0);
-
-    ctx.strokeStyle = palette.axisX;
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(0, originY);
-    ctx.lineTo(currentW, originY);
-    ctx.stroke();
-
-    ctx.strokeStyle = palette.axisY;
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(originX, 0);
-    ctx.lineTo(originX, currentH);
-    ctx.stroke();
-
-    // Axis names stay inside the canvas even when the origin is off-screen
-    ctx.font = '9px monospace';
-    ctx.fillStyle = palette.axisX;
-    ctx.fillText('X →', currentW - 20, Math.min(Math.max(originY - 4, 22), currentH - 16));
-    ctx.fillStyle = palette.axisY;
-    ctx.fillText('Y ↑', Math.min(Math.max(originX + 4, 30), currentW - 24), 24);
-
-    // 1. Render multi-vertex boundary polygon
-    if (activePolygon.length >= 3) {
-      ctx.beginPath();
-      const first = activePolygon[0];
-      ctx.moveTo(toCanvasX(first.x ?? 0), toCanvasY(first.y ?? 0));
-
-      for (let i = 1; i < activePolygon.length; i++) {
-        const pt = activePolygon[i];
-        ctx.lineTo(toCanvasX(pt.x ?? 0), toCanvasY(pt.y ?? 0));
-      }
-      ctx.closePath();
-
-      ctx.fillStyle = editMode === 'BOUNDARIES' ? 'rgba(168, 85, 247, 0.25)' : 'rgba(168, 85, 247, 0.1)';
-      ctx.fill();
-
-      ctx.strokeStyle = editMode === 'BOUNDARIES' ? '#c084fc' : '#8b5cf6';
-      ctx.lineWidth = editMode === 'BOUNDARIES' ? 2.5 : 1.5;
-      if (editMode === 'OBSTACLES') ctx.setLineDash([4, 4]);
-      ctx.stroke();
-      ctx.setLineDash([]);
-
-      // Render boundary vertex handles
-      activePolygon.forEach((pt, i) => {
-        const cx = toCanvasX(pt.x ?? 0);
-        const cy = toCanvasY(pt.y ?? 0);
-        const isHovered = hoveredBoundaryVertexIndex === i;
-        const isDragging = draggingBoundaryVertexIndex === i;
-
-        const handle = boundaryHandleStyle(isDragging, isHovered, editMode === 'BOUNDARIES');
-        ctx.fillStyle = handle.fill;
-        ctx.beginPath();
-        ctx.arc(cx, cy, handle.radius, 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.strokeStyle = isHovered || isDragging ? '#ec4899' : '#a855f7';
-        ctx.lineWidth = isHovered || isDragging ? 2.5 : 1.5;
-        ctx.stroke();
-
-        if (isDragging || isHovered) {
-          ctx.fillStyle = palette.tooltipBackground;
-          ctx.beginPath();
-          ctx.roundRect(cx - 32, cy - 24, 64, 15, 3);
-          ctx.fill();
-          ctx.strokeStyle = '#c084fc';
-          ctx.lineWidth = 1;
-          ctx.stroke();
-          ctx.fillStyle = palette.tooltipText;
-          ctx.font = 'bold 9px sans-serif';
-          ctx.textAlign = 'center';
-          ctx.fillText(`(${pt.x}, ${pt.y})`, cx, cy - 13);
-          ctx.textAlign = 'left';
-        }
-      });
-    }
-
-    // 2. Render 2D Wall Barriers & Forbidden Interior Obstacle Polygons
+    // 2. 2D Wall Barriers & Forbidden Interior Obstacle Polygons
     displayObstacles.forEach((obs, obsIdx) => {
-      if (!obs.enabled || !obs.points || obs.points.length === 0) return;
-      const isSelected = obs.id === activeSelectedObsId;
-
-      if (obs.type === 'WALL_SEGMENT' && obs.points.length >= 2) {
-        if (isSelected) {
-          // Subtle glowing halo stroke behind selected wall
-          ctx.strokeStyle = 'rgba(251, 191, 36, 0.35)';
-          ctx.lineWidth = 10;
-          ctx.beginPath();
-          obs.points.forEach((pt, idx) => {
-            const cx = toCanvasX(pt.x ?? 0);
-            const cy = toCanvasY(pt.y ?? 0);
-            if (idx === 0) ctx.moveTo(cx, cy);
-            else ctx.lineTo(cx, cy);
-          });
-          ctx.stroke();
-
-          // Main line stroke: amber
-          ctx.strokeStyle = palette.selection;
-          ctx.lineWidth = 4;
-          ctx.beginPath();
-          obs.points.forEach((pt, idx) => {
-            const cx = toCanvasX(pt.x ?? 0);
-            const cy = toCanvasY(pt.y ?? 0);
-            if (idx === 0) ctx.moveTo(cx, cy);
-            else ctx.lineTo(cx, cy);
-          });
-          ctx.stroke();
-
-          // Dashed selection outline
-          ctx.strokeStyle = palette.ink;
-          ctx.lineWidth = 1.5;
-          ctx.setLineDash([4, 4]);
-          ctx.beginPath();
-          obs.points.forEach((pt, idx) => {
-            const cx = toCanvasX(pt.x ?? 0);
-            const cy = toCanvasY(pt.y ?? 0);
-            if (idx === 0) ctx.moveTo(cx, cy);
-            else ctx.lineTo(cx, cy);
-          });
-          ctx.stroke();
-          ctx.setLineDash([]);
-        } else {
-          // Standard Red Wall Line
-          ctx.strokeStyle = '#ef4444';
-          ctx.lineWidth = editMode === 'OBSTACLES' ? 3 : 2;
-          ctx.beginPath();
-          obs.points.forEach((pt, idx) => {
-            const cx = toCanvasX(pt.x ?? 0);
-            const cy = toCanvasY(pt.y ?? 0);
-            if (idx === 0) ctx.moveTo(cx, cy);
-            else ctx.lineTo(cx, cy);
-          });
-          ctx.stroke();
-        }
-
-        // Wall End Caps / Handles
-        obs.points.forEach((pt, ptIdx) => {
-          const cx = toCanvasX(pt.x ?? 0);
-          const cy = toCanvasY(pt.y ?? 0);
-          const isDragging = draggingObstacleTarget?.obsIndex === obsIdx && draggingObstacleTarget?.pointIndex === ptIdx;
-          const isHovered = hoveredObstacleTarget?.obsIndex === obsIdx && hoveredObstacleTarget?.pointIndex === ptIdx;
-
-          const handle = obstacleHandleStyle(isDragging, isHovered, isSelected, palette.selection);
-          ctx.fillStyle = handle.fill;
-          ctx.beginPath();
-          ctx.arc(cx, cy, handle.radius, 0, Math.PI * 2);
-          ctx.fill();
-
-          ctx.strokeStyle = handle.stroke;
-          ctx.lineWidth = handle.lineWidth;
-          ctx.stroke();
-
-          if (isSelected || isHovered || isDragging) {
-            ctx.fillStyle = '#ffffff';
-            ctx.beginPath();
-            ctx.arc(cx, cy, 2.5, 0, Math.PI * 2);
-            ctx.fill();
-          }
-
-          if (isDragging || isHovered) {
-            ctx.fillStyle = palette.tooltipBackground;
-            ctx.beginPath();
-            ctx.roundRect(cx - 35, cy - 24, 70, 15, 3);
-            ctx.fill();
-            ctx.strokeStyle = '#fbbf24';
-            ctx.lineWidth = 1;
-            ctx.stroke();
-            ctx.fillStyle = palette.tooltipText;
-            ctx.font = 'bold 9px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillText(`(${pt.x}, ${pt.y})`, cx, cy - 13);
-            ctx.textAlign = 'left';
-          }
-        });
-
-        // Centroid Selection Badge for Wall
-        if (isSelected && obs.points.length >= 2) {
-          const midX = (toCanvasX(obs.points[0].x ?? 0) + toCanvasX(obs.points[1].x ?? 0)) / 2;
-          const midY = (toCanvasY(obs.points[0].y ?? 0) + toCanvasY(obs.points[1].y ?? 0)) / 2;
-          ctx.fillStyle = '#b45309';
-          ctx.beginPath();
-          ctx.roundRect(midX - 35, midY - 20, 70, 15, 3);
-          ctx.fill();
-          ctx.strokeStyle = '#fef3c7';
-          ctx.lineWidth = 1;
-          ctx.stroke();
-          ctx.fillStyle = palette.tooltipText;
-          ctx.font = 'bold 9px sans-serif';
-          ctx.textAlign = 'center';
-          ctx.fillText(`${obs.name || 'Wall'}`, midX, midY - 9);
-          ctx.textAlign = 'left';
-        }
-      } else if (obs.type === 'OBSTACLE_POLYGON' && obs.points.length >= 3) {
-        ctx.beginPath();
-        obs.points.forEach((pt, idx) => {
-          const cx = toCanvasX(pt.x ?? 0);
-          const cy = toCanvasY(pt.y ?? 0);
-          if (idx === 0) ctx.moveTo(cx, cy);
-          else ctx.lineTo(cx, cy);
-        });
-        ctx.closePath();
-
-        const isShapeDragging = draggingObstacleShapeIndex === obsIdx;
-        if (isSelected || isShapeDragging) {
-          ctx.fillStyle = 'rgba(251, 191, 36, 0.35)';
-          ctx.fill();
-          ctx.strokeStyle = palette.selection;
-          ctx.lineWidth = 2.5;
-          ctx.stroke();
-          ctx.strokeStyle = palette.ink;
-          ctx.lineWidth = 1;
-          ctx.setLineDash([4, 4]);
-          ctx.stroke();
-          ctx.setLineDash([]);
-        } else {
-          ctx.fillStyle = editMode === 'OBSTACLES' ? 'rgba(239, 68, 68, 0.3)' : 'rgba(239, 68, 68, 0.15)';
-          ctx.fill();
-          ctx.strokeStyle = '#f87171';
-          ctx.lineWidth = 1.5;
-          ctx.setLineDash([4, 4]);
-          ctx.stroke();
-          ctx.setLineDash([]);
-        }
-
-        // Polygon handles
-        obs.points.forEach((pt, ptIdx) => {
-          const cx = toCanvasX(pt.x ?? 0);
-          const cy = toCanvasY(pt.y ?? 0);
-          const isDragging = draggingObstacleTarget?.obsIndex === obsIdx && draggingObstacleTarget?.pointIndex === ptIdx;
-          const isHovered = hoveredObstacleTarget?.obsIndex === obsIdx && hoveredObstacleTarget?.pointIndex === ptIdx;
-
-          const handle = obstacleHandleStyle(isDragging, isHovered, isSelected, palette.selection);
-          ctx.fillStyle = handle.fill;
-          ctx.beginPath();
-          ctx.arc(cx, cy, handle.radius, 0, Math.PI * 2);
-          ctx.fill();
-
-          ctx.strokeStyle = handle.stroke;
-          ctx.lineWidth = handle.lineWidth;
-          ctx.stroke();
-
-          if (isSelected || isHovered || isDragging) {
-            ctx.fillStyle = '#ffffff';
-            ctx.beginPath();
-            ctx.arc(cx, cy, 2.5, 0, Math.PI * 2);
-            ctx.fill();
-          }
-
-          if (isDragging || isHovered) {
-            ctx.fillStyle = palette.tooltipBackground;
-            ctx.beginPath();
-            ctx.roundRect(cx - 35, cy - 24, 70, 15, 3);
-            ctx.fill();
-            ctx.strokeStyle = '#fbbf24';
-            ctx.lineWidth = 1;
-            ctx.stroke();
-            ctx.fillStyle = palette.tooltipText;
-            ctx.font = 'bold 9px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillText(`(${pt.x}, ${pt.y})`, cx, cy - 13);
-            ctx.textAlign = 'left';
-          }
-        });
-
-        // Centroid Selection Badge for Polygon
-        if (isSelected && obs.points.length >= 3) {
-          const cxAvg = obs.points.reduce((acc, p) => acc + toCanvasX(p.x ?? 0), 0) / obs.points.length;
-          const cyAvg = obs.points.reduce((acc, p) => acc + toCanvasY(p.y ?? 0), 0) / obs.points.length;
-          ctx.fillStyle = '#b45309';
-          ctx.beginPath();
-          ctx.roundRect(cxAvg - 40, cyAvg - 8, 80, 15, 3);
-          ctx.fill();
-          ctx.strokeStyle = '#fef3c7';
-          ctx.lineWidth = 1;
-          ctx.stroke();
-          ctx.fillStyle = palette.tooltipText;
-          ctx.font = 'bold 9px sans-serif';
-          ctx.textAlign = 'center';
-          ctx.fillText(`${obs.name || 'Zone'}`, cxAvg, cyAvg + 3);
-          ctx.textAlign = 'left';
-        }
-      }
+      drawObstacle(ctx, view, obs, {
+        editMode,
+        isSelected: obs.id === activeSelectedObsId,
+        isShapeDragging: draggingObstacleShapeIndex === obsIdx,
+        draggingPointIndex: draggingObstacleTarget?.obsIndex === obsIdx ? draggingObstacleTarget.pointIndex : null,
+        hoveredPointIndex: hoveredObstacleTarget?.obsIndex === obsIdx ? hoveredObstacleTarget.pointIndex : null,
+      }, palette);
     });
   }, [activePolygon, displayObstacles, editMode, activeSelectedObsId, hovered, drag, zoom, panOffset, currentW, currentH, world.cx, world.cy, world.scale, palette]);
 
@@ -614,28 +505,7 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
     const rx = (maxX - minX) * factor || 1;
     const ry = (maxY - minY) * factor || 1;
 
-    let newPts: Point3DCoord[] = [];
-
-    if (shape === 'square') {
-      newPts = [
-        { x: roundCoord(cx - rx), y: roundCoord(cy - ry) },
-        { x: roundCoord(cx + rx), y: roundCoord(cy - ry) },
-        { x: roundCoord(cx + rx), y: roundCoord(cy + ry) },
-        { x: roundCoord(cx - rx), y: roundCoord(cy + ry) },
-      ];
-    } else if (shape === 'triangle') {
-      newPts = [
-        { x: roundCoord(cx), y: roundCoord(cy + ry) },
-        { x: roundCoord(cx + rx), y: roundCoord(cy - ry) },
-        { x: roundCoord(cx - rx), y: roundCoord(cy - ry) },
-      ];
-    } else if (shape === 'circle') {
-      const numPts = 12;
-      for (let i = 0; i < numPts; i++) {
-        const angle = (i * 2 * Math.PI) / numPts;
-        newPts.push({ x: roundCoord(cx + rx * Math.cos(angle)), y: roundCoord(cy + ry * Math.sin(angle)) });
-      }
-    }
+    const newPts = presetShapePoints(shape, cx, cy, rx, ry, roundCoord);
 
     if (editMode === 'BOUNDARIES') {
       setActivePolygon(newPts);
@@ -684,56 +554,7 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
 
   // --- Hit testing (canvas pixel coordinates) ---
 
-  /** Nearest boundary vertex within the hit radius. */
-  const nearestBoundaryVertex = (mx: number, my: number, radius: number): number | null => {
-    let found: { index: number; dist: number } | null = null;
-    for (let i = 0; i < activePolygon.length; i++) {
-      const dist = Math.hypot(mx - toCanvasX(activePolygon[i].x ?? 0), my - toCanvasY(activePolygon[i].y ?? 0));
-      if (dist < radius && (found === null || dist < found.dist)) found = { index: i, dist };
-    }
-    return found ? found.index : null;
-  };
-
-  /** Nearest vertex of an enabled obstacle within the hit radius. */
-  const nearestObstacleVertex = (mx: number, my: number, radius: number): { obsIndex: number; pointIndex: number } | null => {
-    let found: { obsIndex: number; pointIndex: number; dist: number } | null = null;
-    for (let o = 0; o < displayObstacles.length; o++) {
-      const obs = displayObstacles[o];
-      if (!obs.enabled || !obs.points) continue;
-      for (let p = 0; p < obs.points.length; p++) {
-        const dist = Math.hypot(mx - toCanvasX(obs.points[p].x ?? 0), my - toCanvasY(obs.points[p].y ?? 0));
-        if (dist < radius && (found === null || dist < found.dist)) found = { obsIndex: o, pointIndex: p, dist };
-      }
-    }
-    return found ? { obsIndex: found.obsIndex, pointIndex: found.pointIndex } : null;
-  };
-
-  /** Obstacle whose wall line is nearest or whose interior contains the pointer (topmost wins on ties). */
-  const obstacleShapeAt = (mx: number, my: number): number | null => {
-    const wx = fromCanvasXPrecise(mx);
-    const wy = fromCanvasYPrecise(my);
-    let found: { obsIndex: number; dist: number } | null = null;
-    for (let o = 0; o < displayObstacles.length; o++) {
-      const obs = displayObstacles[o];
-      if (!obs.enabled || !obs.points) continue;
-      const pts = obs.points;
-      let dist = Infinity;
-      if (obs.type === 'WALL_SEGMENT' && pts.length >= 2) {
-        for (let i = 0; i < pts.length - 1; i++) {
-          dist = Math.min(dist, pointToSegmentDistance(
-            mx, my,
-            toCanvasX(pts[i].x ?? 0), toCanvasY(pts[i].y ?? 0),
-            toCanvasX(pts[i + 1].x ?? 0), toCanvasY(pts[i + 1].y ?? 0)
-          ));
-        }
-        if (dist >= SEGMENT_HIT_PX) dist = Infinity;
-      } else if (obs.type === 'OBSTACLE_POLYGON' && pts.length >= 3 && isPointInsidePolygonHelper(wx, wy, pts)) {
-        dist = 0;
-      }
-      if (dist !== Infinity && (found === null || dist <= found.dist)) found = { obsIndex: o, dist };
-    }
-    return found ? found.obsIndex : null;
-  };
+  const nearestBoundaryVertex = (mx: number, my: number, radius: number) => nearestPointIndex(activePolygon, view, mx, my, radius);
 
   /**
    * What a press at (mx, my) grabs: in BOUNDARIES mode region vertices win over obstacle vertices;
@@ -744,10 +565,10 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
       const index = nearestBoundaryVertex(mx, my, VERTEX_HIT_PX);
       if (index !== null) return { kind: 'boundary', index };
     }
-    const vertex = nearestObstacleVertex(mx, my, VERTEX_HIT_PX);
+    const vertex = nearestObstacleVertex(displayObstacles, view, mx, my, VERTEX_HIT_PX);
     if (vertex) return { kind: 'obstacleVertex', ...vertex };
     if (editMode === 'OBSTACLES') {
-      const obsIndex = obstacleShapeAt(mx, my);
+      const obsIndex = obstacleShapeAt(displayObstacles, view, mx, my);
       if (obsIndex !== null) return { kind: 'obstacleShape', obsIndex };
     }
     return null;
@@ -899,64 +720,18 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
     const { mx, my } = getCanvasMousePos(e);
 
     const clickCoord = { x: roundCoord(fromCanvasXPrecise(mx)), y: roundCoord(fromCanvasYPrecise(my)) };
-    const openMenu = (menu: Omit<ContextMenuState, 'x' | 'y' | 'clickCoord'>) =>
-      setContextMenu({ x: menuX, y: menuY, clickCoord, ...menu });
 
     // 1. Vertices first; in BOUNDARIES mode region vertices win over obstacle vertices
-    const boundaryVertex = nearestBoundaryVertex(mx, my, VERTEX_HIT_PX);
-    if (editMode === 'BOUNDARIES' && boundaryVertex !== null) {
-      openMenu({ type: 'boundary_vertex', boundaryIndex: boundaryVertex });
-      return;
-    }
-    const obsVertex = nearestObstacleVertex(mx, my, VERTEX_HIT_PX);
-    if (obsVertex) {
-      openMenu({ type: 'obstacle_vertex', obstacleIndex: obsVertex.obsIndex, obstaclePointIndex: obsVertex.pointIndex });
-      return;
-    }
-    if (boundaryVertex !== null) {
-      openMenu({ type: 'boundary_vertex', boundaryIndex: boundaryVertex });
-      return;
-    }
-
+    const vertexTarget = vertexMenuTarget(
+      editMode,
+      nearestBoundaryVertex(mx, my, VERTEX_HIT_PX),
+      nearestObstacleVertex(displayObstacles, view, mx, my, VERTEX_HIT_PX)
+    );
     // 2. Edges: the nearest obstacle or region edge within reach; on a tie, the edited kind wins
-    const segmentDistance = (a: Point3DCoord, b: Point3DCoord) =>
-      pointToSegmentDistance(mx, my, toCanvasX(a.x ?? 0), toCanvasY(a.y ?? 0), toCanvasX(b.x ?? 0), toCanvasY(b.y ?? 0));
-    let obstacleEdge: { obstacleIndex: number; edgeIndex: number; dist: number } | null = null;
-    for (let oIdx = 0; oIdx < displayObstacles.length; oIdx++) {
-      const obs = displayObstacles[oIdx];
-      if (!obs.enabled || !obs.points) continue;
-      const pts = obs.points;
-      const n = pts.length;
-      const isWall = obs.type === 'WALL_SEGMENT';
-      if ((isWall && n < 2) || (!isWall && n < 3)) continue;
-      const edgeCount = isWall ? n - 1 : n;
-      for (let i = 0; i < edgeCount; i++) {
-        const dist = segmentDistance(pts[i], pts[(i + 1) % n]);
-        if (dist < EDGE_MENU_HIT_PX && (obstacleEdge === null || dist < obstacleEdge.dist)) {
-          obstacleEdge = { obstacleIndex: oIdx, edgeIndex: i, dist };
-        }
-      }
-    }
-
-    let boundaryEdge: { edgeIndex: number; dist: number } | null = null;
-    const n = activePolygon.length;
-    for (let i = 0; i < n; i++) {
-      const dist = segmentDistance(activePolygon[i], activePolygon[(i + 1) % n]);
-      if (dist < EDGE_MENU_HIT_PX && (boundaryEdge === null || dist < boundaryEdge.dist)) {
-        boundaryEdge = { edgeIndex: i, dist };
-      }
-    }
-
-    const preferBoundary =
-      boundaryEdge !== null &&
-      (obstacleEdge === null ||
-        boundaryEdge.dist < obstacleEdge.dist ||
-        (boundaryEdge.dist === obstacleEdge.dist && editMode === 'BOUNDARIES'));
-    if (preferBoundary && boundaryEdge) {
-      openMenu({ type: 'boundary_edge', boundaryIndex: boundaryEdge.edgeIndex });
-    } else if (obstacleEdge) {
-      openMenu({ type: 'obstacle_edge', obstacleIndex: obstacleEdge.obstacleIndex, obstaclePointIndex: obstacleEdge.edgeIndex });
-    }
+    const target =
+      vertexTarget ??
+      edgeMenuTarget(editMode, nearestPolygonEdge(activePolygon, view, mx, my), nearestObstacleEdge(displayObstacles, view, mx, my));
+    if (target) setContextMenu({ x: menuX, y: menuY, clickCoord, ...target });
   };
 
   const handleInsertPointOnBoundaryEdge = () => {
@@ -1030,157 +805,33 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
     setContextMenu(null);
   };
 
-  let canvasCursor = 'crosshair';
-  if (drag !== null) {
-    canvasCursor = 'grabbing';
-  } else if (hoveredObstacleTarget !== null || hoveredBoundaryVertexIndex !== null) {
-    canvasCursor = 'grab';
-  } else if (hoveredObstacleShape !== null) {
-    canvasCursor = 'pointer';
-  }
+  const canvasCursor = canvasCursorFor(drag, hovered);
+  const resetView = () => {
+    setZoom(1.0);
+    setPanOffset({ x: 0, y: 0 });
+  };
 
   return (
     <div className={`space-y-2 relative flex flex-col ${fillContainer ? 'h-full flex-1 min-h-0' : ''}`}>
       {/* 1. Header Toolbar */}
       {showToolbar ? (
-        <div className="flex flex-wrap items-center justify-between gap-2 text-xs bg-[var(--c-bg3)] p-2 rounded border border-[var(--c-br1)] shrink-0">
-          {/* Selection Mode Switcher */}
-          <div className="flex items-center gap-1 border border-[var(--c-br1)] p-0.5 rounded bg-[var(--c-bg1)]">
-            <button
-              type="button"
-              aria-pressed={editMode === 'BOUNDARIES'}
-              onClick={() => setEditMode('BOUNDARIES')}
-              className={`px-2.5 py-1 rounded font-medium text-[11px] flex items-center gap-1.5 transition-colors cursor-pointer ${
-                editMode === 'BOUNDARIES'
-                  ? 'bg-purple-600 text-white shadow-sm font-semibold'
-                  : 'text-[var(--c-tx3)] hover:text-[var(--c-tx1)] hover:bg-[var(--c-bg5)]'
-              }`}
-            >
-              <Move size={12} />
-              <span>Move Boundaries (Purple)</span>
-            </button>
-            <button
-              type="button"
-              aria-pressed={editMode === 'OBSTACLES'}
-              onClick={() => setEditMode('OBSTACLES')}
-              className={`px-2.5 py-1 rounded font-medium text-[11px] flex items-center gap-1.5 transition-colors cursor-pointer ${
-                editMode === 'OBSTACLES'
-                  ? 'bg-rose-600 text-white shadow-sm font-semibold'
-                  : 'text-[var(--c-tx3)] hover:text-[var(--c-tx1)] hover:bg-[var(--c-bg5)]'
-              }`}
-            >
-              <ShieldAlert size={12} />
-              <span>Move Obstacles (Red)</span>
-            </button>
-          </div>
-
-          {/* Quick Shape Presets */}
-          <div className="flex items-center gap-1">
-            <span className="text-[10px] text-[var(--c-tx4)] mr-0.5 uppercase">Presets:</span>
-            <button
-              type="button"
-              onClick={() => applyPresetShape('square')}
-              className="px-2 py-0.5 text-[10px] rounded border border-[var(--c-br1)] bg-[var(--c-bg4)] hover:bg-[var(--c-bg5)] text-[var(--c-tx1)] flex items-center gap-1 cursor-pointer"
-              title="Apply Square Geometry"
-            >
-              <Square size={10} className="text-violet-400" />
-              <span>Square</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => applyPresetShape('triangle')}
-              className="px-2 py-0.5 text-[10px] rounded border border-[var(--c-br1)] bg-[var(--c-bg4)] hover:bg-[var(--c-bg5)] text-[var(--c-tx1)] flex items-center gap-1 cursor-pointer"
-              title="Apply Triangle Geometry"
-            >
-              <Triangle size={10} className="text-violet-400" />
-              <span>Triangle</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => applyPresetShape('circle')}
-              className="px-2 py-0.5 text-[10px] rounded border border-[var(--c-br1)] bg-[var(--c-bg4)] hover:bg-[var(--c-bg5)] text-[var(--c-tx1)] flex items-center gap-1 cursor-pointer"
-              title="Apply Circle Geometry"
-            >
-              <Circle size={10} className="text-violet-400" />
-              <span>Circle</span>
-            </button>
-          </div>
-
-          {/* Reset / New Region & Zoom Controls */}
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setShowResetConfirmModal(true)}
-              className="px-2 py-0.5 text-[10px] rounded border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-300 flex items-center gap-1 font-semibold cursor-pointer"
-              title="Reset and clear all regions & obstacles"
-            >
-              <RefreshCw size={10} />
-              <span>New Region</span>
-            </button>
-            <div className="flex items-center border border-[var(--c-br1)] rounded overflow-hidden bg-[var(--c-bg4)] text-[9px]">
-              <button type="button" onClick={() => setZoom((z) => Math.min(20, z * 1.5))} className="px-2 py-0.5 hover:bg-[var(--c-bg5)] text-[var(--c-tx1)] font-bold" title="Zoom In">+</button>
-              <span className="px-1.5 font-mono text-[var(--c-tx3)]">{zoom.toFixed(1)}x</span>
-              <button type="button" onClick={() => setZoom((z) => Math.max(0.5, z / 1.5))} className="px-2 py-0.5 hover:bg-[var(--c-bg5)] text-[var(--c-tx1)] font-bold" title="Zoom Out">-</button>
-            </div>
-            <button type="button" onClick={() => { setZoom(1.0); setPanOffset({ x: 0, y: 0 }); }} className="px-1.5 py-0.5 text-[9px] rounded border border-[var(--c-br1)] bg-[var(--c-bg4)] hover:bg-[var(--c-bg5)]">Reset View</button>
-          </div>
-        </div>
+        <EditorToolbar
+          editMode={editMode}
+          onEditModeChange={setEditMode}
+          onPreset={applyPresetShape}
+          onNewRegion={() => setShowResetConfirmModal(true)}
+          zoom={zoom}
+          setZoom={setZoom}
+          onResetView={resetView}
+        />
       ) : (
-        <div className="flex items-center justify-between text-[11px] text-[var(--c-tx4)] shrink-0">
-          <span>2D Cartesian Grid ({activePolygon.length} Vertices)</span>
-          <div className="flex items-center gap-1 text-[9px]">
-            <div className="flex items-center border border-[var(--c-br1)] rounded overflow-hidden bg-[var(--c-bg4)]">
-              <button type="button" onClick={() => setZoom((z) => Math.min(20, z * 1.5))} className="px-2 py-0.5 hover:bg-[var(--c-bg5)] text-[var(--c-tx1)] font-bold" title="Zoom In">+</button>
-              <span className="px-1.5 font-mono text-[var(--c-tx3)]">{zoom.toFixed(1)}x</span>
-              <button type="button" onClick={() => setZoom((z) => Math.max(0.5, z / 1.5))} className="px-2 py-0.5 hover:bg-[var(--c-bg5)] text-[var(--c-tx1)] font-bold" title="Zoom Out">-</button>
-            </div>
-            <button type="button" onClick={() => { setZoom(1.0); setPanOffset({ x: 0, y: 0 }); }} className="px-1.5 py-0.5 text-[9px] rounded border border-[var(--c-br1)] bg-[var(--c-bg4)] hover:bg-[var(--c-bg5)]">Fit/Reset</button>
-          </div>
-        </div>
+        <CompactHeader vertexCount={activePolygon.length} zoom={zoom} setZoom={setZoom} onResetView={resetView} />
       )}
 
 
       {/* Confirmation Modal when clicking New Region */}
       {showResetConfirmModal && (
-        <div
-          role="alertdialog"
-          aria-modal="true"
-          aria-labelledby="boundary-reset-confirm-title"
-          className="fixed inset-0 z-[999999] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4"
-        >
-          <div className="bg-[var(--c-bg2)] border border-[var(--c-br1)] rounded-lg p-5 max-w-md w-full shadow-2xl space-y-4 text-[var(--c-tx1)]">
-            <div className="flex items-center gap-3 text-amber-400">
-              <AlertTriangle size={22} className="shrink-0" />
-              <h3 id="boundary-reset-confirm-title" className="font-semibold text-sm">Draw New Region & Clear All Obstacles?</h3>
-            </div>
-            <p className="text-xs text-[var(--c-tx2)] leading-relaxed">
-              Creating a new region will reset your custom boundary polygon to default rectangle bounds and <strong>permanently delete all defined wall barriers and forbidden interior obstacle zones</strong>.
-              <br /><br />
-              Are you sure you want to proceed and start a clean new region?
-            </p>
-            <div className="flex items-center justify-end gap-2.5 pt-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setShowResetConfirmModal(false)}
-                className="text-xs cursor-pointer"
-                autoFocus
-              >
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                variant="destructive"
-                size="sm"
-                onClick={handleResetAllConfirm}
-                className="text-xs bg-rose-600 hover:bg-rose-700 text-white cursor-pointer font-medium"
-              >
-                Proceed & Reset All
-              </Button>
-            </div>
-          </div>
-        </div>
+        <ResetConfirmDialog onCancel={() => setShowResetConfirmModal(false)} onConfirm={handleResetAllConfirm} />
       )}
 
       {/* 2. Interactive Canvas */}
@@ -1221,51 +872,14 @@ export const Canvas2DBoundaryEditor: React.FC<Canvas2DBoundaryEditorProps> = ({
 
         {/* Context Menu */}
         {contextMenu && (
-          <div
-            style={{ left: contextMenu.x, top: contextMenu.y }}
-            className="absolute z-50 bg-[var(--c-bg4)] border border-[var(--c-br1)] rounded shadow-xl py-1 text-xs text-[var(--c-tx1)] animate-in fade-in duration-100"
-          >
-            {contextMenu.type === 'boundary_edge' && (
-              <button
-                type="button"
-                onClick={handleInsertPointOnBoundaryEdge}
-                className="w-full text-left px-3 py-1.5 hover:bg-violet-500/20 hover:text-violet-600 dark:hover:text-violet-300 transition-colors flex items-center gap-2 cursor-pointer"
-              >
-                <span>+ Insert Vertex Here on Boundary Edge</span>
-              </button>
-            )}
-            {contextMenu.type === 'obstacle_edge' && (
-              <button
-                type="button"
-                onClick={handleInsertPointOnObstacleEdge}
-                className="w-full text-left px-3 py-1.5 hover:bg-rose-500/20 hover:text-rose-600 dark:hover:text-rose-300 transition-colors flex items-center gap-2 cursor-pointer"
-              >
-                <span>+ Insert Vertex Here on Obstacle</span>
-              </button>
-            )}
-            {contextMenu.type === 'boundary_vertex' && (
-              <button
-                type="button"
-                onClick={handleDeleteBoundaryVertex}
-                className={`w-full text-left px-3 py-1.5 transition-colors flex items-center gap-2 cursor-pointer ${
-                  activePolygon.length <= 3
-                    ? 'opacity-50 text-[var(--c-tx4)] cursor-not-allowed'
-                    : 'hover:bg-red-500/20 hover:text-red-400'
-                }`}
-              >
-                <span>✕ Delete Boundary Vertex (Min 3 required)</span>
-              </button>
-            )}
-            {contextMenu.type === 'obstacle_vertex' && (
-              <button
-                type="button"
-                onClick={handleDeleteObstacleVertex}
-                className="w-full text-left px-3 py-1.5 hover:bg-rose-500/20 hover:text-rose-400 transition-colors flex items-center gap-2 cursor-pointer"
-              >
-                <span>✕ Delete Obstacle Vertex</span>
-              </button>
-            )}
-          </div>
+          <CanvasContextMenu
+            menu={contextMenu}
+            polygonLength={activePolygon.length}
+            onInsertOnBoundaryEdge={handleInsertPointOnBoundaryEdge}
+            onInsertOnObstacleEdge={handleInsertPointOnObstacleEdge}
+            onDeleteBoundaryVertex={handleDeleteBoundaryVertex}
+            onDeleteObstacleVertex={handleDeleteObstacleVertex}
+          />
         )}
       </div>
     </div>

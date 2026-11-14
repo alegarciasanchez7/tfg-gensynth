@@ -19,6 +19,7 @@ import type { Group, Flow, Variable } from '../types';
 import type { GroupState, FlowState, VariableState } from '../core/types';
 import type { OptimisticManager } from './optimisticManager';
 import { randomUUID } from '../core/randomId';
+import type { CreateFlowOptions, CreateVariableOptions } from './crudTypes';
 
 // ─────────────────────────────────────────────────────────────
 // Helper Types
@@ -229,19 +230,10 @@ export async function deleteGroup(
 export async function createFlow(
   ctx: CRUDActionContext,
   groupId: string,
-  name: string,
-  technology: string,
-  host: string,
-  port: number,
-  topic?: string,
-  interval?: number,
-  burst?: number,
-  template?: string,
-  connectorConfig?: Record<string, unknown>,
+  options: CreateFlowOptions,
   onResponse?: (data: FlowState) => void,
-  everyTicks?: number,
-  autoRename?: boolean,
 ): Promise<FlowState> {
+  const { name, technology, host, port, topic, interval, burst, template, connectorConfig, everyTicks, autoRename } = options;
   // Validations
   if (!groupId?.trim()) throwValidationError('groupId', 'is required');
   if (!name?.trim()) throwValidationError('name', 'is required');
@@ -395,15 +387,10 @@ export async function deleteFlow(
  */
 export async function createVariable(
   ctx: CRUDActionContext,
-  name: string,
-  type: string,
-  scope: 'global' | 'group' | 'local',
-  config?: Record<string, unknown>,
-  flowId?: string,
-  groupId?: string,
-  variableId?: string,
+  options: CreateVariableOptions,
   onResponse?: (data: VariableState) => void,
 ): Promise<VariableState> {
+  const { name, type, scope, config, flowId, groupId, variableId } = options;
   // Validations
   if (!name?.trim()) throwValidationError('name', 'is required');
   const validTypes = ['numeric', 'string', 'boolean', 'temporal', 'point', 'list'];
@@ -435,8 +422,8 @@ export async function createVariable(
     const newVariable: VariableState = {
       id: generatedId,
       name: name.trim(),
-      type: type as any,
-      scope: scope as any,
+      type,
+      scope,
       flowId,
       groupId,
       config: config || {},

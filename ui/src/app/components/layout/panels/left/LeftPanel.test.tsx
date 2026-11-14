@@ -6,6 +6,7 @@ import type { Flow, Group, Selection } from '../../../../types';
 import type { ConnectorPluginDescriptor } from '../../../../core/types';
 
 import { LeftPanel } from './LeftPanel';
+import type { CreateFlowOptions } from '../../../../context/crudTypes';
 
 vi.mock('sonner', () => ({
   toast: {
@@ -96,7 +97,7 @@ describe('LeftPanel', () => {
     onUpdateFlowConfig: vi.fn(),
     onCloneGroup: vi.fn(),
     onCloneFlow: vi.fn(),
-    onCreateFlow: vi.fn(async (_groupId: string, name: string): Promise<Flow> => ({
+    onCreateFlow: vi.fn(async (_groupId: string, { name }: CreateFlowOptions): Promise<Flow> => ({
       id: 'flow-1',
       name,
       technology: 'file',
@@ -134,23 +135,19 @@ describe('LeftPanel', () => {
     await user.type(screen.getByLabelText(/^name$/i), 'Output flow');
     await user.click(screen.getByRole('button', { name: /create flow/i }));
 
-    expect(baseProps.onCreateFlow).toHaveBeenCalledWith(
-      'g1',
-      'Output flow',
-      'file',
-      '', // legacy host/port/topic: the destination is part of the connector configuration
-      0,
-      undefined,
-      undefined, // legacy interval: pacing comes from the global tick clock
-      undefined, // legacy burst: one message every N ticks
-      '{}',
-      {
+    expect(baseProps.onCreateFlow).toHaveBeenCalledWith('g1', {
+      name: 'Output flow',
+      technology: 'file',
+      host: '', // legacy host/port/topic: the destination is part of the connector configuration
+      port: 0,
+      template: '{}',
+      connectorConfig: {
         outputDir: './outputs',
         format: 'json',
       },
-      1, // everyTicks
-      false, // autoRename: only the Repeater renames taken names
-    );
+      everyTicks: 1,
+      autoRename: false, // only the Repeater renames taken names
+    });
   });
 
   it('ADD → Add Flow targets the selected group and hides the group selector', async () => {

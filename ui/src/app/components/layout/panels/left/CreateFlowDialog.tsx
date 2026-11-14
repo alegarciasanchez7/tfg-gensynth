@@ -18,6 +18,7 @@ import { buildPatternNames } from '../../../../core/namingPattern';
 import { defaultConnectorConfig, validateConnectorConfig } from '../../../../core/connectorFields';
 import { findFlowNameConflict } from '../../../../core/flowNames';
 import { commandErrorMessage } from '../../../../core/errorMessage';
+import type { CreateFlowHandler } from '../../../../context/crudTypes';
 
 const DEFAULT_REPEAT_COUNT = '2';
 const DEFAULT_REPEAT_PATTERN = '${name} ${index}';
@@ -43,20 +44,7 @@ interface CreateFlowDialogProps {
   /** If provided, binds directly to this group and hides the group selector. */
   groupId?: string;
   latestConnectors: ConnectorPluginDescriptor[];
-  onCreateFlow: (
-    groupId: string,
-    name: string,
-    technology: string,
-    host: string,
-    port: number,
-    topic?: string,
-    interval?: number,
-    burst?: number,
-    template?: string,
-    connectorConfig?: Record<string, unknown>,
-    everyTicks?: number,
-    autoRename?: boolean,
-  ) => Promise<Flow>;
+  onCreateFlow: CreateFlowHandler;
   onSelectFlow?: (groupId: string, flowId: string) => void;
   /** Repeater mode: creates N flows with the same initial configuration and a naming pattern. */
   repeat?: boolean;
@@ -145,20 +133,18 @@ export function CreateFlowDialog({
     try {
       // One after another so the flows keep the order of their names
       for (const name of names) {
-        created.push(await onCreateFlow(
-          targetGroupId,
+        created.push(await onCreateFlow(targetGroupId, {
           name,
-          flowTechnology.trim(),
-          '', // Legacy host/port/topic: the destination is part of the connector configuration
-          0,
-          undefined,
-          undefined, // Legacy interval: generation is paced by the global tick clock
-          undefined, // Legacy burst: one message every N ticks
-          '{}',
+          technology: flowTechnology.trim(),
+          // Legacy host/port/topic: the destination is part of the connector configuration.
+          // Legacy interval/burst are left out: generation is paced by the global tick clock.
+          host: '',
+          port: 0,
+          template: '{}',
           connectorConfig,
           everyTicks,
-          repeat, // autoRename: the Repeater never fails on a taken name
-        ));
+          autoRename: repeat, // the Repeater never fails on a taken name
+        }));
       }
       // With autoRename the Core answers with the final name of each flow
       const renamed = created.filter((flow, i) => flow.name !== names[i].trim()).length;

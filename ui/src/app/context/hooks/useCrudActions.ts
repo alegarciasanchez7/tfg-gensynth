@@ -7,6 +7,7 @@ import type { AppState, AppAction } from '../reducer';
 import { mapFlowFromCore, mapGroupFromCore, reorderFlows } from '../helpers/groupHelpers';
 import * as CRUDActions from '../crudActions';
 import type { CRUDActionContext } from '../crudActions';
+import type { CreateFlowOptions } from '../crudTypes';
 import { normalizeVariableFromCore } from '../variableNormalization';
 import type { OptimisticManager } from '../optimisticManager';
 import { 
@@ -219,32 +220,9 @@ export function useCrudActions({
     [crudContext, state.groups, reportCommandError, dispatch, optimisticManager],
   );
 
-  const createFlow = useCallback(async (
-    groupId: string,
-    name: string,
-    technology: string,
-    host: string,
-    port: number,
-    topic?: string,
-    interval?: number,
-    burst?: number,
-    template?: string,
-    connectorConfig?: Record<string, unknown>,
-    everyTicks?: number,
-    autoRename?: boolean,
-  ) => {
+  const createFlow = useCallback(async (groupId: string, options: CreateFlowOptions) => {
     const optimisticId = generateOptimisticId('flow');
-    const optimisticFlow = createOptimisticFlow(
-      optimisticId,
-      name,
-      technology,
-      host,
-      port,
-      topic,
-      interval,
-      burst,
-      everyTicks
-    );
+    const optimisticFlow = createOptimisticFlow(optimisticId, options);
 
     try {
       const applyOptimisticFlow = () => {
@@ -286,23 +264,7 @@ export function useCrudActions({
         {
           applyOptimistic: applyOptimisticFlow,
           rollback: rollbackOptimisticFlow,
-          send: (onResponse) =>
-            CRUDActions.createFlow(
-              crudContext,
-              groupId,
-              name,
-              technology,
-              host,
-              port,
-              topic,
-              interval,
-              burst,
-              template,
-              connectorConfig,
-              onResponse,
-              everyTicks,
-              autoRename
-            ),
+          send: (onResponse) => CRUDActions.createFlow(crudContext, groupId, options, onResponse),
           reconcileId: (serverFlow) => {
             const mappedFlow = mapFlowFromCore(serverFlow as FlowState);
             dispatch({
@@ -331,7 +293,7 @@ export function useCrudActions({
 
       return mapFlowFromCore(createdFlow as FlowState);
     } catch (error) {
-      reportCommandError('FLOWS', `createFlow(${name})`, error);
+      reportCommandError('FLOWS', `createFlow(${options.name})`, error);
       throw error;
     }
   }, [crudContext, reportCommandError, stateRef, dispatch, optimisticManager]);
@@ -513,7 +475,7 @@ export function useCrudActions({
           applyOptimistic: applyOptimisticVariable,
           rollback: rollbackOptimisticVariable,
           send: (onResponse) =>
-            CRUDActions.createVariable(crudContext, name, type, scope, config, flowId, groupId, variableId, onResponse),
+            CRUDActions.createVariable(crudContext, { name, type, scope, config, flowId, groupId, variableId }, onResponse),
           reconcileId: (serverVariable) => {
             const normalizedServer = normalizeVariableFromCore(serverVariable as VariableState);
             dispatch({
