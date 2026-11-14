@@ -106,6 +106,20 @@ public class NumericVariableConfig extends VariableConfiguration {
     @Override
     public java.util.List<String> validate() {
         java.util.List<String> errors = new java.util.ArrayList<>();
+        validateRangeAndStep(errors);
+        if (pattern == GenerationPattern.SEQUENTIAL && steps <= 0) {
+            errors.add("Steps must be > 0 for SEQUENTIAL pattern");
+        }
+        if (pattern == GenerationPattern.FORMULA && !hasFormula()) {
+            errors.add("Formula pattern requires a non-empty formula expression");
+        }
+        if (pattern == GenerationPattern.DISTRIBUTION && isCustomDistribution()) {
+            validateCustomDistribution(errors);
+        }
+        return errors;
+    }
+
+    private void validateRangeAndStep(List<String> errors) {
         if (fromValue > toValue) {
             errors.add("Numeric range is invalid: min must be <= max");
         }
@@ -118,35 +132,40 @@ public class NumericVariableConfig extends VariableConfiguration {
         if (step > 0 && step > (toValue - fromValue)) {
             errors.add("Step " + step + " exceeds the range [min, max]: no value can be generated");
         }
-        if (pattern == GenerationPattern.SEQUENTIAL && steps <= 0) {
-            errors.add("Steps must be > 0 for SEQUENTIAL pattern");
+    }
+
+    private void validateCustomDistribution(List<String> errors) {
+        if (customDistributionGraph == null || customDistributionGraph.isEmpty()) {
+            errors.add("Custom distribution requires at least one segment");
+        } else if (sumCustomWeights() <= 0) {
+            errors.add("Custom distribution: all weights are zero or negative");
         }
-        if (pattern == GenerationPattern.FORMULA && (formula == null || formula.trim().isEmpty())) {
-            errors.add("Formula pattern requires a non-empty formula expression");
-        }
-        if (pattern == GenerationPattern.DISTRIBUTION && "CUSTOM".equalsIgnoreCase(distributionType)) {
-            if (customDistributionGraph == null || customDistributionGraph.isEmpty()) {
-                errors.add("Custom distribution requires at least one segment");
-            } else {
-                double totalWeight = 0;
-                for (Map<String, Object> pt : customDistributionGraph) {
-                    Number wNum = (Number) pt.get(WEIGHT);
-                    if (wNum != null) {
-                        totalWeight += wNum.doubleValue();
-                    }
-                }
-                if (totalWeight <= 0) {
-                    errors.add("Custom distribution: all weights are zero or negative");
-                }
+    }
+
+    private boolean hasFormula() {
+        return formula != null && !formula.trim().isEmpty();
+    }
+
+    private boolean isCustomDistribution() {
+        return "CUSTOM".equalsIgnoreCase(distributionType);
+    }
+
+    /** Sum of the segment weights of the custom distribution; segments without a weight count as 0. */
+    private double sumCustomWeights() {
+        double totalWeight = 0;
+        for (Map<String, Object> pt : customDistributionGraph) {
+            Number wNum = (Number) pt.get(WEIGHT);
+            if (wNum != null) {
+                totalWeight += wNum.doubleValue();
             }
         }
-        return errors;
+        return totalWeight;
     }
 
     @Override
     public java.util.Set<String> getDependencies() {
         java.util.Set<String> deps = super.getDependencies();
-        if (pattern == GenerationPattern.FORMULA && formula != null && !formula.trim().isEmpty()) {
+        if (pattern == GenerationPattern.FORMULA && hasFormula()) {
             // Very basic heuristic: extract variable names from formula via regex
             java.util.regex.Matcher m = java.util.regex.Pattern
                     .compile("(?:\\x5B|\\x7B\\x7B)([a-zA-Z0-9_-]+)(?:\\x5D|\\x7D\\x7D)").matcher(formula);
@@ -167,99 +186,96 @@ public class NumericVariableConfig extends VariableConfiguration {
         }
 
         if (sourceListVariableId != null && !sourceListVariableId.trim().isEmpty()) {
-            Object refVal = resolveListReferenceValue();
-            if (refVal != null) {
-                try {
-                    if (refVal instanceof Number number) {
-                        currentValue = number.doubleValue();
-                    } else {
-                        currentValue = Double.parseDouble(refVal.toString().trim());
-                    }
-                    if (noiseEnabled) currentValue = applyNoise(currentValue);
-                    if (spikeEnabled) currentValue = applySpike(currentValue);
-                    return formatValue(currentValue);
-                } catch (Exception ignored) {
-                    // Fallback to standard numeric generation
-                }
+            Object referenced = valueFromListReference();
+            if (referenced != null) {
+                return referenced;
             }
         }
 
-        double baseValue;
+        currentValue = computeBaseValue();
+        applyModifierLayers();
+        return formatValue(currentValue);
+    }
 
-        if (pattern == GenerationPattern.FORMULA) {
-            if (formula != null && !formula.trim().isEmpty()) {
-                baseValue = evaluateFormula();
+    /**
+     * Value taken from the referenced list item, with the modifier layers applied.
+     *
+     * @return the formatted value, or {@code null} to fall back to the standard generation
+     */
+    private Object valueFromListReference() {
+        Object refVal = resolveListReferenceValue();
+        if (refVal == null) {
+            return null;
+        }
+        try {
+            if (refVal instanceof Number number) {
+                currentValue = number.doubleValue();
             } else {
-                baseValue = 0.0;
+                currentValue = Double.parseDouble(refVal.toString().trim());
             }
-        } else if (tickCounter == 1 && initialValue != null && 
-                  (pattern == GenerationPattern.RANDOM || pattern == GenerationPattern.SEQUENTIAL)) {
-            baseValue = initialValue;
-        } else {
-            switch (pattern) {
-                case RANDOM:
-                    if (step > 0 && (toValue - fromValue) > 0) {
-                        double range = toValue - fromValue;
-                        long numSteps = (long) (range / step);
-                        if (numSteps > 0) {
-                            long randomStep = ThreadLocalRandom.current().nextLong(0, numSteps + 1);
-                            baseValue = fromValue + (randomStep * step);
-                            baseValue = Math.clamp(baseValue, fromValue, toValue);
-                        } else {
-                            baseValue = fromValue;
-                        }
-                    } else {
-                        baseValue = generateRandom();
-                    }
-                    break;
-                case CONSTANT:
-                    if (constantMargin > 0.0) {
-                        double randomOffset = ThreadLocalRandom.current().nextDouble(-constantMargin, constantMargin);
-                        baseValue = constantValue + randomOffset;
-                        if (fromValue < toValue) {
-                            baseValue = Math.clamp(baseValue, fromValue, toValue);
-                        }
-                    } else {
-                        baseValue = constantValue;
-                    }
-                    break;
-                case SEQUENTIAL:
-                    baseValue = generateSequential();
-                    break;
-                case DISTRIBUTION:
-                    if ("CUSTOM".equalsIgnoreCase(distributionType)) {
-                        baseValue = generateCustomDistribution();
-                    } else {
-                        baseValue = generateDistribution();
-                    }
-                    break;
-                case TREND:
-                    baseValue = generateTrend();
-                    break;
-                case SINUSOIDAL:
-                    baseValue = generateSinusoidal();
-                    break;
-                case DRIFT:
-                    baseValue = generateDrift();
-                    break;
-                default:
-                    baseValue = initialValue != null ? initialValue : fromValue;
-            }
+            applyModifierLayers();
+            return formatValue(currentValue);
+        } catch (Exception ignored) {
+            // Fallback to standard numeric generation
+            return null;
         }
+    }
 
-        currentValue = baseValue;
-
-        // Apply Noise modifier layer if enabled
+    /** Applies the noise layer and then the spike layer, when enabled, to {@code currentValue}. */
+    private void applyModifierLayers() {
         if (noiseEnabled) {
             currentValue = applyNoise(currentValue);
         }
-
-        // Apply Spike anomaly modifier layer if enabled
         if (spikeEnabled) {
             currentValue = applySpike(currentValue);
         }
+    }
 
-        return formatValue(currentValue);
+    private double computeBaseValue() {
+        if (pattern == GenerationPattern.FORMULA) {
+            return hasFormula() ? evaluateFormula() : 0.0;
+        }
+        if (tickCounter == 1 && initialValue != null
+                && (pattern == GenerationPattern.RANDOM || pattern == GenerationPattern.SEQUENTIAL)) {
+            return initialValue;
+        }
+        return switch (pattern) {
+            case RANDOM -> generateRandomPatternValue();
+            case CONSTANT -> generateConstant();
+            case SEQUENTIAL -> generateSequential();
+            case DISTRIBUTION -> isCustomDistribution() ? generateCustomDistribution() : generateDistribution();
+            case TREND -> generateTrend();
+            case SINUSOIDAL -> generateSinusoidal();
+            case DRIFT -> generateDrift();
+            default -> initialValue != null ? initialValue : fromValue;
+        };
+    }
+
+    /** Random pattern: a whole number of steps above min when a step is set, otherwise {@link #generateRandom()}. */
+    private double generateRandomPatternValue() {
+        if (step > 0 && (toValue - fromValue) > 0) {
+            double range = toValue - fromValue;
+            long numSteps = (long) (range / step);
+            if (numSteps > 0) {
+                long randomStep = ThreadLocalRandom.current().nextLong(0, numSteps + 1);
+                return Math.clamp(fromValue + (randomStep * step), fromValue, toValue);
+            }
+            return fromValue;
+        }
+        return generateRandom();
+    }
+
+    /** Constant pattern: the constant, moved by a random offset within the margin when one is set. */
+    private double generateConstant() {
+        if (constantMargin > 0.0) {
+            double randomOffset = ThreadLocalRandom.current().nextDouble(-constantMargin, constantMargin);
+            double baseValue = constantValue + randomOffset;
+            if (fromValue < toValue) {
+                baseValue = Math.clamp(baseValue, fromValue, toValue);
+            }
+            return baseValue;
+        }
+        return constantValue;
     }
 
     private double generateSinusoidal() {
@@ -279,30 +295,39 @@ public class NumericVariableConfig extends VariableConfiguration {
         double rawVal = startVal + driftRate * t;
 
         if (fromValue < toValue) {
-            String mode = driftLimitMode != null ? driftLimitMode.toUpperCase() : CLAMP;
-            switch (mode) {
-                case "BOUNCE": {
-                    // Triangle wave: the value goes back and forth between the limits like a reflection
-                    double range = toValue - fromValue;
-                    double offset = (rawVal - fromValue) % (2 * range);
-                    if (offset < 0) {
-                        offset += 2 * range;
-                    }
-                    return offset <= range ? fromValue + offset : toValue - (offset - range);
-                }
-                case "WRAP", "RESET":
-                    if (rawVal > toValue) {
-                        double range = toValue - fromValue;
-                        rawVal = fromValue + ((rawVal - fromValue) % range);
-                    } else if (rawVal < fromValue) {
-                        double range = toValue - fromValue;
-                        rawVal = toValue - ((toValue - rawVal) % range);
-                    }
-                    return rawVal;
-                case CLAMP:
-                default:
-                    return Math.clamp(rawVal, fromValue, toValue);
-            }
+            return limitDrift(rawVal);
+        }
+        return rawVal;
+    }
+
+    /** Keeps a drifted value in [min, max] following the drift limit mode (CLAMP when unknown). */
+    private double limitDrift(double rawVal) {
+        String mode = driftLimitMode != null ? driftLimitMode.toUpperCase() : CLAMP;
+        return switch (mode) {
+            case "BOUNCE" -> bounceInRange(rawVal);
+            case "WRAP", "RESET" -> wrapInRange(rawVal);
+            default -> Math.clamp(rawVal, fromValue, toValue);
+        };
+    }
+
+    /** Triangle wave: the value goes back and forth between the limits like a reflection. */
+    private double bounceInRange(double rawVal) {
+        double range = toValue - fromValue;
+        double offset = (rawVal - fromValue) % (2 * range);
+        if (offset < 0) {
+            offset += 2 * range;
+        }
+        return offset <= range ? fromValue + offset : toValue - (offset - range);
+    }
+
+    /** Saw-tooth: a value past one limit starts again from the other one. */
+    private double wrapInRange(double rawVal) {
+        double range = toValue - fromValue;
+        if (rawVal > toValue) {
+            return fromValue + ((rawVal - fromValue) % range);
+        }
+        if (rawVal < fromValue) {
+            return toValue - ((toValue - rawVal) % range);
         }
         return rawVal;
     }
@@ -519,15 +544,7 @@ public class NumericVariableConfig extends VariableConfiguration {
             return generateOriginalSequential();
         }
 
-        // Find max x in the graph
-        double maxX = 0;
-        for (Map<String, Object> pt : sequentialGraph) {
-            Number xNum = (Number) pt.get("x");
-            if (xNum != null && xNum.doubleValue() > maxX) {
-                maxX = xNum.doubleValue();
-            }
-        }
-
+        double maxX = maxGraphX();
         if (maxX <= 0) {
             return fromValue;
         }
@@ -535,41 +552,85 @@ public class NumericVariableConfig extends VariableConfiguration {
         // Current index in the loop: every drawn point, from x=0 to x=maxX, is played once per cycle
         double index = (tickCounter - 1) % (maxX + 1); // tickCounter is already incremented in generateNextValue()
 
-        // Find the bracket points
-        Map<String, Object> before = null;
-        Map<String, Object> after = null;
+        Optional<Map<String, Object>> exact = graphPointAt(index);
+        if (exact.isPresent()) {
+            Number yNum = (Number) exact.get().get("y");
+            return yNum != null ? yNum.doubleValue() : fromValue;
+        }
+        return interpolateGraph(closestGraphPointBelow(index), closestGraphPointAbove(index), index);
+    }
 
+    /** Largest x of the sequential graph, or 0 when no point has a positive x. */
+    private double maxGraphX() {
+        double maxX = 0;
         for (Map<String, Object> pt : sequentialGraph) {
             Number xNum = (Number) pt.get("x");
-            if (xNum == null)
-                continue;
-            double px = xNum.doubleValue();
-            if (px == index) {
-                Number yNum = (Number) pt.get("y");
-                return yNum != null ? yNum.doubleValue() : fromValue;
+            if (xNum != null && xNum.doubleValue() > maxX) {
+                maxX = xNum.doubleValue();
             }
-            if (px < index && (before == null || px > ((Number) before.get("x")).doubleValue())) {
+        }
+        return maxX;
+    }
+
+    /** First graph point drawn exactly at {@code index}, if any. */
+    private Optional<Map<String, Object>> graphPointAt(double index) {
+        for (Map<String, Object> pt : sequentialGraph) {
+            Number xNum = (Number) pt.get("x");
+            if (xNum != null && xNum.doubleValue() == index) {
+                return Optional.of(pt);
+            }
+        }
+        return Optional.empty();
+    }
+
+    /** Nearest graph point below {@code index} (the first drawn on equal x), or {@code null}. */
+    private Map<String, Object> closestGraphPointBelow(double index) {
+        Map<String, Object> before = null;
+        for (Map<String, Object> pt : sequentialGraph) {
+            Number xNum = (Number) pt.get("x");
+            if (xNum != null && xNum.doubleValue() < index
+                    && (before == null || xNum.doubleValue() > graphX(before))) {
                 before = pt;
             }
-            if (px > index && (after == null || px < ((Number) after.get("x")).doubleValue())) {
+        }
+        return before;
+    }
+
+    /** Nearest graph point above {@code index} (the first drawn on equal x), or {@code null}. */
+    private Map<String, Object> closestGraphPointAbove(double index) {
+        Map<String, Object> after = null;
+        for (Map<String, Object> pt : sequentialGraph) {
+            Number xNum = (Number) pt.get("x");
+            if (xNum != null && xNum.doubleValue() > index
+                    && (after == null || xNum.doubleValue() < graphX(after))) {
                 after = pt;
             }
         }
+        return after;
+    }
 
-        // Interpolate
+    /** Linear interpolation between the bracket points, or the only bracket point found. */
+    private double interpolateGraph(Map<String, Object> before, Map<String, Object> after, double index) {
         if (before != null && after != null) {
-            double x1 = ((Number) before.get("x")).doubleValue();
-            double y1 = ((Number) before.get("y")).doubleValue();
-            double x2 = ((Number) after.get("x")).doubleValue();
-            double y2 = ((Number) after.get("y")).doubleValue();
+            double x1 = graphX(before);
+            double y1 = graphY(before);
+            double x2 = graphX(after);
+            double y2 = graphY(after);
             return y1 + (y2 - y1) * (index - x1) / (x2 - x1);
         } else if (before != null) {
-            return ((Number) before.get("y")).doubleValue();
+            return graphY(before);
         } else if (after != null) {
-            return ((Number) after.get("y")).doubleValue();
+            return graphY(after);
         }
-
         return fromValue;
+    }
+
+    private static double graphX(Map<String, Object> pt) {
+        return ((Number) pt.get("x")).doubleValue();
+    }
+
+    private static double graphY(Map<String, Object> pt) {
+        return ((Number) pt.get("y")).doubleValue();
     }
 
     private double generateRandomInInterval(double f, double t) {
@@ -591,50 +652,38 @@ public class NumericVariableConfig extends VariableConfiguration {
             return fromValue + (toValue - fromValue) * ThreadLocalRandom.current().nextDouble();
         }
 
-        double totalWeight = 0;
-        for (Map<String, Object> pt : customDistributionGraph) {
-            Number wNum = (Number) pt.get(WEIGHT);
-            if (wNum != null) {
-                totalWeight += wNum.doubleValue();
-            }
-        }
-
+        double totalWeight = sumCustomWeights();
         if (totalWeight <= 0) {
-            Map<String, Object> first = customDistributionGraph.get(0);
-            Number fromNum = (Number) first.get("from");
-            Number toNum = (Number) first.get("to");
-            if (fromNum != null && toNum != null) {
-                return generateRandomInInterval(fromNum.doubleValue(), toNum.doubleValue());
-            }
-            Number valNum = (Number) first.get(VALUE);
-            return valNum != null ? valNum.doubleValue() : fromValue;
+            return sampleSegment(customDistributionGraph.get(0));
         }
 
         double r = ThreadLocalRandom.current().nextDouble() * totalWeight;
+        return sampleSegment(weightedSegment(r));
+    }
+
+    /** Segment whose cumulative weight first reaches {@code r}; the last segment if none does. */
+    private Map<String, Object> weightedSegment(double r) {
         double cumulativeWeight = 0;
         for (Map<String, Object> pt : customDistributionGraph) {
             Number wNum = (Number) pt.get(WEIGHT);
-            if (wNum == null)
-                continue;
-            cumulativeWeight += wNum.doubleValue();
-            if (r <= cumulativeWeight) {
-                Number fromNum = (Number) pt.get("from");
-                Number toNum = (Number) pt.get("to");
-                if (fromNum != null && toNum != null) {
-                    return generateRandomInInterval(fromNum.doubleValue(), toNum.doubleValue());
+            if (wNum != null) {
+                cumulativeWeight += wNum.doubleValue();
+                if (r <= cumulativeWeight) {
+                    return pt;
                 }
-                Number valNum = (Number) pt.get(VALUE);
-                return valNum != null ? valNum.doubleValue() : fromValue;
             }
         }
+        return customDistributionGraph.get(customDistributionGraph.size() - 1);
+    }
 
-        Map<String, Object> last = customDistributionGraph.get(customDistributionGraph.size() - 1);
-        Number fromNum = (Number) last.get("from");
-        Number toNum = (Number) last.get("to");
+    /** A random value inside a from-to segment, or its single value (min when it has none). */
+    private double sampleSegment(Map<String, Object> segment) {
+        Number fromNum = (Number) segment.get("from");
+        Number toNum = (Number) segment.get("to");
         if (fromNum != null && toNum != null) {
             return generateRandomInInterval(fromNum.doubleValue(), toNum.doubleValue());
         }
-        Number valNum = (Number) last.get(VALUE);
+        Number valNum = (Number) segment.get(VALUE);
         return valNum != null ? valNum.doubleValue() : fromValue;
     }
 
@@ -651,102 +700,120 @@ public class NumericVariableConfig extends VariableConfiguration {
         return "%0" + width + "d";
     }
 
-    private Object formatValue(double value) {
-        String activePrefix = this.prefix != null ? this.prefix : "";
-        String activeSuffix = this.suffix != null ? this.suffix : "";
-        String numberFormat = "";
-        boolean hasFormatSpec = false;
+    /**
+     * Text layout of the emitted number: prefix and suffix, plus the zero-padding digits of the
+     * integer format ("0000" or "(ID-)0000", whose text in brackets is the default prefix).
+     *
+     * @param present whether an integer format was given, which turns the number into text
+     */
+    private record NumberLayout(String prefix, String suffix, String digits, boolean present) {
 
-        if (integerFormat != null && !integerFormat.isEmpty()) {
-            if (integerFormat.contains("(") && integerFormat.contains(")")) {
-                int start = integerFormat.indexOf('(');
-                int end = integerFormat.indexOf(')');
-                if (start < end) {
-                    if (activePrefix.isEmpty()) {
-                        activePrefix = integerFormat.substring(start + 1, end);
-                    }
-                    numberFormat = integerFormat.substring(end + 1);
-                    hasFormatSpec = true;
-                }
-            } else {
-                numberFormat = integerFormat;
-                hasFormatSpec = true;
-            }
+        boolean hasAffixes() {
+            return !prefix.isEmpty() || !suffix.isEmpty();
         }
 
+        /** Width to zero-pad the integer part to, or 0 for no padding. */
+        int padWidth() {
+            return present && digits.matches("0*1?") ? digits.length() : 0;
+        }
+    }
+
+    private NumberLayout numberLayout() {
+        String activePrefix = this.prefix != null ? this.prefix : "";
+        String activeSuffix = this.suffix != null ? this.suffix : "";
+        if (integerFormat == null || integerFormat.isEmpty()) {
+            return new NumberLayout(activePrefix, activeSuffix, "", false);
+        }
+        if (!integerFormat.contains("(") || !integerFormat.contains(")")) {
+            return new NumberLayout(activePrefix, activeSuffix, integerFormat, true);
+        }
+        int start = integerFormat.indexOf('(');
+        int end = integerFormat.indexOf(')');
+        if (start >= end) {
+            // A ")" before the "(" is not a prefix: the format is ignored
+            return new NumberLayout(activePrefix, activeSuffix, "", false);
+        }
+        String layoutPrefix = activePrefix.isEmpty() ? integerFormat.substring(start + 1, end) : activePrefix;
+        return new NumberLayout(layoutPrefix, activeSuffix, integerFormat.substring(end + 1), true);
+    }
+
+    private Object formatValue(double value) {
+        NumberLayout layout = numberLayout();
         if ("INTEGER".equalsIgnoreCase(precision)) {
-            long intVal = (long) value;
-            lastNumericValue = (double) intVal;
-            String formattedNum;
-            if (hasFormatSpec && numberFormat.matches("0*1?")) {
-                int padLen = numberFormat.length();
-                if (padLen > 0) {
-                    formattedNum = String.format(Locale.ROOT, zeroPaddedFormat(padLen), intVal);
-                } else {
-                    formattedNum = String.valueOf(intVal);
-                }
-            } else {
-                formattedNum = String.valueOf(intVal);
-            }
+            return formatInteger(value, layout);
+        }
+        return formatDecimal(value, layout);
+    }
 
-            if (!activePrefix.isEmpty() || !activeSuffix.isEmpty()) {
-                return activePrefix + formattedNum + activeSuffix;
-            }
-            return hasFormatSpec ? formattedNum : intVal;
-        } else {
-            double roundedValue = value;
-            int activeDecimalPlaces = this.decimalPlaces;
-            if (pattern == GenerationPattern.CONSTANT) {
-                if (constantMargin == 0.0) {
-                    if (constantValue % 1.0 == 0.0) {
-                        activeDecimalPlaces = 0;
-                    }
-                } else {
-                    if (constantMargin % 1.0 == 0.0 && constantValue % 1.0 == 0.0) {
-                        activeDecimalPlaces = 0;
-                    }
-                }
-            }
+    /** INTEGER precision: a Long, or a String when a prefix, suffix or integer format applies. */
+    private Object formatInteger(double value, NumberLayout layout) {
+        long intVal = (long) value;
+        lastNumericValue = (double) intVal;
+        int padLen = layout.padWidth();
+        String formattedNum = padLen > 0
+                ? String.format(Locale.ROOT, zeroPaddedFormat(padLen), intVal)
+                : String.valueOf(intVal);
 
-            if (activeDecimalPlaces >= 0) {
-                double scale = Math.pow(10, activeDecimalPlaces);
-                roundedValue = Math.round(value * scale) / scale;
-            }
-            lastNumericValue = roundedValue;
+        if (layout.hasAffixes()) {
+            return layout.prefix() + formattedNum + layout.suffix();
+        }
+        return layout.present() ? formattedNum : intVal;
+    }
 
-            if (hasFormatSpec || !activePrefix.isEmpty() || !activeSuffix.isEmpty()) {
-                String formattedNum;
-                String decimalsFormat = "%." + (activeDecimalPlaces >= 0 ? activeDecimalPlaces : 2) + "f";
-                String strValue = String.format(Locale.US, decimalsFormat, roundedValue);
-                int dotIdx = strValue.indexOf('.');
-                String intPartStr = dotIdx >= 0 ? strValue.substring(0, dotIdx) : strValue;
-                String decPartStr = dotIdx >= 0 ? strValue.substring(dotIdx) : "";
+    /**
+     * FLOAT and DOUBLE precision: the value rounded to the decimal places, as a Float or Double,
+     * or as a String when a prefix, suffix or integer format applies.
+     */
+    private Object formatDecimal(double value, NumberLayout layout) {
+        double roundedValue = value;
+        int activeDecimalPlaces = effectiveDecimalPlaces();
+        if (activeDecimalPlaces >= 0) {
+            double scale = Math.pow(10, activeDecimalPlaces);
+            roundedValue = Math.round(value * scale) / scale;
+        }
+        lastNumericValue = roundedValue;
 
-                boolean isNegative = intPartStr.startsWith("-");
-                if (isNegative) {
-                    intPartStr = intPartStr.substring(1);
-                }
+        if (layout.present() || layout.hasAffixes()) {
+            return layout.prefix() + decimalText(roundedValue, activeDecimalPlaces, layout.padWidth())
+                    + layout.suffix();
+        }
+        if ("FLOAT".equalsIgnoreCase(precision)) {
+            return (float) roundedValue;
+        }
+        return roundedValue; // DOUBLE
+    }
 
-                if (hasFormatSpec && numberFormat.matches("0*1?")) {
-                    int padLen = numberFormat.length();
-                    if (padLen > 0) {
-                        try {
-                            long intPartVal = Long.parseLong(intPartStr);
-                            intPartStr = String.format(Locale.ROOT, zeroPaddedFormat(padLen), intPartVal);
-                        } catch (NumberFormatException e) {
-                            // ignore, keep original
-                        }
-                    }
-                }
+    /** A whole constant with a whole margin (0 included, as 0 % 1 is 0) is shown without decimals. */
+    private int effectiveDecimalPlaces() {
+        boolean wholeConstant = pattern == GenerationPattern.CONSTANT
+                && constantMargin % 1.0 == 0.0 && constantValue % 1.0 == 0.0;
+        return wholeConstant ? 0 : decimalPlaces;
+    }
 
-                formattedNum = (isNegative ? "-" : "") + intPartStr + decPartStr;
-                return activePrefix + formattedNum + activeSuffix;
-            }
+    /** The value with its decimals, its integer part zero-padded to {@code padLen} (0 for none). */
+    private static String decimalText(double roundedValue, int activeDecimalPlaces, int padLen) {
+        String decimalsFormat = "%." + (activeDecimalPlaces >= 0 ? activeDecimalPlaces : 2) + "f";
+        String strValue = String.format(Locale.US, decimalsFormat, roundedValue);
+        int dotIdx = strValue.indexOf('.');
+        String intPartStr = dotIdx >= 0 ? strValue.substring(0, dotIdx) : strValue;
+        String decPartStr = dotIdx >= 0 ? strValue.substring(dotIdx) : "";
 
-            if ("FLOAT".equalsIgnoreCase(precision)) {
-                return (float) roundedValue;
-            }
-            return roundedValue; // DOUBLE
+        boolean isNegative = intPartStr.startsWith("-");
+        if (isNegative) {
+            intPartStr = intPartStr.substring(1);
+        }
+        if (padLen > 0) {
+            intPartStr = zeroPadded(intPartStr, padLen);
+        }
+        return (isNegative ? "-" : "") + intPartStr + decPartStr;
+    }
+
+    private static String zeroPadded(String intPart, int padLen) {
+        try {
+            return String.format(Locale.ROOT, zeroPaddedFormat(padLen), Long.parseLong(intPart));
+        } catch (NumberFormatException e) {
+            // Not a long (e.g. too many digits): keep it as is
+            return intPart;
         }
     }
 

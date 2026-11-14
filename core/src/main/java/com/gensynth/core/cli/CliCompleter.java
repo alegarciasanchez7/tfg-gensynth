@@ -160,19 +160,23 @@ public class CliCompleter implements Completer {
         }
         try (DirectoryStream<Path> entries = Files.newDirectoryStream(folder)) {
             for (Path entry : entries) {
-                String name = entry.getFileName().toString();
-                if (!showHidden && isHidden(entry)) {
-                    continue;
-                }
-                if (Files.isDirectory(entry)) {
-                    addFolder(folderPart + name, name, separator, candidates);
-                } else {
-                    String display = projects.isValidProject(entry) ? theme.paint(name, CliTheme.SUCCESS) : name;
-                    candidates.add(new Candidate(folderPart + name, display, null, null, null, null, true));
+                if (showHidden || !isHidden(entry)) {
+                    addEntry(entry, folderPart, separator, candidates);
                 }
             }
         } catch (IOException | SecurityException e) {
             // Missing or unreadable folder: nothing to offer
+        }
+    }
+
+    /** Adds one entry of a folder: a folder to go on with, or a file (projects in color). */
+    private void addEntry(Path entry, String folderPart, String separator, List<Candidate> candidates) {
+        String name = entry.getFileName().toString();
+        if (Files.isDirectory(entry)) {
+            addFolder(folderPart + name, name, separator, candidates);
+        } else {
+            String display = projects.isValidProject(entry) ? theme.paint(name, CliTheme.SUCCESS) : name;
+            candidates.add(new Candidate(folderPart + name, display, null, null, null, null, true));
         }
     }
 

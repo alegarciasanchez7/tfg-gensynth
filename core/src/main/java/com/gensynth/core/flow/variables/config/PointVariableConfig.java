@@ -390,44 +390,69 @@ public class PointVariableConfig extends VariableConfiguration {
         return (cy - ay) * (bx - ax) - (by - ay) * (cx - ax);
     }
 
-    public boolean doLineSegmentsIntersect(double p0X, double p0Y, double p1X, double p1Y,
-                                          double p2X, double p2Y, double p3X, double p3Y) {
-        double ccw1 = ccwCross(p0X, p0Y, p1X, p1Y, p2X, p2Y);
-        double ccw2 = ccwCross(p0X, p0Y, p1X, p1Y, p3X, p3Y);
-        double ccw3 = ccwCross(p2X, p2Y, p3X, p3Y, p0X, p0Y);
-        double ccw4 = ccwCross(p2X, p2Y, p3X, p3Y, p1X, p1Y);
-
-        return ((ccw1 * ccw2 <= 0.0) && (ccw3 * ccw4 <= 0.0)) &&
-               (Math.max(p0X, p1X) >= Math.min(p2X, p3X) && Math.max(p2X, p3X) >= Math.min(p0X, p1X)) &&
-               (Math.max(p0Y, p1Y) >= Math.min(p2Y, p3Y) && Math.max(p2Y, p3Y) >= Math.min(p0Y, p1Y));
+    /** A 2D line segment from (x1, y1) to (x2, y2). */
+    private record Segment(double x1, double y1, double x2, double y2) {
     }
 
+    private static boolean doLineSegmentsIntersect(Segment s, Segment t) {
+        double ccw1 = ccwCross(s.x1, s.y1, s.x2, s.y2, t.x1, t.y1);
+        double ccw2 = ccwCross(s.x1, s.y1, s.x2, s.y2, t.x2, t.y2);
+        double ccw3 = ccwCross(t.x1, t.y1, t.x2, t.y2, s.x1, s.y1);
+        double ccw4 = ccwCross(t.x1, t.y1, t.x2, t.y2, s.x2, s.y2);
+
+        return ((ccw1 * ccw2 <= 0.0) && (ccw3 * ccw4 <= 0.0)) &&
+               (Math.max(s.x1, s.x2) >= Math.min(t.x1, t.x2) && Math.max(t.x1, t.x2) >= Math.min(s.x1, s.x2)) &&
+               (Math.max(s.y1, s.y2) >= Math.min(t.y1, t.y2) && Math.max(t.y1, t.y2) >= Math.min(s.y1, s.y2));
+    }
+
+    /**
+     * Whether the segment touches or crosses a wall or the outline of a polygon obstacle
+     * (enabled obstacles only).
+     *
+     * @param x1 start X
+     * @param y1 start Y
+     * @param x2 end X
+     * @param y2 end Y
+     * @return {@code true} if the segment hits any obstacle edge
+     */
     public boolean doesSegmentIntersectAnyWall(double x1, double y1, double x2, double y2) {
         if (obstacles == null || obstacles.isEmpty()) {
             return false;
         }
+        Segment move = new Segment(x1, y1, x2, y2);
         for (BoundaryObstacle obs : obstacles) {
-            if (obs == null || !obs.isEnabled()) continue;
-            List<Point3D> pts = obs.getPoints();
-            if (pts == null) continue;
+            if (doesSegmentIntersectObstacle(move, obs)) {
+                return true;
+            }
+        }
+        return false;
+    }
 
-            if (obs.getType() == BoundaryObstacle.ObstacleType.WALL_SEGMENT && pts.size() >= 2) {
-                for (int i = 0; i < pts.size() - 1; i++) {
-                    Point3D a = pts.get(i);
-                    Point3D b = pts.get(i + 1);
-                    if (doLineSegmentsIntersect(x1, y1, x2, y2, a.x, a.y, b.x, b.y)) {
-                        return true;
-                    }
-                }
-            } else if (obs.getType() == BoundaryObstacle.ObstacleType.OBSTACLE_POLYGON && pts.size() >= 3) {
-                int n = pts.size();
-                for (int i = 0; i < n; i++) {
-                    Point3D a = pts.get(i);
-                    Point3D b = pts.get((i + 1) % n);
-                    if (doLineSegmentsIntersect(x1, y1, x2, y2, a.x, a.y, b.x, b.y)) {
-                        return true;
-                    }
-                }
+    private static boolean doesSegmentIntersectObstacle(Segment move, BoundaryObstacle obs) {
+        if (obs == null || !obs.isEnabled()) {
+            return false;
+        }
+        List<Point3D> pts = obs.getPoints();
+        if (pts == null) {
+            return false;
+        }
+        if (obs.getType() == BoundaryObstacle.ObstacleType.WALL_SEGMENT && pts.size() >= 2) {
+            return doesSegmentIntersectEdges(move, pts, pts.size() - 1); // open polyline
+        }
+        if (obs.getType() == BoundaryObstacle.ObstacleType.OBSTACLE_POLYGON && pts.size() >= 3) {
+            return doesSegmentIntersectEdges(move, pts, pts.size()); // closing edge included
+        }
+        return false;
+    }
+
+    /** Tests the first {@code edgeCount} edges {@code pts[i] -> pts[(i + 1) % n]}. */
+    private static boolean doesSegmentIntersectEdges(Segment move, List<Point3D> pts, int edgeCount) {
+        int n = pts.size();
+        for (int i = 0; i < edgeCount; i++) {
+            Point3D a = pts.get(i);
+            Point3D b = pts.get((i + 1) % n);
+            if (doLineSegmentsIntersect(move, new Segment(a.x, a.y, b.x, b.y))) {
+                return true;
             }
         }
         return false;
@@ -938,32 +963,11 @@ public class PointVariableConfig extends VariableConfiguration {
 
     private Point3D generateRandomWalkPoint() {
         if (lastPoint == null || isPointInAnyObstacle(lastPoint.x, lastPoint.y)) {
-            Point3D initial = (fixedPointSet && isValidWalkStart(fixedPoint))
-                ? fixedPoint
-                : generateRandomPoint();
-            if (initialAltitude != null && coordinateSystem != CoordinateSystem.CARTESIAN_3D
-                    && (altitudePattern == AltitudePattern.FOLLOW_XY || altitudePattern == null)) {
-                initial = new Point3D(initial.x, initial.y, initialAltitude);
-            }
-            lastVelocity = new Point3D(0.0, 0.0, 0.0);
-            lastPoint = applyBoundaries(initial.x, initial.y, initial.z, 0, 0, 0);
-            return lastPoint;
+            return restartRandomWalk();
         }
 
-        double spanX = Math.abs(maxPoint.x - minPoint.x);
-        double spanY = Math.abs(maxPoint.y - minPoint.y);
-        double spanZ = Math.abs(maxPoint.z - minPoint.z);
-
-        double stepXY = (maxStepDistance > 0 && maxStepDistance < Math.max(spanX, spanY)) 
-            ? maxStepDistance 
-            : Math.max(Math.max(spanX, spanY) * 0.05, 0.0001);
-
-        double stepZ;
-        if (coordinateSystem == CoordinateSystem.GEOSPATIAL && spanZ > 0) {
-            stepZ = (maxStepDistance >= 1.0) ? maxStepDistance : Math.max(spanZ * 0.05, 0.01);
-        } else {
-            stepZ = stepXY;
-        }
+        double stepXY = randomWalkStepXY();
+        double stepZ = randomWalkStepZ(stepXY);
 
         // Random step vector
         double rx = (ThreadLocalRandom.current().nextDouble() * 2 - 1) * stepXY;
@@ -980,28 +984,70 @@ public class PointVariableConfig extends VariableConfiguration {
         double targetZ = lastPoint.z + vz;
         Point3D bounded = applyBoundaries(targetX, targetY, targetZ, vx, vy, vz);
 
-        // In 2D/Geo a custom polygon is the region: the step must end inside it without leaving it
-        boolean leavesPolygon = coordinateSystem != CoordinateSystem.CARTESIAN_3D
-            && boundaryPolygon != null && boundaryPolygon.size() >= 3
-            && (!isPointInsidePolygon(bounded.x, bounded.y)
-                || doesSegmentCrossPolygon(lastPoint.x, lastPoint.y, bounded.x, bounded.y));
-
-        // Check if movement segment hits a wall barrier or steps inside an obstacle zone
-        if (leavesPolygon
-         || doesSegmentIntersectAnyWall(lastPoint.x, lastPoint.y, targetX, targetY)
-         || doesSegmentIntersectAnyWall(lastPoint.x, lastPoint.y, bounded.x, bounded.y)
-         || isPointInAnyObstacle(targetX, targetY)
-         || isPointInAnyObstacle(bounded.x, bounded.y)) {
-            if (boundaryBehavior == BoundaryBehavior.BOUNCE) {
-                lastVelocity = new Point3D(-vx, -vy, vz);
-            } else {
-                lastVelocity = new Point3D(0.0, 0.0, 0.0);
-            }
+        if (isWalkStepBlocked(targetX, targetY, bounded)) {
+            lastVelocity = boundaryBehavior == BoundaryBehavior.BOUNCE
+                ? new Point3D(-vx, -vy, vz)
+                : new Point3D(0.0, 0.0, 0.0);
             return lastPoint;
         }
 
         lastPoint = bounded;
         return lastPoint;
+    }
+
+    /**
+     * (Re)starts a Random Walk: at the fixed point when it is a valid start, else at a random point
+     * of the region, with no momentum.
+     */
+    private Point3D restartRandomWalk() {
+        Point3D initial = (fixedPointSet && isValidWalkStart(fixedPoint))
+            ? fixedPoint
+            : generateRandomPoint();
+        if (initialAltitude != null && coordinateSystem != CoordinateSystem.CARTESIAN_3D
+                && (altitudePattern == AltitudePattern.FOLLOW_XY || altitudePattern == null)) {
+            initial = new Point3D(initial.x, initial.y, initialAltitude);
+        }
+        lastVelocity = new Point3D(0.0, 0.0, 0.0);
+        lastPoint = applyBoundaries(initial.x, initial.y, initial.z, 0, 0, 0);
+        return lastPoint;
+    }
+
+    /** Horizontal step size: the configured one when it fits the region, else 5% of its span. */
+    private double randomWalkStepXY() {
+        double spanX = Math.abs(maxPoint.x - minPoint.x);
+        double spanY = Math.abs(maxPoint.y - minPoint.y);
+        return (maxStepDistance > 0 && maxStepDistance < Math.max(spanX, spanY))
+            ? maxStepDistance
+            : Math.max(Math.max(spanX, spanY) * 0.05, 0.0001);
+    }
+
+    /** Vertical step size: altitudes (Geo) get their own scale, other systems reuse the horizontal one. */
+    private double randomWalkStepZ(double stepXY) {
+        double spanZ = Math.abs(maxPoint.z - minPoint.z);
+        if (coordinateSystem == CoordinateSystem.GEOSPATIAL && spanZ > 0) {
+            return (maxStepDistance >= 1.0) ? maxStepDistance : Math.max(spanZ * 0.05, 0.01);
+        }
+        return stepXY;
+    }
+
+    /**
+     * Whether a walk step must be cancelled: it leaves the boundary polygon, hits a wall (on the way
+     * to the raw target or to the bounded point) or ends inside an obstacle.
+     */
+    private boolean isWalkStepBlocked(double targetX, double targetY, Point3D bounded) {
+        return leavesBoundaryPolygon(bounded)
+            || doesSegmentIntersectAnyWall(lastPoint.x, lastPoint.y, targetX, targetY)
+            || doesSegmentIntersectAnyWall(lastPoint.x, lastPoint.y, bounded.x, bounded.y)
+            || isPointInAnyObstacle(targetX, targetY)
+            || isPointInAnyObstacle(bounded.x, bounded.y);
+    }
+
+    /** In 2D/Geo a custom polygon is the region: the step must end inside it without leaving it. */
+    private boolean leavesBoundaryPolygon(Point3D bounded) {
+        return coordinateSystem != CoordinateSystem.CARTESIAN_3D
+            && boundaryPolygon != null && boundaryPolygon.size() >= 3
+            && (!isPointInsidePolygon(bounded.x, bounded.y)
+                || doesSegmentCrossPolygon(lastPoint.x, lastPoint.y, bounded.x, bounded.y));
     }
 
     private Point3D generateCircularOrbitPoint() {
@@ -1027,166 +1073,153 @@ public class PointVariableConfig extends VariableConfiguration {
     }
 
     private Point3D applyBoundaries(double x, double y, double z, double vx, double vy, double vz) {
-        double newX = x;
-        double newY = y;
-        double newZ = z;
-        double newVx = vx;
-        double newVy = vy;
-        double newVz = vz;
-
+        Point3D p = new Point3D(x, y, z);
+        Point3D v = new Point3D(vx, vy, vz);
         if (coordinateSystem != CoordinateSystem.CARTESIAN_3D) {
-            double boundMinX = Math.min(minPoint.x, maxPoint.x);
-            double boundMaxX = Math.max(minPoint.x, maxPoint.x);
-            double boundMinY = Math.min(minPoint.y, maxPoint.y);
-            double boundMaxY = Math.max(minPoint.y, maxPoint.y);
-            double boundMinZ = Math.min(minPoint.z, maxPoint.z);
-            double boundMaxZ = Math.max(minPoint.z, maxPoint.z);
-
-            switch (boundaryBehavior) {
-                case CLAMP:
-                    newX = Math.clamp(x, boundMinX, boundMaxX);
-                    newY = Math.clamp(y, boundMinY, boundMaxY);
-                    newZ = Math.clamp(z, boundMinZ, boundMaxZ);
-                    break;
-
-                case WRAP:
-                    newX = wrapValue(x, boundMinX, boundMaxX);
-                    newY = wrapValue(y, boundMinY, boundMaxY);
-                    newZ = wrapValue(z, boundMinZ, boundMaxZ);
-                    break;
-
-                case BOUNCE:
-                    if (x < boundMinX || x > boundMaxX) {
-                        newVx = -vx;
-                        newX = Math.clamp(x < boundMinX ? boundMinX + (boundMinX - x) : boundMaxX - (x - boundMaxX), boundMinX, boundMaxX);
-                    }
-                    if (y < boundMinY || y > boundMaxY) {
-                        newVy = -vy;
-                        newY = Math.clamp(y < boundMinY ? boundMinY + (boundMinY - y) : boundMaxY - (y - boundMaxY), boundMinY, boundMaxY);
-                    }
-                    if (z < boundMinZ || z > boundMaxZ) {
-                        newVz = -vz;
-                        newZ = Math.clamp(z < boundMinZ ? boundMinZ + (boundMinZ - z) : boundMaxZ - (z - boundMaxZ), boundMinZ, boundMaxZ);
-                    }
-                    break;
-            }
-            lastVelocity = new Point3D(newVx, newVy, newVz);
-            return new Point3D(newX, newY, newZ);
+            Point3D lo = new Point3D(Math.min(minPoint.x, maxPoint.x), Math.min(minPoint.y, maxPoint.y),
+                Math.min(minPoint.z, maxPoint.z));
+            Point3D hi = new Point3D(Math.max(minPoint.x, maxPoint.x), Math.max(minPoint.y, maxPoint.y),
+                Math.max(minPoint.z, maxPoint.z));
+            return applyBoxBoundaries(p, v, lo, hi);
         }
-
         // Cartesian 3D: the shape is the region (the boundary polygon does not apply)
+        return switch (shape3DType) {
+            case SPHERE -> applySphereBoundaries(p, v);
+            case CONE -> applyConeBoundaries(p, v);
+            case PYRAMID -> applyPyramidBoundaries(p, v);
+            case null, default -> applyCubeBoundaries(p, v);
+        };
+    }
+
+    /**
+     * Keeps a point inside an axis-aligned box ({@code lo} to {@code hi}) and stores the resulting
+     * velocity in {@link #lastVelocity} (BOUNCE reverses each axis that went out).
+     */
+    private Point3D applyBoxBoundaries(Point3D p, Point3D v, Point3D lo, Point3D hi) {
+        Point3D bounded = switch (boundaryBehavior) {
+            case CLAMP -> new Point3D(Math.clamp(p.x, lo.x, hi.x), Math.clamp(p.y, lo.y, hi.y),
+                Math.clamp(p.z, lo.z, hi.z));
+            case WRAP -> new Point3D(wrapValue(p.x, lo.x, hi.x), wrapValue(p.y, lo.y, hi.y),
+                wrapValue(p.z, lo.z, hi.z));
+            case BOUNCE -> new Point3D(bounceValue(p.x, lo.x, hi.x), bounceValue(p.y, lo.y, hi.y),
+                bounceValue(p.z, lo.z, hi.z));
+        };
+        lastVelocity = boundaryBehavior == BoundaryBehavior.BOUNCE
+            ? new Point3D(bounceVelocity(p.x, v.x, lo.x, hi.x), bounceVelocity(p.y, v.y, lo.y, hi.y),
+                bounceVelocity(p.z, v.z, lo.z, hi.z))
+            : v;
+        return bounded;
+    }
+
+    /** The cube footprint is centred on the bounding-box X/Y centre, between its base and apex in Z. */
+    private Point3D applyCubeBoundaries(Point3D p, Point3D v) {
         double cx = (minPoint.x + maxPoint.x) / 2.0;
         double cy = (minPoint.y + maxPoint.y) / 2.0;
+        double halfX = getShape3DWidth() / 2.0;
+        double halfY = getShape3DLength() / 2.0;
         double baseZ = shapeBaseZ();
         double apexZ = baseZ + getShape3DHeight();
-        double zMin = Math.min(baseZ, apexZ);
-        double zMax = Math.max(baseZ, apexZ);
+        Point3D lo = new Point3D(cx - halfX, cy - halfY, Math.min(baseZ, apexZ));
+        Point3D hi = new Point3D(cx + halfX, cy + halfY, Math.max(baseZ, apexZ));
+        return applyBoxBoundaries(p, v, lo, hi);
+    }
 
-        if (shape3DType == Shape3DType.SPHERE) {
-            double radius = getShape3DRadius();
-            double cz = minPoint.z + radius;
+    /**
+     * Pulls a point outside the sphere back in: onto the surface (CLAMP), just inside it (BOUNCE,
+     * reversing the velocity) or onto the opposite side (WRAP).
+     */
+    private Point3D applySphereBoundaries(Point3D p, Point3D v) {
+        double cx = (minPoint.x + maxPoint.x) / 2.0;
+        double cy = (minPoint.y + maxPoint.y) / 2.0;
+        double radius = getShape3DRadius();
+        double cz = minPoint.z + radius;
 
-            double dx = x - cx;
-            double dy = y - cy;
-            double dz = z - cz;
-            double dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        double dx = p.x - cx;
+        double dy = p.y - cy;
+        double dz = p.z - cz;
+        double dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
-            if (dist > radius) {
-                if (boundaryBehavior == BoundaryBehavior.BOUNCE) {
-                    newVx = -vx;
-                    newVy = -vy;
-                    newVz = -vz;
-                    double factor = (radius * 0.95) / (dist > 0 ? dist : 1.0);
-                    newX = cx + dx * factor;
-                    newY = cy + dy * factor;
-                    newZ = cz + dz * factor;
-                } else if (boundaryBehavior == BoundaryBehavior.WRAP) {
-                    // Reappear on the opposite side, never beyond the surface
-                    double factor = dist * 0.8 > radius ? -(radius * 0.95) / dist : -0.8;
-                    newX = cx + dx * factor;
-                    newY = cy + dy * factor;
-                    newZ = cz + dz * factor;
-                } else { // CLAMP
-                    double factor = radius / (dist > 0 ? dist : 1.0);
-                    newX = cx + dx * factor;
-                    newY = cy + dy * factor;
-                    newZ = cz + dz * factor;
-                }
-            }
-        } else if (shape3DType == Shape3DType.CONE || shape3DType == Shape3DType.PYRAMID) {
-            newZ = Math.clamp(z, zMin, zMax);
-            double scale = 1.0 - Math.clamp(normalizedShapeZ(newZ), 0.0, 1.0);
-
-            if (shape3DType == Shape3DType.CONE) {
-                double radiusAtZ = getShape3DRadius() * scale;
-                double dx = x - cx;
-                double dy = y - cy;
-                double distXY = Math.sqrt(dx * dx + dy * dy);
-
-                if (distXY > radiusAtZ) {
-                    if (boundaryBehavior == BoundaryBehavior.BOUNCE) {
-                        newVx = -vx;
-                        newVy = -vy;
-                    }
-                    double factor = radiusAtZ / (distXY > 0 ? distXY : 1.0);
-                    newX = cx + dx * factor;
-                    newY = cy + dy * factor;
-                }
-            } else {
-                double halfX = getShape3DWidth() / 2.0 * scale;
-                double halfY = getShape3DLength() / 2.0 * scale;
-
-                newX = Math.clamp(x, cx - halfX, cx + halfX);
-                newY = Math.clamp(y, cy - halfY, cy + halfY);
-                if (boundaryBehavior == BoundaryBehavior.BOUNCE && (x != newX || y != newY)) {
-                    newVx = -vx;
-                    newVy = -vy;
-                }
-            }
-        } else {
-            // CUBE / BOX
-            double halfX = getShape3DWidth() / 2.0;
-            double halfY = getShape3DLength() / 2.0;
-            double boundMinZ = zMin;
-            double boundMaxZ = zMax;
-
-            double boundMinX = cx - halfX;
-            double boundMaxX = cx + halfX;
-            double boundMinY = cy - halfY;
-            double boundMaxY = cy + halfY;
-
-            switch (boundaryBehavior) {
-                case CLAMP:
-                    newX = Math.clamp(x, boundMinX, boundMaxX);
-                    newY = Math.clamp(y, boundMinY, boundMaxY);
-                    newZ = Math.clamp(z, boundMinZ, boundMaxZ);
-                    break;
-
-                case WRAP:
-                    newX = wrapValue(x, boundMinX, boundMaxX);
-                    newY = wrapValue(y, boundMinY, boundMaxY);
-                    newZ = wrapValue(z, boundMinZ, boundMaxZ);
-                    break;
-
-                case BOUNCE:
-                    if (x < boundMinX || x > boundMaxX) {
-                        newVx = -vx;
-                        newX = Math.clamp(x < boundMinX ? boundMinX + (boundMinX - x) : boundMaxX - (x - boundMaxX), boundMinX, boundMaxX);
-                    }
-                    if (y < boundMinY || y > boundMaxY) {
-                        newVy = -vy;
-                        newY = Math.clamp(y < boundMinY ? boundMinY + (boundMinY - y) : boundMaxY - (y - boundMaxY), boundMinY, boundMaxY);
-                    }
-                    if (z < boundMinZ || z > boundMaxZ) {
-                        newVz = -vz;
-                        newZ = Math.clamp(z < boundMinZ ? boundMinZ + (boundMinZ - z) : boundMaxZ - (z - boundMaxZ), boundMinZ, boundMaxZ);
-                    }
-                    break;
-            }
+        if (dist > radius) {
+            double factor = sphereReturnFactor(dist, radius);
+            lastVelocity = boundaryBehavior == BoundaryBehavior.BOUNCE ? new Point3D(-v.x, -v.y, -v.z) : v;
+            return new Point3D(cx + dx * factor, cy + dy * factor, cz + dz * factor);
         }
+        lastVelocity = v;
+        return p;
+    }
 
-        lastVelocity = new Point3D(newVx, newVy, newVz);
+    /** Scale applied to the centre-to-point vector of a point outside the sphere (negative: other side). */
+    private double sphereReturnFactor(double dist, double radius) {
+        return switch (boundaryBehavior) {
+            case BOUNCE -> (radius * 0.95) / (dist > 0 ? dist : 1.0);
+            // Reappear on the opposite side, never beyond the surface
+            case WRAP -> dist * 0.8 > radius ? -(radius * 0.95) / dist : -0.8;
+            case null, default -> radius / (dist > 0 ? dist : 1.0); // CLAMP
+        };
+    }
+
+    /** Clamps Z to the cone height, then pulls X/Y onto the circle of the cone at that height. */
+    private Point3D applyConeBoundaries(Point3D p, Point3D v) {
+        double cx = (minPoint.x + maxPoint.x) / 2.0;
+        double cy = (minPoint.y + maxPoint.y) / 2.0;
+        double newZ = clampToShapeHeight(p.z);
+        double radiusAtZ = getShape3DRadius() * taperScaleAt(newZ);
+        double dx = p.x - cx;
+        double dy = p.y - cy;
+        double distXY = Math.sqrt(dx * dx + dy * dy);
+
+        if (distXY > radiusAtZ) {
+            lastVelocity = boundaryBehavior == BoundaryBehavior.BOUNCE ? new Point3D(-v.x, -v.y, v.z) : v;
+            double factor = radiusAtZ / (distXY > 0 ? distXY : 1.0);
+            return new Point3D(cx + dx * factor, cy + dy * factor, newZ);
+        }
+        lastVelocity = v;
+        return new Point3D(p.x, p.y, newZ);
+    }
+
+    /** Clamps Z to the pyramid height, then clamps X/Y to the square section at that height. */
+    private Point3D applyPyramidBoundaries(Point3D p, Point3D v) {
+        double cx = (minPoint.x + maxPoint.x) / 2.0;
+        double cy = (minPoint.y + maxPoint.y) / 2.0;
+        double newZ = clampToShapeHeight(p.z);
+        double scale = taperScaleAt(newZ);
+        double halfX = getShape3DWidth() / 2.0 * scale;
+        double halfY = getShape3DLength() / 2.0 * scale;
+
+        double newX = Math.clamp(p.x, cx - halfX, cx + halfX);
+        double newY = Math.clamp(p.y, cy - halfY, cy + halfY);
+        lastVelocity = boundaryBehavior == BoundaryBehavior.BOUNCE && (p.x != newX || p.y != newY)
+            ? new Point3D(-v.x, -v.y, v.z)
+            : v;
         return new Point3D(newX, newY, newZ);
+    }
+
+    /** Clamps Z between the shape base and its apex. */
+    private double clampToShapeHeight(double z) {
+        double baseZ = shapeBaseZ();
+        double apexZ = baseZ + getShape3DHeight();
+        return Math.clamp(z, Math.min(baseZ, apexZ), Math.max(baseZ, apexZ));
+    }
+
+    /** Section scale of a cone or pyramid at this Z: 1 at the base, 0 at the apex. */
+    private double taperScaleAt(double z) {
+        return 1.0 - Math.clamp(normalizedShapeZ(z), 0.0, 1.0);
+    }
+
+    private static boolean isOutside(double val, double min, double max) {
+        return val < min || val > max;
+    }
+
+    /** Mirrors a value that went out of range back inside it (then clamps, for very long steps). */
+    private static double bounceValue(double val, double min, double max) {
+        if (!isOutside(val, min, max)) {
+            return val;
+        }
+        return Math.clamp(val < min ? min + (min - val) : max - (val - max), min, max);
+    }
+
+    private static double bounceVelocity(double val, double velocity, double min, double max) {
+        return isOutside(val, min, max) ? -velocity : velocity;
     }
 
     private double wrapValue(double val, double min, double max) {
@@ -1211,57 +1244,67 @@ public class PointVariableConfig extends VariableConfiguration {
         // Insertion order is the order written in messages: x, y, z / latitude, longitude, altitude
         Map<String, Object> map = java.util.LinkedHashMap.newLinkedHashMap(12);
         switch (coordinateSystem) {
-            case CARTESIAN_2D:
+            case CARTESIAN_2D -> {
                 map.put("x", p.x);
                 map.put("y", p.y);
-                break;
-
-            case CARTESIAN_3D:
+            }
+            case CARTESIAN_3D -> {
                 map.put("x", p.x);
                 map.put("y", p.y);
                 map.put("z", p.z);
-                break;
-
-            case GEOSPATIAL:
-                if (geospatialFormat == GeospatialFormat.DEGREES_MINUTES_SECONDS) {
-                    map.put("latitude", convertToDMS(p.x, true));
-                    map.put("longitude", convertToDMS(p.y, false));
-                    map.put("altitude", p.z);
-                    map.put("latitudeDecimal", p.x);
-                    map.put("longitudeDecimal", p.y);
-                } else {
-                    map.put("latitude", p.x);
-                    map.put("longitude", p.y);
-                    map.put("altitude", p.z);
-                }
-                if (altitudeUnit != null) {
-                    map.put("altitudeUnit", altitudeUnit.toString());
-                }
-                if (altitudeReference != null) {
-                    map.put("altitudeReference", altitudeReference.toString());
-                }
-                break;
+            }
+            case GEOSPATIAL -> putGeospatialCoordinates(map, p);
         }
 
         if (pattern == GenerationPattern.GRAPH_ROUTE && currentGraphNodeId != null) {
-            GraphNode currentNode = findGraphNodeById(currentGraphNodeId);
-            if (currentNode != null) {
-                map.put("nodeId", currentNode.getId());
-                map.put("nodeName", (currentNode.getName() != null && !currentNode.getName().trim().isEmpty()) ? currentNode.getName() : currentNode.getId());
-            }
-            if (targetGraphNodeId != null) {
-                GraphNode targetNode = findGraphNodeById(targetGraphNodeId);
-                if (targetNode != null) {
-                    map.put("targetNodeId", targetNode.getId());
-                    map.put("targetNodeName", (targetNode.getName() != null && !targetNode.getName().trim().isEmpty()) ? targetNode.getName() : targetNode.getId());
-                }
-            }
-            map.put("stepInEdge", graphStepInEdge);
-            map.put("totalEdgeSteps", graphInterpolationSteps);
-            map.put("isPaused", remainingStopTicks > 0);
+            putGraphRouteState(map);
         }
 
         return map;
+    }
+
+    private void putGeospatialCoordinates(Map<String, Object> map, Point3D p) {
+        if (geospatialFormat == GeospatialFormat.DEGREES_MINUTES_SECONDS) {
+            map.put("latitude", convertToDMS(p.x, true));
+            map.put("longitude", convertToDMS(p.y, false));
+            map.put("altitude", p.z);
+            map.put("latitudeDecimal", p.x);
+            map.put("longitudeDecimal", p.y);
+        } else {
+            map.put("latitude", p.x);
+            map.put("longitude", p.y);
+            map.put("altitude", p.z);
+        }
+        if (altitudeUnit != null) {
+            map.put("altitudeUnit", altitudeUnit.toString());
+        }
+        if (altitudeReference != null) {
+            map.put("altitudeReference", altitudeReference.toString());
+        }
+    }
+
+    /** Adds the current/target node and the edge progress of a Graph Route. */
+    private void putGraphRouteState(Map<String, Object> map) {
+        GraphNode currentNode = findGraphNodeById(currentGraphNodeId);
+        if (currentNode != null) {
+            map.put("nodeId", currentNode.getId());
+            map.put("nodeName", graphNodeDisplayName(currentNode));
+        }
+        if (targetGraphNodeId != null) {
+            GraphNode targetNode = findGraphNodeById(targetGraphNodeId);
+            if (targetNode != null) {
+                map.put("targetNodeId", targetNode.getId());
+                map.put("targetNodeName", graphNodeDisplayName(targetNode));
+            }
+        }
+        map.put("stepInEdge", graphStepInEdge);
+        map.put("totalEdgeSteps", graphInterpolationSteps);
+        map.put("isPaused", remainingStopTicks > 0);
+    }
+
+    /** The node name, or its id when the name is blank. */
+    private static String graphNodeDisplayName(GraphNode node) {
+        return (node.getName() != null && !node.getName().trim().isEmpty()) ? node.getName() : node.getId();
     }
 
     /**
@@ -1617,22 +1660,7 @@ public class PointVariableConfig extends VariableConfiguration {
 
         GraphNode currentNode = findGraphNodeById(currentGraphNodeId);
         if (currentNode == null) {
-            if (graphNavigationMode == GraphNavigationMode.SEQUENCE && graphSequence != null && !graphSequence.isEmpty()) {
-                currentGraphNodeId = graphSequence.get(0);
-                currentNode = findGraphNodeById(currentGraphNodeId);
-            }
-            if (currentNode == null) {
-                currentNode = graphNodes.get(0);
-                currentGraphNodeId = currentNode.getId();
-            }
-            targetGraphNodeId = currentGraphNodeId;
-            graphStepInEdge = 0;
-            graphSequenceIndex = 0;
-            remainingStopTicks = 0;
-            hasPausedAtCurrentNode = false;
-            visitedNodeHistory.clear();
-            visitedNodeHistory.add(currentGraphNodeId);
-            return currentNode.toPoint3D();
+            return startGraphRoute();
         }
 
         if (remainingStopTicks > 0) {
@@ -1640,43 +1668,12 @@ public class PointVariableConfig extends VariableConfiguration {
             return currentNode.toPoint3D();
         }
 
-        if (currentGraphNodeId.equals(targetGraphNodeId) && graphStepInEdge == 0 && !hasPausedAtCurrentNode) {
-            hasPausedAtCurrentNode = true;
-            if (graphStopProbability > 0 && graphStopTicks > 0 && ThreadLocalRandom.current().nextDouble() < graphStopProbability) {
-                remainingStopTicks = graphStopTicks - 1;
-                return currentNode.toPoint3D();
-            }
+        if (startStopAtCurrentNode()) {
+            return currentNode.toPoint3D();
         }
 
         if (currentGraphNodeId.equals(targetGraphNodeId)) {
-            if (graphNavigationMode == GraphNavigationMode.SEQUENCE) {
-                if (graphSequence != null && !graphSequence.isEmpty()) {
-                    // Follow the position in the sequence, not the node id: ids may repeat (A, B, A, C)
-                    int nextIdx = graphSequenceIndex + 1;
-                    if (nextIdx >= graphSequence.size()) {
-                        nextIdx = graphLoopSequence ? 0 : graphSequence.size() - 1;
-                    }
-                    graphSequenceIndex = nextIdx;
-                    targetGraphNodeId = graphSequence.get(nextIdx);
-                }
-            } else {
-                List<String> neighbors = getDirectNeighbors(currentGraphNodeId);
-                if (!neighbors.isEmpty()) {
-                    if (graphPreventCycles && neighbors.size() > 1) {
-                        List<String> filtered = new ArrayList<>();
-                        for (String nId : neighbors) {
-                            if (!visitedNodeHistory.contains(nId)) {
-                                filtered.add(nId);
-                            }
-                        }
-                        if (!filtered.isEmpty()) {
-                            neighbors = filtered;
-                        }
-                    }
-                    int choice = ThreadLocalRandom.current().nextInt(neighbors.size());
-                    targetGraphNodeId = neighbors.get(choice);
-                }
-            }
+            chooseNextGraphTarget();
             graphStepInEdge = 0;
         }
 
@@ -1686,11 +1683,100 @@ public class PointVariableConfig extends VariableConfiguration {
             return currentNode.toPoint3D();
         }
 
+        return moveAlongGraphEdge(currentNode, targetNode);
+    }
+
+    /**
+     * Places the route on its first node (the first of the sequence in SEQUENCE mode, else the
+     * first node) and resets the runtime state.
+     */
+    private Point3D startGraphRoute() {
+        GraphNode currentNode = null;
+        if (graphNavigationMode == GraphNavigationMode.SEQUENCE && graphSequence != null && !graphSequence.isEmpty()) {
+            currentGraphNodeId = graphSequence.get(0);
+            currentNode = findGraphNodeById(currentGraphNodeId);
+        }
+        if (currentNode == null) {
+            currentNode = graphNodes.get(0);
+            currentGraphNodeId = currentNode.getId();
+        }
+        targetGraphNodeId = currentGraphNodeId;
+        graphStepInEdge = 0;
+        graphSequenceIndex = 0;
+        remainingStopTicks = 0;
+        hasPausedAtCurrentNode = false;
+        visitedNodeHistory.clear();
+        visitedNodeHistory.add(currentGraphNodeId);
+        return currentNode.toPoint3D();
+    }
+
+    /**
+     * On the first tick at a node, draws whether the route stops there; a stop holds the point for
+     * {@link #graphStopTicks} ticks (this one included).
+     *
+     * @return {@code true} if a stop starts on this tick
+     */
+    private boolean startStopAtCurrentNode() {
+        if (currentGraphNodeId.equals(targetGraphNodeId) && graphStepInEdge == 0 && !hasPausedAtCurrentNode) {
+            hasPausedAtCurrentNode = true;
+            if (graphStopProbability > 0 && graphStopTicks > 0 && ThreadLocalRandom.current().nextDouble() < graphStopProbability) {
+                remainingStopTicks = graphStopTicks - 1;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void chooseNextGraphTarget() {
+        if (graphNavigationMode == GraphNavigationMode.SEQUENCE) {
+            advanceGraphSequenceTarget();
+        } else {
+            chooseRandomNeighborTarget();
+        }
+    }
+
+    /** SEQUENCE mode: targets the next position of the sequence (wrapping or holding at its end). */
+    private void advanceGraphSequenceTarget() {
+        if (graphSequence == null || graphSequence.isEmpty()) {
+            return;
+        }
+        // Follow the position in the sequence, not the node id: ids may repeat (A, B, A, C)
+        int nextIdx = graphSequenceIndex + 1;
+        if (nextIdx >= graphSequence.size()) {
+            nextIdx = graphLoopSequence ? 0 : graphSequence.size() - 1;
+        }
+        graphSequenceIndex = nextIdx;
+        targetGraphNodeId = graphSequence.get(nextIdx);
+    }
+
+    /** RANDOM_NEIGHBOR mode: targets a random neighbour, preferring the ones not visited recently. */
+    private void chooseRandomNeighborTarget() {
+        List<String> neighbors = getDirectNeighbors(currentGraphNodeId);
+        if (neighbors.isEmpty()) {
+            return;
+        }
+        if (graphPreventCycles && neighbors.size() > 1) {
+            neighbors = preferUnvisited(neighbors);
+        }
+        int choice = ThreadLocalRandom.current().nextInt(neighbors.size());
+        targetGraphNodeId = neighbors.get(choice);
+    }
+
+    /** The neighbours missing from the recent history, or all of them when every one was visited. */
+    private List<String> preferUnvisited(List<String> neighbors) {
+        List<String> filtered = new ArrayList<>();
+        for (String nId : neighbors) {
+            if (!visitedNodeHistory.contains(nId)) {
+                filtered.add(nId);
+            }
+        }
+        return filtered.isEmpty() ? neighbors : filtered;
+    }
+
+    /** Takes one interpolation step towards the target node, arriving on the last one. */
+    private Point3D moveAlongGraphEdge(GraphNode currentNode, GraphNode targetNode) {
         if (graphInterpolationSteps <= 1) {
-            currentGraphNodeId = targetGraphNodeId;
-            graphStepInEdge = 0;
-            hasPausedAtCurrentNode = false;
-            addToVisitedHistory(currentGraphNodeId);
+            arriveAtGraphTarget();
             return targetNode.toPoint3D();
         }
 
@@ -1705,13 +1791,17 @@ public class PointVariableConfig extends VariableConfiguration {
         );
 
         if (graphStepInEdge >= graphInterpolationSteps) {
-            currentGraphNodeId = targetGraphNodeId;
-            graphStepInEdge = 0;
-            hasPausedAtCurrentNode = false;
-            addToVisitedHistory(currentGraphNodeId);
+            arriveAtGraphTarget();
         }
 
         return interpolated;
+    }
+
+    private void arriveAtGraphTarget() {
+        currentGraphNodeId = targetGraphNodeId;
+        graphStepInEdge = 0;
+        hasPausedAtCurrentNode = false;
+        addToVisitedHistory(currentGraphNodeId);
     }
 
     private GraphNode findGraphNodeById(String id) {

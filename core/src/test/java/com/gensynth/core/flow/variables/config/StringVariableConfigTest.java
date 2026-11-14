@@ -7,8 +7,12 @@ import com.gensynth.core.flow.variables.VariableType;
 import org.junit.Before;
 import org.junit.Test;
 
+import java.util.List;
+import java.util.Map;
+
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -265,5 +269,81 @@ public class StringVariableConfigTest {
               
         String val = (String) config.generateNextValue();
         assertEquals("HELLO_WO", val);
+    }
+
+    @Test
+    public void validate_lengthErrorsInOrder() {
+        assertEquals(List.of("Fixed string length must be greater than 0"),
+                new StringVariableConfig().fixedSize(0).validate());
+        assertEquals(List.of("Minimum string length cannot be negative",
+                        "Minimum string length (-1) cannot be greater than maximum string length (-2)"),
+                new StringVariableConfig().variableSize(-1, -2).validate());
+        // A constant has no length to check
+        assertTrue(new StringVariableConfig().fixedSize(0).constant("x").validate().isEmpty());
+    }
+
+    @Test
+    public void validate_invalidRegex_returnsError() {
+        StringVariableConfig regexConfig = new StringVariableConfig();
+        // The builder keeps the pattern but fails to compile it
+        assertThrows(RuntimeException.class, () -> regexConfig.regex("["));
+        regexConfig.pattern(GenerationPattern.REGEX);
+
+        List<String> errors = regexConfig.validate();
+        assertEquals(1, errors.size());
+        assertTrue(errors.get(0), errors.get(0).startsWith("Invalid regex pattern: "));
+        // Generating tries to compile it again
+        assertThrows(RuntimeException.class, regexConfig::generateNextValue);
+    }
+
+    @Test
+    public void templatePatternWithoutTemplate_returnsError() {
+        assertEquals(List.of("Template pattern requires a valid template string"),
+                new StringVariableConfig().template("").validate());
+    }
+
+    @Test
+    public void nullConstant_givesEmptyString() {
+        assertEquals("", new StringVariableConfig().constant(null).generateNextValue());
+    }
+
+    @Test
+    public void regexPatternWithoutRegex_givesEmptyString() {
+        StringVariableConfig regexConfig = new StringVariableConfig().pattern(GenerationPattern.REGEX);
+        assertTrue(regexConfig.validate().isEmpty());
+        assertEquals("", regexConfig.generateNextValue());
+    }
+
+    @Test
+    public void nullPattern_generatesARandomString() {
+        config.pattern(null);
+        assertEquals(8, ((String) config.generateNextValue()).length());
+    }
+
+    @Test
+    public void noEnabledCharacterSet_fallsBackToLowerCase() {
+        config.lowerCase(0.0).upperCase(0.0).numbers(0.0);
+        String value = (String) config.generateNextValue();
+        assertTrue(value, value.matches("[a-z]{8}"));
+    }
+
+    @Test
+    public void corruptionWithZeroProbability_keepsTheValue() {
+        config.constant("HELLO").corruptionEnabled(true).corruptionProbability(0.0).corruptionMode("TRUNCATE");
+        assertEquals("HELLO", config.generateNextValue());
+    }
+
+    @Test
+    public void listReference_givesTheItemTextAndCorruptsIt() {
+        ListVariableConfig source = VariableFactory.createList("src")
+                .items(List.of(new ListVariableConfig.ListItem("item", "ABC", 1.0)));
+        config.setSourceListVariableId("src");
+        config.setSourceListSelectionMode("FIXED_ITEM");
+        config.setSelectedListItemId("item");
+        config.setContext(Map.of("src_config", source));
+        assertEquals("ABC", config.generateNextValue());
+
+        config.corruptionEnabled(true).corruptionProbability(1.0).corruptionMode("TRUNCATE").corruptionMagnitude(1);
+        assertEquals("AB", config.generateNextValue());
     }
 }

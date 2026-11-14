@@ -185,20 +185,27 @@ public class ListVariableConfig extends VariableConfiguration {
         }
         List<ListItem> parsedItems = new ArrayList<>();
         for (Object obj : rawItems) {
-            if (obj instanceof ListItem listItem) {
-                parsedItems.add(listItem);
-            } else if (obj instanceof WeightedItem wi) {
-                parsedItems.add(new ListItem(null, wi.value, wi.weight));
-            } else if (obj instanceof Map<?, ?> map) {
-                String itemId = map.containsKey("id") ? String.valueOf(map.get("id")) : null;
-                Object val = map.containsKey(VALUE) ? map.get(VALUE) : obj;
-                double w = map.containsKey(WEIGHT) ? ((Number) map.get(WEIGHT)).doubleValue() : 1.0;
-                parsedItems.add(new ListItem(itemId, val, w));
-            } else {
-                parsedItems.add(new ListItem(null, obj, 1.0));
-            }
+            parsedItems.add(toListItem(obj));
         }
         return items(parsedItems);
+    }
+
+    /** A raw list entry as an item: a {@link ListItem}, a {@link WeightedItem}, a map or a plain value. */
+    private static ListItem toListItem(Object obj) {
+        return switch (obj) {
+            case ListItem listItem -> listItem;
+            case WeightedItem wi -> new ListItem(null, wi.value, wi.weight);
+            case Map<?, ?> map -> listItemFromMap(map);
+            case null, default -> new ListItem(null, obj, 1.0);
+        };
+    }
+
+    /** A map entry with optional "id", "value" (the whole map when missing) and "weight" (1 when missing). */
+    private static ListItem listItemFromMap(Map<?, ?> map) {
+        String itemId = map.containsKey("id") ? String.valueOf(map.get("id")) : null;
+        Object val = map.containsKey(VALUE) ? map.get(VALUE) : map;
+        double w = map.containsKey(WEIGHT) ? ((Number) map.get(WEIGHT)).doubleValue() : 1.0;
+        return new ListItem(itemId, val, w);
     }
 
     public Map<String, Map<String, Double>> getTransitionMatrix() {
@@ -230,7 +237,12 @@ public class ListVariableConfig extends VariableConfiguration {
         if (items == null || items.isEmpty()) {
             return errors;
         }
+        validateWeights(errors);
+        validateEmbeddedConfigs(errors);
+        return errors;
+    }
 
+    private void validateWeights(List<String> errors) {
         boolean hasExplicitWeights = false;
         boolean hasPositiveWeight = false;
         for (ListItem item : items) {
@@ -248,8 +260,9 @@ public class ListVariableConfig extends VariableConfiguration {
         if (hasExplicitWeights && !hasPositiveWeight) {
             errors.add("List variable has weights config but all weights are zero or negative");
         }
+    }
 
-        // Validate embedded configurations
+    private void validateEmbeddedConfigs(List<String> errors) {
         for (ListItem item : items) {
             if (item.getEmbeddedConfig() != null) {
                 List<String> subErrors = item.getEmbeddedConfig().validate();
@@ -258,8 +271,6 @@ public class ListVariableConfig extends VariableConfiguration {
                 }
             }
         }
-
-        return errors;
     }
 
     @Override
@@ -299,35 +310,51 @@ public class ListVariableConfig extends VariableConfiguration {
     public List<ListItem> getEffectiveItems() {
         List<ListItem> effective = items != null ? new ArrayList<>(items) : new ArrayList<>();
 
-        // Reorder by itemOrder if specified
         if (itemOrder != null && !itemOrder.isEmpty()) {
-            Map<String, ListItem> itemMap = new HashMap<>();
-            for (ListItem item : effective) {
-                itemMap.put(item.getId(), item);
-                if (item.getValue() != null) {
-                    itemMap.put(String.valueOf(item.getValue()), item);
-                }
-            }
-
-            List<ListItem> reordered = new ArrayList<>();
-            for (String orderId : itemOrder) {
-                ListItem matched = itemMap.remove(orderId);
-                if (matched != null) {
-                    reordered.add(matched);
-                    if (matched.getId() != null) itemMap.remove(matched.getId());
-                    if (matched.getValue() != null) itemMap.remove(String.valueOf(matched.getValue()));
-                }
-            }
-            // Append any items that were not specified in itemOrder
-            for (ListItem item : effective) {
-                if (!reordered.contains(item)) {
-                    reordered.add(item);
-                }
-            }
-            return reordered;
+            return reorderByItemOrder(effective);
         }
-
         return effective;
+    }
+
+    /** The items in {@code itemOrder} first, matched by id or value, then the rest as they were. */
+    private List<ListItem> reorderByItemOrder(List<ListItem> effective) {
+        Map<String, ListItem> itemMap = indexByIdAndValue(effective);
+        List<ListItem> reordered = new ArrayList<>();
+        for (String orderId : itemOrder) {
+            ListItem matched = itemMap.remove(orderId);
+            if (matched != null) {
+                reordered.add(matched);
+                forgetItem(itemMap, matched);
+            }
+        }
+        // Append any items that were not specified in itemOrder
+        for (ListItem item : effective) {
+            if (!reordered.contains(item)) {
+                reordered.add(item);
+            }
+        }
+        return reordered;
+    }
+
+    private static Map<String, ListItem> indexByIdAndValue(List<ListItem> items) {
+        Map<String, ListItem> itemMap = new HashMap<>();
+        for (ListItem item : items) {
+            itemMap.put(item.getId(), item);
+            if (item.getValue() != null) {
+                itemMap.put(String.valueOf(item.getValue()), item);
+            }
+        }
+        return itemMap;
+    }
+
+    /** Removes the other key of a matched item, so a later order entry cannot pick it twice. */
+    private static void forgetItem(Map<String, ListItem> itemMap, ListItem matched) {
+        if (matched.getId() != null) {
+            itemMap.remove(matched.getId());
+        }
+        if (matched.getValue() != null) {
+            itemMap.remove(String.valueOf(matched.getValue()));
+        }
     }
 
     /**
@@ -427,13 +454,7 @@ public class ListVariableConfig extends VariableConfiguration {
             currentMarkovStateId = activeItems.get(0).getId();
         }
 
-        ListItem currentItem = null;
-        for (ListItem item : activeItems) {
-            if (item.getId().equals(currentMarkovStateId)) {
-                currentItem = item;
-                break;
-            }
-        }
+        ListItem currentItem = findItemById(activeItems, currentMarkovStateId);
         if (currentItem == null) {
             currentItem = activeItems.get(0);
             currentMarkovStateId = currentItem.getId();
@@ -444,26 +465,47 @@ public class ListVariableConfig extends VariableConfiguration {
             // A state without a row (e.g. a matrix edited by hand) moves to any item
             currentMarkovStateId = activeItems.get(ThreadLocalRandom.current().nextInt(activeItems.size())).getId();
         } else if (!transitions.isEmpty()) {
-            double sum = 0.0;
-            for (double p : transitions.values()) {
-                if (p > 0) sum += p;
-            }
-
-            if (sum > 0) {
-                double randomVal = ThreadLocalRandom.current().nextDouble() * sum;
-                double currentSum = 0.0;
-                for (Map.Entry<String, Double> entry : transitions.entrySet()) {
-                    if (entry.getValue() <= 0) continue;
-                    currentSum += entry.getValue();
-                    if (randomVal <= currentSum) {
-                        currentMarkovStateId = entry.getKey();
-                        break;
-                    }
-                }
-            }
+            currentMarkovStateId = nextMarkovState(transitions);
         }
 
         return currentItem;
+    }
+
+    private static ListItem findItemById(List<ListItem> activeItems, String id) {
+        for (ListItem item : activeItems) {
+            if (item.getId().equals(id)) {
+                return item;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Picks the next state from a transition row, ignoring non-positive probabilities.
+     *
+     * @return the picked state, or the current one when the row has no positive probability
+     */
+    private String nextMarkovState(Map<String, Double> transitions) {
+        double sum = 0.0;
+        for (double p : transitions.values()) {
+            if (p > 0) {
+                sum += p;
+            }
+        }
+        if (sum > 0) {
+            double randomVal = ThreadLocalRandom.current().nextDouble() * sum;
+            double currentSum = 0.0;
+            for (Map.Entry<String, Double> entry : transitions.entrySet()) {
+                if (entry.getValue() <= 0) {
+                    continue;
+                }
+                currentSum += entry.getValue();
+                if (randomVal <= currentSum) {
+                    return entry.getKey();
+                }
+            }
+        }
+        return currentMarkovStateId;
     }
 
     @Override

@@ -252,54 +252,53 @@ public class FlowEngineImpl implements IFlowEngine, ILifecycleListener {
      * Data generation loop for a single flow within a group.
      */
     private void runFlowDataGeneration(Flow flow, GroupContext context, long interval) {
-        while (context.isRunning()) {
-            try {
-                // Check pause state
-                if (context.isPaused()) {
-                    Thread.sleep(100);
-                    continue;
-                }
-
-                // Check if group is enabled
-                if (!context.group.isEnabled()) {
-                    Thread.sleep(100);
-                    continue;
-                }
-
-                // Check if flow is enabled
-                if (!flow.isEnabled()) {
-                    Thread.sleep(100);
-                    continue;
-                }
-
-                // Generate events from all variables in the flow
-                List<DataEvent> events = flow.generateEvents();
-
-                // Submit events to pipeline and record metrics
-                for (DataEvent event : events) {
-                    if (pipeline != null && !pipeline.isFull()) {
-                        pipeline.submit(event);
-                    }
-                }
-
-                // Record metrics
-                generatedEventCount.addAndGet(events.size());
-                context.group.recordEventsSent(events.size());
-
-                // Sleep for configured interval
-                Thread.sleep(interval);
-
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                break;
-            } catch (Exception e) {
-                logger.log(Level.SEVERE, e, () -> "Error in data generation for " + flow.getFlowId());
-                context.group.recordError();
-                break;
-            }
+        boolean keepRunning = true;
+        while (keepRunning && context.isRunning()) {
+            keepRunning = runGenerationCycle(flow, context, interval);
         }
 
         logger.fine(() -> "Flow " + flow.getFlowId() + " stopped");
+    }
+
+    /**
+     * Runs one cycle of the data generation loop of a flow: generates and submits its events,
+     * then waits for the interval.
+     *
+     * @return false when the loop must end (interrupted or failed)
+     */
+    private boolean runGenerationCycle(Flow flow, GroupContext context, long interval) {
+        try {
+            // Paused, or group or flow disabled: check again a bit later
+            if (context.isPaused() || !context.group.isEnabled() || !flow.isEnabled()) {
+                Thread.sleep(100);
+                return true;
+            }
+
+            // Generate events from all variables in the flow
+            List<DataEvent> events = flow.generateEvents();
+
+            // Submit events to pipeline and record metrics
+            for (DataEvent event : events) {
+                if (pipeline != null && !pipeline.isFull()) {
+                    pipeline.submit(event);
+                }
+            }
+
+            // Record metrics
+            generatedEventCount.addAndGet(events.size());
+            context.group.recordEventsSent(events.size());
+
+            // Sleep for configured interval
+            Thread.sleep(interval);
+            return true;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        } catch (Exception e) {
+            logger.log(Level.SEVERE, e, () -> "Error in data generation for " + flow.getFlowId());
+            context.group.recordError();
+            return false;
+        }
     }
 
     @Override

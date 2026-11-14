@@ -34,44 +34,19 @@ public final class RestartUtil {
             String classpath = System.getProperty("java.class.path");
             boolean isMaven = classpath.contains("plexus-classworlds") || System.getProperty("maven.home") != null;
 
-            List<String> command = new ArrayList<>();
             // Installed application: relaunch its native launcher, which knows the bundled runtime
             String launcher = System.getProperty(AppPaths.LAUNCHER_PROPERTY);
-
+            String[] args = com.gensynth.core.App.getOriginalArgs();
+            List<String> command;
             if (launcher != null) {
                 logger.info("Detected installed application. Restarting via its launcher...");
-                command.add(launcher);
-                String[] args = com.gensynth.core.App.getOriginalArgs();
-                if (args != null) {
-                    command.addAll(List.of(args));
-                }
+                command = launcherCommand(launcher, args);
             } else if (isMaven) {
                 logger.info("Detected Maven environment. Restarting via Maven...");
-                command.add(isWindows ? "mvn.cmd" : "mvn");
-                command.add("exec:java");
-                command.add("-Dexec.mainClass=com.gensynth.core.App");
-                
-                // Add original application arguments for Maven
-                String[] args = com.gensynth.core.App.getOriginalArgs();
-                if (args != null && args.length > 0) {
-                    command.add("-Dexec.args=" + String.join(" ", args));
-                }
+                command = mavenCommand(isWindows, args);
             } else {
                 logger.info("Detected standard Java environment. Restarting via Java...");
-                String javaHome = System.getProperty("java.home");
-                String javaBin = javaHome + File.separator + "bin" + File.separator + "java";
-                
-                command.add(javaBin);
-                command.addAll(ManagementFactory.getRuntimeMXBean().getInputArguments());
-                command.add("-cp");
-                command.add(classpath);
-                command.add("com.gensynth.core.App");
-
-                // Add original application arguments (e.g., --desktop)
-                String[] args = com.gensynth.core.App.getOriginalArgs();
-                if (args != null) {
-                    Collections.addAll(command, args);
-                }
+                command = javaCommand(classpath, args);
             }
 
             if (logger.isInfoEnabled()) {
@@ -96,6 +71,49 @@ public final class RestartUtil {
             // If restart fails, at least we exit so the user knows something happened
             System.exit(1);
         }
+    }
+
+    /** The installed application's launcher with the original arguments. */
+    static List<String> launcherCommand(String launcher, String[] args) {
+        List<String> command = new ArrayList<>();
+        command.add(launcher);
+        if (args != null) {
+            command.addAll(List.of(args));
+        }
+        return command;
+    }
+
+    /** Maven's exec:java with the original arguments, for the development environment. */
+    static List<String> mavenCommand(boolean isWindows, String[] args) {
+        List<String> command = new ArrayList<>();
+        command.add(isWindows ? "mvn.cmd" : "mvn");
+        command.add("exec:java");
+        command.add("-Dexec.mainClass=com.gensynth.core.App");
+
+        // Add original application arguments for Maven
+        if (args != null && args.length > 0) {
+            command.add("-Dexec.args=" + String.join(" ", args));
+        }
+        return command;
+    }
+
+    /** This JVM, with its options and class path, and the original arguments. */
+    static List<String> javaCommand(String classpath, String[] args) {
+        String javaHome = System.getProperty("java.home");
+        String javaBin = javaHome + File.separator + "bin" + File.separator + "java";
+
+        List<String> command = new ArrayList<>();
+        command.add(javaBin);
+        command.addAll(ManagementFactory.getRuntimeMXBean().getInputArguments());
+        command.add("-cp");
+        command.add(classpath);
+        command.add("com.gensynth.core.App");
+
+        // Add original application arguments (e.g., --desktop)
+        if (args != null) {
+            Collections.addAll(command, args);
+        }
+        return command;
     }
 
     /**

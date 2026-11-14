@@ -1,6 +1,7 @@
 package com.gensynth.core.ws.dispatch;
 
 import com.gensynth.core.api.IFlowMessageHandler;
+import com.gensynth.core.flow.TemplateEngine;
 import com.gensynth.plugin.api.ConnectorSession;
 import com.gensynth.core.ws.BridgeContext;
 import com.gensynth.core.ws.runtime.FlowRuntime;
@@ -57,8 +58,8 @@ public class FlowMessagePublisher implements IFlowMessageHandler {
         try {
             // Global sequence: {{n}} is unique even across flows running in parallel
             long sequence = ctx.getMessageSequence().incrementAndGet();
-            String payload = ctx.getTemplateEngine().evaluate(
-                flow.template, sequence, ctx.getVariablesById(), flow.id, group.id, flow.name, null, flow.format);
+            String payload = ctx.getTemplateEngine().evaluate(flow.template, sequence, ctx.getVariablesById(),
+                new TemplateEngine.RenderTarget(flow.id, group.id, flow.name, flow.format), null);
             flow.generated.incrementAndGet();
             return payload;
         } catch (Exception ex) {

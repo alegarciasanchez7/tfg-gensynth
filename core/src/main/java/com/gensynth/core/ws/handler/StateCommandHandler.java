@@ -186,29 +186,8 @@ public class StateCommandHandler implements CommandHandler {
         UiBridgeWebSocketServer server = ctx.getServer();
         ObjectMapper objectMapper = ctx.getObjectMapper();
 
-        List<GroupDefinition> newGroups = new ArrayList<>();
-        JsonNode groupsNode = payload.path(GROUPS);
-        if (groupsNode.isArray()) {
-            for (JsonNode groupNode : groupsNode) {
-                @SuppressWarnings("unchecked")
-                Map<String, Object> groupMap = objectMapper.convertValue(groupNode, Map.class);
-                newGroups.add(GroupDefinition.fromPayload(groupMap));
-            }
-        }
-
-        List<Variable> newVariables = new ArrayList<>();
-        JsonNode variablesNode = payload.path("variables");
-        if (variablesNode.isArray()) {
-            for (JsonNode varNode : variablesNode) {
-                @SuppressWarnings("unchecked")
-                Map<String, Object> varMap = objectMapper.convertValue(varNode, Map.class);
-                Variable variable = Variable.fromPayload(varMap);
-                if (variable.getScope().equals("LOCAL")) {
-                    logger.info("Importing LOCAL variable '{}' for flow '{}'", variable.getName(), variable.getFlowId());
-                }
-                newVariables.add(variable);
-            }
-        }
+        List<GroupDefinition> newGroups = readGroups(payload.path(GROUPS), objectMapper);
+        List<Variable> newVariables = readVariables(payload.path("variables"), objectMapper);
 
         ProjectSettings settings = ProjectSettings.fromPayload(
             payload.has(SETTINGS) ? objectMapper.convertValue(payload.get(SETTINGS), Map.class) : null
@@ -239,6 +218,36 @@ public class StateCommandHandler implements CommandHandler {
             }
         }
         return newGroups.size();
+    }
+
+    /** @return the groups of an imported project ({@code groups} array; none when it is not an array) */
+    private static List<GroupDefinition> readGroups(JsonNode groupsNode, ObjectMapper objectMapper) {
+        List<GroupDefinition> groups = new ArrayList<>();
+        if (groupsNode.isArray()) {
+            for (JsonNode groupNode : groupsNode) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> groupMap = objectMapper.convertValue(groupNode, Map.class);
+                groups.add(GroupDefinition.fromPayload(groupMap));
+            }
+        }
+        return groups;
+    }
+
+    /** @return the variables of an imported project ({@code variables} array; none when it is not an array) */
+    private static List<Variable> readVariables(JsonNode variablesNode, ObjectMapper objectMapper) {
+        List<Variable> variables = new ArrayList<>();
+        if (variablesNode.isArray()) {
+            for (JsonNode varNode : variablesNode) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> varMap = objectMapper.convertValue(varNode, Map.class);
+                Variable variable = Variable.fromPayload(varMap);
+                if (variable.getScope().equals("LOCAL")) {
+                    logger.info("Importing LOCAL variable '{}' for flow '{}'", variable.getName(), variable.getFlowId());
+                }
+                variables.add(variable);
+            }
+        }
+        return variables;
     }
 
     /**

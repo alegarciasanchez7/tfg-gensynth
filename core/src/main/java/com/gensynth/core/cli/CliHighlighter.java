@@ -163,31 +163,45 @@ class CliHighlighter implements Highlighter {
         for (int i = 0; i < line.length(); i++) {
             char c = line.charAt(i);
             if (quote != 0) {
-                if (c == quote) {
-                    quote = 0;
-                } else {
-                    text.append(c);
-                }
+                quote = CliShell.continueQuote(c, quote, text);
             } else if (Character.isWhitespace(c)) {
-                if (start >= 0) {
-                    words.add(new Word(start, i, text.toString()));
-                    text.setLength(0);
-                    start = -1;
-                }
+                start = endWord(words, text, start, i);
             } else {
                 if (start < 0) {
                     start = i;
                 }
-                if (c == '"' || c == '\'') {
-                    quote = c;
-                } else {
-                    text.append(c);
-                }
+                quote = openQuoteOrAppend(c, text);
             }
         }
         if (start >= 0) {
             words.add(new Word(start, line.length(), text.toString()));
         }
         return words;
+    }
+
+    /**
+     * Adds the word being read, if any, ending at {@code end}.
+     *
+     * @return -1: no word is being read any more
+     */
+    private static int endWord(List<Word> words, StringBuilder text, int start, int end) {
+        if (start >= 0) {
+            words.add(new Word(start, end, text.toString()));
+            text.setLength(0);
+        }
+        return -1;
+    }
+
+    /**
+     * Reads a character outside quotes that is not a space.
+     *
+     * @return the quote it opens, or 0 when it is part of the word
+     */
+    private static char openQuoteOrAppend(char c, StringBuilder text) {
+        if (c == '"' || c == '\'') {
+            return c;
+        }
+        text.append(c);
+        return 0;
     }
 }

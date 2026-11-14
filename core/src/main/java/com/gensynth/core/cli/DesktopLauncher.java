@@ -136,12 +136,9 @@ public class DesktopLauncher implements IDesktopLauncher {
         }
 
         if (cliLauncher != null && os.startsWith("mac")) {
-            // .../GenSynth.app/Contents/MacOS/GenSynth
-            Path bundle = desktopLauncher(cliLauncher, osName).getParent().getParent().getParent();
-            if (bundle != null && bundle.toString().endsWith(".app")) {
-                List<String> command = new ArrayList<>(List.of("/usr/bin/open", "-n", "-a", bundle.toString(), "--args"));
-                command.addAll(args);
-                return command;
+            List<String> openApp = openAppBundle(cliLauncher, osName, args);
+            if (!openApp.isEmpty()) {
+                return openApp;
             }
         }
 
@@ -149,16 +146,7 @@ public class DesktopLauncher implements IDesktopLauncher {
         if (cliLauncher != null) {
             app.add(desktopLauncher(cliLauncher, osName).toString());
         } else {
-            app.add(Paths.get(javaHome, "bin", windows ? "javaw" : "java").toString());
-            for (String arg : jvmArgs) {
-                // A debugger port would clash with the one of this process
-                if (!arg.startsWith("-agentlib:jdwp") && !arg.startsWith("-Xrunjdwp")) {
-                    app.add(arg);
-                }
-            }
-            app.add("-cp");
-            app.add(classPath);
-            app.add(MAIN_CLASS);
+            addSourceBuildJava(app, javaHome, windows, jvmArgs, classPath);
         }
         app.addAll(args);
         if (windows) {
@@ -172,6 +160,36 @@ public class DesktopLauncher implements IDesktopLauncher {
         }
         detached.addAll(app);
         return detached;
+    }
+
+    /**
+     * @return {@code open -a} with the application bundle of a macOS installation, or an empty
+     *         list when the launcher is not inside a {@code .app} bundle
+     */
+    private static List<String> openAppBundle(String cliLauncher, String osName, List<String> args) {
+        // .../GenSynth.app/Contents/MacOS/GenSynth
+        Path bundle = desktopLauncher(cliLauncher, osName).getParent().getParent().getParent();
+        if (bundle == null || !bundle.toString().endsWith(".app")) {
+            return List.of();
+        }
+        List<String> command = new ArrayList<>(List.of("/usr/bin/open", "-n", "-a", bundle.toString(), "--args"));
+        command.addAll(args);
+        return command;
+    }
+
+    /** Adds the Java command of the source build: this JVM's options and class path. */
+    private static void addSourceBuildJava(List<String> app, String javaHome, boolean windows, List<String> jvmArgs,
+                                           String classPath) {
+        app.add(Paths.get(javaHome, "bin", windows ? "javaw" : "java").toString());
+        for (String arg : jvmArgs) {
+            // A debugger port would clash with the one of this process
+            if (!arg.startsWith("-agentlib:jdwp") && !arg.startsWith("-Xrunjdwp")) {
+                app.add(arg);
+            }
+        }
+        app.add("-cp");
+        app.add(classPath);
+        app.add(MAIN_CLASS);
     }
 
     /**
