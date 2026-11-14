@@ -153,7 +153,7 @@ core/src/main/java/com/gensynth/core/App.java  (13)
 - **What:** `analyze core`, `analyze plugin-api` or `analyze ui` (or several); all of them by default.
 - **Levels:** SpotBugs and PMD use their own priorities (PMD 4 and 5 are INFO); duplicated code
   is MEDIUM; in the UI, ESLint errors are HIGH, the SonarJS warnings MEDIUM and the other
-  warnings (the debt that `npm run lint` already reports, such as `no-explicit-any`) LOW.
+  warnings LOW (there should be none: `npm run lint` fails on any warning).
 - **Options:** the console shows HIGH and MEDIUM, `--all` also LOW and INFO; every finding is
   always written to `target/code-analysis.txt`. `--report-only` lists the last analysis again
   without running it.

@@ -168,7 +168,7 @@ core/src/main/java/com/gensynth/core/App.java  (13)
 - **What:** `analyze core`, `analyze plugin-api` or `analyze ui` (or several); all of them by default.
 - **Levels:** SpotBugs and PMD use their own priorities (PMD 4 and 5 are INFO); duplicated code
   is MEDIUM; in the UI, ESLint errors are HIGH, the SonarJS warnings MEDIUM and the other
-  warnings (the debt that `npm run lint` already reports, such as `no-explicit-any`) LOW.
+  warnings LOW (there should be none: `npm run lint` fails on any warning).
 - **Options:** the console shows HIGH and MEDIUM, `--all` also LOW and INFO; every finding is
   always written to `target/code-analysis.txt`. `--report-only` lists the last analysis again
   without running it.
@@ -198,7 +198,7 @@ runs the [CI workflow](.github/workflows/ci.yml) on GitHub Actions:
 
 | Job | What it checks |
 |---|---|
-| **Frontend** | `npm run lint`, `npm run typecheck`, `npm run test:coverage` and `npm run build` in `ui/`. |
+| **Frontend** | `npm audit --audit-level=high`, `npm run lint` (fails on any warning), `npm run typecheck`, `npm run test:coverage` and `npm run build` in `ui/`. |
 | **Backend** | `./mvnw verify` (build, tests and JaCoCo coverage) on Linux, Windows and macOS. |
 | **SonarQube analysis** | Only on `dev`: analyses the Java and TypeScript code on [SonarQube Cloud](https://sonarcloud.io/summary/new_code?id=alegarciasanchez7_tfg-gensynth) and fails when the Quality Gate fails. |
 
