@@ -88,6 +88,10 @@ public class App {
                     String updatedContent = content.replace("}", ", \"attempted\": true}");
                     Files.writeString(markerPath, updatedContent);
                 }
+            } catch (InterruptedException e) {
+                // Keep the interrupt so the startup thread can still see it
+                Thread.currentThread().interrupt();
+                logger.error("Rollback of the plugin interrupted: {}", e.getMessage());
             } catch (Exception e) {
                 logger.error("Error processing rollback marker: {}", e.getMessage());
             }
