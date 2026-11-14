@@ -3,16 +3,18 @@ rem Runs the same checks as the CI: backend tests with coverage, then the UI lin
 rem tests with coverage and build.
 setlocal EnableExtensions
 set "SCRIPT_NAME=%~nx0"
-call "%~dp0common.bat" :init
+rem Kept now: shift also moves %0, so %~dp0 is no longer this folder after reading the options
+set "COMMON=%~dp0common.bat"
+call "%COMMON%" :init
 set "BACKEND=yes"
 set "FRONTEND=yes"
 if not "%~1"=="" goto :args
-call "%~dp0common.bat" :ask_choice "What to check" 1 "Backend and frontend, as the CI" "Backend only (mvnw verify)" "Frontend only (lint, typecheck, tests, build)"
-if "%CHOICE%"=="1" call "%~dp0common.bat" :show_command scripts\windows\test.bat
+call "%COMMON%" :ask_choice "What to check" 1 "Backend and frontend, as the CI" "Backend only (mvnw verify)" "Frontend only (lint, typecheck, tests, build)"
+if "%CHOICE%"=="1" call "%COMMON%" :show_command scripts\windows\test.bat
 if "%CHOICE%"=="2" set "FRONTEND="
-if "%CHOICE%"=="2" call "%~dp0common.bat" :show_command scripts\windows\test.bat --backend
+if "%CHOICE%"=="2" call "%COMMON%" :show_command scripts\windows\test.bat --backend
 if "%CHOICE%"=="3" set "BACKEND="
-if "%CHOICE%"=="3" call "%~dp0common.bat" :show_command scripts\windows\test.bat --frontend
+if "%CHOICE%"=="3" call "%COMMON%" :show_command scripts\windows\test.bat --frontend
 goto :run
 
 :args
@@ -26,29 +28,29 @@ goto :fail
 
 :run
 if defined BACKEND (
-    call "%~dp0common.bat" :check_java || goto :fail
-    call "%~dp0common.bat" :step "Backend: mvnw verify"
+    call "%COMMON%" :check_java || goto :fail
+    call "%COMMON%" :step "Backend: mvnw verify"
     rem The UI is checked by its own steps below
-    call "%~dp0common.bat" :mvnw -B verify -DskipUi=true || goto :fail
+    call "%COMMON%" :mvnw -B verify -DskipUi=true || goto :fail
 )
 if not defined FRONTEND goto :passed
-call "%~dp0common.bat" :check_node || goto :fail
-call "%~dp0common.bat" :ensure_ui_dependencies || goto :fail
+call "%COMMON%" :check_node || goto :fail
+call "%COMMON%" :ensure_ui_dependencies || goto :fail
 pushd "%UI_DIR%"
-call "%~dp0common.bat" :step "Frontend: lint"
+call "%COMMON%" :step "Frontend: lint"
 call npm run lint || goto :frontend_failed
-call "%~dp0common.bat" :step "Frontend: typecheck"
+call "%COMMON%" :step "Frontend: typecheck"
 call npm run typecheck || goto :frontend_failed
-call "%~dp0common.bat" :step "Frontend: tests"
+call "%COMMON%" :step "Frontend: tests"
 call npm run test:coverage || goto :frontend_failed
-call "%~dp0common.bat" :step "Frontend: build"
+call "%COMMON%" :step "Frontend: build"
 call npm run build || goto :frontend_failed
 popd
 
 :passed
 echo.
 echo All checks passed.
-call "%~dp0common.bat" :done 0
+call "%COMMON%" :done 0
 exit /b 0
 
 :frontend_failed
@@ -65,5 +67,5 @@ echo Without options it asks what to do.
 exit /b 0
 
 :fail
-call "%~dp0common.bat" :done 1
+call "%COMMON%" :done 1
 exit /b 1

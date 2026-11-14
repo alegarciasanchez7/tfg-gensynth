@@ -4,15 +4,17 @@ rem builds and installs every module (plugin API, RabbitMQ, core with the UI and
 rem plugins when present) and leaves the core ready to run.
 setlocal EnableExtensions
 set "SCRIPT_NAME=%~nx0"
-call "%~dp0common.bat" :init
+rem Kept now: shift also moves %0, so %~dp0 is no longer this folder after reading the options
+set "COMMON=%~dp0common.bat"
+call "%COMMON%" :init
 set "SKIP_UI="
 if not "%~1"=="" goto :args
-call "%~dp0common.bat" :ask_yes_no "Build the user interface too (needs Node.js)" Y
+call "%COMMON%" :ask_yes_no "Build the user interface too (needs Node.js)" Y
 if "%ANSWER%"=="no" (
     set "SKIP_UI=yes"
-    call "%~dp0common.bat" :show_command scripts\windows\setup.bat --skip-ui
+    call "%COMMON%" :show_command scripts\windows\setup.bat --skip-ui
 ) else (
-    call "%~dp0common.bat" :show_command scripts\windows\setup.bat
+    call "%COMMON%" :show_command scripts\windows\setup.bat
 )
 goto :run
 
@@ -25,30 +27,30 @@ echo Error: Unknown option: %~1
 goto :fail
 
 :run
-call "%~dp0common.bat" :step "Checking the tools"
-call "%~dp0common.bat" :check_java || goto :fail
+call "%COMMON%" :step "Checking the tools"
+call "%COMMON%" :check_java || goto :fail
 echo Java %JAVA_MAJOR%
 if not defined SKIP_UI (
-    call "%~dp0common.bat" :check_node || goto :fail
+    call "%COMMON%" :check_node || goto :fail
     node --version
 )
 
 if not defined SKIP_UI (
-    call "%~dp0common.bat" :step "Installing the UI dependencies (npm ci)"
+    call "%COMMON%" :step "Installing the UI dependencies (npm ci)"
     pushd "%UI_DIR%"
     call npm ci || (popd & goto :fail)
     popd
 )
 
-call "%~dp0common.bat" :step "Building and installing every module (mvnw clean install -DskipTests)"
+call "%COMMON%" :step "Building and installing every module (mvnw clean install -DskipTests)"
 if defined SKIP_UI (
-    call "%~dp0common.bat" :mvnw -B clean install -DskipTests -DskipUi=true || goto :fail
+    call "%COMMON%" :mvnw -B clean install -DskipTests -DskipUi=true || goto :fail
 ) else (
-    call "%~dp0common.bat" :mvnw -B clean install -DskipTests || goto :fail
+    call "%COMMON%" :mvnw -B clean install -DskipTests || goto :fail
 )
 
-call "%~dp0common.bat" :step "Preparing the core to run from the sources"
-call "%~dp0common.bat" :build_runtime skip-ui || goto :fail
+call "%COMMON%" :step "Preparing the core to run from the sources"
+call "%COMMON%" :build_runtime skip-ui || goto :fail
 
 echo.
 echo GenSynth is ready for development.
@@ -59,7 +61,7 @@ echo   scripts\windows\run-cli.bat         gensynth command line
 echo   scripts\windows\run-browser.bat     core + UI dev server with hot reload (http://localhost:5173)
 echo   scripts\windows\test.bat            backend and frontend tests, as the CI runs them
 echo   scripts\windows\compile.bat         compile after changing the code
-call "%~dp0common.bat" :done 0
+call "%COMMON%" :done 0
 exit /b 0
 
 :usage
@@ -71,5 +73,5 @@ echo Without options it asks what to do.
 exit /b 0
 
 :fail
-call "%~dp0common.bat" :done 1
+call "%COMMON%" :done 1
 exit /b 1

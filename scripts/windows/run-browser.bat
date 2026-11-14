@@ -3,15 +3,17 @@ rem Starts the core without a window (WebSocket on port 8765) and, in a second w
 rem dev server of the UI (http://localhost:5173) with hot reload. Close both windows to stop.
 setlocal EnableExtensions
 set "SCRIPT_NAME=%~nx0"
-call "%~dp0common.bat" :init
+rem Kept now: shift also moves %0, so %~dp0 is no longer this folder after reading the options
+set "COMMON=%~dp0common.bat"
+call "%COMMON%" :init
 set "BUILD=yes"
 if not "%~1"=="" goto :args
-call "%~dp0common.bat" :ask_yes_no "Compile the core before starting" Y
+call "%COMMON%" :ask_yes_no "Compile the core before starting" Y
 if "%ANSWER%"=="no" (
     set "BUILD="
-    call "%~dp0common.bat" :show_command scripts\windows\run-browser.bat --no-build
+    call "%COMMON%" :show_command scripts\windows\run-browser.bat --no-build
 ) else (
-    call "%~dp0common.bat" :show_command scripts\windows\run-browser.bat
+    call "%COMMON%" :show_command scripts\windows\run-browser.bat
 )
 goto :run
 
@@ -24,29 +26,29 @@ echo Error: Unknown option: %~1
 goto :fail
 
 :run
-call "%~dp0common.bat" :check_java || goto :fail
-call "%~dp0common.bat" :check_node || goto :fail
+call "%COMMON%" :check_java || goto :fail
+call "%COMMON%" :check_node || goto :fail
 if defined BUILD goto :build_checked
-call "%~dp0common.bat" :needs_build
+call "%COMMON%" :needs_build
 if errorlevel 1 goto :build_checked
 echo Warning: Nothing is compiled yet: compiling first.
 set "BUILD=yes"
 :build_checked
 if defined BUILD (
-    call "%~dp0common.bat" :step "Compiling the core"
-    call "%~dp0common.bat" :build_runtime skip-ui -q || goto :fail
+    call "%COMMON%" :step "Compiling the core"
+    call "%COMMON%" :build_runtime skip-ui -q || goto :fail
 )
-call "%~dp0common.bat" :ensure_ui_dependencies || goto :fail
+call "%COMMON%" :ensure_ui_dependencies || goto :fail
 
-call "%~dp0common.bat" :step "Starting the UI dev server in a new window: open http://localhost:5173"
+call "%COMMON%" :step "Starting the UI dev server in a new window: open http://localhost:5173"
 start "GenSynth UI dev server" /d "%UI_DIR%" cmd /k npm run dev
 
-call "%~dp0common.bat" :step "Starting the core (ws://localhost:8765). Ctrl+C stops it"
+call "%COMMON%" :step "Starting the core (ws://localhost:8765). Ctrl+C stops it"
 pushd "%CORE_DIR%"
 java -cp "%RUNTIME_CP%" com.gensynth.core.App
 set "EXIT_CODE=%errorlevel%"
 popd
-call "%~dp0common.bat" :done %EXIT_CODE%
+call "%COMMON%" :done %EXIT_CODE%
 exit /b %EXIT_CODE%
 
 :usage
@@ -58,5 +60,5 @@ echo Without options it asks what to do.
 exit /b 0
 
 :fail
-call "%~dp0common.bat" :done 1
+call "%COMMON%" :done 1
 exit /b 1

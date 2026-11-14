@@ -7,7 +7,9 @@ rem nothing), then downloaded to core\target\installer\remote\. That needs the G
 rem and the branch pushed to GitHub. Start it without options to be asked what to do.
 setlocal EnableExtensions
 set "SCRIPT_NAME=%~nx0"
-call "%~dp0common.bat" :init
+rem Kept now: shift also moves %0, so %~dp0 is no longer this folder after reading the options
+set "COMMON=%~dp0common.bat"
+call "%COMMON%" :init
 set "SYSTEMS=this"
 set "OS_SET="
 set "EDITION=both"
@@ -15,14 +17,14 @@ set "ASKED="
 if not "%~1"=="" goto :args
 
 set "ASKED=yes"
-call "%~dp0common.bat" :ask_choice "Installers for" 1 "This computer (Windows)" "Linux (built on GitHub Actions)" "macOS (built on GitHub Actions)" "Windows, Linux and macOS (the other two on GitHub Actions)"
+call "%COMMON%" :ask_choice "Installers for" 1 "This computer (Windows)" "Linux (built on GitHub Actions)" "macOS (built on GitHub Actions)" "Windows, Linux and macOS (the other two on GitHub Actions)"
 if "%CHOICE%"=="2" set "SYSTEMS=linux"
 if "%CHOICE%"=="3" set "SYSTEMS=macos"
 if "%CHOICE%"=="4" set "SYSTEMS=all"
-call "%~dp0common.bat" :ask_choice "Edition" 1 "Both: the full application and the CLI edition" "The full application only" "The CLI edition only (the command line, without the window)"
+call "%COMMON%" :ask_choice "Edition" 1 "Both: the full application and the CLI edition" "The full application only" "The CLI edition only (the command line, without the window)"
 if "%CHOICE%"=="2" set "EDITION=full"
 if "%CHOICE%"=="3" set "EDITION=cli"
-call "%~dp0common.bat" :show_command scripts\windows\package.bat --os %SYSTEMS% --edition %EDITION%
+call "%COMMON%" :show_command scripts\windows\package.bat --os %SYSTEMS% --edition %EDITION%
 goto :run
 
 :args
@@ -60,7 +62,7 @@ set "RUN_ID="
 set "DESTINATION="
 
 if not defined REMOTE goto :build_here
-call "%~dp0common.bat" :step "Building for %REMOTE% on GitHub Actions (jpackage only builds for the system it runs on)"
+call "%COMMON%" :step "Building for %REMOTE% on GitHub Actions (jpackage only builds for the system it runs on)"
 where gh >nul 2>nul || (echo Error: The GitHub CLI was not found. Install it from https://cli.github.com and run: gh auth login& goto :fail)
 gh auth status >nul 2>nul || (echo Error: The GitHub CLI is not logged in. Run: gh auth login& goto :fail)
 pushd "%REPO_ROOT%"
@@ -73,7 +75,7 @@ for /f %%H in ('git rev-parse origin/%BRANCH%') do set "PUSHED_HEAD=%%H"
 if "%LOCAL_HEAD%"=="%PUSHED_HEAD%" goto :pushed
 echo Warning: GitHub builds the last pushed commit of %BRANCH%, which is not the one you have here.
 if not defined ASKED goto :not_pushed
-call "%~dp0common.bat" :ask_yes_no "Build the pushed commit anyway" N
+call "%COMMON%" :ask_yes_no "Build the pushed commit anyway" N
 if "%ANSWER%"=="no" goto :not_pushed
 :pushed
 set "DIRTY="
@@ -99,18 +101,18 @@ popd
 
 :build_here
 if not defined BUILD_HERE goto :remote_results
-call "%~dp0common.bat" :check_java || goto :fail
-call "%~dp0common.bat" :check_node || goto :fail
+call "%COMMON%" :check_java || goto :fail
+call "%COMMON%" :check_node || goto :fail
 where candle.exe >nul 2>nul || (echo Error: WiX Toolset 3 was not found ^(candle.exe^). Install it from https://github.com/wixtoolset/wix3/releases and add its bin folder to PATH.& goto :fail)
 set "OPTIONS="
 if /i "%EDITION%"=="full" set "OPTIONS=-Dinstaller.skipCli=true"
 if /i "%EDITION%"=="cli" set "OPTIONS=-Dinstaller.skipFull=true"
-call "%~dp0common.bat" :step "Building the installers of this computer (mvnw -Dinstaller -DskipTests clean package)"
-call "%~dp0common.bat" :mvnw -B -Dinstaller -DskipTests %OPTIONS% clean package || goto :fail
+call "%COMMON%" :step "Building the installers of this computer (mvnw -Dinstaller -DskipTests clean package)"
+call "%COMMON%" :mvnw -B -Dinstaller -DskipTests %OPTIONS% clean package || goto :fail
 
 :remote_results
 if not defined RUN_ID goto :list
-call "%~dp0common.bat" :step "Waiting for the GitHub Actions run %RUN_ID%"
+call "%COMMON%" :step "Waiting for the GitHub Actions run %RUN_ID%"
 pushd "%REPO_ROOT%"
 gh run watch %RUN_ID% --exit-status || (popd & echo Error: The GitHub Actions run %RUN_ID% failed: see the Actions tab of the repository.& goto :fail)
 set "DESTINATION=%CORE_DIR%\target\installer\remote\run-%RUN_ID%"
@@ -119,11 +121,11 @@ gh run download %RUN_ID% --dir "%DESTINATION%" --pattern "installers-*" || (popd
 popd
 
 :list
-call "%~dp0common.bat" :step "Installers"
+call "%COMMON%" :step "Installers"
 call :list_folder "%CORE_DIR%\target\installer\dist"
 call :list_folder "%CORE_DIR%\target\installer\dist-cli"
 if defined DESTINATION call :list_folder "%DESTINATION%"
-call "%~dp0common.bat" :done 0
+call "%COMMON%" :done 0
 exit /b 0
 
 :list_folder
@@ -174,5 +176,5 @@ echo Without options it asks what to do.
 exit /b 0
 
 :fail
-call "%~dp0common.bat" :done 1
+call "%COMMON%" :done 1
 exit /b 1

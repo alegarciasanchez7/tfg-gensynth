@@ -5,27 +5,29 @@ rem the type check and the coverage on the UI. Then it lists the findings groupe
 rem (scripts\CodeAnalysisReport.java). Findings are reported, they never fail the analysis.
 setlocal EnableExtensions
 set "SCRIPT_NAME=%~nx0"
-call "%~dp0common.bat" :init
+rem Kept now: shift also moves %0, so %~dp0 is no longer this folder after reading the options
+set "COMMON=%~dp0common.bat"
+call "%COMMON%" :init
 set "MODULES="
 set "UI="
 set "RUN=yes"
 set "REPORT_OPTIONS="
 if not "%~1"=="" goto :args
 set "COMMAND=scripts\windows\analyze.bat"
-call "%~dp0common.bat" :ask_choice "What to analyze" 1 "Everything (core, plugin-api and ui)" "core" "plugin-api" "ui"
+call "%COMMON%" :ask_choice "What to analyze" 1 "Everything (core, plugin-api and ui)" "core" "plugin-api" "ui"
 if "%CHOICE%"=="2" set "MODULES=core"
 if "%CHOICE%"=="3" set "MODULES=plugin-api"
 if defined MODULES set "REPORT_OPTIONS=%MODULES%"
 if "%CHOICE%"=="4" set "UI=yes"
 if "%CHOICE%"=="4" set "REPORT_OPTIONS=ui"
 if defined REPORT_OPTIONS set "COMMAND=%COMMAND% %REPORT_OPTIONS%"
-call "%~dp0common.bat" :ask_choice "Analysis" 1 "Run a new analysis" "Show the findings of the last analysis (fast)"
+call "%COMMON%" :ask_choice "Analysis" 1 "Run a new analysis" "Show the findings of the last analysis (fast)"
 if "%CHOICE%"=="2" set "RUN="
 if "%CHOICE%"=="2" set "COMMAND=%COMMAND% --report-only"
-call "%~dp0common.bat" :ask_yes_no "Also show the LOW and INFO findings (mostly style)" N
+call "%COMMON%" :ask_yes_no "Also show the LOW and INFO findings (mostly style)" N
 if "%ANSWER%"=="yes" set "REPORT_OPTIONS=%REPORT_OPTIONS% --all"
 if "%ANSWER%"=="yes" set "COMMAND=%COMMAND% --all"
-call "%~dp0common.bat" :show_command %COMMAND%
+call "%COMMON%" :show_command %COMMAND%
 goto :run
 
 :args
@@ -51,27 +53,27 @@ if not defined MODULES if not defined UI (
     set "MODULES=core,plugin-api"
     set "UI=yes"
 )
-call "%~dp0common.bat" :check_java || goto :fail
+call "%COMMON%" :check_java || goto :fail
 if not defined RUN goto :findings
 if defined MODULES (
-    call "%~dp0common.bat" :step "Java (%MODULES%): tests, SpotBugs, PMD and CPD (mvnw -Pcode-analysis verify)"
-    call "%~dp0common.bat" :mvnw -B -Pcode-analysis verify -DskipUi=true -pl "%MODULES%" -am || goto :fail
+    call "%COMMON%" :step "Java (%MODULES%): tests, SpotBugs, PMD and CPD (mvnw -Pcode-analysis verify)"
+    call "%COMMON%" :mvnw -B -Pcode-analysis verify -DskipUi=true -pl "%MODULES%" -am || goto :fail
 )
 if defined UI (
-    call "%~dp0common.bat" :check_node || goto :fail
-    call "%~dp0common.bat" :ensure_ui_dependencies || goto :fail
-    call "%~dp0common.bat" :step "ui: ESLint with the SonarJS rules, typecheck and coverage (npm run analyze)"
+    call "%COMMON%" :check_node || goto :fail
+    call "%COMMON%" :ensure_ui_dependencies || goto :fail
+    call "%COMMON%" :step "ui: ESLint with the SonarJS rules, typecheck and coverage (npm run analyze)"
     pushd "%UI_DIR%"
     call npm run analyze || (popd & goto :fail)
     popd
 )
 
 :findings
-call "%~dp0common.bat" :step "Findings"
+call "%COMMON%" :step "Findings"
 java "%REPO_ROOT%\scripts\CodeAnalysisReport.java" "%REPO_ROOT%" %REPORT_OPTIONS% || goto :fail
 if defined MODULES for %%M in (%MODULES%) do echo Coverage of %%M: %REPO_ROOT%\%%M\target\site\jacoco\index.html
 if defined UI echo Coverage of ui: %UI_DIR%\coverage\index.html
-call "%~dp0common.bat" :done 0
+call "%COMMON%" :done 0
 exit /b 0
 
 :usage
@@ -85,5 +87,5 @@ echo Every finding is also written to target\code-analysis.txt. Without options 
 exit /b 0
 
 :fail
-call "%~dp0common.bat" :done 1
+call "%COMMON%" :done 1
 exit /b 1
