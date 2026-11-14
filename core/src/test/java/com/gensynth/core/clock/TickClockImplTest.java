@@ -56,7 +56,8 @@ public class TickClockImplTest {
 
     @Test
     public void stopFreezesCounterAndStartResetsIt() throws Exception {
-        clock = new TickClockImpl(n -> true, FIVE_MS);
+        List<Long> ticks = new CopyOnWriteArrayList<>();
+        clock = new TickClockImpl(n -> ticks.add(n), FIVE_MS);
         clock.start();
         awaitTrue("expected ticks", () -> clock.getTickCount() >= 3);
 
@@ -67,9 +68,12 @@ public class TickClockImplTest {
         Thread.sleep(50);
         assertEquals(frozen, clock.getTickCount());
 
+        // The first tick after the restart is number 1. Checked on the tick itself, not on the
+        // counter after a wait: a slow CI runner may emit several ticks before the check
+        ticks.clear();
         clock.start();
-        awaitTrue("expected ticks after restart", () -> clock.getTickCount() >= 1);
-        assertTrue("counter should restart from zero", clock.getTickCount() < frozen + 3);
+        awaitTrue("expected ticks after restart", () -> !ticks.isEmpty());
+        assertEquals("counter should restart from zero", 1L, (long) ticks.get(0));
     }
 
     @Test

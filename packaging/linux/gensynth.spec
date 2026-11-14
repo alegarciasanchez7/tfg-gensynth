@@ -101,9 +101,14 @@ DESKTOP_SCRIPTS
 LAUNCHER_AS_SERVICE_SCRIPTS
 DESKTOP_COMMANDS_UNINSTALL
 LAUNCHER_AS_SERVICE_COMMANDS_UNINSTALL
-# GenSynth: on uninstall only ($1 = 0), not on upgrade; remove the "gensynth" link if it is still ours
+# GenSynth: on uninstall only ($1 = 0), not on upgrade; if the "gensynth" link is still ours,
+# hand it to the CLI edition when it is installed, or remove it
 if [ "$1" = 0 ] && [ "$(readlink /usr/bin/gensynth)" = "/opt/gensynth/bin/gensynth-cli" ]; then
-  rm -f /usr/bin/gensynth
+  if [ -x /opt/gensynth-cli/bin/GenSynth-CLI ]; then
+    ln -sf /opt/gensynth-cli/bin/GenSynth-CLI /usr/bin/gensynth
+  else
+    rm -f /usr/bin/gensynth
+  fi
 fi
 
 %clean

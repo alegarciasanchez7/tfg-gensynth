@@ -380,7 +380,29 @@ public class CliShellTest {
         String output = runWithDesktop("edit a.gsynth\nexit\n", noDisplay);
 
         assertTrue(output, output.contains("Error: No graphical display"));
-        assertTrue("without a launcher", run("edit new\nexit\n").contains("Error: The desktop application is not available here"));
+    }
+
+    @Test
+    public void theCliEditionHasNoEdit() throws Exception {
+        // Without a desktop launcher (CLI edition) edit is not listed and explains why
+        String output = run("help\nedit a.gsynth\nedit\nexit\n");
+
+        assertFalse(output, output.contains("edit <file.gsynth>"));
+        assertTrue(output, output.contains("Error: " + CliShell.EDIT_UNAVAILABLE));
+        assertFalse(output, output.contains("Usage: edit"));
+        assertEquals(java.util.Set.of("start", "see", "stop", "tick", "metrics", "list", "clear", "help", "exit"),
+            CliShell.commands(false));
+        assertFalse("edit is not suggested", CliShell.unknownCommand("edti", CliShell.commands(false)).contains("'edit'"));
+        assertTrue(CliShell.unknownCommand("edti").contains("Did you mean 'edit'?"));
+    }
+
+    @Test
+    public void theFullApplicationListsEdit() throws Exception {
+        String output = runWithDesktop("help\nexit\n", file -> IDesktopLauncher.Result.LAUNCHED);
+
+        assertTrue(output, output.contains("edit <file.gsynth>|new"));
+        assertEquals("start", CliShell.commands(true).iterator().next());
+        assertTrue(CliShell.commands(true).contains("edit"));
     }
 
     @Test

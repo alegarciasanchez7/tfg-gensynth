@@ -1,7 +1,11 @@
 package com.gensynth.core.desktop.bridge;
 
+import com.gensynth.core.ws.UiBridgeWebSocketServer;
+import org.cef.browser.CefBrowser;
 import org.cef.callback.CefQueryCallback;
+import org.java_websocket.WebSocket;
 import org.junit.Test;
+import org.mockito.ArgumentCaptor;
 
 import javax.swing.SwingUtilities;
 import java.util.concurrent.CountDownLatch;
@@ -9,11 +13,13 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 /**
@@ -74,5 +80,27 @@ public class GensynthMessageRouterTest {
             GensynthMessageRouter.parse(load).path("payload").path("filePath").asText());
         assertEquals("", GensynthMessageRouter.parse("{ not json").path("type").asText(""));
         assertEquals("", GensynthMessageRouter.parse("").path("type").asText(""));
+    }
+
+    @Test
+    public void everyCommandGoesThroughTheSameDesktopSocket() {
+        // The Core keeps pushing messages to the socket of the window, so it must not change
+        GensynthMessageRouter router = new GensynthMessageRouter(null);
+        UiBridgeWebSocketServer server = mock(UiBridgeWebSocketServer.class);
+        CefBrowser browser = mock(CefBrowser.class);
+        CefQueryCallback first = mock(CefQueryCallback.class);
+        CefQueryCallback second = mock(CefQueryCallback.class);
+
+        router.dispatch(server, "first", first, browser);
+        router.dispatch(server, "second", second, browser);
+
+        ArgumentCaptor<WebSocket> sockets = ArgumentCaptor.forClass(WebSocket.class);
+        verify(server, times(2)).handleDesktopCommand(anyString(), sockets.capture());
+        assertSame(sockets.getAllValues().get(0), sockets.getAllValues().get(1));
+
+        // The answer goes to the query being answered now, not to the previous one
+        sockets.getValue().send("{\"type\":\"OK\"}");
+        verify(second).success("{\"type\":\"OK\"}");
+        verify(first, never()).success(anyString());
     }
 }

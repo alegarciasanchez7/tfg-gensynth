@@ -1,0 +1,64 @@
+@echo off
+rem Starts the core without a window (WebSocket on port 8765) and, in a second window, the Vite
+rem dev server of the UI (http://localhost:5173) with hot reload. Close both windows to stop.
+setlocal EnableExtensions
+set "SCRIPT_NAME=%~nx0"
+rem Kept now: shift also moves %0, so %~dp0 is no longer this folder after reading the options
+set "COMMON=%~dp0common.bat"
+call "%COMMON%" :init
+set "BUILD=yes"
+if not "%~1"=="" goto :args
+call "%COMMON%" :ask_yes_no "Compile the core before starting" Y
+if "%ANSWER%"=="no" (
+    set "BUILD="
+    call "%COMMON%" :show_command scripts\windows\run-browser.bat --no-build
+) else (
+    call "%COMMON%" :show_command scripts\windows\run-browser.bat
+)
+goto :run
+
+:args
+if "%~1"=="" goto :run
+if /i "%~1"=="--no-build" (set "BUILD=" & shift & goto :args)
+if /i "%~1"=="--help" goto :usage
+if /i "%~1"=="-h" goto :usage
+echo Error: Unknown option: %~1
+goto :fail
+
+:run
+call "%COMMON%" :check_java || goto :fail
+call "%COMMON%" :check_node || goto :fail
+if defined BUILD goto :build_checked
+call "%COMMON%" :needs_build
+if errorlevel 1 goto :build_checked
+echo Warning: Nothing is compiled yet: compiling first.
+set "BUILD=yes"
+:build_checked
+if defined BUILD (
+    call "%COMMON%" :step "Compiling the core"
+    call "%COMMON%" :build_runtime skip-ui -q || goto :fail
+)
+call "%COMMON%" :ensure_ui_dependencies || goto :fail
+
+call "%COMMON%" :step "Starting the UI dev server in a new window: open http://localhost:5173"
+start "GenSynth UI dev server" /d "%UI_DIR%" cmd /k npm run dev
+
+call "%COMMON%" :step "Starting the core (ws://localhost:8765). Ctrl+C stops it"
+pushd "%CORE_DIR%"
+java -cp "%RUNTIME_CP%" com.gensynth.core.App
+set "EXIT_CODE=%errorlevel%"
+popd
+call "%COMMON%" :done %EXIT_CODE%
+exit /b %EXIT_CODE%
+
+:usage
+echo Usage: scripts\windows\run-browser.bat [--no-build]
+echo.
+echo   --no-build   Start the core compiled last, without compiling
+echo.
+echo Without options it asks what to do.
+exit /b 0
+
+:fail
+call "%COMMON%" :done 1
+exit /b 1

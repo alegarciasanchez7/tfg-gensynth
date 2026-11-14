@@ -28,9 +28,14 @@ case "$1" in
     remove|upgrade|deconfigure)
 DESKTOP_COMMANDS_UNINSTALL
 LAUNCHER_AS_SERVICE_COMMANDS_UNINSTALL
-# GenSynth: remove the "gensynth" link, only if it is still ours
+# GenSynth: if the "gensynth" link is still ours, hand it to the CLI edition when it is
+# installed, or remove it
 if [ "$(readlink /usr/bin/gensynth)" = "/opt/gensynth/bin/gensynth-cli" ]; then
-  rm -f /usr/bin/gensynth
+  if [ -x /opt/gensynth-cli/bin/GenSynth-CLI ]; then
+    ln -sf /opt/gensynth-cli/bin/GenSynth-CLI /usr/bin/gensynth
+  else
+    rm -f /usr/bin/gensynth
+  fi
 fi
     ;;
 
