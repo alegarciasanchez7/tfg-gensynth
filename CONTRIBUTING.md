@@ -140,6 +140,12 @@ launcher is `CliMain`, started with `-Dgensynth.edition=cli`, and its files
 edition (also when JCEF is missing from the classpath) and the shell then hides and refuses
 `edit`. Try it from source with `scripts/unix/run-cli.sh --cli-edition`.
 
+The `plugins` command (`PluginCommands`) reuses the installer of the desktop application
+(`PluginInstallerImpl`, same plugins folder and validation). Instead of restarting, it stops the
+running simulations and asks `SimulationManager.changeConnectors` to release the imported
+plugins, apply the change and load the catalog again; it then clears the rollback marker that
+the desktop application would otherwise clear on its next start.
+
 ## Local code analysis
 
 `scripts/unix/analyze.sh` (`scripts\windows\analyze.bat`) analyses the code without a SonarQube
@@ -232,8 +238,8 @@ installs its package on each OS to check the `gensynth` command. Releases are al
 3. Tag `main` and push the tag:
    ```bash
    git switch main && git pull
-   git tag v0.5.0
-   git push origin v0.5.0
+   git tag v0.6.0
+   git push origin v0.6.0
    ```
 
 The workflow also refuses tags that are not on `main`. Pull requests that change the packaging

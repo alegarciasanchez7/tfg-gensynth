@@ -38,7 +38,8 @@ GenSynth is not signed, so Windows and macOS show a warning the first time. The
 how to use the application.
 
 To run projects without opening the window, type `gensynth` in a terminal: see
-[Command line](USER_GUIDE.md#command-line).
+[Command line](USER_GUIDE.md#command-line). It also imports connector plugins with
+`plugins add <file.jar>`.
 
 **CLI edition.** For servers or computers without a desktop, each release also includes
 `GenSynth-cli-installer-<version>` (`.msi`, `.deb`, `.rpm` and `.pkg` for macOS). It installs only
