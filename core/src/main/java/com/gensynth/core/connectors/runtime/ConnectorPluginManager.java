@@ -197,7 +197,8 @@ public class ConnectorPluginManager {
 
     /**
      * Unregisters a plugin and closes its class loader to release the JAR file.
-     * The catalog is not rebuilt because the application restarts after an uninstall.
+     * The catalog is not rebuilt: the caller builds a new manager afterwards (the desktop
+     * application restarts, the command line loads the connectors again).
      *
      * @param pluginId      plugin identifier
      * @param pluginVersion plugin version
@@ -218,6 +219,20 @@ public class ConnectorPluginManager {
             }
         }
         return true;
+    }
+
+    /**
+     * Unregisters every plugin loaded from the plugins directory and closes their class loaders,
+     * so their JAR files can be replaced or deleted (Windows keeps open JARs locked). The
+     * plugins included in GenSynth stay registered. As with {@link #unloadPlugin}, the catalog
+     * is not rebuilt: create a new manager to load the plugins again.
+     */
+    public void unloadExternalPlugins() {
+        for (ConnectorDescriptor descriptor : listDescriptors()) {
+            if (descriptor.isExternal()) {
+                unloadPlugin(descriptor.getPluginId(), descriptor.getPluginVersion());
+            }
+        }
     }
 
     /**

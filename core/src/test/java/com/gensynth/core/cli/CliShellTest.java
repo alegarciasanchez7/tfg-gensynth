@@ -37,7 +37,7 @@ public class CliShellTest {
         workingDir = temp.newFolder("work").toPath();
         home = temp.newFolder("home").toPath();
         outputs = temp.newFolder("outputs").toPath();
-        manager = new SimulationManager(new ConnectorCatalogService(), () -> outputs.resolve("OUTPUT").toString());
+        manager = new SimulationManager(ConnectorCatalogService::new, () -> outputs.resolve("OUTPUT").toString());
     }
 
     @After
@@ -390,7 +390,7 @@ public class CliShellTest {
         assertFalse(output, output.contains("edit <file.gsynth>"));
         assertTrue(output, output.contains("Error: " + CliShell.EDIT_UNAVAILABLE));
         assertFalse(output, output.contains("Usage: edit"));
-        assertEquals(java.util.Set.of("start", "see", "stop", "tick", "metrics", "list", "clear", "help", "exit"),
+        assertEquals(java.util.Set.of("start", "see", "stop", "tick", "metrics", "list", "plugins", "clear", "help", "exit"),
             CliShell.commands(false));
         assertFalse("edit is not suggested", CliShell.unknownCommand("edti", CliShell.commands(false)).contains("'edit'"));
         assertTrue(CliShell.unknownCommand("edti").contains("Did you mean 'edit'?"));

@@ -12,6 +12,9 @@ export function systemReducer(state: AppState, action: AppAction): AppState {
     case 'SET_SYSTEM_STATUS':
       return { ...state, systemStatus: action.payload };
 
+    case 'SET_SESSION_OUTPUT_DIR':
+      return state.sessionOutputDir === action.payload ? state : { ...state, sessionOutputDir: action.payload };
+
     default:
       return state;
   }

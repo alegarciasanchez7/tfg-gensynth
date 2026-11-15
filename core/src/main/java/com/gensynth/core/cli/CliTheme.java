@@ -77,4 +77,21 @@ final class CliTheme {
     String paint(String text, AttributedStyle style) {
         return paint(new AttributedString(text, style));
     }
+
+    /**
+     * @param message what went wrong
+     * @return the line {@code Error: message}, with the label in red
+     */
+    String error(String message) {
+        return paint("Error:", ERROR) + " " + message;
+    }
+
+    /**
+     * @param message what the user should know
+     * @return the line {@code     Warning: message}, indented under the line it refers to, with
+     *         the label in yellow
+     */
+    String warning(String message) {
+        return "    " + paint("Warning:", WARNING) + " " + message;
+    }
 }

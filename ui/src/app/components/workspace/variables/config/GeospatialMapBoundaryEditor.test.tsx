@@ -62,7 +62,9 @@ vi.mock('react-leaflet', async () => {
       return <div data-testid="vertex-marker">{children}</div>;
     },
     Rectangle: () => <div data-testid="selection-box" />,
-    Polyline: () => <div data-testid="grid-line" />,
+    Polyline: ({ positions, interactive }: { positions?: [number, number][]; interactive?: boolean }) => (
+      <div data-testid="grid-line" data-positions={JSON.stringify(positions ?? [])} data-interactive={String(interactive)} />
+    ),
     Tooltip: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
     useMap: () => h.map,
     useMapEvents: (handlers: HandlerMap) => {
@@ -314,5 +316,35 @@ describe('GeospatialMapBoundaryEditor', () => {
     expect(screen.queryByLabelText(/Altitude Measurement Unit/i)).not.toBeInTheDocument();
     expect(screen.getByText(/Altitude settings are hidden in fullscreen; edit them in the Spatial Boundaries tab/)).toBeInTheDocument();
     expect(screen.getByTestId('map')).toBeInTheDocument();
+  });
+  describe('walls and forbidden zones', () => {
+    const wall = { id: 'w', name: 'Wall', type: 'WALL_SEGMENT' as const, points: [{ x: 40.2, y: -3.8 }, { x: 40.8, y: -3.8 }], enabled: true };
+    const zone = {
+      id: 'z',
+      name: 'Zone',
+      type: 'OBSTACLE_POLYGON' as const,
+      points: [{ x: 40.4, y: -3.6 }, { x: 40.6, y: -3.6 }, { x: 40.6, y: -3.4 }],
+      enabled: true,
+    };
+    const positionsOf = (elements: HTMLElement[]) => elements.map((el) => el.dataset.positions);
+
+    it('are drawn on the map at their latitude and longitude, without taking its clicks', () => {
+      renderEditor({ obstacles: [wall, zone] });
+
+      const wallLine = screen.getAllByTestId('grid-line').find((el) => el.dataset.positions === '[[40.2,-3.8],[40.8,-3.8]]');
+      expect(wallLine).toBeDefined();
+      expect(wallLine!.dataset.interactive).toBe('false');
+      const zoneShape = screen.getAllByTestId('polygon').find((el) => el.dataset.positions === '[[40.4,-3.6],[40.6,-3.6],[40.6,-3.4]]');
+      expect(zoneShape).toBeDefined();
+      expect(zoneShape!.dataset.interactive).toBe('false');
+    });
+
+    it('leave out the disabled ones and the ones without enough points', () => {
+      renderEditor({ obstacles: [{ ...wall, enabled: false }, { ...zone, points: zone.points.slice(0, 2) }] });
+
+      expect(positionsOf(screen.queryAllByTestId('grid-line'))).not.toContain('[[40.2,-3.8],[40.8,-3.8]]');
+      // Only the geofence itself is drawn as a polygon
+      expect(screen.getAllByTestId('polygon')).toHaveLength(1);
+    });
   });
 });

@@ -74,6 +74,9 @@ export class MessageHandler {
       case 'VARIABLE_UPDATE':
         this.emit('variables-update', message.payload as VariableState[]);
         break;
+      case 'VARIABLE_CHANGED':
+        this.emit('variable-changed', message.payload as VariableState);
+        break;
       case 'INITIAL_STATE':
         this.emit('initial-state', message.payload as InitialStatePayload);
         break;

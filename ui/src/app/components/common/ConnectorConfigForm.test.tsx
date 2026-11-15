@@ -110,4 +110,56 @@ describe('ConnectorConfigForm', () => {
     render(<ConnectorConfigForm connector={{ ...connector, fields: [] }} config={{}} onChange={vi.fn()} />);
     expect(screen.getByText('RabbitMQ does not need any configuration.')).toBeInTheDocument();
   });
+
+  describe('advanced options', () => {
+    const withAdvanced: ConnectorPluginDescriptor = {
+      ...connector,
+      fields: [
+        connector.fields[0],
+        { key: 'declareQueue', type: 'TEXT', label: 'Queue', tooltip: '', required: true, defaultValue: null, placeholder: '', options: [] },
+        { key: 'exchange', type: 'TEXT', label: 'Exchange', tooltip: '', required: false, advanced: true, defaultValue: null, placeholder: '', options: [] },
+        {
+          key: 'vhost', type: 'TEXT', label: 'Virtual host', tooltip: '', required: false, advanced: true, defaultValue: '/', placeholder: '', options: [],
+        },
+        {
+          key: 'retries', type: 'INTEGER', label: 'Retries', tooltip: '', required: false, advanced: true, defaultValue: 3, placeholder: '', min: 0, options: [],
+        },
+      ],
+    };
+
+    const renderForm = (config: Record<string, unknown>, showAllErrors = false) => render(
+      <ConnectorConfigForm connector={withAdvanced} config={config} onChange={vi.fn()} showAllErrors={showAllErrors} />,
+    );
+
+    it('keeps the advanced fields collapsed after the essential ones', () => {
+      renderForm({ host: 'localhost', vhost: '/', retries: 3 });
+
+      expect(screen.getByLabelText(/^Queue/)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Advanced options \(3\)/ })).toHaveAttribute('aria-expanded', 'false');
+      expect(screen.queryByLabelText('Exchange')).not.toBeInTheDocument();
+    });
+
+    it('opens and closes the section on demand', async () => {
+      const user = userEvent.setup();
+      renderForm({ host: 'localhost' });
+
+      await user.click(screen.getByRole('button', { name: /Advanced options/ }));
+      expect(screen.getByLabelText('Exchange')).toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: /Advanced options/ }));
+      expect(screen.queryByLabelText('Exchange')).not.toBeInTheDocument();
+    });
+
+    it('opens by itself when an advanced field has a value of its own', () => {
+      renderForm({ host: 'localhost', exchange: 'sensors' });
+
+      expect(screen.getByLabelText('Exchange')).toHaveValue('sensors');
+    });
+
+    it('opens by itself to show an error inside it', () => {
+      renderForm({ host: 'localhost', declareQueue: 'q', retries: -1 }, true);
+
+      expect(screen.getByText('Retries must be at least 0')).toBeInTheDocument();
+    });
+  });
 });

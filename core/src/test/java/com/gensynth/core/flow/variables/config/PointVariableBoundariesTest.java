@@ -190,4 +190,30 @@ public class PointVariableBoundariesTest {
 
         assertFalse(config.doesSegmentIntersectAnyWall(0, 5, 10, 5));
     }
+
+    @Test
+    public void geospatialRandomWalkAvoidsForbiddenZonesAndWalls() {
+        // x = latitude, y = longitude, as in the UI: a zone in the middle of the region and a
+        // wall across it at longitude 1.5
+        PointVariableConfig config = new PointVariableConfig()
+            .pattern(GenerationPattern.RANDOM_WALK)
+            .coordinateSystem(CoordinateSystem.GEOSPATIAL)
+            .maxStepDistance(0.05)
+            .range(0, 2, 0, 2, 0, 100)
+            .addObstacle(obstacle(ObstacleType.OBSTACLE_POLYGON, 0.8, 0.2, 1.2, 0.2, 1.2, 0.6, 0.8, 0.6))
+            .addObstacle(obstacle(ObstacleType.WALL_SEGMENT, -1, 1.5, 3, 1.5));
+
+        Map<?, ?> previous = null;
+        for (int i = 0; i < 2000; i++) {
+            Map<?, ?> point = (Map<?, ?>) config.generateNextValue();
+            double lat = (Double) point.get("latitude");
+            double lon = (Double) point.get("longitude");
+            assertFalse("inside the forbidden zone at " + lat + ", " + lon, config.isPointInAnyObstacle(lat, lon));
+            if (previous != null) {
+                double prevLon = (Double) previous.get("longitude");
+                assertEquals("never crosses the wall", prevLon < 1.5, lon < 1.5);
+            }
+            previous = point;
+        }
+    }
 }

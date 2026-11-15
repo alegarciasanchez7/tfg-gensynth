@@ -130,8 +130,11 @@ java -cp "target/classes:target/dependency/*" com.gensynth.core.cli.CliMain     
 
 Its log goes to `core/logs/cli.log`. The installers ship it as a second jpackage launcher,
 `gensynth-cli` (configured in `packaging/launchers/`); the Linux packages link it as
-`/usr/bin/gensynth` with the scripts in `packaging/linux/`, and the Windows installer adds
-`cli\gensynth.cmd` for the `PATH`.
+`/usr/bin/gensynth` with the scripts in `packaging/linux/`, and the Windows installers add
+`cli\gensynth.cmd` and put that folder on the `PATH` (removed on uninstall). They do it with
+`packaging/windows-msi/main.wxs`, the WiX template of jpackage (JDK 21) plus the `PATH` component:
+compare it with the template of the JDK when the JDK that builds the installers changes. The
+release workflow checks it with `.github/scripts/check-windows-install.ps1`.
 
 **CLI edition.** The release also ships the command line on its own (`GenSynth-CLI`): its main
 launcher is `CliMain`, started with `-Dgensynth.edition=cli`, and its files
@@ -139,6 +142,12 @@ launcher is `CliMain`, started with `-Dgensynth.edition=cli`, and its files
 (`com.gensynth.core.ws`) has no JCEF reference, so it runs without them; `AppEdition` detects the
 edition (also when JCEF is missing from the classpath) and the shell then hides and refuses
 `edit`. Try it from source with `scripts/unix/run-cli.sh --cli-edition`.
+
+The `plugins` command (`PluginCommands`) reuses the installer of the desktop application
+(`PluginInstallerImpl`, same plugins folder and validation). Instead of restarting, it stops the
+running simulations and asks `SimulationManager.changeConnectors` to release the imported
+plugins, apply the change and load the catalog again; it then clears the rollback marker that
+the desktop application would otherwise clear on its next start.
 
 ## Local code analysis
 
@@ -232,8 +241,8 @@ installs its package on each OS to check the `gensynth` command. Releases are al
 3. Tag `main` and push the tag:
    ```bash
    git switch main && git pull
-   git tag v0.5.0
-   git push origin v0.5.0
+   git tag v0.6.0
+   git push origin v0.6.0
    ```
 
 The workflow also refuses tags that are not on `main`. Pull requests that change the packaging

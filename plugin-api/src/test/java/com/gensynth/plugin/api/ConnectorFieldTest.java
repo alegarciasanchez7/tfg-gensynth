@@ -23,6 +23,21 @@ public class ConnectorFieldTest {
     }
 
     @Test
+    public void advancedFieldsKeepEveryOtherAttribute() {
+        ConnectorField plain = ConnectorField.integer("retries").label("Retries").defaultValue(3).min(0);
+        assertFalse(plain.isAdvanced());
+
+        ConnectorField advanced = plain.advanced().required().tooltip("How many times");
+        assertTrue(advanced.isAdvanced());
+        assertTrue(advanced.isRequired());
+        assertEquals("Retries", advanced.getLabel());
+        assertEquals(3L, advanced.getDefaultValue());
+        assertEquals(0.0, advanced.getMin(), 0.0);
+        assertFalse("the original field is unchanged", plain.isAdvanced());
+        assertTrue(advanced.toString().contains("advanced"));
+    }
+
+    @Test
     public void labelDefaultsToTheKeyInWords() {
         assertEquals("Virtual host", ConnectorField.text("virtualHost").getLabel());
         assertEquals("Bootstrap servers", ConnectorField.text("bootstrap_servers").getLabel());

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Polyline, useMap } from 'react-leaflet';
+import { Polygon, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
-import type { Point3DCoord } from '../../../../types';
+import type { BoundaryObstacle, Point3DCoord } from '../../../../types';
 import { useCanvasPalette } from './canvasPalette';
 
 /** Pieces shared by the Leaflet editors of geospatial points (route graph, waypoints). */
@@ -102,3 +102,37 @@ export function MapAutoFit({
 
   return null;
 }
+
+/** Walls and forbidden zones: dashed red, and the selected one in amber. */
+const obstacleStyle = (selected: boolean): L.PathOptions => ({
+  color: selected ? '#f59e0b' : '#f43f5e',
+  fillColor: selected ? '#f59e0b' : '#f43f5e',
+  fillOpacity: 0.22,
+  weight: selected ? 3 : 2,
+  dashArray: '4, 4',
+});
+
+/**
+ * The enabled walls and forbidden zones, drawn over the map (x is the latitude, y the longitude).
+ * They are edited elsewhere, so they never take the clicks of the map (drawing and editing on it
+ * keep working).
+ */
+export const ObstacleLayers = ({
+  obstacles,
+  selectedObstacleId,
+}: { obstacles: BoundaryObstacle[]; selectedObstacleId?: string | null }) => (
+  <>
+    {obstacles.map((obs) => {
+      if (!obs.enabled) return null;
+      const positions = obs.points.map((p): [number, number] => [p.x ?? 0, p.y ?? 0]);
+      const style = obstacleStyle(obs.id === selectedObstacleId);
+      if (obs.type === 'WALL_SEGMENT' && positions.length >= 2) {
+        return <Polyline key={obs.id} positions={positions} pathOptions={style} interactive={false} />;
+      }
+      if (obs.type === 'OBSTACLE_POLYGON' && positions.length >= 3) {
+        return <Polygon key={obs.id} positions={positions} pathOptions={style} interactive={false} />;
+      }
+      return null;
+    })}
+  </>
+);

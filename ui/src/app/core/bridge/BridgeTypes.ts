@@ -64,6 +64,7 @@ export const SUPPORTED_COMMANDS = new Set<UICommandType>([
   'UI_LOG',
   'UPDATE_SETTINGS',
   'UPDATE_OUTPUT_FOLDER',
+  'OPEN_OUTPUT_FOLDER',
   'CHECK_FOR_UPDATES',
   'INSTALL_UPDATE',
   'CANCEL_UPDATE',
@@ -90,6 +91,8 @@ export interface EventMap {
   'groups-update': GroupState[];
   'flows-metrics': FlowMetricsPayload[];
   'variables-update': VariableState[];
+  /** One variable that changed (UPDATE_VARIABLE), instead of the whole list. */
+  'variable-changed': VariableState;
   'initial-state': InitialStatePayload;
   'connector-catalog': ConnectorPluginDescriptor[];
   'message': CoreMessage;

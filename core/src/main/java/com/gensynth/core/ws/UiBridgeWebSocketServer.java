@@ -6,8 +6,10 @@ import com.gensynth.core.update.GitHubUpdateService;
 import com.fasterxml.jackson.core.StreamReadConstraints;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.gensynth.core.api.IFolderOpener;
 import com.gensynth.core.api.IPluginInstaller;
 import com.gensynth.core.api.ITickClock;
+import com.gensynth.core.desktop.DesktopFolderOpener;
 import com.gensynth.core.clock.TickClockImpl;
 import com.gensynth.core.connectors.plugin.PluginInstallerImpl;
 import com.gensynth.core.connectors.runtime.ConnectorCatalogService;
@@ -97,6 +99,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         "CONVERT_MESSAGE_FORMAT",
         "UPDATE_SETTINGS",
         "UPDATE_OUTPUT_FOLDER",
+        "OPEN_OUTPUT_FOLDER",
         "CHECK_FOR_UPDATES",
         "INSTALL_UPDATE",
         "CANCEL_UPDATE",
@@ -147,6 +150,8 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
 
     final TemplateEngine templateEngine = new TemplateEngine();
     String currentOutputDir = null;
+    /** Shows the session folder in the file explorer (OPEN_OUTPUT_FOLDER); replaceable in tests. */
+    volatile IFolderOpener folderOpener = new DesktopFolderOpener();
     /** Set on the browser thread, read when a project arrives from outside (WebSocket, macOS). */
     final AtomicReference<WebSocket> desktopSocket = new AtomicReference<>();
     /** Project file the desktop window opens once its UI connects (from --open or a double click). */
@@ -183,6 +188,15 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
      */
     public void setWindowActivator(Runnable windowActivator) {
         this.windowActivator.set(windowActivator);
+    }
+
+    /**
+     * Sets how OPEN_OUTPUT_FOLDER shows a folder in the file explorer.
+     *
+     * @param folderOpener the opener to use (tests replace the desktop one)
+     */
+    public void setFolderOpener(IFolderOpener folderOpener) {
+        this.folderOpener = folderOpener;
     }
 
     /**
@@ -443,7 +457,12 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         }
     }
 
+    /**
+     * Stops every group, the clock and the background tasks, writes any state still waiting to
+     * be saved and closes the server.
+     */
     public void shutdown() {
+        stateCommandHandler.flushPendingState();
         synchronized (stateLock) {
             for (GroupRuntime group : groupsById.values()) {
                 flowCommandHandler.stopGroupInternal(group);
@@ -470,8 +489,19 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         }
     }
 
+    /**
+     * Writes the whole state to the repository now (see {@link StateCommandHandler#persistState()}).
+     */
     public void persistState() {
         stateCommandHandler.persistState();
+    }
+
+    /**
+     * Writes the whole state to the repository a little later, once for several edits in a row
+     * (see {@link StateCommandHandler#schedulePersistState()}).
+     */
+    public void schedulePersistState() {
+        stateCommandHandler.schedulePersistState();
     }
 
     /**
@@ -597,6 +627,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             case "CONVERT_MESSAGE_FORMAT" -> handleConvertMessageFormat(conn, payload, commandId);
             case "UPDATE_SETTINGS" -> settingsCommandHandler.handleUpdateSettings(conn, payload, commandId);
             case "UPDATE_OUTPUT_FOLDER" -> settingsCommandHandler.handleUpdateOutputFolder(conn, payload, commandId);
+            case "OPEN_OUTPUT_FOLDER" -> settingsCommandHandler.handleOpenOutputFolder(conn, commandId);
             case "CHECK_FOR_UPDATES" -> updateCommandHandler.handleCheckForUpdates(conn, commandId);
             case "INSTALL_UPDATE" -> updateCommandHandler.handleInstallUpdate(conn, payload, commandId);
             case "CANCEL_UPDATE" -> updateCommandHandler.handleCancelUpdate(conn, commandId);
@@ -675,6 +706,16 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             }
         }
         broadcastMessage("VARIABLE_UPDATE", payload);
+    }
+
+    /**
+     * Sends the UI one variable that changed ({@code VARIABLE_CHANGED}), instead of every
+     * variable as {@link #sendVariablesUpdate()} does.
+     *
+     * @param variable the variable as it is now
+     */
+    public void sendVariableChanged(Variable variable) {
+        broadcastMessage("VARIABLE_CHANGED", VariableCommandHandler.normalizeVariablePayloadForUi(variable.toPayload()));
     }
 
     /**

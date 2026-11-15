@@ -6,7 +6,7 @@ import 'leaflet/dist/leaflet.css';
 import markerIconUrl from 'leaflet/dist/images/marker-icon.png';
 import markerIconRetinaUrl from 'leaflet/dist/images/marker-icon-2x.png';
 import markerShadowUrl from 'leaflet/dist/images/marker-shadow.png';
-import { Point3DCoord, AltitudeUnit, AltitudeReference, AltitudePattern } from '../../../../types';
+import { Point3DCoord, AltitudeUnit, AltitudeReference, AltitudePattern, type BoundaryObstacle } from '../../../../types';
 import { Input } from '../../../ui/input';
 import { Label } from '../../../ui/label';
 import { Button } from '../../../ui/button';
@@ -15,7 +15,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '../../../ui/tooltip';
 import { useBoundaryModalContext } from './boundaryModalContext';
 import { centerOf, defaultBoundsFor } from '../../../../core/pointDefaults';
 import { formatDms } from '../../../../core/dms';
-import { OfflineGridOverlay } from './mapShared';
+import { ObstacleLayers, OfflineGridOverlay } from './mapShared';
 import { useDialogEscape } from './useDialogEscape';
 import { useCanvasPalette } from './canvasPalette';
 
@@ -45,6 +45,7 @@ const parseNumber = (text: string): number | undefined => {
 /** Consecutive tile failures needed before falling back to the offline grid. */
 const TILE_ERROR_THRESHOLD = 3;
 const NO_POLYGON: Point3DCoord[] = [];
+const NO_OBSTACLES: BoundaryObstacle[] = [];
 const WORLD_BOUNDS: L.LatLngBoundsExpression = [[-90, -180], [90, 180]];
 
 const VERTEX_ICON = L.icon({
@@ -97,6 +98,9 @@ interface GeospatialMapBoundaryEditorProps {
   maxVerticalStep?: number;
   altitudeOscillationSpeed?: number;
   polygon?: Point3DCoord[];
+  /** Walls and forbidden zones drawn over the map (edited in the obstacles list). */
+  obstacles?: BoundaryObstacle[];
+  selectedObstacleId?: string | null;
   onChange: (bounds: {
     minLat: number;
     maxLat: number;
@@ -783,6 +787,8 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
   maxVerticalStep = 1.0,
   altitudeOscillationSpeed = 0.1,
   polygon = NO_POLYGON,
+  obstacles = NO_OBSTACLES,
+  selectedObstacleId,
   onChange,
   height = 280,
 }) => {
@@ -1157,6 +1163,7 @@ export const GeospatialMapBoundaryEditor: React.FC<GeospatialMapBoundaryEditorPr
           <MapAutoFitBounds polygon={activePolygon} fitToken={fitToken} />
           <MapResizeHandler />
           {/* Real-time cursor / moving-vertex coordinates HUD is rendered by GeofenceLayers */}
+          <ObstacleLayers obstacles={obstacles} selectedObstacleId={selectedObstacleId} />
           <GeofenceLayers points={activePolygon} onVertexMove={handleVertexMove} onVertexDelete={handleDeleteVertex} />
         </MapContainer>
       </div>

@@ -99,6 +99,26 @@ final class TestProjects {
             """));
     }
 
+    /**
+     * Writes a project with one flow that uses the connector {@code technology}, with its
+     * default settings.
+     *
+     * @param file       where to write the project
+     * @param technology id of the connector plugin
+     * @return the file
+     */
+    static Path connectorProject(Path file, String technology) throws IOException {
+        return write(file, project("""
+            [{
+              "id": "g1", "name": "Sensors", "enabled": true, "outputMode": "parallel",
+              "flows": [{
+                "id": "f1", "name": "Temperature", "technology": "%s", "enabled": true, "everyTicks": 1,
+                "template": "{\\"n\\":{{n}}}"
+              }]
+            }]
+            """.formatted(technology), "[]"));
+    }
+
     private static String project(String groups, String variables) {
         return """
             {

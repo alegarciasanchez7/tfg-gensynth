@@ -91,6 +91,8 @@ export interface AppState {
   settings: ProjectSettings;
   /** Folder of the generated files on this computer; null until the Core reports it. */
   outputFolder: OutputFolderInfo | null;
+  /** Folder of the current (or last) session, from SYSTEM_STATUS; null before the first START. */
+  sessionOutputDir: string | null;
 
   // Updates (the user always decides whether to install)
   /** Newer release found by the last check, or null. */
@@ -138,6 +140,7 @@ export const initialState: AppState = {
   variables: [],
   settings: DEFAULT_PROJECT_SETTINGS,
   outputFolder: null,
+  sessionOutputDir: null,
   availableUpdate: null,
   updateDialogOpen: false,
   updateStatus: null,
@@ -158,6 +161,7 @@ export const initialState: AppState = {
 export type AppAction =
   | { type: 'SET_CONNECTED'; payload: { connected: boolean; mode: 'websocket' | 'jcef' | 'mock' } }
   | { type: 'SET_SYSTEM_STATUS'; payload: SystemStatus }
+  | { type: 'SET_SESSION_OUTPUT_DIR'; payload: string | null }
   | { type: 'TOGGLE_THEME' }
   | { type: 'SET_SELECTION'; payload: Selection }
   | { type: 'SET_BOTTOM_TAB'; payload: 'logs' | 'stats' | 'preview' }
@@ -199,6 +203,8 @@ export type AppAction =
         settings?: ProjectSettings;
         /** Folder of the generated files; the current one is kept when omitted (e.g. older cores). */
         outputFolder?: OutputFolderInfo;
+        /** Session folder; the current one is kept when omitted (e.g. older cores). */
+        sessionOutputDir?: string | null;
         logs?: LogEntry[];
         connectorCatalog?: ConnectorPluginDescriptor[];
         metrics?: MetricsPayload | null;

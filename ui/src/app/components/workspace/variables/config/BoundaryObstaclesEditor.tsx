@@ -6,6 +6,22 @@ import { Input } from '../../../ui/input';
 import { Label } from '../../../ui/label';
 import { centerOf } from '../../../../core/pointDefaults';
 import { randomUUID } from '../../../../core/randomId';
+import { parseCoordinate, vertexRows } from './obstacleVertices';
+
+/** Names of the two axes of the obstacle points: X/Y, or Latitude/Longitude on a map. */
+export interface ObstacleAxisLabels {
+  x: string;
+  y: string;
+}
+
+/** Largest absolute value of each axis (geospatial: latitude 90, longitude 180); no limit if missing. */
+export interface ObstacleAxisLimits {
+  x?: number;
+  y?: number;
+}
+
+const CARTESIAN_AXES: ObstacleAxisLabels = { x: 'X', y: 'Y' };
+const NO_LIMITS: ObstacleAxisLimits = {};
 
 interface BoundaryObstaclesEditorProps {
   obstacles: BoundaryObstacle[];
@@ -15,7 +31,87 @@ interface BoundaryObstaclesEditorProps {
   selectedObstacleId?: string | null;
   onSelectObstacle?: (id: string | null) => void;
   onChange: (newObstacles: BoundaryObstacle[]) => void;
+  axisLabels?: ObstacleAxisLabels;
+  axisLimits?: ObstacleAxisLimits;
 }
+
+/** Text input of one vertex coordinate: keeps what is typed until Enter or leaving the field. */
+const VertexCoordinateInput: React.FC<{
+  id: string;
+  label: string;
+  value: number;
+  limit?: number;
+  onCommit: (value: number) => void;
+}> = ({ id, label, value, limit, onCommit }) => {
+  const [draft, setDraft] = useState<string | null>(null);
+
+  const commit = () => {
+    if (draft === null) return;
+    const parsed = parseCoordinate(draft, value, limit);
+    setDraft(null);
+    if (parsed !== null) onCommit(parsed);
+  };
+
+  return (
+    <div className="flex-1 min-w-0 space-y-0.5">
+      <Label htmlFor={id} className="text-[9px] text-[var(--c-tx4)]">{label}</Label>
+      <Input
+        id={id}
+        type="text"
+        inputMode="decimal"
+        value={draft ?? String(value)}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            commit();
+          }
+        }}
+        className="h-7 text-xs font-mono"
+      />
+    </div>
+  );
+};
+
+/** Exact coordinates of the vertices of the selected obstacle, editable one by one. */
+const ObstacleVerticesEditor: React.FC<{
+  obstacle: BoundaryObstacle;
+  axisLabels: ObstacleAxisLabels;
+  axisLimits: ObstacleAxisLimits;
+  onChange: (points: Point3DCoord[]) => void;
+}> = ({ obstacle, axisLabels, axisLimits, onChange }) => {
+  const setCoordinate = (index: number, axis: 'x' | 'y', value: number) => {
+    onChange(obstacle.points.map((point, i) => (i === index ? { ...point, [axis]: value } : point)));
+  };
+
+  return (
+    <div className="space-y-1.5 rounded border border-amber-400/30 bg-[var(--c-bg2)] p-2">
+      <div className="text-[10px] font-semibold uppercase text-[var(--c-tx3)]">
+        Vertices of {obstacle.name || 'Obstacle'}
+      </div>
+      {vertexRows(obstacle.points).map(({ point, key }, i) => (
+        <div key={key} className="flex items-end gap-2">
+          <span className="w-14 shrink-0 pb-1.5 text-[10px] font-mono text-[var(--c-tx4)]">Point {i + 1}</span>
+          <VertexCoordinateInput
+            id={`obs-${obstacle.id}-${i}-x`}
+            label={axisLabels.x}
+            value={point.x ?? 0}
+            limit={axisLimits.x}
+            onCommit={(value) => setCoordinate(i, 'x', value)}
+          />
+          <VertexCoordinateInput
+            id={`obs-${obstacle.id}-${i}-y`}
+            label={axisLabels.y}
+            value={point.y ?? 0}
+            limit={axisLimits.y}
+            onCommit={(value) => setCoordinate(i, 'y', value)}
+          />
+        </div>
+      ))}
+    </div>
+  );
+};
 
 /** Classes of an obstacle row: selected, enabled or disabled. */
 const obstacleRowClass = (isSelected: boolean, enabled: boolean | undefined): string => {
@@ -38,9 +134,13 @@ export const BoundaryObstaclesEditor: React.FC<BoundaryObstaclesEditorProps> = (
   selectedObstacleId,
   onSelectObstacle,
   onChange,
+  axisLabels = CARTESIAN_AXES,
+  axisLimits = NO_LIMITS,
 }) => {
   const [newObstacleName, setNewObstacleName] = useState<string>('');
   const [newObstacleType, setNewObstacleType] = useState<ObstacleType>('WALL_SEGMENT');
+
+  const selectedObstacle = obstacles.find((obs) => obs.id === selectedObstacleId);
 
   const handleAddObstacle = () => {
     const name = newObstacleName.trim() || (newObstacleType === 'WALL_SEGMENT' ? 'Wall Barrier' : 'Forbidden Zone');
@@ -95,7 +195,7 @@ export const BoundaryObstaclesEditor: React.FC<BoundaryObstaclesEditorProps> = (
       <div className="flex items-center justify-between border-b border-[var(--c-br1)] pb-2">
         <div className="flex items-center gap-1.5 text-xs font-semibold text-[var(--c-tx2)]">
           <ShieldAlert size={14} className="text-amber-400" />
-          <span>2D Walls & Forbidden Interior Obstacle Zones ({obstacles.length})</span>
+          <span>Walls & Forbidden Interior Obstacle Zones ({obstacles.length})</span>
         </div>
       </div>
 
@@ -193,6 +293,18 @@ export const BoundaryObstaclesEditor: React.FC<BoundaryObstaclesEditorProps> = (
             );
           })}
         </div>
+      )}
+
+      {selectedObstacle && (
+        <ObstacleVerticesEditor
+          key={selectedObstacle.id}
+          obstacle={selectedObstacle}
+          axisLabels={axisLabels}
+          axisLimits={axisLimits}
+          onChange={(points) =>
+            onChange(obstacles.map((obs) => (obs.id === selectedObstacle.id ? { ...obs, points } : obs)))
+          }
+        />
       )}
     </div>
   );

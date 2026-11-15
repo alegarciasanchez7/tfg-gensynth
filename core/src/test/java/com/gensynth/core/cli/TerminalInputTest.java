@@ -52,7 +52,7 @@ public class TerminalInputTest {
         Files.createFile(workingDir.resolve("documents").resolve("plant").resolve("line.gsynth"));
         Files.createFile(workingDir.resolve("my project.gsynth"));
         Path outputs = temp.newFolder("outputs").toPath();
-        manager = new SimulationManager(new ConnectorCatalogService(), () -> outputs.resolve("OUTPUT").toString());
+        manager = new SimulationManager(ConnectorCatalogService::new, () -> outputs.resolve("OUTPUT").toString());
     }
 
     @After
@@ -82,6 +82,16 @@ public class TerminalInputTest {
             // No separator typed: folders end with the one of the system (a backslash on Windows)
             String sep = File.separator;
             assertEquals("start documents" + sep + "plant" + sep + "line.gsynth ", input.readLine(CliShell.PROMPT));
+        }
+    }
+
+    @Test
+    public void answersAreReadWithoutCompletionOrTheCommandHistory() throws Exception {
+        try (TerminalInput input = type("li" + TAB + ENTER + "y" + TAB + ENTER)) {
+            assertEquals("list ", input.readLine(CliShell.PROMPT));
+            // Tab completes nothing in an answer, and the end of the input reads as no answer
+            assertEquals("y", input.readAnswer("Install? [y/N] ").trim());
+            assertNull(input.readAnswer("Install? [y/N] "));
         }
     }
 

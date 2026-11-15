@@ -164,7 +164,7 @@ public class PluginSandboxValidator {
                .fieldCount(loaded.fieldCount())
                .apiVersion(PluginApi.VERSION);
         builder.log(PluginValidationResult.ValidationLevel.INFO,
-            "Built for plugin API " + PluginApi.VERSION + " with " + loaded.fieldCount() + " configuration fields.");
+            "Compatible with plugin API " + PluginApi.VERSION + ", with " + loaded.fieldCount() + " configuration fields.");
 
         // 5. Check for duplicates
         String key = info.id() + "@" + info.version();

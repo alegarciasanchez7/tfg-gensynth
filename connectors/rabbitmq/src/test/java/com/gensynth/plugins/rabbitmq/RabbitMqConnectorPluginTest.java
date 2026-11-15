@@ -21,9 +21,12 @@ public class RabbitMqConnectorPluginTest {
         raw.put("host", "broker");
         raw.put("username", "user");
         raw.put("password", "secret");
-        raw.put("exchange", "sensors");
-        raw.put("routingKey", "sensors.temperature");
+        raw.put("declareQueue", "readings");
         return raw;
+    }
+
+    private RabbitMqSettings settings(Map<String, Object> raw) {
+        return RabbitMqSettings.from(ConnectorConfig.resolve(plugin.fields(), raw));
     }
 
     @Test
@@ -34,71 +37,85 @@ public class RabbitMqConnectorPluginTest {
     }
 
     @Test
-    public void declaresDocumentedFieldsInDisplayOrder() {
+    public void showsTheEssentialFieldsFirstAndTheExchangeOptionsAsAdvanced() {
         List<ConnectorField> fields = plugin.fields();
 
-        assertEquals(List.of("host", "port", "virtualHost", "username", "password", "exchange", "exchangeType",
-            "exchangeDurable", "routingKey", "declareQueue"), fields.stream().map(ConnectorField::getKey).toList());
+        assertEquals(List.of("host", "port", "username", "password", "declareQueue", "virtualHost", "exchange",
+            "exchangeType", "exchangeDurable", "routingKey"), fields.stream().map(ConnectorField::getKey).toList());
         assertTrue("every field explains itself", fields.stream().noneMatch(f -> f.getTooltip().isBlank()));
-        assertEquals(FieldType.PASSWORD, fields.get(4).getType());
-        assertEquals(List.of("host", "username", "password", "exchange"),
+        assertEquals(FieldType.PASSWORD, fields.get(3).getType());
+        assertEquals(List.of("host", "username", "password", "declareQueue"),
             fields.stream().filter(ConnectorField::isRequired).map(ConnectorField::getKey).toList());
+        assertEquals(List.of("virtualHost", "exchange", "exchangeType", "exchangeDurable", "routingKey"),
+            fields.stream().filter(ConnectorField::isAdvanced).map(ConnectorField::getKey).toList());
+        assertTrue("no advanced field is required", fields.stream().noneMatch(f -> f.isAdvanced() && f.isRequired()));
     }
 
     @Test
-    public void readsSettingsWithDefaults() {
-        RabbitMqSettings settings = RabbitMqSettings.from(ConnectorConfig.resolve(plugin.fields(), validConfig()));
+    public void sendsStraightToTheQueueByDefault() {
+        RabbitMqSettings settings = settings(validConfig());
 
         assertEquals("broker", settings.host());
         assertEquals(5672, settings.port());
         assertEquals("/", settings.virtualHost());
-        assertEquals("topic", settings.exchangeType());
-        assertTrue(settings.exchangeDurable());
-        assertEquals("sensors.temperature", settings.routingKey());
-        assertEquals("", settings.queue());
+        assertEquals("readings", settings.queue());
+        assertFalse(settings.usesExchange());
+        assertEquals("The default exchange", "", settings.exchange());
+        assertEquals("The default exchange delivers by queue name", "readings", settings.publishRoutingKey());
     }
 
     @Test
-    public void reportsMissingRequiredFields() {
+    public void onlyTheQueueIsNeededOnALocalBroker() {
         ConnectorConfigException error = assertThrows(ConnectorConfigException.class,
             () -> ConnectorConfig.resolve(plugin.fields(), Map.of()));
 
-        // Username and password default to RabbitMQ's local guest/guest
-        assertEquals(List.of("Exchange is required"), error.getErrors());
-    }
+        // Host, username and password default to a local RabbitMQ (localhost, guest/guest)
+        assertEquals(List.of("Queue is required"), error.getErrors());
 
-    @Test
-    public void credentialsDefaultToGuest() {
-        RabbitMqSettings settings = RabbitMqSettings.from(ConnectorConfig.resolve(plugin.fields(),
-            Map.of("exchange", "x", "routingKey", "k")));
-
+        RabbitMqSettings settings = settings(Map.of("declareQueue", "q"));
+        assertEquals("localhost", settings.host());
         assertEquals("guest", settings.username());
         assertEquals("guest", settings.password());
     }
 
     @Test
-    public void routingKeyIsRequiredOnlyForTopicAndDirectExchanges() {
+    public void anExchangeUsesTheRoutingKeyOrElseTheQueueName() {
         Map<String, Object> raw = validConfig();
-        raw.remove("routingKey");
+        raw.put("exchange", "sensors");
 
-        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
-            () -> RabbitMqSettings.from(ConnectorConfig.resolve(plugin.fields(), raw)));
-        assertTrue(error.getMessage().contains("Routing key is required"));
+        RabbitMqSettings withoutKey = settings(raw);
+        assertTrue(withoutKey.usesExchange());
+        assertEquals("topic", withoutKey.exchangeType());
+        assertTrue(withoutKey.exchangeDurable());
+        assertEquals("An empty routing key is no longer an error", "readings", withoutKey.publishRoutingKey());
+
+        raw.put("routingKey", "sensors.temperature");
+        assertEquals("sensors.temperature", settings(raw).publishRoutingKey());
 
         raw.put("exchangeType", "fanout");
-        assertEquals("", RabbitMqSettings.from(ConnectorConfig.resolve(plugin.fields(), raw)).routingKey());
+        assertEquals("fanout", settings(raw).exchangeType());
     }
 
     @Test
     public void keepsCompatibilityWithSavedProjects() {
-        // Projects saved with the previous plugin version use the same keys
+        // Projects saved with earlier versions store every key explicitly, with an exchange
         Map<String, Object> raw = validConfig();
-        raw.put("declareQueue", "readings");
+        raw.put("exchange", "gensynth.exchange");
+        raw.put("exchangeType", "topic");
+        raw.put("routingKey", "gensynth.data");
         raw.put("port", "5673");
         raw.put("bindQueue", true); // removed setting: ignored
 
-        RabbitMqSettings settings = RabbitMqSettings.from(ConnectorConfig.resolve(plugin.fields(), raw));
+        RabbitMqSettings settings = settings(raw);
         assertEquals("readings", settings.queue());
         assertEquals(5673, settings.port());
+        assertEquals("gensynth.exchange", settings.exchange());
+        assertEquals("gensynth.data", settings.publishRoutingKey());
+
+        // Before 0.6.0 the queue was optional: such a project now asks for one
+        raw.put("declareQueue", "");
+        ConnectorConfigException error = assertThrows(ConnectorConfigException.class,
+            () -> ConnectorConfig.resolve(plugin.fields(), raw));
+        assertEquals(List.of("Queue is required"), error.getErrors());
     }
 }

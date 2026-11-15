@@ -92,6 +92,7 @@ const VALIDATORS: Partial<Record<UICommandType, PayloadValidator>> = {
   UNSUBSCRIBE_METRICS: noPayload,
   CHECK_FOR_UPDATES: noPayload,
   CANCEL_UPDATE: noPayload,
+  OPEN_OUTPUT_FOLDER: noPayload,
   PICK_DIRECTORY: noPayload,
   EXPORT_STATE: noPayload,
   START_GROUP: requireGroupId,

@@ -32,7 +32,7 @@ public class CliHighlighterTest {
         Files.writeString(workingDir.resolve("notes.txt"), "text");
         Files.createDirectories(workingDir.resolve("docs"));
         Path outputs = temp.newFolder("outputs").toPath();
-        manager = new SimulationManager(new ConnectorCatalogService(), () -> outputs.resolve("OUTPUT").toString());
+        manager = new SimulationManager(ConnectorCatalogService::new, () -> outputs.resolve("OUTPUT").toString());
         highlighter = new CliHighlighter(manager, new ProjectFileCheck(), workingDir, temp.getRoot().toPath());
     }
 
@@ -64,6 +64,19 @@ public class CliHighlighterTest {
         assertEquals(CliTheme.WARNING, styleAt("start notes.txt", 6));
         assertEquals(CliTheme.INFO, styleAt("start docs", 6));
         assertEquals(CliTheme.PLAIN, styleAt("start goo", 6));
+    }
+
+    @Test
+    public void pluginsColorsItsSubcommandAndArgument() throws Exception {
+        Files.createFile(workingDir.resolve("kafka.jar"));
+
+        assertEquals(CliTheme.ACCENT, styleAt("plugins add", 8));
+        assertEquals(CliTheme.ERROR, styleAt("plugins update", 8));
+        assertEquals(CliTheme.SUCCESS, styleAt("plugins add kafka.jar", 12));
+        assertEquals(CliTheme.WARNING, styleAt("plugins add notes.txt", 12));
+        assertEquals(CliTheme.INFO, styleAt("plugins add docs", 12));
+        assertEquals(CliTheme.PLAIN, styleAt("plugins add kaf", 12));
+        assertEquals("only imported plugins can be removed", CliTheme.ERROR, styleAt("plugins remove rabbitmq", 15));
     }
 
     @Test

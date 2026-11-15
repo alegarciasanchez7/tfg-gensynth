@@ -135,6 +135,7 @@ public class PluginCommandHandlerTest {
         Map<String, Object> result = sentPayload("PLUGIN_INSTALL_RESULT");
         assertEquals("ok", result.get("status"));
         assertEquals(true, result.get("restartRequired"));
+        assertEquals("The window says it restarts", "installed Restarting...", result.get("message"));
         verify(server).persistState();
         verify(server).sendMessage(eq(open), eq("RESTART_REQUIRED"), isNull(), any());
         verify(server, never()).sendMessage(eq(closed), anyString(), any(), any());

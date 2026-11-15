@@ -7,7 +7,7 @@
 
     <groupId>com.gensynth</groupId>
     <artifactId>core</artifactId>
-    <version>0.5.2</version>
+    <version>0.6.0</version>
     <packaging>jar</packaging>
 
     <name>Gen-Synth Core</name>
@@ -70,7 +70,7 @@
         <dependency>
             <groupId>com.gensynth</groupId>
             <artifactId>gensynth-plugin-api</artifactId>
-            <version>1.0.0</version>
+            <version>1.1.0</version>
         </dependency>
 
         <!-- JUnit for testing -->
@@ -648,7 +648,9 @@
                                     <winDirChooser>true</winDirChooser>
                                     <!-- Fixed forever: lets a newer version replace the installed one -->
                                     <winUpgradeUuid>5c2b9d1e-7f4a-4c3e-9b8d-2e6f1a0c4d73</winUpgradeUuid>
-                                    <!-- cli\gensynth.cmd: the folder users add to PATH to type "gensynth" -->
+                                    <!-- main.wxs puts the cli folder on the PATH (removed on uninstall) -->
+                                    <resourceDir>${installer.packaging}/windows-msi</resourceDir>
+                                    <!-- cli\gensynth.cmd: the "gensynth" command, found through the PATH -->
                                     <appContentPaths combine.children="append">
                                         <appContentPath>${installer.packaging}/windows/cli</appContentPath>
                                     </appContentPaths>
@@ -678,7 +680,9 @@
                                     <winDirChooser>true</winDirChooser>
                                     <!-- Fixed forever, and different from the full application: both can be installed -->
                                     <winUpgradeUuid>ec511478-7dc7-476f-af1a-1184a8e17454</winUpgradeUuid>
-                                    <!-- cli\gensynth.cmd runs GenSynth-CLI.exe: the folder users add to PATH -->
+                                    <!-- main.wxs puts the cli folder on the PATH (removed on uninstall) -->
+                                    <resourceDir>${installer.packaging}/windows-msi</resourceDir>
+                                    <!-- cli\gensynth.cmd runs GenSynth-CLI.exe: the "gensynth" command -->
                                     <appContentPaths combine.children="append">
                                         <appContentPath>${installer.packaging}/windows-cli/cli</appContentPath>
                                     </appContentPaths>

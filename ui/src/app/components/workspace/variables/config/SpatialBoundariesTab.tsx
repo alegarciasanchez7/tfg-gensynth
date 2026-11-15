@@ -10,21 +10,16 @@ import { Canvas2DBoundaryEditor } from './Canvas2DBoundaryEditor';
 import { Isometric3DBoundaryEditor } from './Isometric3DBoundaryEditor';
 import { GeospatialMapBoundaryEditor } from './GeospatialMapBoundaryEditor';
 import { BoundaryExpandModal } from './BoundaryExpandModal';
-import { BoundaryObstaclesEditor } from './BoundaryObstaclesEditor';
+import { shapeFittingBounds } from './shape3DBounds';
+import { parseCoordinate, vertexRows } from './obstacleVertices';
+import { BoundaryObstaclesEditor, type ObstacleAxisLabels, type ObstacleAxisLimits } from './BoundaryObstaclesEditor';
 
-/**
- * Rows of the read-only vertex list, keyed by their coordinates plus how many earlier vertices share
- * them, so every key is unique without using the position in the list.
- */
-const vertexRows = (points: Point3DCoord[]): { pt: Point3DCoord; key: string }[] => {
-  const seen = new Map<string, number>();
-  return points.map((pt) => {
-    const coords = `${pt.x ?? 0},${pt.y ?? 0},${pt.z ?? 0}`;
-    const repeats = seen.get(coords) ?? 0;
-    seen.set(coords, repeats + 1);
-    return { pt, key: `${coords}#${repeats}` };
-  });
-};
+/** Obstacle points on a map: x is the latitude and y the longitude, as in the Core. */
+const GEO_AXES: ObstacleAxisLabels = { x: 'Latitude', y: 'Longitude' };
+const GEO_LIMITS: ObstacleAxisLimits = { x: 90, y: 180 };
+
+/** Stable empty list, so the editors do not redraw when a point has no obstacles. */
+const NO_OBSTACLES: BoundaryObstacle[] = [];
 
 /** Title of the fullscreen editor for a coordinate system. */
 const modalTitleFor = (coordSystem: CoordinateSystem, is2D: boolean): string => {
@@ -84,7 +79,7 @@ const Modal2DVisualEditor: React.FC<{
           minY={minPoint.y}
           maxY={maxPoint.y}
           polygon={polygon}
-          obstacles={config.obstacles || []}
+          obstacles={config.obstacles ?? NO_OBSTACLES}
           selectedObstacleId={selectedObstacleId}
           onSelectObstacle={setSelectedObstacleId}
           fillContainer={true}
@@ -98,7 +93,7 @@ const Modal2DVisualEditor: React.FC<{
         </h3>
         <div className="flex-1 min-h-0">
           <BoundaryObstaclesEditor
-            obstacles={config.obstacles || []}
+            obstacles={config.obstacles ?? NO_OBSTACLES}
             minPoint={minPoint}
             maxPoint={maxPoint}
             selectedObstacleId={selectedObstacleId}
@@ -137,9 +132,11 @@ export const SpatialBoundariesTab: React.FC<SpatialBoundariesTabProps> = ({ conf
 
   const is2D = coordSystem === 'CARTESIAN_2D';
   const isGeo = coordSystem === 'GEOSPATIAL';
+  // Walls and forbidden zones are 2D: the Core checks them on x/y (latitude/longitude on a map)
+  const hasObstacles = is2D || isGeo;
 
-  const labelX = isGeo ? 'Latitude' : 'X';
-  const labelY = isGeo ? 'Longitude' : 'Y';
+  const labelX = isGeo ? GEO_AXES.x : 'X';
+  const labelY = isGeo ? GEO_AXES.y : 'Y';
   const labelZ = isGeo ? 'Altitude' : 'Z';
 
   const updateBounds = (updates: BoundsUpdate) => {
@@ -184,19 +181,30 @@ export const SpatialBoundariesTab: React.FC<SpatialBoundariesTabProps> = ({ conf
   const commitBound = (key: BoundFieldKey) => {
     const raw = boundDrafts[key];
     setBoundDrafts(({ [key]: _committed, ...rest }) => rest);
-    if (raw === undefined || raw.trim() === '') return;
+    if (raw === undefined) return;
     const axis = key.slice(3) as 'X' | 'Y' | 'Z';
-    let value = Number(raw);
-    if (!Number.isFinite(value)) return;
     // Geospatial: x is latitude (±90°) and y is longitude (±180°)
-    if (coordSystem === 'GEOSPATIAL' && axis !== 'Z') {
-      const limit = axis === 'X' ? 90 : 180;
-      value = Math.max(-limit, Math.min(limit, value));
-    }
-    if (value === boundValue(key)) return;
+    const geoLimit = axis === 'X' ? GEO_LIMITS.x : GEO_LIMITS.y;
+    const limit = isGeo && axis !== 'Z' ? geoLimit : undefined;
+    const value = parseCoordinate(raw, boundValue(key), limit);
+    if (value === null) return;
 
     const other = boundValue(key.startsWith('min') ? `max${axis}` : `min${axis}`);
-    updateBounds({ [`min${axis}`]: Math.min(value, other), [`max${axis}`]: Math.max(value, other) });
+    const pair: BoundsUpdate = { [`min${axis}`]: Math.min(value, other), [`max${axis}`]: Math.max(value, other) };
+    if (coordSystem !== 'CARTESIAN_3D') {
+      updateBounds(pair);
+      return;
+    }
+    // In 3D the bounds are the box of the shape: typing them resizes the shape to fill it
+    const bounds = {
+      minX: pair.minX ?? minPoint.x,
+      maxX: pair.maxX ?? maxPoint.x,
+      minY: pair.minY ?? minPoint.y,
+      maxY: pair.maxY ?? maxPoint.y,
+      minZ: pair.minZ ?? minPoint.z,
+      maxZ: pair.maxZ ?? maxPoint.z,
+    };
+    updateBounds({ ...pair, ...shapeFittingBounds(config.shape3DType, bounds, config) });
   };
 
   const renderBoundInput = (key: BoundFieldKey, label: string) => {
@@ -250,7 +258,7 @@ export const SpatialBoundariesTab: React.FC<SpatialBoundariesTabProps> = ({ conf
             minY={minPoint.y}
             maxY={maxPoint.y}
             polygon={polygon}
-            obstacles={config.obstacles || []}
+            obstacles={config.obstacles ?? NO_OBSTACLES}
             selectedObstacleId={tabSelectedObsId}
             onSelectObstacle={setTabSelectedObsId}
             width={canvasW}
@@ -312,6 +320,8 @@ export const SpatialBoundariesTab: React.FC<SpatialBoundariesTabProps> = ({ conf
             maxVerticalStep={config.maxVerticalStep ?? 1.0}
             altitudeOscillationSpeed={config.altitudeOscillationSpeed ?? 0.1}
             polygon={polygon}
+            obstacles={config.obstacles ?? NO_OBSTACLES}
+            selectedObstacleId={tabSelectedObsId}
             height={canvasH}
             onChange={(b) =>
               updateBounds({
@@ -433,15 +443,17 @@ export const SpatialBoundariesTab: React.FC<SpatialBoundariesTabProps> = ({ conf
           )}
         </div>
 
-        {/* 3b. 2D Wall Barriers & Forbidden Interior Obstacle Zones */}
-        {is2D && (
+        {/* 3b. Wall Barriers & Forbidden Interior Obstacle Zones (2D and geospatial) */}
+        {hasObstacles && (
           <BoundaryObstaclesEditor
-          minPoint={minPoint}
-          maxPoint={maxPoint}
-            obstacles={config.obstacles || []}
+            minPoint={minPoint}
+            maxPoint={maxPoint}
+            obstacles={config.obstacles ?? NO_OBSTACLES}
             selectedObstacleId={tabSelectedObsId}
             onSelectObstacle={setTabSelectedObsId}
             onChange={(newObs) => onChange({ obstacles: newObs })}
+            axisLabels={isGeo ? GEO_AXES : undefined}
+            axisLimits={isGeo ? GEO_LIMITS : undefined}
           />
         )}
 
@@ -510,16 +522,16 @@ export const SpatialBoundariesTab: React.FC<SpatialBoundariesTabProps> = ({ conf
             </div>
 
             <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
-              {vertexRows(polygon).map(({ pt, key }, i) => (
+              {vertexRows(polygon).map(({ point, key }, i) => (
                 <div
                   key={key}
                   className="flex items-center justify-between p-1.5 rounded border border-[var(--c-br1)] bg-[var(--c-bg2)] text-xs font-mono text-[var(--c-tx2)]"
                 >
                   <span className="text-[10px] font-semibold text-violet-600 dark:text-violet-300 w-16">Vertex {i + 1}:</span>
                   <div className="flex gap-3 text-[11px]">
-                    <span>{labelX}: <strong className="text-[var(--c-tx1)]">{pt.x ?? 0}</strong></span>
-                    <span>{labelY}: <strong className="text-[var(--c-tx1)]">{pt.y ?? 0}</strong></span>
-                    {!is2D && <span>{labelZ}: <strong className="text-[var(--c-tx1)]">{pt.z ?? 0}</strong></span>}
+                    <span>{labelX}: <strong className="text-[var(--c-tx1)]">{point.x ?? 0}</strong></span>
+                    <span>{labelY}: <strong className="text-[var(--c-tx1)]">{point.y ?? 0}</strong></span>
+                    {!is2D && <span>{labelZ}: <strong className="text-[var(--c-tx1)]">{point.z ?? 0}</strong></span>}
                   </div>
                 </div>
               ))}

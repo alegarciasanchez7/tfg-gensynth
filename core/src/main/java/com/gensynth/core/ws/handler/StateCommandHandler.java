@@ -22,6 +22,9 @@ import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 import static com.gensynth.core.ws.BridgeProtocol.SOURCE_SYSTEM;
 
@@ -35,7 +38,17 @@ public class StateCommandHandler implements CommandHandler {
 
     private static final Logger logger = LoggerFactory.getLogger(StateCommandHandler.class);
 
+    /**
+     * How long a scheduled write waits (see {@link #schedulePersistState()}): the edits made in
+     * the meantime are written with it, once.
+     */
+    public static final long PERSIST_DELAY_MILLIS = 400;
+
     private final BridgeContext ctx;
+    /** Guards {@link #pendingPersist}; never held while waiting for the state lock. */
+    private final Object persistLock = new Object();
+    /** The scheduled write not run yet, or null. */
+    private ScheduledFuture<?> pendingPersist;
 
     /**
      * Constructs a StateCommandHandler with the shared BridgeContext.
@@ -283,9 +296,79 @@ public class StateCommandHandler implements CommandHandler {
     }
 
     /**
-     * Persists the current runtime state of groups, variables and project settings to the state repository.
+     * Persists the current runtime state of groups, variables and project settings to the state
+     * repository now. A scheduled write is no longer needed and is cancelled.
      */
     public void persistState() {
+        cancelPendingPersist();
+        writeState();
+    }
+
+    /**
+     * Writes the state a little later (see {@link #PERSIST_DELAY_MILLIS}) instead of now, for
+     * edits that come in a row, such as the fields of a variable: each one would otherwise write
+     * the whole project to disk. A write already scheduled takes the new edits too, since it
+     * reads the state when it runs.
+     */
+    public void schedulePersistState() {
+        synchronized (persistLock) {
+            if (pendingPersist != null) {
+                return;
+            }
+            try {
+                pendingPersist = ctx.getScheduler().schedule(
+                        this::runScheduledPersist, PERSIST_DELAY_MILLIS, TimeUnit.MILLISECONDS);
+                return;
+            } catch (RejectedExecutionException e) {
+                // Shutting down: nothing will run later, so write below
+                logger.debug("Scheduler stopped, writing the state now");
+            }
+        }
+        writeStateLocked();
+    }
+
+    /**
+     * Writes now the state of a scheduled write that has not run yet, if any. Called before the
+     * application stops and before the state is read back from the repository.
+     */
+    public void flushPendingState() {
+        if (cancelPendingPersist()) {
+            writeStateLocked();
+        }
+    }
+
+    /** Writes the state while holding the state lock, so it is not changed halfway. */
+    private void writeStateLocked() {
+        synchronized (ctx.getStateLock()) {
+            writeState();
+        }
+    }
+
+    private void runScheduledPersist() {
+        // Same lock order as the command handlers: the state lock first, then persistLock
+        synchronized (ctx.getStateLock()) {
+            synchronized (persistLock) {
+                pendingPersist = null;
+            }
+            writeState();
+        }
+    }
+
+    /**
+     * @return whether a scheduled write was pending
+     */
+    private boolean cancelPendingPersist() {
+        synchronized (persistLock) {
+            if (pendingPersist == null) {
+                return false;
+            }
+            pendingPersist.cancel(false);
+            pendingPersist = null;
+            return true;
+        }
+    }
+
+    private void writeState() {
         try {
             List<GroupDefinition> groupDefinitions = new ArrayList<>();
             for (GroupRuntime group : ctx.getGroupsById().values()) {
@@ -307,6 +390,8 @@ public class StateCommandHandler implements CommandHandler {
      */
     public void loadRuntimeState(boolean createDefaultIfEmpty) {
         UiBridgeWebSocketServer server = ctx.getServer();
+        // The repository must have the last edits before it is read back
+        flushPendingState();
         synchronized (ctx.getStateLock()) {
             for (GroupRuntime group : ctx.getGroupsById().values()) {
                 server.flowCommandHandler.stopGroupInternal(group);

@@ -128,7 +128,7 @@ public class PluginCommandHandler implements CommandHandler {
         response.put(COMMAND_ID, commandId);
         response.put(STATUS, result.isSuccess() ? "ok" : ERROR);
         response.put("success", result.isSuccess());
-        response.put(MESSAGE, result.getMessage());
+        response.put(MESSAGE, desktopMessage(result));
         response.put("restartRequired", result.isRestartRequired());
         server.sendMessage(conn, "PLUGIN_INSTALL_RESULT", commandId, response);
 
@@ -169,7 +169,7 @@ public class PluginCommandHandler implements CommandHandler {
         response.put(COMMAND_ID, commandId);
         response.put(STATUS, result.isSuccess() ? "ok" : ERROR);
         response.put("success", result.isSuccess());
-        response.put(MESSAGE, result.getMessage());
+        response.put(MESSAGE, desktopMessage(result));
         response.put("restartRequired", result.isRestartRequired());
         server.sendMessage(conn, "PLUGIN_INSTALL_RESULT", commandId, response);
 
@@ -183,6 +183,11 @@ public class PluginCommandHandler implements CommandHandler {
         } else {
             server.logToBackend(ERROR, SOURCE_PLUGINS, "Plugin uninstall failed: " + result.getMessage(), commandId);
         }
+    }
+
+    /** The message of the result, saying that the application restarts when it does. */
+    private static String desktopMessage(PluginInstallResult result) {
+        return result.isSuccess() && result.isRestartRequired() ? result.getMessage() + " Restarting..." : result.getMessage();
     }
 
     /**

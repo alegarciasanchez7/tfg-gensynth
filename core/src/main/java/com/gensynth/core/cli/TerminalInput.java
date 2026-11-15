@@ -33,6 +33,8 @@ final class TerminalInput implements CliShell.LineSource, CliShell.Screen, Close
 
     private final Terminal terminal;
     private final LineReader reader;
+    /** Reads the answers to questions: no completion, colors or history of commands. */
+    private LineReader answerReader;
 
     /**
      * @param terminal  terminal to read from; closed by {@link #close()}
@@ -116,6 +118,25 @@ final class TerminalInput implements CliShell.LineSource, CliShell.Screen, Close
                 // Ctrl + D, or the terminal went away (window closed, connection lost)
                 return null;
             }
+        }
+    }
+
+    /**
+     * Reads the answer to a question with a reader of its own, so the answer is neither colored
+     * as a command nor kept in the history of commands.
+     *
+     * @param prompt the question
+     * @return the answer, or null at the end of the input ({@code Ctrl + C} or {@code Ctrl + D})
+     */
+    @Override
+    public String readAnswer(String prompt) {
+        if (answerReader == null) {
+            answerReader = LineReaderBuilder.builder().terminal(terminal).appName("gensynth").build();
+        }
+        try {
+            return answerReader.readLine(prompt);
+        } catch (UserInterruptException | EndOfFileException | IOError e) {
+            return null;
         }
     }
 

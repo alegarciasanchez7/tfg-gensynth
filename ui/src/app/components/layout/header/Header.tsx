@@ -273,7 +273,7 @@ export function Header({
         </button>
       )}
 
-      {/* Feedback (temporary, for the student demo) */}
+      {/* Feedback */}
       {isFeedbackAvailable() && (
         <button
           onClick={() => {

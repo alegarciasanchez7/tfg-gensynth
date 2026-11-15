@@ -11,7 +11,7 @@ a **connector**: GenSynth writes to files out of the box, and connector plugins 
 technologies. Use it whenever you need realistic, repeatable data to develop, test or demonstrate a
 system that consumes events.
 
-This guide covers GenSynth **0.5.2**. For a quick overview, see the [README](README.md).
+This guide covers GenSynth **0.6.0**. For a quick overview, see the [README](README.md).
 
 ## Contents
 
@@ -224,9 +224,10 @@ It takes about five minutes.
 
 8. **Stop and find the files.** Click **STOP**. The messages are in
    `~/GenSynth/OUTPUT_FILES_<date>/Weather_network/Station_1.txt` (one file per station); on
-   Windows, `~` is your user folder, `C:\Users\<you>`. The **Logs** show the exact folder when you
-   click START (*Output folder of this session: …*). To write the files somewhere else, change
-   **Settings → Save & Storage → Output folder**.
+   Windows, `~` is your user folder, `C:\Users\<you>`. The **Session folder** line at the top of
+   **Logs** shows the exact folder from the moment you click START, and keeps it after STOP:
+   **Copy** copies the path and **Open** shows the folder in your file explorer. To write the
+   files somewhere else, change **Settings → Save & Storage → Output folder**.
 
 9. **Save the project.** Click **Save as** and choose a name such as `weather.gsynth`, in a folder
    of yours such as *Documents*. Not in the folder where GenSynth is installed
@@ -243,18 +244,19 @@ It takes about five minutes.
 
 2. **Point the flows to RabbitMQ.** The RabbitMQ connector is included in GenSynth: there is
    nothing to install. Select *Station 1* in the left panel. In the flow settings, in
-   the centre of the window (above **Message Format**), change **Connector** to **RabbitMQ** and
-   fill in the fields. For a local broker only three fields need a value:
+   the centre of the window (above **Message Format**), change **Connector** to **RabbitMQ**. The
+   form asks for the broker (**Host**, **Port**, **Username**, **Password**) and the **Queue** the
+   messages go to. For a local broker the defaults (`localhost`, `5672`, `guest`, `guest`) already
+   work, so only one field needs a value:
 
    | Field | Value |
    |---|---|
-   | **Exchange** | `weather` |
-   | **Routing key** | `weather.reading` |
-   | **Queue (optional)** | `weather-readings` |
+   | **Queue** | `weather-readings` |
 
-   Setting **Queue** makes GenSynth create a durable queue bound to the exchange, so messages are
-   kept until your consumer reads them. Tip: configure *Station 1* first and then clone it; clones
-   copy the connector settings.
+   GenSynth creates the queue (durable) if it does not exist and sends every message straight to
+   it, so messages are kept until your consumer reads them. To send through an exchange instead,
+   open **Advanced options** (see [RabbitMQ connector](#rabbitmq-connector-built-in)). Tip:
+   configure *Station 1* first and then clone it; clones copy the connector settings.
 3. **Start** and open the management UI at <http://localhost:15672> (user `guest`, password
    `guest`). In **Queues → weather-readings → Get messages** you can see the JSON of each reading.
 
@@ -539,7 +541,9 @@ Good to know:
 
 ![Logs](docs-assets/user-guide/32-bottom-logs.png)
 
-- **Logs:** messages from GenSynth and from the flows. Filter by level (**ALL**, **INFO**,
+- **Logs:** messages from GenSynth and from the flows. The **Session folder** line at the top shows
+  where the files of the current (or last) session are written, with **Copy** and **Open**; no
+  filter hides it. Filter by level (**ALL**, **INFO**,
   **WARN**, **ERROR**, **DEBUG**, **DATA**), by **Group** and by **Flow**; **only data** shows just
   the generated messages. The trash icon clears the list, and **Connector Health** at the top shows
   the state of each connector. To keep the interface fluid, each flow logs at most about four
@@ -638,37 +642,48 @@ can implement one by following the [Plugin Developer Guide](plugin-api/PLUGIN_DE
 4. Click **Import Validated Plugin** and confirm with **INSTALL & RESTART**. GenSynth restarts
    (running flows stop) and the new connector appears in the connector list of every flow.
 
+From a terminal, `plugins add <file.jar>` does the same (see [Command line](#command-line)): it
+runs the same checks, asks for confirmation and installs the plugin in the same folder, so the
+window and the command line share it.
+
 ### RabbitMQ connector (built in)
 
 ![RabbitMQ fields](docs-assets/user-guide/12-rabbitmq-fields.png)
 
-The RabbitMQ connector is included in GenSynth (since 0.5.2; before, it was a separate plugin). It
-publishes each message to an exchange and waits for the broker's confirmation before counting it
-as sent. Its source code is in [`connectors/rabbitmq`](connectors/rabbitmq), a complete example of
-a connector plugin.
+The RabbitMQ connector is included in GenSynth (since 0.5.2; before, it was a separate plugin). By
+default it sends each message straight to a queue, and waits for the broker's confirmation before
+counting it as sent. Its source code is in [`connectors/rabbitmq`](connectors/rabbitmq), a complete
+example of a connector plugin.
+
+The form shows the essential fields first. The exchange settings are under **Advanced options**,
+collapsed; the section opens by itself when one of its fields has a value of its own (for example a
+project that sends to an exchange).
 
 | Field | What it does | Default |
 |---|---|---|
 | **Host** \* | Host name or IP address of the broker. | `localhost` |
 | **Port** | AMQP port of the broker (TLS is not supported). | `5672` (1–65535) |
-| **Virtual host** | Virtual host to connect to. Use `/` unless your broker separates environments with vhosts. | `/` |
 | **Username** \* | Broker user. The default `guest` user can only connect from `localhost`. | `guest` |
 | **Password** \* | Password of the user. | `guest` |
-| **Exchange** \* | Exchange that receives the messages. It is created if it does not exist. | — |
-| **Exchange type** | `topic` (routing key patterns with `*` and `#`), `direct` (exact routing key), `fanout` (every bound queue, key ignored) or `headers`. Must match the type of an existing exchange. | `topic` |
-| **Durable exchange** | Declares the exchange as durable so it survives a broker restart. Must match an existing exchange. | Yes |
-| **Routing key** | Routing key of every message of this flow. Required for `topic` and `direct`; ignored by `fanout` and `headers`. | — |
-| **Queue (optional)** | If set, a durable queue with this name is created and bound to the exchange with the routing key, so messages are kept until someone reads them. | Empty |
+| **Queue** \* | Queue that receives the messages. It is created (durable) if it does not exist. | — |
+| *Advanced options* | | |
+| **Virtual host** | Virtual host to connect to. Use `/` unless your broker separates environments with vhosts. | `/` |
+| **Exchange** | Optional. Exchange that receives the messages instead of the queue; it is created if it does not exist and the queue is bound to it. Empty: the messages go straight to the queue. | Empty |
+| **Exchange type** | `topic` (routing key patterns with `*` and `#`), `direct` (exact routing key), `fanout` (every bound queue, key ignored) or `headers`. Only used with an exchange; must match the type of an existing exchange. | `topic` |
+| **Durable exchange** | Declares the exchange as durable so it survives a broker restart. Only used with an exchange; must match an existing exchange. | Yes |
+| **Routing key** | Routing key of every message sent to the exchange, also used to bind the queue. Empty: the queue name. Ignored without an exchange. | Empty |
 
 Good to know:
 
 - Messages are persistent and carry the header `content-type: application/json`.
-- A message that reaches no queue (no queue bound with a matching key) is returned by the broker
-  and counted as a **fail** with the log *"Message not routed to any queue"*. Fill in **Queue
-  (optional)** or bind a queue before starting.
+- With an exchange, other queues bound to it (by your consumers) receive the messages too, as the
+  exchange type decides. A message that reaches no queue is returned by the broker and counted as
+  a **fail** with the log *"Message not routed to any queue"*.
 - The routing key is fixed per flow. Use different keys per flow (for example
   `weather.station1`) if your consumer needs to tell streams apart by key, or simply put the
   device ID in the message with `{{flow.name}}`.
+- Before 0.6.0 the queue was optional and the exchange required. A project that only set an
+  exchange and a routing key now asks for a **Queue**: the flow shows the error when you open it.
 
 ---
 
@@ -1334,7 +1349,7 @@ The **Spatial Boundaries** tab sets the region where the point lives.
 | **Boundary Collision Action** | Same as Boundary Behavior. | Clamp |
 | **Outer Envelope Bounding Box (AABB Bounds)** | **Min/Max X, Y, Z** (Latitude, Longitude, Altitude in Geospatial): the box the point lives in. | 0–100 on every axis |
 | **Exact Individual Polygon Vertices** | 2D and Geospatial: the vertices of a custom polygon (3 or more), when you drew one. The box then fits the polygon. In 3D the polygon is not used, and the list only shows the footprint of the drawn shape. | — |
-| Barriers & obstacles | **Obstacle Name**, **Type** (**Wall Line Segment** or **Forbidden Interior Polygon**) and **Add Barrier**; each barrier can be disabled or removed. Walls block Random Walk steps; forbidden polygons are never entered. | — |
+| Barriers & obstacles | 2D and Geospatial. **Obstacle Name**, **Type** (**Wall Line Segment** or **Forbidden Interior Polygon**) and **Add Barrier**; each barrier can be disabled or removed. Click a barrier to select it and type the exact coordinates of its vertices (X/Y, or Latitude/Longitude in Geospatial, kept within ±90° and ±180°). Walls block Random Walk steps; forbidden polygons are never entered. | — |
 | Altitude (Geospatial) | **Independent Altitude Dynamics Pattern**: **Follow Primary XY Pattern**, **Fixed Altitude** (the value typed in its **Fixed Altitude** field), **Random Elevation (Uniform in Range)**, **Continuous Climb & Descent Walk** (**Max Vertical Step (m/tick)**), **Sinusoidal Hover Oscillation** (**Oscillation Speed (rad/tick)**); **Min/Max Altitude**, **Initial Altitude (Seed)**, **Altitude Measurement Unit** (m, ft, km, mi) and **Datum / Altitude Reference** (MSL, AGL, ELLIPSOID), which are written in the output. | Follow XY, m, MSL |
 
 How editing works in every boundary and route editor:
@@ -1368,8 +1383,11 @@ How editing works in every boundary and route editor:
   height is negative (a cube, pyramid or cone then points down). A sphere rests on Min Z: its
   centre is Min Z + radius.
 - The dimensions you never set follow the bounds: width and length are the X and Y spans (100 when
-  a span is 0), the height is Max Z − Min Z and the radius is 50. Once you edit the shape, the
-  Min/Max fields only move it; resize it in the 3D view.
+  a span is 0), the height is Max Z − Min Z and the radius is 50.
+- Typing new **Min/Max** values resizes the shape to the new box: a cube or pyramid fills it, a
+  cone takes the largest circle that fits in X/Y and the whole height, and a sphere the largest
+  ball that fits. A shape pointing down keeps pointing down. You can still fine-tune it in the 3D
+  view.
 - The height handle follows the cursor, and a negative height does not move the base.
 
 ![Geofence editor on the map (Fullscreen)](docs-assets/user-guide/27-point-map.png)
@@ -1387,6 +1405,8 @@ How editing works in every boundary and route editor:
   the region.
 - The marker icons work offline. The altitude fields are applied when you leave them or press
   `Enter`.
+- Enabled walls and forbidden zones are drawn on the map in red, the selected one in amber. They
+  are edited in the barriers list below the map, so clicks on the map still edit the region.
 
 > **Tip:** coordinates are sent with full precision (many decimals). Adjust the bounding box to
 > your scenario: new point variables start with every axis from 0 to 100, and a point without
@@ -1590,6 +1610,9 @@ Bye.
 | `tick <id> [value]` / `tick all [value]` | Without a value, shows the tick of the simulation and the ticks it makes per second. With a value, changes it while it runs, to speed it up or slow it down: `500ms`, `2s`, `1m` (from 1 ms up to 24 hours) or `fast` (as fast as possible). The project file is not changed. |
 | `metrics [id]` / `metrics all` | Shows live figures, refreshed every second: without id, one line with the totals of the running simulations and the CPU and memory of the command line; with an id, that simulation (time, messages per second, sent, errors and tick); with `all`, one line per simulation and the totals below. Press any key to go back to the prompt. |
 | `list` | Shows the simulations of the session with their status, time, messages per second, messages and errors. |
+| `plugins` | Lists the connectors: id, name, version and whether it is **included** in GenSynth or **imported**. |
+| `plugins add <file.jar>` | Imports a connector plugin, as **Import plugin** does in the window: it runs the same checks, shows the plugin (name, version, id and settings) and its warnings, and asks `Install …? [y/N]`. Running simulations are stopped first (it says so before asking), and the next `start` can use the plugin without restarting. |
+| `plugins remove <id>` | Removes an imported plugin, after asking. The included connectors (File Output, RabbitMQ) cannot be removed. |
 | `clear` | Clears the screen (also `Ctrl + L`). |
 | `help` | Lists the commands. |
 | `exit` | Stops whatever is still running and closes the shell (also `Ctrl + D`, or `Ctrl + C` on an empty line). |
@@ -1603,7 +1626,8 @@ Press **Tab** to complete what you are typing, as in any terminal:
 - On the first word, Tab completes the command (a mistyped one, such as `lsit`, is answered with
   the closest command); after `stop`, `tick` or `metrics`, it offers the ids with their file
   names (and `all` where it is accepted); after `start`, also the ids of the stopped simulations;
-  after `tick <id>`, `fast`.
+  after `tick <id>`, `fast`; after `plugins`, `add` and `remove`, then the files (`.jar` in
+  green) or the ids of the imported plugins.
 - The up and down arrows bring back the commands of the session and `Ctrl + C` clears the line
   you are typing.
 
@@ -1646,8 +1670,10 @@ A file that is not valid JSON is reported with the line and column where it brea
   Set the `NO_COLOR` environment variable to turn them off yourself (Tab still works). With the
   input redirected from a file or a pipe, the shell prints plain text and `metrics` prints its
   line once.
-- The command line uses the plugins installed from the application, never changes its autosave
-  and opens no network port, so it can run while the window is open.
+- The command line and the application share the plugins folder: a plugin imported in either is
+  available in both (an open window loads the ones imported from the terminal the next time it
+  starts). The command line never changes the autosave of the application and opens no network
+  port, so it can run while the window is open.
 - Its log goes to `logs/cli.log` inside the data folder (see
   [Where GenSynth keeps its files](#where-gensynth-keeps-its-files)). Each session is added at
   the end of the file and starts with a `command line started` line, so the errors of a past
@@ -1656,12 +1682,10 @@ A file that is not valid JSON is reported with the line and column where it brea
 ### Making `gensynth` available in the terminal
 
 - **Linux (`.deb` / `.rpm`):** nothing to do; the installer adds `/usr/bin/gensynth`.
-- **Windows:** add the `cli` folder of the installation to your `PATH` once, in PowerShell
-  (change the path if you installed GenSynth elsewhere), then open a new terminal:
-
-  ```powershell
-  [Environment]::SetEnvironmentVariable("Path", [Environment]::GetEnvironmentVariable("Path", "User") + ";C:\Program Files\GenSynth\cli", "User")
-  ```
+- **Windows:** nothing to do either; the installer adds the `cli` folder of the installation
+  (`C:\Program Files\GenSynth\cli` by default) to the `PATH`, and uninstalling removes it. Open
+  a new terminal after installing: the ones already open keep the old `PATH`. Before 0.6.0 this
+  was a manual step; if you did it, the extra entry is harmless.
 
 - **macOS:** open GenSynth once from *Applications* (see the first start note above), then link
   the command in Terminal:
@@ -1679,7 +1703,7 @@ downloads it.
 
 | Your system | Download | `gensynth` in the terminal |
 |---|---|---|
-| Windows 10/11 (64-bit) | `GenSynth-cli-installer-<version>.msi` | Add `C:\Program Files\GenSynth-CLI\cli` to your `PATH`, as above |
+| Windows 10/11 (64-bit) | `GenSynth-cli-installer-<version>.msi` | Added by the installer (`C:\Program Files\GenSynth-CLI\cli` on the `PATH`) |
 | Ubuntu, Debian… | `GenSynth-cli-installer-<version>.deb` (`sudo apt install ./GenSynth-cli-installer-<version>.deb`) | Added by the installer (`/usr/bin/gensynth`) |
 | Fedora, openSUSE, RHEL… | `GenSynth-cli-installer-<version>.rpm` (`sudo dnf install ./GenSynth-cli-installer-<version>.rpm`) | Added by the installer (`/usr/bin/gensynth`) |
 | macOS (Apple Silicon) | `GenSynth-cli-installer-<version>.pkg` (right-click → **Open** the first time, as it is not signed) | Added by the installer (`/usr/local/bin/gensynth`) |
@@ -1689,8 +1713,8 @@ It works like the command line of the full application, with these differences:
 - `edit` is not available, as there is no window to open: it is not listed in `help` or offered by
   Tab, and typing it explains that it needs the full application. `gensynth --version` shows
   `(CLI edition)`.
-- It includes the File Output and RabbitMQ connectors. Other connector plugins are installed from
-  the full application.
+- It includes the File Output and RabbitMQ connectors. Other connector plugins are installed with
+  `plugins add <file.jar>`.
 - It keeps its files in the same folders as the full application (see
   [Where GenSynth keeps its files](#where-gensynth-keeps-its-files)), so both editions can be
   installed on the same computer. On Linux, `gensynth` then stays with the full application,
@@ -1752,14 +1776,14 @@ more detail. It only takes a couple of minutes, and it helps to improve the tool
 | START warns about *validation errors or circular dependencies* | A formula, template variable or conditional rule refers to a variable that does not exist, or two variables refer to each other. Fix the red references. |
 | RabbitMQ: *Connection refused* | The broker is not running or Host/Port are wrong. Check `docker ps` and that port 5672 is published. |
 | RabbitMQ: *ACCESS_REFUSED* with user `guest` | `guest` only works on the same computer as the broker. Create a user in the management UI (Admin → Users, with permissions on the virtual host) and use it. |
-| RabbitMQ: *Routing key is required for a topic exchange* | Fill in **Routing key**, or use a `fanout` exchange. |
-| RabbitMQ: *Message not routed to any queue* | No queue is bound to the exchange with that routing key. Fill in **Queue (optional)** or bind a queue in the management UI. |
-| RabbitMQ: *PRECONDITION_FAILED – inequivalent arg* | The exchange already exists with another type or durability. Match **Exchange type** / **Durable exchange**, or delete the exchange in the management UI. |
+| RabbitMQ: *Queue is required* | Fill in **Queue** with the queue that should receive the messages. Projects made before 0.6.0 that only set an exchange need it too. |
+| RabbitMQ: *Message not routed to any queue* | With an exchange, no queue is bound to it with that routing key. Leave **Routing key** empty (the queue name is used) or bind the queue in the management UI. |
+| RabbitMQ: *PRECONDITION_FAILED – inequivalent arg* | The exchange or the queue already exists with other settings (type, durability). GenSynth declares the queue durable: match **Exchange type** / **Durable exchange**, or delete the old exchange or queue in the management UI. |
 | Values look wrong (all devices share a sequence, values jump, a placeholder stays as `{{…}}`) | Check the **scope** of the variable (per-device values must be LOCAL), the name in the template (a typo leaves the placeholder unchanged) and the Preview of the flow. |
 | A variable sends a value that does not match its pattern | Check its **Rules** tab: while a rule matches, the override configuration is used instead. |
 | The JSON received is invalid | Text values need quotes (`"{{name}}"`); numbers with prefix, suffix or padding are text too. |
 | Saving says *You do not have permission to write in …* | The folder is read-only for your user, like the installation folder (`C:\Program Files\GenSynth`). Save the project in a folder of yours, such as *Documents*. Spaces in the path are not a problem. |
-| I cannot find the generated files | The **Logs** show the folder of each session when you click START. By default it is `GenSynth` in your user folder; change it in **Settings → Save & Storage → Output folder**. |
+| I cannot find the generated files | The **Session folder** line at the top of **Logs** shows the folder of the session from the moment you click START; **Open** shows it in your file explorer. By default it is `GenSynth` in your user folder; change it in **Settings → Save & Storage → Output folder**. |
 | The terminal says `gensynth` is not found | On Windows and macOS, follow [Making `gensynth` available in the terminal](#making-gensynth-available-in-the-terminal) and open a new terminal. |
 
 Problems when building from source are covered in [CONTRIBUTING.md](CONTRIBUTING.md#troubleshooting).

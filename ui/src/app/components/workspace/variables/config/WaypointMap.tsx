@@ -16,7 +16,7 @@ import type { BoundaryObstacle, Point3DCoord } from '../../../../types';
 import { centerOf, type FullPoint } from '../../../../core/pointDefaults';
 import { clampToRegion, isInsideRegion, roundIntoRegion } from '../../../../core/routeGeometry';
 import type { MoveCheck, PathIssues } from '../../../../core/waypointPath';
-import { MapAutoFit, OfflineGridOverlay } from './mapShared';
+import { MapAutoFit, ObstacleLayers, OfflineGridOverlay } from './mapShared';
 import { useCanvasPalette } from './canvasPalette';
 import { cachedDivIcon } from './mapIcons';
 import { flaggedSegments } from './waypointCanvasHelpers';
@@ -383,27 +383,7 @@ export const WaypointMap: React.FC<WaypointMapProps> = ({
           />
         )}
 
-        {obstacles
-          .filter((obs) => obs.enabled && obs.points && obs.points.length > 0)
-          .map((obs) => {
-            const positions = obs.points.map((p): [number, number] => [p.x ?? 0, p.y ?? p.x ?? 0]);
-            if (obs.type === 'WALL_SEGMENT' && positions.length >= 2) {
-              return (
-                <LeafletPolyline key={obs.id} positions={positions} pathOptions={{ color: '#f43f5e', weight: 3, dashArray: '4, 4' }} interactive={false} />
-              );
-            }
-            if (positions.length >= 3) {
-              return (
-                <LeafletPolygon
-                  key={obs.id}
-                  positions={positions}
-                  pathOptions={{ color: '#f43f5e', fillColor: '#f43f5e', fillOpacity: 0.22, weight: 1.5 }}
-                  interactive={false}
-                />
-              );
-            }
-            return null;
-          })}
+        <ObstacleLayers obstacles={obstacles} />
 
         {n >= 2 && <LeafletPolyline positions={pathPositions} pathOptions={PATH_STYLE} interactive={false} />}
         {loopPath && n >= 3 && <LeafletPolyline positions={[pathPositions[n - 1], pathPositions[0]]} pathOptions={CLOSING_STYLE} interactive={false} />}

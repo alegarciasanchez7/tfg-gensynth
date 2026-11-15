@@ -22,6 +22,7 @@ export type CoreMessageType =
   | 'METRICS_UPDATE'
   | 'LOG_ENTRY'
   | 'VARIABLE_UPDATE'
+  | 'VARIABLE_CHANGED'
   | 'INITIAL_STATE'
   | 'CONNECTION_STATUS'
   | 'ERROR'
@@ -80,6 +81,8 @@ export interface SystemStatusPayload {
   uptime: number;
   totalMessages: number;
   messagesPerSecond: number;
+  /** Folder of the current (or last) session, kept after STOP; null before the first START. */
+  sessionOutputDir?: string | null;
 }
 
 export interface RollbackReportPayload {
@@ -163,6 +166,8 @@ export interface ConnectorFieldDescriptor {
   /** Help shown next to the label (empty if none). */
   tooltip: string;
   required: boolean;
+  /** Shown in the collapsed "Advanced options" section (plugin API 1.1; absent from older cores). */
+  advanced?: boolean;
   /** String, number or boolean depending on the type; null if none. */
   defaultValue: string | number | boolean | null;
   placeholder: string;
@@ -221,6 +226,7 @@ export type UICommandType =
   | 'UI_LOG'
   | 'UPDATE_SETTINGS'
   | 'UPDATE_OUTPUT_FOLDER'
+  | 'OPEN_OUTPUT_FOLDER'
   | 'CHECK_FOR_UPDATES'
   | 'INSTALL_UPDATE'
   | 'CANCEL_UPDATE';
@@ -415,6 +421,13 @@ export interface UpdateStatusPayload {
   message?: string;
 }
 
+/** Ack of OPEN_OUTPUT_FOLDER: the folder shown in the file explorer. */
+export interface OpenOutputFolderResponsePayload {
+  status?: string;
+  result?: string;
+  path?: string;
+}
+
 /** Ack of UPDATE_OUTPUT_FOLDER. */
 export interface OutputFolderResponsePayload {
   status?: string;
@@ -492,6 +505,7 @@ export interface UICommandPayloadMap {
   UI_LOG: UILogCommandPayload;
   UPDATE_SETTINGS: UpdateSettingsCommandPayload;
   UPDATE_OUTPUT_FOLDER: UpdateOutputFolderCommandPayload;
+  OPEN_OUTPUT_FOLDER: undefined;
   CHECK_FOR_UPDATES: undefined;
   INSTALL_UPDATE: InstallUpdateCommandPayload;
   CANCEL_UPDATE: undefined;

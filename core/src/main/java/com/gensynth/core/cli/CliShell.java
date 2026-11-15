@@ -1,6 +1,7 @@
 package com.gensynth.core.cli;
 
 import com.gensynth.core.api.IDesktopLauncher;
+import com.gensynth.core.api.IPluginInstaller;
 import com.gensynth.core.api.ISimulationManager;
 import com.gensynth.core.model.ProjectReport;
 import com.gensynth.core.model.SimulationSnapshot;
@@ -46,6 +47,9 @@ public class CliShell {
         {"tick <id|all> [value]", "Show or change the tick: 500ms, 2s, 1m or fast"},
         {"metrics [id|all]", "Live totals, one simulation, or every simulation"},
         {"list", "Show the simulations of this session"},
+        {"plugins", "Show the connectors, included and imported"},
+        {"plugins add <file.jar>", "Import a connector plugin (as Import plugin in the app)"},
+        {"plugins remove <id>", "Remove an imported connector plugin"},
         {"clear", "Clear the screen"},
         {"help", "Show this help"},
         {"exit", "Stop every simulation and leave"},
@@ -88,6 +92,17 @@ public class CliShell {
          * @throws IOException if the input cannot be read
          */
         String readLine(String prompt) throws IOException;
+
+        /**
+         * Asks a question and reads the answer, such as the confirmation of {@code plugins add}.
+         *
+         * @param prompt the question
+         * @return the answer, or null at the end of the input
+         * @throws IOException if the input cannot be read
+         */
+        default String readAnswer(String prompt) throws IOException {
+            return readLine(prompt);
+        }
     }
 
     /**
@@ -119,6 +134,8 @@ public class CliShell {
     private final String version;
     private CliTheme theme = CliTheme.noColors();
     private IDesktopLauncher desktop;
+    /** Installs the plugins of {@code plugins add} and {@code plugins remove}; null: listing only. */
+    private IPluginInstaller pluginInstaller;
     /** Without a terminal the lines are printed once, as they are now. */
     private Screen screen;
 
@@ -180,6 +197,16 @@ public class CliShell {
     }
 
     /**
+     * Enables {@code plugins add} and {@code plugins remove}. Without an installer, {@code plugins}
+     * only lists the connectors.
+     *
+     * @param pluginInstaller validates, installs and removes connector plugins
+     */
+    void usePluginInstaller(IPluginInstaller pluginInstaller) {
+        this.pluginInstaller = pluginInstaller;
+    }
+
+    /**
      * Runs the shell until {@code exit} or the end of the input, then stops every simulation
      * that is still running.
      *
@@ -228,6 +255,7 @@ public class CliShell {
                 case "tick" -> tick(args);
                 case "metrics" -> metrics(args);
                 case "list" -> list(args);
+                case "plugins" -> plugins(args);
                 case "clear" -> clear(args);
                 case "help" -> help();
                 case "exit" -> {
@@ -397,6 +425,14 @@ public class CliShell {
         return lines;
     }
 
+    private void plugins(List<String> args) throws IOException {
+        if (!args.isEmpty() && pluginInstaller == null) {
+            throw new IllegalStateException("Plugins cannot be imported or removed here");
+        }
+        new PluginCommands(manager, pluginInstaller, out, theme, raw -> resolvePath(raw, workingDir, userHome),
+            in::readAnswer, () -> manager.stopAll().forEach(this::printStopped)).run(args);
+    }
+
     private void clear(List<String> args) {
         if (!args.isEmpty()) {
             throw new IllegalArgumentException("Usage: clear");
@@ -557,7 +593,7 @@ public class CliShell {
 
     /** Lists every reason why a project cannot start, one per line. */
     private void printCannotStart(ProjectStartException e) {
-        out.println(theme.paint("Error:", CliTheme.ERROR) + " '" + e.getFileName() + "' cannot start:");
+        out.println(theme.error("'" + e.getFileName() + "' cannot start:"));
         for (StartProblem problem : e.getProblems()) {
             out.println("  - " + ProjectSummary.describe(problem));
         }
@@ -568,11 +604,11 @@ public class CliShell {
     }
 
     private void printWarning(String message) {
-        out.println("    " + theme.paint("Warning:", CliTheme.WARNING) + " " + message);
+        out.println(theme.warning(message));
     }
 
     private void printError(String message) {
-        out.println(theme.paint("Error:", CliTheme.ERROR) + " " + message);
+        out.println(theme.error(message));
     }
 
     /**

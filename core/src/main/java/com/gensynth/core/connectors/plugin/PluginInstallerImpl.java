@@ -105,7 +105,7 @@ public class PluginInstallerImpl implements IPluginInstaller {
             Files.write(targetPath, jarBytes);
             logger.info("Plugin installed: {}@{} -> {}", pluginId, newVersion, targetPath);
             return PluginInstallResult.success(
-                    "Plugin '" + validation.getDisplayName() + "' installed successfully. Restarting...",
+                    "Plugin '" + validation.getDisplayName() + "' installed successfully.",
                     pluginId
             );
         } catch (IOException e) {
@@ -156,6 +156,11 @@ public class PluginInstallerImpl implements IPluginInstaller {
         }
     }
 
+    @Override
+    public void confirmLoaded() {
+        clearRollbackMarker();
+    }
+
     private void clearRollbackMarker() {
         try {
             Files.deleteIfExists(pluginsDirectory.resolve(AppPaths.PENDING_INSTALL_MARKER));
@@ -189,7 +194,7 @@ public class PluginInstallerImpl implements IPluginInstaller {
                         Files.delete(jarPath);
                         logger.info("Plugin uninstalled: {}@{} ({})", pluginId, pluginVersion, jarPath.getFileName());
                         return PluginInstallResult.success(
-                                "Plugin '" + info.displayName() + "' removed. Restart required.",
+                                "Plugin '" + info.displayName() + "' removed.",
                                 pluginId
                         );
                     }

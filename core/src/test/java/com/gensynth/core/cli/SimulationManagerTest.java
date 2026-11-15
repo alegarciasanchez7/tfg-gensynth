@@ -33,7 +33,7 @@ public class SimulationManagerTest {
     @Before
     public void setUp() throws Exception {
         outputs = temp.newFolder("outputs").toPath();
-        manager = new SimulationManager(new ConnectorCatalogService(), () -> outputs.resolve("OUTPUT").toString());
+        manager = new SimulationManager(ConnectorCatalogService::new, () -> outputs.resolve("OUTPUT").toString());
     }
 
     @After
@@ -43,6 +43,49 @@ public class SimulationManagerTest {
 
     private Path project(String name) throws Exception {
         return TestProjects.fileProject(temp.getRoot().toPath().resolve(name));
+    }
+
+    @Test
+    public void changingTheConnectorsLoadsThemAgainOnlyWithNothingRunning() throws Exception {
+        Path pluginsDir = temp.newFolder("plugins").toPath();
+        Path shared = temp.newFolder("shared").toPath();
+        List<ConnectorCatalogService> loaded = new ArrayList<>();
+        SimulationManager reloading = new SimulationManager(() -> {
+            ConnectorCatalogService catalog = new ConnectorCatalogService(pluginsDir, shared);
+            loaded.add(catalog);
+            return catalog;
+        }, warnings -> outputs.resolve("RELOAD").toString());
+        try {
+            assertEquals(1, loaded.size());
+            assertTrue(reloading.connectors().stream().noneMatch(c -> c.getPluginId().equals("testconn")));
+
+            byte[] jar = com.gensynth.core.connectors.plugin.TestPluginJars.connector("testconn", "Test", "1.0.0");
+            String result = reloading.changeConnectors(() -> {
+                try {
+                    Files.write(pluginsDir.resolve("testconn-1.0.0.jar"), jar);
+                } catch (java.io.IOException e) {
+                    throw new IllegalStateException(e);
+                }
+                return "written";
+            });
+            assertEquals("written", result);
+            assertEquals("loaded again after the change", 2, loaded.size());
+            assertTrue(reloading.connectors().stream().anyMatch(c -> c.isExternal() && c.getPluginId().equals("testconn")));
+
+            reloading.start(project("running.gsynth"));
+            IllegalStateException running = assertThrows(IllegalStateException.class,
+                () -> reloading.changeConnectors(() -> "never"));
+            assertTrue(running.getMessage(), running.getMessage().contains("Stop the running simulations"));
+            assertEquals(2, loaded.size());
+        } finally {
+            reloading.shutdown();
+        }
+    }
+
+    @Test
+    public void aChangeWithoutImportedPluginsKeepsTheIncludedConnectors() {
+        assertEquals("done", manager.changeConnectors(() -> "done"));
+        assertTrue(manager.connectors().stream().anyMatch(c -> c.getPluginId().equals("rabbitmq")));
     }
 
     @Test
@@ -245,7 +288,7 @@ public class SimulationManagerTest {
     @Test
     public void outputWarningsAreReportedWhenTheSimulationStarts() throws Exception {
         Path base = outputs.resolve("OUTPUT");
-        SimulationManager withWarning = new SimulationManager(new ConnectorCatalogService(), warnings -> {
+        SimulationManager withWarning = new SimulationManager(ConnectorCatalogService::new, warnings -> {
             warnings.accept("The chosen folder cannot be written");
             return base.toString();
         });

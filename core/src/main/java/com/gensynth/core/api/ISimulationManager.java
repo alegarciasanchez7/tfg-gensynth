@@ -1,11 +1,13 @@
 package com.gensynth.core.api;
 
+import com.gensynth.core.connectors.runtime.ConnectorDescriptor;
 import com.gensynth.core.model.ProjectReport;
 import com.gensynth.core.model.SimulationSnapshot;
 import com.gensynth.core.model.TickSettings;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.function.Supplier;
 
 /**
  * Runs project files headlessly for the command line. Each project file gets a session id the
@@ -70,6 +72,24 @@ public interface ISimulationManager {
      * @return every simulation of the session, running or stopped, in id order
      */
     List<SimulationSnapshot> list();
+
+    /**
+     * @return the connectors the next simulations can use (included and imported), sorted by id
+     *         and version
+     */
+    List<ConnectorDescriptor> connectors();
+
+    /**
+     * Changes the installed connector plugins and loads them again, so the next simulations use
+     * them without restarting. The imported plugins are released first, so their JAR files can
+     * be replaced or deleted; they are loaded again even if the change fails.
+     *
+     * @param change installs or removes plugins
+     * @param <T>    what the change returns
+     * @return what the change returned
+     * @throws IllegalStateException if a simulation is running (its connectors are in use)
+     */
+    <T> T changeConnectors(Supplier<T> change);
 
     /**
      * Stops every running simulation and releases the engines. Safe to call more than once.
