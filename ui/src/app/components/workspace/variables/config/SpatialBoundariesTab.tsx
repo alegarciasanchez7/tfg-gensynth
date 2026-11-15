@@ -10,7 +10,12 @@ import { Canvas2DBoundaryEditor } from './Canvas2DBoundaryEditor';
 import { Isometric3DBoundaryEditor } from './Isometric3DBoundaryEditor';
 import { GeospatialMapBoundaryEditor } from './GeospatialMapBoundaryEditor';
 import { BoundaryExpandModal } from './BoundaryExpandModal';
-import { BoundaryObstaclesEditor } from './BoundaryObstaclesEditor';
+import { shapeFittingBounds } from './shape3DBounds';
+import { BoundaryObstaclesEditor, type ObstacleAxisLabels, type ObstacleAxisLimits } from './BoundaryObstaclesEditor';
+
+/** Obstacle points on a map: x is the latitude and y the longitude, as in the Core. */
+const GEO_AXES: ObstacleAxisLabels = { x: 'Latitude', y: 'Longitude' };
+const GEO_LIMITS: ObstacleAxisLimits = { x: 90, y: 180 };
 
 /**
  * Rows of the read-only vertex list, keyed by their coordinates plus how many earlier vertices share
@@ -137,6 +142,8 @@ export const SpatialBoundariesTab: React.FC<SpatialBoundariesTabProps> = ({ conf
 
   const is2D = coordSystem === 'CARTESIAN_2D';
   const isGeo = coordSystem === 'GEOSPATIAL';
+  // Walls and forbidden zones are 2D: the Core checks them on x/y (latitude/longitude on a map)
+  const hasObstacles = is2D || isGeo;
 
   const labelX = isGeo ? 'Latitude' : 'X';
   const labelY = isGeo ? 'Longitude' : 'Y';
@@ -196,7 +203,21 @@ export const SpatialBoundariesTab: React.FC<SpatialBoundariesTabProps> = ({ conf
     if (value === boundValue(key)) return;
 
     const other = boundValue(key.startsWith('min') ? `max${axis}` : `min${axis}`);
-    updateBounds({ [`min${axis}`]: Math.min(value, other), [`max${axis}`]: Math.max(value, other) });
+    const pair: BoundsUpdate = { [`min${axis}`]: Math.min(value, other), [`max${axis}`]: Math.max(value, other) };
+    if (coordSystem !== 'CARTESIAN_3D') {
+      updateBounds(pair);
+      return;
+    }
+    // In 3D the bounds are the box of the shape: typing them resizes the shape to fill it
+    const bounds = {
+      minX: pair.minX ?? minPoint.x,
+      maxX: pair.maxX ?? maxPoint.x,
+      minY: pair.minY ?? minPoint.y,
+      maxY: pair.maxY ?? maxPoint.y,
+      minZ: pair.minZ ?? minPoint.z,
+      maxZ: pair.maxZ ?? maxPoint.z,
+    };
+    updateBounds({ ...pair, ...shapeFittingBounds(config.shape3DType, bounds, config) });
   };
 
   const renderBoundInput = (key: BoundFieldKey, label: string) => {
@@ -312,6 +333,8 @@ export const SpatialBoundariesTab: React.FC<SpatialBoundariesTabProps> = ({ conf
             maxVerticalStep={config.maxVerticalStep ?? 1.0}
             altitudeOscillationSpeed={config.altitudeOscillationSpeed ?? 0.1}
             polygon={polygon}
+            obstacles={config.obstacles || []}
+            selectedObstacleId={tabSelectedObsId}
             height={canvasH}
             onChange={(b) =>
               updateBounds({
@@ -433,15 +456,17 @@ export const SpatialBoundariesTab: React.FC<SpatialBoundariesTabProps> = ({ conf
           )}
         </div>
 
-        {/* 3b. 2D Wall Barriers & Forbidden Interior Obstacle Zones */}
-        {is2D && (
+        {/* 3b. Wall Barriers & Forbidden Interior Obstacle Zones (2D and geospatial) */}
+        {hasObstacles && (
           <BoundaryObstaclesEditor
-          minPoint={minPoint}
-          maxPoint={maxPoint}
+            minPoint={minPoint}
+            maxPoint={maxPoint}
             obstacles={config.obstacles || []}
             selectedObstacleId={tabSelectedObsId}
             onSelectObstacle={setTabSelectedObsId}
             onChange={(newObs) => onChange({ obstacles: newObs })}
+            axisLabels={isGeo ? GEO_AXES : undefined}
+            axisLimits={isGeo ? GEO_LIMITS : undefined}
           />
         )}
 

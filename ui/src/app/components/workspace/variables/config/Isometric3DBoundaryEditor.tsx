@@ -20,6 +20,7 @@ import {
   type FieldKey,
   type HandleType,
 } from './isometric3DHelpers';
+import { footprintPolygon } from './shape3DBounds';
 
 export interface Isometric3DBoundaryEditorProps {
   minX: number;
@@ -177,39 +178,6 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
   const centerX = (minX + maxX) / 2;
   const centerY = (minY + maxY) / 2;
 
-  // Helper to compute polygon for bounds sync
-  const computePolygonForShape = (
-    shape: Shape3DType,
-    w: number,
-    l: number,
-    r: number,
-    elev: number
-  ): Point3DCoord[] => {
-    if (shape === 'cube' || shape === 'pyramid') {
-      const hw = w / 2;
-      const hl = l / 2;
-      return [
-        { x: centerX - hw, y: centerY - hl, z: elev },
-        { x: centerX + hw, y: centerY - hl, z: elev },
-        { x: centerX + hw, y: centerY + hl, z: elev },
-        { x: centerX - hw, y: centerY + hl, z: elev },
-      ];
-    } else {
-      // Cone or Sphere base circle polygon
-      const points: Point3DCoord[] = [];
-      const numPts = 12;
-      for (let i = 0; i < numPts; i++) {
-        const angle = (i / numPts) * Math.PI * 2;
-        points.push({
-          x: Math.round((centerX + Math.cos(angle) * r) * 100) / 100,
-          y: Math.round((centerY + Math.sin(angle) * r) * 100) / 100,
-          z: elev,
-        });
-      }
-      return points;
-    }
-  };
-
   const emitChange = (updates: {
     shape?: Shape3DType;
     width?: number;
@@ -225,7 +193,7 @@ export const Isometric3DBoundaryEditor: React.FC<Isometric3DBoundaryEditorProps>
     const nextRadius = updates.radius ?? radius3D;
     const nextElev = updates.elev ?? baseElevation;
 
-    const computedPoly = computePolygonForShape(nextShape, nextWidth, nextLength, nextRadius, nextElev);
+    const computedPoly = footprintPolygon(nextShape, centerX, centerY, { width: nextWidth, length: nextLength, radius: nextRadius }, nextElev);
     // A sphere rests on its base and spans its diameter; other shapes span their (possibly negative) height
     const topZ = nextShape === 'sphere' ? nextElev + 2 * nextRadius : nextElev + nextHeight;
     const computedMinZ = Math.min(nextElev, topZ);

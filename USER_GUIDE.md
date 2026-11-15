@@ -1349,7 +1349,7 @@ The **Spatial Boundaries** tab sets the region where the point lives.
 | **Boundary Collision Action** | Same as Boundary Behavior. | Clamp |
 | **Outer Envelope Bounding Box (AABB Bounds)** | **Min/Max X, Y, Z** (Latitude, Longitude, Altitude in Geospatial): the box the point lives in. | 0–100 on every axis |
 | **Exact Individual Polygon Vertices** | 2D and Geospatial: the vertices of a custom polygon (3 or more), when you drew one. The box then fits the polygon. In 3D the polygon is not used, and the list only shows the footprint of the drawn shape. | — |
-| Barriers & obstacles | **Obstacle Name**, **Type** (**Wall Line Segment** or **Forbidden Interior Polygon**) and **Add Barrier**; each barrier can be disabled or removed. Walls block Random Walk steps; forbidden polygons are never entered. | — |
+| Barriers & obstacles | 2D and Geospatial. **Obstacle Name**, **Type** (**Wall Line Segment** or **Forbidden Interior Polygon**) and **Add Barrier**; each barrier can be disabled or removed. Click a barrier to select it and type the exact coordinates of its vertices (X/Y, or Latitude/Longitude in Geospatial, kept within ±90° and ±180°). Walls block Random Walk steps; forbidden polygons are never entered. | — |
 | Altitude (Geospatial) | **Independent Altitude Dynamics Pattern**: **Follow Primary XY Pattern**, **Fixed Altitude** (the value typed in its **Fixed Altitude** field), **Random Elevation (Uniform in Range)**, **Continuous Climb & Descent Walk** (**Max Vertical Step (m/tick)**), **Sinusoidal Hover Oscillation** (**Oscillation Speed (rad/tick)**); **Min/Max Altitude**, **Initial Altitude (Seed)**, **Altitude Measurement Unit** (m, ft, km, mi) and **Datum / Altitude Reference** (MSL, AGL, ELLIPSOID), which are written in the output. | Follow XY, m, MSL |
 
 How editing works in every boundary and route editor:
@@ -1383,8 +1383,11 @@ How editing works in every boundary and route editor:
   height is negative (a cube, pyramid or cone then points down). A sphere rests on Min Z: its
   centre is Min Z + radius.
 - The dimensions you never set follow the bounds: width and length are the X and Y spans (100 when
-  a span is 0), the height is Max Z − Min Z and the radius is 50. Once you edit the shape, the
-  Min/Max fields only move it; resize it in the 3D view.
+  a span is 0), the height is Max Z − Min Z and the radius is 50.
+- Typing new **Min/Max** values resizes the shape to the new box: a cube or pyramid fills it, a
+  cone takes the largest circle that fits in X/Y and the whole height, and a sphere the largest
+  ball that fits. A shape pointing down keeps pointing down. You can still fine-tune it in the 3D
+  view.
 - The height handle follows the cursor, and a negative height does not move the base.
 
 ![Geofence editor on the map (Fullscreen)](docs-assets/user-guide/27-point-map.png)
@@ -1402,6 +1405,8 @@ How editing works in every boundary and route editor:
   the region.
 - The marker icons work offline. The altitude fields are applied when you leave them or press
   `Enter`.
+- Enabled walls and forbidden zones are drawn on the map in red, the selected one in amber. They
+  are edited in the barriers list below the map, so clicks on the map still edit the region.
 
 > **Tip:** coordinates are sent with full precision (many decimals). Adjust the bounding box to
 > your scenario: new point variables start with every axis from 0 to 100, and a point without

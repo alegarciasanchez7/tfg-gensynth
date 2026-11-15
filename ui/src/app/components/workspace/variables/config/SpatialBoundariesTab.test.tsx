@@ -42,11 +42,20 @@ describe('SpatialBoundariesTab', () => {
     expect(handleChange).not.toHaveBeenCalled();
     fireEvent.blur(minXInput);
 
-    expect(handleChange).toHaveBeenCalledWith({
+    // In 3D the cube is resized to fill the new box (85 x 100 x 100, centred at x 57.5)
+    expect(handleChange).toHaveBeenCalledWith(expect.objectContaining({
       minPoint: { x: 15, y: 0, z: 0 },
       maxPoint: { x: 100, y: 100, z: 100 },
-      boundaryPolygon: [],
-    });
+      shape3DWidth: 85,
+      shape3DLength: 100,
+      shape3DHeight: 100,
+      boundaryPolygon: [
+        { x: 15, y: 0, z: 0 },
+        { x: 100, y: 0, z: 0 },
+        { x: 100, y: 100, z: 0 },
+        { x: 15, y: 100, z: 0 },
+      ],
+    }));
   });
 
   it('renders Geospatial Map Boundary Editor when coordinateSystem is GEOSPATIAL', () => {
@@ -223,5 +232,82 @@ describe('SpatialBoundariesTab', () => {
     // Duplicate keys would make React log an error
     expect(errorSpy.mock.calls.some((args) => args.join(' ').includes('same key'))).toBe(false);
     errorSpy.mockRestore();
+  });
+
+  describe('walls and forbidden zones', () => {
+    const obstacles = [
+      { id: 'obs_1', name: 'River', type: 'WALL_SEGMENT' as const, points: [{ x: 40.1, y: -3.9 }, { x: 40.9, y: -3.9 }], enabled: true },
+    ];
+
+    it('can be edited on a geospatial point, with latitude and longitude', () => {
+      const handleChange = vi.fn();
+      render(
+        <SpatialBoundariesTab
+          config={{ coordinateSystem: 'GEOSPATIAL', minPoint: { x: 40, y: -4, z: 0 }, maxPoint: { x: 41, y: -3, z: 100 }, obstacles }}
+          onChange={handleChange}
+        />
+      );
+
+      expect(screen.getByText('Walls & Forbidden Interior Obstacle Zones (1)')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: /River/ }));
+      const longitude = screen.getAllByLabelText('Longitude')[1];
+      fireEvent.change(longitude, { target: { value: '-3.2' } });
+      fireEvent.blur(longitude);
+
+      expect(handleChange).toHaveBeenCalledWith({
+        obstacles: [{ ...obstacles[0], points: [{ x: 40.1, y: -3.9 }, { x: 40.9, y: -3.2 }] }],
+      });
+    });
+
+    it('are also edited on a 2D point, and not on a 3D one', () => {
+      const { rerender } = render(
+        <SpatialBoundariesTab config={{ ...defaultConfig, coordinateSystem: 'CARTESIAN_2D', obstacles }} onChange={vi.fn()} />
+      );
+      expect(screen.getByText('Walls & Forbidden Interior Obstacle Zones (1)')).toBeInTheDocument();
+
+      rerender(<SpatialBoundariesTab config={{ ...defaultConfig, obstacles }} onChange={vi.fn()} />);
+      expect(screen.queryByText(/Forbidden Interior Obstacle Zones/)).not.toBeInTheDocument();
+    });
+  });
+
+  describe('3D bounds typed in the Min/Max fields', () => {
+    const commit = (label: RegExp, value: string) => {
+      const input = screen.getByLabelText(label);
+      fireEvent.change(input, { target: { value } });
+      fireEvent.blur(input);
+    };
+
+    it('resize a sphere to the largest ball that fits', () => {
+      const handleChange = vi.fn();
+      render(<SpatialBoundariesTab config={{ ...defaultConfig, shape3DType: 'sphere', shape3DRadius: 50 }} onChange={handleChange} />);
+
+      commit(/Max Z/i, '30');
+
+      expect(handleChange).toHaveBeenCalledWith(
+        expect.objectContaining({ maxPoint: { x: 100, y: 100, z: 30 }, shape3DType: 'sphere', shape3DRadius: 15 })
+      );
+    });
+
+    it('keep the height of an upside-down cone negative', () => {
+      const handleChange = vi.fn();
+      render(<SpatialBoundariesTab config={{ ...defaultConfig, shape3DType: 'cone', shape3DHeight: -100 }} onChange={handleChange} />);
+
+      commit(/Min Z/i, '40');
+
+      expect(handleChange).toHaveBeenCalledWith(
+        expect.objectContaining({ minPoint: { x: 0, y: 0, z: 40 }, shape3DHeight: -60, shape3DRadius: 50 })
+      );
+    });
+
+    it('do not touch the shape of a 2D point', () => {
+      const handleChange = vi.fn();
+      render(<SpatialBoundariesTab config={{ ...defaultConfig, coordinateSystem: 'CARTESIAN_2D' }} onChange={handleChange} />);
+
+      commit(/Max X/i, '50');
+
+      const update = handleChange.mock.calls[0][0];
+      expect(update.maxPoint).toEqual({ x: 50, y: 100, z: 100 });
+      expect(update.shape3DWidth).toBeUndefined();
+    });
   });
 });
