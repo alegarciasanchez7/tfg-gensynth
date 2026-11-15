@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
-import { Eye, EyeOff, FolderOpen, Info, Plug } from 'lucide-react';
+import { ChevronRight, Eye, EyeOff, FolderOpen, Info, Plug } from 'lucide-react';
 import type { ConnectorFieldDescriptor, ConnectorPluginDescriptor } from '../../core/types';
 import { validateConnectorConfig, type ConnectorConfigValues } from '../../core/connectorFields';
 import { CoreCommands } from '../../core/bridge';
 import { isRunningInJCEF } from '../../core/jcef';
 import { Switch } from '../ui/switch';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 
 const INPUT_CLASS =
@@ -19,18 +20,44 @@ interface ConnectorConfigFormProps {
   showAllErrors?: boolean;
 }
 
+/** Whether a value was set to something other than the field default (an empty value is the default). */
+function differsFromDefault(field: ConnectorFieldDescriptor, value: unknown): boolean {
+  if (value === undefined || value === null || (typeof value === 'string' && value.trim() === '')) return false;
+  return toTextValue(value) !== toTextValue(field.defaultValue);
+}
+
 /**
  * Connection section of a flow: renders the fields declared by the connector plugin, in the
- * plugin's order, with their tooltips, required marks and validation errors.
+ * plugin's order, with their tooltips, required marks and validation errors. Fields marked as
+ * advanced go into a collapsed "Advanced options" section, which opens by itself when one of
+ * them has a value of its own or an error.
  */
 export function ConnectorConfigForm({ connector, config, onChange, showAllErrors = false }: Readonly<ConnectorConfigFormProps>) {
   const [touched, setTouched] = useState<Set<string>>(() => new Set());
   const errors = useMemo(() => validateConnectorConfig(connector.fields, config), [connector.fields, config]);
+  const basicFields = connector.fields.filter((field) => !field.advanced);
+  const advancedFields = connector.fields.filter((field) => field.advanced);
+  const [advancedOpen, setAdvancedOpen] = useState(() =>
+    advancedFields.some((field) => differsFromDefault(field, config[field.key])));
 
   const update = (key: string, value: unknown) => {
     setTouched((previous) => new Set(previous).add(key));
     onChange({ ...config, [key]: value });
   };
+
+  const visibleError = (key: string) => (showAllErrors || touched.has(key) ? errors[key] : undefined);
+  // An error inside the section is never hidden
+  const showAdvanced = advancedOpen || advancedFields.some((field) => visibleError(field.key));
+
+  const renderField = (field: ConnectorFieldDescriptor) => (
+    <ConnectorFieldInput
+      key={field.key}
+      field={field}
+      value={config[field.key]}
+      error={visibleError(field.key)}
+      onChange={(value) => update(field.key, value)}
+    />
+  );
 
   return (
     <section className="flex flex-col gap-3" aria-label={`Connection settings for ${connector.displayName}`}>
@@ -48,15 +75,22 @@ export function ConnectorConfigForm({ connector, config, onChange, showAllErrors
           {connector.displayName} does not need any configuration.
         </div>
       ) : (
-        connector.fields.map((field) => (
-          <ConnectorFieldInput
-            key={field.key}
-            field={field}
-            value={config[field.key]}
-            error={showAllErrors || touched.has(field.key) ? errors[field.key] : undefined}
-            onChange={(value) => update(field.key, value)}
-          />
-        ))
+        basicFields.map(renderField)
+      )}
+
+      {advancedFields.length > 0 && (
+        <Collapsible open={showAdvanced} onOpenChange={setAdvancedOpen} className="flex flex-col gap-3">
+          <CollapsibleTrigger
+            className="flex items-center gap-1.5 self-start text-[10px] text-[var(--c-tx4)] hover:text-cyan-500 tracking-wider uppercase transition-colors"
+            style={MONO}
+          >
+            <ChevronRight size={11} className={`transition-transform ${showAdvanced ? 'rotate-90' : ''}`} />
+            Advanced options ({advancedFields.length})
+          </CollapsibleTrigger>
+          <CollapsibleContent className="flex flex-col gap-3 border-l border-[var(--c-br2)] pl-3">
+            {advancedFields.map(renderField)}
+          </CollapsibleContent>
+        </Collapsible>
       )}
     </section>
   );
