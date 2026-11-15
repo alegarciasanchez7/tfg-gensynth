@@ -353,6 +353,15 @@ export function AppProvider({ children, useMockData = false }: Readonly<AppProvi
     [reportCommandError]
   );
 
+  const openOutputFolder = useCallback(
+    () =>
+      settingsActions.openOutputFolder({
+        getConnectionMode: () => stateRef.current.connectionMode,
+        reportCommandError,
+      })(),
+    [reportCommandError]
+  );
+
   // UI / Logs
   const setBottomTab = useCallback((tab: 'logs' | 'stats' | 'preview') => {
     dispatch({ type: 'SET_BOTTOM_TAB', payload: tab });
@@ -393,6 +402,7 @@ export function AppProvider({ children, useMockData = false }: Readonly<AppProvi
       setAutoSaveInterval,
       updateTickSettings,
       setOutputFolder,
+      openOutputFolder,
       checkForUpdates,
       installUpdate,
       cancelUpdate,
@@ -421,7 +431,7 @@ export function AppProvider({ children, useMockData = false }: Readonly<AppProvi
   }), [
     startSystem, stopSystem, toggleSystem, newProjectState, loadProjectState, saveProjectState,
     saveProjectStateAs, discardItemChanges, discardAllChanges, setAutoSave, setAutoSaveInterval,
-    updateTickSettings, setOutputFolder, checkForUpdates, installUpdate, cancelUpdate,
+    updateTickSettings, setOutputFolder, openOutputFolder, checkForUpdates, installUpdate, cancelUpdate,
     setUpdateDialogOpen, skipUpdateVersion, setCheckUpdatesAtStartup, clearUpdateStatus,
     selectGroup, selectFlow, selectVariable, clearVariableSelection, clearSelection,
     toggleGroupExpanded, startGroup, stopGroup, crudActions, getVariables, setFormatTemplate,

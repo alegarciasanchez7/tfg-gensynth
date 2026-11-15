@@ -68,6 +68,12 @@ describe('validateCommand group order fields', () => {
   });
 });
 
+describe('validateCommand OPEN_OUTPUT_FOLDER', () => {
+  it('needs no payload: the Core chooses the folder', () => {
+    expect(validateCommand('OPEN_OUTPUT_FOLDER', undefined)).toBeNull();
+  });
+});
+
 describe('validateCommand update commands', () => {
   it('needs the version the user accepted to install an update', () => {
     expect(validateCommand('CHECK_FOR_UPDATES', undefined)).toBeNull();

@@ -137,4 +137,19 @@ describe('rootReducer', () => {
     });
     expect(next.formatTemplates).toEqual({ other: 'x', f1: '{"a":1}' });
   });
+
+  it('keeps the session folder reported by the Core', () => {
+    const started = rootReducer(initialState, { type: 'SET_SESSION_OUTPUT_DIR', payload: '/out/OUTPUT_FILES_1' });
+    expect(started.sessionOutputDir).toBe('/out/OUTPUT_FILES_1');
+    expect(rootReducer(started, { type: 'SET_SESSION_OUTPUT_DIR', payload: '/out/OUTPUT_FILES_1' })).toBe(started);
+
+    const keptByOlderCore = rootReducer(started, { type: 'LOAD_INITIAL_STATE', payload: { groups: [], variables: [] } });
+    expect(keptByOlderCore.sessionOutputDir).toBe('/out/OUTPUT_FILES_1');
+
+    const reconnected = rootReducer(started, {
+      type: 'LOAD_INITIAL_STATE',
+      payload: { groups: [], variables: [], sessionOutputDir: '/out/OUTPUT_FILES_2' },
+    });
+    expect(reconnected.sessionOutputDir).toBe('/out/OUTPUT_FILES_2');
+  });
 });

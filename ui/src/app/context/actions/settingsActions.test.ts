@@ -5,16 +5,19 @@ import { DEFAULT_PROJECT_SETTINGS } from '../../core/tickSettings';
 
 const updateSettings = vi.fn();
 const updateOutputFolder = vi.fn();
+const openOutputFolderCommand = vi.fn();
 
 vi.mock('../../core/bridge', () => ({
   CoreCommands: {
     updateSettings: (...args: unknown[]) => updateSettings(...args),
     updateOutputFolder: (...args: unknown[]) => updateOutputFolder(...args),
+    openOutputFolder: () => openOutputFolderCommand(),
   },
 }));
-vi.mock('sonner', () => ({ toast: { error: vi.fn() } }));
+vi.mock('sonner', () => ({ toast: { error: vi.fn(), info: vi.fn() } }));
 
-const { updateTickSettings, setOutputFolder } = await import('./settingsActions');
+const { updateTickSettings, setOutputFolder, openOutputFolder } = await import('./settingsActions');
+const { toast } = await import('sonner');
 
 const fastTick: TickSettings = { mode: 'FIXED_RATE', value: 100, unit: 'MILLISECONDS' };
 
@@ -124,5 +127,39 @@ describe('setOutputFolder', () => {
 
     expect(updateOutputFolder).not.toHaveBeenCalled();
     expect(dispatched).toEqual([{ type: 'SET_OUTPUT_FOLDER', payload: defaultFolder }]);
+  });
+});
+
+describe('openOutputFolder', () => {
+  beforeEach(() => {
+    openOutputFolderCommand.mockReset();
+    vi.mocked(toast.error).mockClear();
+  });
+
+  it('asks the Core to show the session folder', async () => {
+    openOutputFolderCommand.mockResolvedValue({ result: 'output_folder_opened', path: '/out' });
+    const reportCommandError = vi.fn();
+
+    await openOutputFolder({ getConnectionMode: () => 'websocket', reportCommandError })();
+
+    expect(openOutputFolderCommand).toHaveBeenCalledTimes(1);
+    expect(reportCommandError).not.toHaveBeenCalled();
+  });
+
+  it('says why the folder cannot be opened', async () => {
+    openOutputFolderCommand.mockRejectedValue({ code: 'UNSUPPORTED_OPERATION', message: 'This computer cannot open folders' });
+    const reportCommandError = vi.fn();
+
+    await openOutputFolder({ getConnectionMode: () => 'websocket', reportCommandError })();
+
+    expect(toast.error).toHaveBeenCalledWith('Could not open the folder: This computer cannot open folders');
+    expect(reportCommandError).toHaveBeenCalled();
+  });
+
+  it('does not reach the Core in mock mode', async () => {
+    await openOutputFolder({ getConnectionMode: () => 'mock', reportCommandError: vi.fn() })();
+
+    expect(openOutputFolderCommand).not.toHaveBeenCalled();
+    expect(toast.info).toHaveBeenCalled();
   });
 });

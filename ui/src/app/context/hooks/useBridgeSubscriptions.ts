@@ -98,6 +98,9 @@ export function useBridgeSubscriptions({
     const unsubscribers = [
       bridge.on('system-status', (status: SystemStatusPayload) => {
         dispatch({ type: 'SET_SYSTEM_STATUS', payload: status.status });
+        if (status.sessionOutputDir !== undefined) {
+          dispatch({ type: 'SET_SESSION_OUTPUT_DIR', payload: status.sessionOutputDir });
+        }
       }),
       
       bridge.on('metrics', (metrics: MetricsPayload) => {
@@ -147,6 +150,7 @@ export function useBridgeSubscriptions({
             connectorCatalog: snapshot.connectorCatalog,
             metrics: snapshot.metrics,
             systemStatus: snapshot.systemStatus.status,
+            sessionOutputDir: snapshot.systemStatus.sessionOutputDir,
             rollbackReport: snapshot.rollbackReport,
           },
         });

@@ -3,6 +3,7 @@ import {
   Circle, AlertTriangle, AlertCircle, Bug, Trash2, Send, ChevronDown
 } from 'lucide-react';
 import type { ConnectorHealthSummary, Group } from '../../../../types';
+import { SessionFolderBar } from './SessionFolderBar';
 
 const levelCfg = {
   info:  { color: 'text-sky-500',     dot: 'bg-sky-500',     label: 'INFO ' },
@@ -42,9 +43,15 @@ interface LogsViewProps {
   groups: Group[];
   /** Empties the log list. */
   onClear?: () => void;
+  /** Folder of the current (or last) session, shown above the logs; null before the first START. */
+  sessionOutputDir?: string | null;
+  /** Shows the session folder in the file explorer. */
+  onOpenSessionFolder?: () => void;
 }
 
-export function LogsView({ entries, connectorHealthSummary, groups, onClear }: Readonly<LogsViewProps>) {
+export function LogsView({
+  entries, connectorHealthSummary, groups, onClear, sessionOutputDir = null, onOpenSessionFolder,
+}: Readonly<LogsViewProps>) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const [filter, setFilter] = useState<string>('all');
@@ -146,6 +153,8 @@ export function LogsView({ entries, connectorHealthSummary, groups, onClear }: R
           )}
         </div>
       </div>
+
+      <SessionFolderBar path={sessionOutputDir} onOpen={onOpenSessionFolder} />
 
       {/* Toolbar */}
       <div className="flex items-center gap-2 px-3 py-1.5 border-b border-[var(--c-br2)] shrink-0">

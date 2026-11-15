@@ -105,7 +105,16 @@ export function BottomPanel({ tab, onTabChange, systemStatus }: Readonly<BottomP
       {/* Content */}
       {!collapsed && (
         <div className="flex-1 overflow-hidden flex">
-          {tab === 'logs'    && <LogsView entries={state.logs} connectorHealthSummary={state.connectorHealthSummary} groups={state.groups ?? []} onClear={actions?.clearLogs} />}
+          {tab === 'logs'    && (
+            <LogsView
+              entries={state.logs}
+              connectorHealthSummary={state.connectorHealthSummary}
+              groups={state.groups ?? []}
+              onClear={actions?.clearLogs}
+              sessionOutputDir={state.sessionOutputDir}
+              onOpenSessionFolder={actions?.openOutputFolder}
+            />
+          )}
           {tab === 'stats'   && <StatsView running={running} />}
           {tab === 'preview' && <PreviewView running={running} />}
         </div>

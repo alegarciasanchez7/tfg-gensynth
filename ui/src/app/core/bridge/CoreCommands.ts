@@ -1,5 +1,5 @@
 import { bridge } from '../bridge';
-import type { OutputFolderResponsePayload, PluginValidationResultPayload, PluginInstallResultPayload, StateFileResponsePayload, UpdateCheckPayload } from '../types';
+import type { OpenOutputFolderResponsePayload, OutputFolderResponsePayload, PluginValidationResultPayload, PluginInstallResultPayload, StateFileResponsePayload, UpdateCheckPayload } from '../types';
 import type { Group, ProjectSettings, Variable } from '../../types';
 
 export const CoreCommands = {
@@ -64,6 +64,8 @@ export const CoreCommands = {
   // Preferences of this computer
   updateOutputFolder: (path: string | null) =>
     bridge.send<'UPDATE_OUTPUT_FOLDER', OutputFolderResponsePayload>('UPDATE_OUTPUT_FOLDER', { path }),
+  /** Shows the session folder (chosen by the Core) in the file explorer. */
+  openOutputFolder: () => bridge.send<'OPEN_OUTPUT_FOLDER', OpenOutputFolderResponsePayload>('OPEN_OUTPUT_FOLDER'),
 
   // Updates: the Core builds every URL; the UI only names the version the user accepted
   checkForUpdates: () => bridge.send<'CHECK_FOR_UPDATES', UpdateCheckPayload>('CHECK_FOR_UPDATES'),

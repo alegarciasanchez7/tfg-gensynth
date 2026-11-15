@@ -496,6 +496,61 @@ public class UiBridgeWebSocketServerTest {
     }
 
     @Test
+    public void systemStatusReportsTheSessionFolderAndKeepsItAfterStop() throws Exception {
+        Path tempDir = Files.createTempDirectory("gensynth-ws-test-session-status-");
+        UiBridgeWebSocketServer server = newServer(tempDir, new JsonStateRepositoryImpl(tempDir.toString()));
+        server.onMessage(null, outputFolderCommand("cmd-folder-status", tempDir.resolve("results")));
+        assertNull(server.systemCommandHandler.buildSystemStatusPayload(null).get("sessionOutputDir"));
+
+        server.onMessage(null, "{\"type\":\"START_SYSTEM\",\"commandId\":\"cmd-start-status\",\"protocolVersion\":\"1.0.0\",\"payload\":{}}");
+        String sessionDir = server.bridgeContext.getCurrentOutputDir();
+        assertNotNull(sessionDir);
+        assertEquals(sessionDir, server.systemCommandHandler.buildSystemStatusPayload(null).get("sessionOutputDir"));
+
+        server.onMessage(null, "{\"type\":\"STOP_SYSTEM\",\"commandId\":\"cmd-stop-status\",\"protocolVersion\":\"1.0.0\",\"payload\":{}}");
+        assertEquals("The folder is still shown after STOP, when the files are looked for",
+            sessionDir, server.systemCommandHandler.buildSystemStatusPayload(null).get("sessionOutputDir"));
+        server.shutdown();
+    }
+
+    @Test
+    public void openOutputFolderShowsTheSessionFolderOrElseTheOutputFolder() throws Exception {
+        Path tempDir = Files.createTempDirectory("gensynth-ws-test-open-folder-");
+        Path chosen = tempDir.resolve("results");
+        UiBridgeWebSocketServer server = newServer(tempDir, new JsonStateRepositoryImpl(tempDir.toString()));
+        List<Path> opened = new java.util.ArrayList<>();
+        server.setFolderOpener(folder -> opened.add(folder));
+        WebSocket mockConn = mock(WebSocket.class);
+        when(mockConn.isOpen()).thenReturn(true);
+        String open = "{\"type\":\"OPEN_OUTPUT_FOLDER\",\"commandId\":\"%s\",\"protocolVersion\":\"1.0.0\",\"payload\":{}}";
+
+        server.onMessage(mockConn, outputFolderCommand("cmd-folder-open", chosen));
+        server.onMessage(null, "{\"type\":\"START_SYSTEM\",\"commandId\":\"cmd-start-open\",\"protocolVersion\":\"1.0.0\",\"payload\":{}}");
+        Path sessionDir = Path.of(server.bridgeContext.getCurrentOutputDir()).toAbsolutePath();
+
+        // No connector wrote a file yet, so the session folder does not exist: the output folder is shown
+        server.onMessage(mockConn, String.format(open, "cmd-open-base"));
+        assertEquals(List.of(chosen.toAbsolutePath()), opened);
+        JsonNode ack = findMessage(sentMessages(mockConn), "CONNECTION_STATUS", "cmd-open-base");
+        assertNotNull("OPEN_OUTPUT_FOLDER should be acknowledged", ack);
+        assertEquals("output_folder_opened", ack.path("payload").path("result").asText());
+        assertEquals(chosen.toAbsolutePath().toString(), ack.path("payload").path("path").asText());
+
+        Files.createDirectories(sessionDir);
+        server.onMessage(mockConn, String.format(open, "cmd-open-session"));
+        assertEquals(sessionDir, opened.get(1));
+
+        server.setFolderOpener(folder -> false);
+        server.onMessage(mockConn, String.format(open, "cmd-open-headless"));
+        JsonNode error = findMessage(sentMessages(mockConn), "ERROR", "cmd-open-headless");
+        assertNotNull("A system without a desktop reports an error", error);
+        assertEquals("UNSUPPORTED_OPERATION", error.path("payload").path("code").asText());
+        assertTrue(error.path("payload").path("message").asText().contains(sessionDir.toString()));
+        server.onMessage(null, "{\"type\":\"STOP_SYSTEM\",\"commandId\":\"cmd-stop-open\",\"protocolVersion\":\"1.0.0\",\"payload\":{}}");
+        server.shutdown();
+    }
+
+    @Test
     public void updateOutputFolderRejectsRelativePathsAndNullRestoresTheDefault() throws Exception {
         Path tempDir = Files.createTempDirectory("gensynth-ws-test-output-folder-reset-");
         UiBridgeWebSocketServer server = newServer(tempDir, new JsonStateRepositoryImpl(tempDir.toString()));

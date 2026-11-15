@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import type { AppAction } from '../reducer';
 import type { OutputFolderInfo, ProjectSettings, TickSettings } from '../../types';
 import { CoreCommands } from '../../core/bridge';
+import { commandErrorMessage } from '../../core/errorMessage';
 import { executeOptimisticUpdate } from '../optimisticUpdateHelper';
 import { describeTickSettings, validateTickSettings } from '../../core/tickSettings';
 
@@ -82,6 +83,30 @@ export function setOutputFolder(ctx: OutputFolderActionContext) {
       ctx.reportCommandError('SETTINGS', `setOutputFolder(${trimmed ?? 'default'})`, error);
       toast.error(`Could not change the output folder: ${error instanceof Error ? error.message : String(error)}`);
       throw error;
+    }
+  };
+}
+
+export interface OpenOutputFolderActionContext {
+  getConnectionMode: () => string;
+  reportCommandError: (source: string, action: string, error: unknown) => void;
+}
+
+/**
+ * Shows the folder of the current session in the file explorer (the output folder when the
+ * session folder does not exist yet). The Core chooses the folder. Not available in mock mode.
+ */
+export function openOutputFolder(ctx: OpenOutputFolderActionContext) {
+  return async (): Promise<void> => {
+    if (ctx.getConnectionMode() === 'mock') {
+      toast.info('Opening folders needs the GenSynth core (not available in mock mode).');
+      return;
+    }
+    try {
+      await CoreCommands.openOutputFolder();
+    } catch (error) {
+      ctx.reportCommandError('SETTINGS', 'openOutputFolder', error);
+      toast.error(`Could not open the folder: ${commandErrorMessage(error, 'unknown error')}`);
     }
   };
 }

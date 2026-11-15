@@ -36,6 +36,8 @@ export interface AppContextValue {
     updateTickSettings: (tick: TickSettings) => Promise<void>;
     /** Changes the folder of the generated files on this computer (null = default one). */
     setOutputFolder: (path: string | null) => Promise<void>;
+    /** Shows the folder of the current session in the file explorer. */
+    openOutputFolder: () => Promise<void>;
 
     // Updates: nothing is downloaded or installed unless the user asks for it
     checkForUpdates: (options: { silent: boolean }) => Promise<UpdateCheckPayload | null>;

@@ -32,4 +32,21 @@ describe('LogsView', () => {
     fireEvent.change(screen.getByLabelText('filter-group'), { target: { value: 'g2' } });
     expect(screen.getByLabelText('filter-flow')).toHaveValue('all');
   });
+
+  it('keeps the session folder visible whatever the filters show', () => {
+    render(
+      <LogsView
+        entries={[{ id: '1', timestamp: '10:00:00', level: 'data', source: 'f1', message: 'a message' }]}
+        connectorHealthSummary={[]}
+        groups={[]}
+        sessionOutputDir="/home/ana/GenSynth/OUTPUT_FILES_1"
+      />
+    );
+
+    fireEvent.click(screen.getByText('only data'));
+    fireEvent.click(screen.getByText('INFO'));
+
+    expect(screen.queryByText('a message')).not.toBeInTheDocument();
+    expect(screen.getByText('/home/ana/GenSynth/OUTPUT_FILES_1')).toBeInTheDocument();
+  });
 });

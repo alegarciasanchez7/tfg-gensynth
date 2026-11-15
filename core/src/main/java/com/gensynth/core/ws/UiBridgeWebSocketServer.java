@@ -6,8 +6,10 @@ import com.gensynth.core.update.GitHubUpdateService;
 import com.fasterxml.jackson.core.StreamReadConstraints;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.gensynth.core.api.IFolderOpener;
 import com.gensynth.core.api.IPluginInstaller;
 import com.gensynth.core.api.ITickClock;
+import com.gensynth.core.desktop.DesktopFolderOpener;
 import com.gensynth.core.clock.TickClockImpl;
 import com.gensynth.core.connectors.plugin.PluginInstallerImpl;
 import com.gensynth.core.connectors.runtime.ConnectorCatalogService;
@@ -97,6 +99,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         "CONVERT_MESSAGE_FORMAT",
         "UPDATE_SETTINGS",
         "UPDATE_OUTPUT_FOLDER",
+        "OPEN_OUTPUT_FOLDER",
         "CHECK_FOR_UPDATES",
         "INSTALL_UPDATE",
         "CANCEL_UPDATE",
@@ -147,6 +150,8 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
 
     final TemplateEngine templateEngine = new TemplateEngine();
     String currentOutputDir = null;
+    /** Shows the session folder in the file explorer (OPEN_OUTPUT_FOLDER); replaceable in tests. */
+    volatile IFolderOpener folderOpener = new DesktopFolderOpener();
     /** Set on the browser thread, read when a project arrives from outside (WebSocket, macOS). */
     final AtomicReference<WebSocket> desktopSocket = new AtomicReference<>();
     /** Project file the desktop window opens once its UI connects (from --open or a double click). */
@@ -183,6 +188,15 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
      */
     public void setWindowActivator(Runnable windowActivator) {
         this.windowActivator.set(windowActivator);
+    }
+
+    /**
+     * Sets how OPEN_OUTPUT_FOLDER shows a folder in the file explorer.
+     *
+     * @param folderOpener the opener to use (tests replace the desktop one)
+     */
+    public void setFolderOpener(IFolderOpener folderOpener) {
+        this.folderOpener = folderOpener;
     }
 
     /**
@@ -597,6 +611,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             case "CONVERT_MESSAGE_FORMAT" -> handleConvertMessageFormat(conn, payload, commandId);
             case "UPDATE_SETTINGS" -> settingsCommandHandler.handleUpdateSettings(conn, payload, commandId);
             case "UPDATE_OUTPUT_FOLDER" -> settingsCommandHandler.handleUpdateOutputFolder(conn, payload, commandId);
+            case "OPEN_OUTPUT_FOLDER" -> settingsCommandHandler.handleOpenOutputFolder(conn, commandId);
             case "CHECK_FOR_UPDATES" -> updateCommandHandler.handleCheckForUpdates(conn, commandId);
             case "INSTALL_UPDATE" -> updateCommandHandler.handleInstallUpdate(conn, payload, commandId);
             case "CANCEL_UPDATE" -> updateCommandHandler.handleCancelUpdate(conn, commandId);

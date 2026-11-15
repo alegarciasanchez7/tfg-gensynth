@@ -318,6 +318,7 @@ function loadInitialState(state: AppState, payload: ActionPayload<'LOAD_INITIAL_
     variables: normalizedVars,
     settings,
     outputFolder: payload.outputFolder ?? state.outputFolder,
+    sessionOutputDir: payload.sessionOutputDir === undefined ? state.sessionOutputDir : payload.sessionOutputDir,
     savedState,
     isDirty,
     dirtyItems,

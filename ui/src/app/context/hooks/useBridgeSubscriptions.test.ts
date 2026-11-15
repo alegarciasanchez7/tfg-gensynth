@@ -2,17 +2,21 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppAction, AppState } from '../reducer';
 
-const { connect, getInitialState, subscribeMetrics } = vi.hoisted(() => ({
+const { connect, getInitialState, subscribeMetrics, handlers } = vi.hoisted(() => ({
   connect: vi.fn(),
   getInitialState: vi.fn(),
   subscribeMetrics: vi.fn(),
+  handlers: new Map<string, (payload: unknown) => void>(),
 }));
 
 vi.mock('../../core/bridge', () => ({
   default: {
     connect: () => connect(),
     getMode: () => 'websocket',
-    on: () => () => undefined,
+    on: (event: string, handler: (payload: unknown) => void) => {
+      handlers.set(event, handler);
+      return () => undefined;
+    },
   },
   CoreCommands: {
     getInitialState: () => getInitialState(),
@@ -64,5 +68,23 @@ describe('useBridgeSubscriptions', () => {
     );
     expect(getInitialState).not.toHaveBeenCalled();
     consoleError.mockRestore();
+  });
+
+  it('keeps the session folder that the Core reports with the system status', async () => {
+    connect.mockResolvedValue(undefined);
+    const dispatch = vi.fn();
+    renderSubscriptions(dispatch);
+    await waitFor(() => expect(handlers.has('system-status')).toBe(true));
+    const systemStatus = handlers.get('system-status')!;
+
+    systemStatus({ status: 'running', uptime: 0, totalMessages: 0, messagesPerSecond: 0, sessionOutputDir: '/out/OUTPUT_FILES_1' });
+    expect(dispatch).toHaveBeenCalledWith({ type: 'SET_SYSTEM_STATUS', payload: 'running' });
+    expect(dispatch).toHaveBeenCalledWith({ type: 'SET_SESSION_OUTPUT_DIR', payload: '/out/OUTPUT_FILES_1' });
+
+    // An older Core does not send the field: the folder shown is kept
+    dispatch.mockClear();
+    systemStatus({ status: 'stopped', uptime: 0, totalMessages: 0, messagesPerSecond: 0 });
+    expect(dispatch).toHaveBeenCalledWith({ type: 'SET_SYSTEM_STATUS', payload: 'stopped' });
+    expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'SET_SESSION_OUTPUT_DIR' }));
   });
 });

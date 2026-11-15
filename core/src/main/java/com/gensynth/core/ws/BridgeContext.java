@@ -1,6 +1,7 @@
 package com.gensynth.core.ws;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.gensynth.core.api.IFolderOpener;
 import com.gensynth.core.api.IPluginInstaller;
 import com.gensynth.core.api.ITickClock;
 import com.gensynth.core.config.AppPaths;
@@ -13,6 +14,7 @@ import com.gensynth.core.persistence.StateRepository;
 import com.gensynth.core.ws.runtime.GroupRuntime;
 import org.java_websocket.WebSocket;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -186,6 +188,32 @@ public class BridgeContext {
      */
     public DevicePreferences getDevicePreferences() {
         return server.devicePreferences;
+    }
+
+    /**
+     * @return how OPEN_OUTPUT_FOLDER shows a folder in the file explorer
+     */
+    public IFolderOpener getFolderOpener() {
+        return server.folderOpener;
+    }
+
+    /**
+     * Finds the folder that OPEN_OUTPUT_FOLDER shows: the folder of the current (or last) session
+     * when it exists, otherwise the folder where each START creates its session folder. The
+     * session folder only exists once a connector writes a file in it.
+     *
+     * @return absolute path of the folder to show; it may not exist yet when it is the base folder
+     */
+    public Path folderToOpen() {
+        String session = server.currentOutputDir;
+        if (session != null) {
+            Path sessionPath = Path.of(session).toAbsolutePath();
+            if (Files.isDirectory(sessionPath)) {
+                return sessionPath;
+            }
+        }
+        return server.devicePreferences.sessionsFolder(AppPaths.current().outputsHome(), warning -> { })
+            .toAbsolutePath();
     }
 
     /**

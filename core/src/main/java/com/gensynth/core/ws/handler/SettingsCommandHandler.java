@@ -20,7 +20,7 @@ import static com.gensynth.core.ws.BridgeProtocol.INVALID_PAYLOAD;
 
 /**
  * Handles project settings commands (UPDATE_SETTINGS), which broadcast SETTINGS_UPDATE, and the
- * preferences of this computer (UPDATE_OUTPUT_FOLDER).
+ * preferences of this computer (UPDATE_OUTPUT_FOLDER, OPEN_OUTPUT_FOLDER).
  */
 public class SettingsCommandHandler implements CommandHandler {
     private static final String FIELD = "field";
@@ -139,6 +139,32 @@ public class SettingsCommandHandler implements CommandHandler {
         Map<String, Object> outputFolder = ctx.outputFolderPayload();
         server.sendAck(conn, commandId, "output_folder_updated", Map.of("outputFolder", outputFolder));
         server.logToBackend("info", "SETTINGS", "Output folder set to " + outputFolder.get("path"), commandId);
+    }
+
+    /**
+     * Handles the OPEN_OUTPUT_FOLDER command: shows the folder of the current session in the file
+     * explorer, or the output folder when the session folder does not exist yet. The folder is
+     * always chosen here, never sent by the UI, so the UI cannot open arbitrary paths.
+     *
+     * @param conn the WebSocket connection
+     * @param commandId the command identifier
+     */
+    public void handleOpenOutputFolder(WebSocket conn, String commandId) {
+        UiBridgeWebSocketServer server = ctx.getServer();
+        Path folder = ctx.folderToOpen();
+        try {
+            Files.createDirectories(folder);
+        } catch (IOException | SecurityException e) {
+            server.sendError(conn, commandId, "INTERNAL_ERROR", "Could not create the folder " + folder + ": " + e.getMessage(),
+                Map.of(FIELD, "path"));
+            return;
+        }
+        if (!ctx.getFolderOpener().open(folder)) {
+            server.sendError(conn, commandId, "UNSUPPORTED_OPERATION",
+                "This computer cannot open folders (no graphical desktop). The folder is " + folder, Map.of("path", folder.toString()));
+            return;
+        }
+        server.sendAck(conn, commandId, "output_folder_opened", Map.of("path", folder.toString()));
     }
 
     private void sendInvalidFolder(WebSocket conn, String commandId, String message) {

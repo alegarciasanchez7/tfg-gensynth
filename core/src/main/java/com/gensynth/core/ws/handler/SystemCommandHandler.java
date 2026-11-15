@@ -474,6 +474,8 @@ public class SystemCommandHandler implements CommandHandler {
         payload.put("uptime", uptime);
         payload.put("totalMessages", ctx.getTotalMessages().get());
         payload.put("messagesPerSecond", ctx.getMessagesPerSecond());
+        // Folder of the current (or last) session; kept after STOP, when the files are looked for.
+        payload.put("sessionOutputDir", ctx.getCurrentOutputDir());
         return payload;
     }
 
