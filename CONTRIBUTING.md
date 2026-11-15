@@ -130,8 +130,11 @@ java -cp "target/classes:target/dependency/*" com.gensynth.core.cli.CliMain     
 
 Its log goes to `core/logs/cli.log`. The installers ship it as a second jpackage launcher,
 `gensynth-cli` (configured in `packaging/launchers/`); the Linux packages link it as
-`/usr/bin/gensynth` with the scripts in `packaging/linux/`, and the Windows installer adds
-`cli\gensynth.cmd` for the `PATH`.
+`/usr/bin/gensynth` with the scripts in `packaging/linux/`, and the Windows installers add
+`cli\gensynth.cmd` and put that folder on the `PATH` (removed on uninstall). They do it with
+`packaging/windows-msi/main.wxs`, the WiX template of jpackage (JDK 21) plus the `PATH` component:
+compare it with the template of the JDK when the JDK that builds the installers changes. The
+release workflow checks it with `.github/scripts/check-windows-install.ps1`.
 
 **CLI edition.** The release also ships the command line on its own (`GenSynth-CLI`): its main
 launcher is `CliMain`, started with `-Dgensynth.edition=cli`, and its files

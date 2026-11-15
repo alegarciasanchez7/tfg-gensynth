@@ -1682,12 +1682,10 @@ A file that is not valid JSON is reported with the line and column where it brea
 ### Making `gensynth` available in the terminal
 
 - **Linux (`.deb` / `.rpm`):** nothing to do; the installer adds `/usr/bin/gensynth`.
-- **Windows:** add the `cli` folder of the installation to your `PATH` once, in PowerShell
-  (change the path if you installed GenSynth elsewhere), then open a new terminal:
-
-  ```powershell
-  [Environment]::SetEnvironmentVariable("Path", [Environment]::GetEnvironmentVariable("Path", "User") + ";C:\Program Files\GenSynth\cli", "User")
-  ```
+- **Windows:** nothing to do either; the installer adds the `cli` folder of the installation
+  (`C:\Program Files\GenSynth\cli` by default) to the `PATH`, and uninstalling removes it. Open
+  a new terminal after installing: the ones already open keep the old `PATH`. Before 0.6.0 this
+  was a manual step; if you did it, the extra entry is harmless.
 
 - **macOS:** open GenSynth once from *Applications* (see the first start note above), then link
   the command in Terminal:
@@ -1705,7 +1703,7 @@ downloads it.
 
 | Your system | Download | `gensynth` in the terminal |
 |---|---|---|
-| Windows 10/11 (64-bit) | `GenSynth-cli-installer-<version>.msi` | Add `C:\Program Files\GenSynth-CLI\cli` to your `PATH`, as above |
+| Windows 10/11 (64-bit) | `GenSynth-cli-installer-<version>.msi` | Added by the installer (`C:\Program Files\GenSynth-CLI\cli` on the `PATH`) |
 | Ubuntu, Debian… | `GenSynth-cli-installer-<version>.deb` (`sudo apt install ./GenSynth-cli-installer-<version>.deb`) | Added by the installer (`/usr/bin/gensynth`) |
 | Fedora, openSUSE, RHEL… | `GenSynth-cli-installer-<version>.rpm` (`sudo dnf install ./GenSynth-cli-installer-<version>.rpm`) | Added by the installer (`/usr/bin/gensynth`) |
 | macOS (Apple Silicon) | `GenSynth-cli-installer-<version>.pkg` (right-click → **Open** the first time, as it is not signed) | Added by the installer (`/usr/local/bin/gensynth`) |
