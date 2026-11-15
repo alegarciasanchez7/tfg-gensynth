@@ -66,6 +66,8 @@ public class ConnectorPluginManagerTest {
         assertEquals(PluginApi.VERSION, descriptor.getApiVersion());
         assertEquals(List.of("host", "port"), descriptor.getFields().stream().map(f -> f.get("key")).toList());
         assertEquals(true, descriptor.getFields().get(0).get("required"));
+        assertEquals(false, descriptor.getFields().get(0).get("advanced"));
+        assertEquals(true, descriptor.getFields().get(1).get("advanced"));
         assertEquals("Where to connect", descriptor.getFields().get(0).get("tooltip"));
         assertEquals(5672L, descriptor.getFields().get(1).get("defaultValue"));
     }
@@ -123,7 +125,7 @@ public class ConnectorPluginManagerTest {
         public List<ConnectorField> fields() {
             return List.of(
                 ConnectorField.text("host").required().tooltip("Where to connect"),
-                ConnectorField.integer("port").defaultValue(5672));
+                ConnectorField.integer("port").defaultValue(5672).advanced());
         }
 
         @Override

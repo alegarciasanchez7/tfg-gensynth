@@ -73,6 +73,7 @@ public final class ConnectorDescriptor {
         payload.put("label", field.getLabel());
         payload.put("tooltip", field.getTooltip());
         payload.put("required", field.isRequired());
+        payload.put("advanced", field.isAdvanced());
         payload.put("defaultValue", field.getDefaultValue());
         payload.put("placeholder", field.getPlaceholder());
         if (field.getMin() != null) payload.put("min", field.getMin());
