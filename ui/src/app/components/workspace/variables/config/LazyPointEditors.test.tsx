@@ -3,6 +3,10 @@ import { describe, it, expect, vi } from 'vitest';
 import { LazyPointConfigPanel, LazySpatialBoundariesTab } from './LazyPointEditors';
 import { PointVariableConfig } from '../../../../types';
 
+// The first load transforms the editor chunk on demand, which can exceed the default 1 s wait
+// while the whole suite runs in parallel
+const CHUNK_LOAD = { timeout: 10_000 };
+
 describe('LazyPointEditors', () => {
   const config: PointVariableConfig = {
     coordinateSystem: 'CARTESIAN_3D',
@@ -17,7 +21,7 @@ describe('LazyPointEditors', () => {
     const handleChange = vi.fn();
     render(<LazyPointConfigPanel config={config} onChange={handleChange} />);
 
-    const stepInput = await screen.findByLabelText(/Max Step Distance/i);
+    const stepInput = await screen.findByLabelText(/Max Step Distance/i, {}, CHUNK_LOAD);
     expect(stepInput).toHaveValue('10.5');
 
     fireEvent.change(stepInput, { target: { value: '5.2' } });
@@ -28,7 +32,7 @@ describe('LazyPointEditors', () => {
     const handleChange = vi.fn();
     render(<LazySpatialBoundariesTab config={config} onChange={handleChange} />);
 
-    fireEvent.click(await screen.findByText(/Bounce \(Rebound\)/i));
+    fireEvent.click(await screen.findByText(/Bounce \(Rebound\)/i, {}, CHUNK_LOAD));
     expect(handleChange).toHaveBeenCalledWith({ boundaryBehavior: 'BOUNCE' });
   });
 
@@ -39,7 +43,7 @@ describe('LazyPointEditors', () => {
     render(<FreshTab config={config} onChange={vi.fn()} />);
 
     expect(screen.getByLabelText(/Loading editor/i)).toBeInTheDocument();
-    expect(await screen.findByText(/Clamp \(Stop\)/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Clamp \(Stop\)/i, {}, CHUNK_LOAD)).toBeInTheDocument();
     expect(screen.queryByLabelText(/Loading editor/i)).not.toBeInTheDocument();
   });
 });
