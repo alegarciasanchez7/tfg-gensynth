@@ -457,7 +457,12 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         }
     }
 
+    /**
+     * Stops every group, the clock and the background tasks, writes any state still waiting to
+     * be saved and closes the server.
+     */
     public void shutdown() {
+        stateCommandHandler.flushPendingState();
         synchronized (stateLock) {
             for (GroupRuntime group : groupsById.values()) {
                 flowCommandHandler.stopGroupInternal(group);
@@ -484,8 +489,19 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         }
     }
 
+    /**
+     * Writes the whole state to the repository now (see {@link StateCommandHandler#persistState()}).
+     */
     public void persistState() {
         stateCommandHandler.persistState();
+    }
+
+    /**
+     * Writes the whole state to the repository a little later, once for several edits in a row
+     * (see {@link StateCommandHandler#schedulePersistState()}).
+     */
+    public void schedulePersistState() {
+        stateCommandHandler.schedulePersistState();
     }
 
     /**
@@ -690,6 +706,16 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             }
         }
         broadcastMessage("VARIABLE_UPDATE", payload);
+    }
+
+    /**
+     * Sends the UI one variable that changed ({@code VARIABLE_CHANGED}), instead of every
+     * variable as {@link #sendVariablesUpdate()} does.
+     *
+     * @param variable the variable as it is now
+     */
+    public void sendVariableChanged(Variable variable) {
+        broadcastMessage("VARIABLE_CHANGED", VariableCommandHandler.normalizeVariablePayloadForUi(variable.toPayload()));
     }
 
     /**

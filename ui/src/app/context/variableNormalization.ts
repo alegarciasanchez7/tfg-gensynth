@@ -36,3 +36,17 @@ export function normalizeVariableFromCore(variable: RawVariable): Variable {
 export function normalizeVariableListFromCore(variables: Variable[]): Variable[] {
   return variables.map(normalizeVariableFromCore);
 }
+
+/**
+ * Applies one variable sent by the Core (`VARIABLE_CHANGED`) to the last list it sent: it
+ * replaces the variable with the same id, or is added at the end when the list does not have it.
+ *
+ * @returns a new list; the other variables keep their objects
+ */
+export function withChangedVariable(variables: readonly Variable[], changed: Variable): Variable[] {
+  const index = variables.findIndex(variable => variable.id === changed.id);
+  if (index < 0) {
+    return [...variables, changed];
+  }
+  return variables.map((variable, i) => (i === index ? changed : variable));
+}

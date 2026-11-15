@@ -16,7 +16,12 @@ import { normalizeProjectSettings } from '../../core/tickSettings';
 import type { AppState, AppAction } from '../reducer';
 import { mapGroupsFromCore } from '../helpers/groupHelpers';
 import { formatConnectorHealthMessage } from '../helpers/connectorHelpers';
-import { normalizeVariableListFromCore } from '../variableNormalization';
+import {
+  normalizeVariableFromCore,
+  normalizeVariableListFromCore,
+  withChangedVariable,
+  type RawVariable,
+} from '../variableNormalization';
 import { reconcileState, applyReconciliation, logReconciliationResults } from '../reconciliationHelper';
 import type { OptimisticManager } from '../optimisticManager';
 
@@ -37,6 +42,8 @@ export function useBridgeSubscriptions({
 }: UseBridgeSubscriptionsProps) {
   const connectionAttempted = useRef(false);
   const lastConnectorHealthSignature = useRef('');
+  /** The last list of variables the Core sent; a VARIABLE_CHANGED only patches it. */
+  const serverVariablesRef = useRef<Variable[] | null>(null);
 
   // Initial connection to the Core
   useEffect(() => {
@@ -95,6 +102,25 @@ export function useBridgeSubscriptions({
   useEffect(() => {
     if (useMockData) return;
 
+    /** Reconciles the local variables (and their pending operations) with the Core's list. */
+    const reconcileVariables = (serverVariables: Variable[]) => {
+      const reconciliation = reconcileState({
+        optimisticManager,
+        localState: { groups: stateRef.current.groups, variables: stateRef.current.variables },
+        serverState: { groups: stateRef.current.groups, variables: serverVariables },
+      });
+
+      if (optimisticManager) {
+        reconciliation.operationsResolved.forEach(op => {
+          if (op.success) {
+            optimisticManager.remove(op.commandId);
+          }
+        });
+      }
+
+      dispatch({ type: 'SET_VARIABLES', payload: reconciliation.variablesToUpdate });
+    };
+
     const unsubscribers = [
       bridge.on('system-status', (status: SystemStatusPayload) => {
         dispatch({ type: 'SET_SYSTEM_STATUS', payload: status.status });
@@ -111,6 +137,7 @@ export function useBridgeSubscriptions({
         const currentState = stateRef.current;
         const serverGroups = mapGroupsFromCore(snapshot.groups, currentState.groups);
         const serverVariables = normalizeVariableListFromCore(snapshot.variables);
+        serverVariablesRef.current = serverVariables;
 
         const reconciliation = reconcileState({
           optimisticManager,
@@ -201,21 +228,16 @@ export function useBridgeSubscriptions({
 
       bridge.on('variables-update', (variables: VariableState[]) => {
         const serverVariables = normalizeVariableListFromCore(variables as unknown as Variable[]);
-        const reconciliation = reconcileState({
-          optimisticManager,
-          localState: { groups: stateRef.current.groups, variables: stateRef.current.variables },
-          serverState: { groups: stateRef.current.groups, variables: serverVariables },
-        });
+        serverVariablesRef.current = serverVariables;
+        reconcileVariables(serverVariables);
+      }),
 
-        if (optimisticManager) {
-          reconciliation.operationsResolved.forEach(op => {
-            if (op.success) {
-              optimisticManager.remove(op.commandId);
-            }
-          });
-        }
-
-        dispatch({ type: 'SET_VARIABLES', payload: reconciliation.variablesToUpdate });
+      // UPDATE_VARIABLE: the Core sends only the variable that changed, applied to its last list
+      bridge.on('variable-changed', (variable: VariableState) => {
+        const changed = normalizeVariableFromCore(variable as unknown as RawVariable);
+        const serverVariables = withChangedVariable(serverVariablesRef.current ?? stateRef.current.variables, changed);
+        serverVariablesRef.current = serverVariables;
+        reconcileVariables(serverVariables);
       }),
       
       bridge.on('settings-update', (settings: ProjectSettings) => {

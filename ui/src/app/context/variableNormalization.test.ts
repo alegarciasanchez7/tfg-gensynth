@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeVariableFromCore, normalizeVariableListFromCore } from './variableNormalization';
+import type { Variable } from '../types';
+import { normalizeVariableFromCore, normalizeVariableListFromCore, withChangedVariable } from './variableNormalization';
 
 describe('normalizeVariableFromCore', () => {
   it('lower-cases the scope and maps the legacy date type to temporal', () => {
@@ -22,5 +23,39 @@ describe('normalizeVariableFromCore', () => {
       { id: 'a', name: 'a', type: 'string', scope: 'group', config: {} },
     ]);
     expect(list[0].scope).toBe('group');
+  });
+});
+
+describe('withChangedVariable', () => {
+  const speed: Variable = { id: 'v1', name: 'speed', type: 'numeric', scope: 'global', config: { min: 0, max: 10 } };
+  const label: Variable = { id: 'v2', name: 'label', type: 'string', scope: 'global', config: {} };
+
+  it('replaces the variable with the same id and keeps the order', () => {
+    const changed: Variable = { ...speed, name: 'speed_kmh', config: { min: 0, max: 120 } };
+
+    const list = withChangedVariable([speed, label], changed);
+
+    expect(list).toEqual([changed, label]);
+  });
+
+  it('keeps the objects of the other variables, so they do not render again', () => {
+    const list = withChangedVariable([speed, label], { ...speed, name: 'renamed' });
+
+    expect(list[1]).toBe(label);
+  });
+
+  it('adds a variable the list does not have at the end', () => {
+    const list = withChangedVariable([speed], label);
+
+    expect(list).toEqual([speed, label]);
+  });
+
+  it('does not change the list it was given', () => {
+    const original = [speed, label];
+
+    withChangedVariable(original, { ...speed, name: 'renamed' });
+
+    expect(original[0]).toBe(speed);
+    expect(original).toHaveLength(2);
   });
 });

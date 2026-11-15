@@ -91,6 +91,8 @@ export interface EventMap {
   'groups-update': GroupState[];
   'flows-metrics': FlowMetricsPayload[];
   'variables-update': VariableState[];
+  /** One variable that changed (UPDATE_VARIABLE), instead of the whole list. */
+  'variable-changed': VariableState;
   'initial-state': InitialStatePayload;
   'connector-catalog': ConnectorPluginDescriptor[];
   'message': CoreMessage;

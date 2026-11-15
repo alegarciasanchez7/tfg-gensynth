@@ -22,6 +22,7 @@ export type CoreMessageType =
   | 'METRICS_UPDATE'
   | 'LOG_ENTRY'
   | 'VARIABLE_UPDATE'
+  | 'VARIABLE_CHANGED'
   | 'INITIAL_STATE'
   | 'CONNECTION_STATUS'
   | 'ERROR'

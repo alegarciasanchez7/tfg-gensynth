@@ -160,6 +160,7 @@ describe('MessageHandler typed events', () => {
       ['LOG_ENTRY', 'log'],
       ['GROUPS_UPDATE', 'groups-update'],
       ['VARIABLE_UPDATE', 'variables-update'],
+      ['VARIABLE_CHANGED', 'variable-changed'],
       ['INITIAL_STATE', 'initial-state'],
       ['TRACE_EVENT', 'trace'],
       ['PLUGIN_VALIDATION_RESULT', 'plugin-validation-result'],
