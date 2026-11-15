@@ -52,7 +52,7 @@ public class CliCompleterTest {
         Files.createFile(workingDir.resolve("docs").resolve("inner.gsynth"));
 
         Path outputs = temp.newFolder("outputs").toPath();
-        manager = new SimulationManager(new ConnectorCatalogService(), () -> outputs.resolve("OUTPUT").toString());
+        manager = new SimulationManager(ConnectorCatalogService::new, () -> outputs.resolve("OUTPUT").toString());
         completer = new CliCompleter(manager, workingDir, home);
         parser.setEscapeChars(null);
     }
@@ -85,7 +85,7 @@ public class CliCompleterTest {
         assertEquals(Set.of("a.gsynth", "notes.txt", "kafka.jar", "docs" + SEP), values("plugins add "));
         assertTrue("only the included connectors: nothing to remove", values("plugins remove ").isEmpty());
         assertTrue(values("plugins list ").isEmpty());
-        assertTrue(CliCompleter.isJar("Kafka.JAR"));
+        assertTrue(PluginCommands.isJar("Kafka.JAR"));
     }
 
     @Test

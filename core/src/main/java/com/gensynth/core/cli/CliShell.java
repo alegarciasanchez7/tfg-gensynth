@@ -429,8 +429,8 @@ public class CliShell {
         if (!args.isEmpty() && pluginInstaller == null) {
             throw new IllegalStateException("Plugins cannot be imported or removed here");
         }
-        new PluginCommands(manager, pluginInstaller, out, workingDir, userHome, in::readAnswer,
-            () -> manager.stopAll().forEach(this::printStopped)).run(args, theme);
+        new PluginCommands(manager, pluginInstaller, out, theme, raw -> resolvePath(raw, workingDir, userHome),
+            in::readAnswer, () -> manager.stopAll().forEach(this::printStopped)).run(args);
     }
 
     private void clear(List<String> args) {
@@ -593,7 +593,7 @@ public class CliShell {
 
     /** Lists every reason why a project cannot start, one per line. */
     private void printCannotStart(ProjectStartException e) {
-        out.println(theme.paint("Error:", CliTheme.ERROR) + " '" + e.getFileName() + "' cannot start:");
+        out.println(theme.error("'" + e.getFileName() + "' cannot start:"));
         for (StartProblem problem : e.getProblems()) {
             out.println("  - " + ProjectSummary.describe(problem));
         }
@@ -604,11 +604,11 @@ public class CliShell {
     }
 
     private void printWarning(String message) {
-        out.println("    " + theme.paint("Warning:", CliTheme.WARNING) + " " + message);
+        out.println(theme.warning(message));
     }
 
     private void printError(String message) {
-        out.println(theme.paint("Error:", CliTheme.ERROR) + " " + message);
+        out.println(theme.error(message));
     }
 
     /**

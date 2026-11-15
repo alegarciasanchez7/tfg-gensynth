@@ -16,6 +16,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.function.Predicate;
 
 /**
  * Tab completion of the shell: command names, the ids of {@code stop}, {@code tick} and
@@ -84,8 +85,9 @@ public class CliCompleter implements Completer {
         if (!commands.contains(command)) {
             return;
         }
+        String typed = line.word().substring(0, line.wordCursor());
         if (line.wordIndex() == 2 && "plugins".equals(command)) {
-            addPluginArgument(line, candidates);
+            addPluginArgument(line.words().get(1), typed, candidates);
             return;
         }
         if (line.wordIndex() == 2 && "tick".equals(command)) {
@@ -98,12 +100,12 @@ public class CliCompleter implements Completer {
         }
         switch (command) {
             case "start" -> {
-                addPaths(line.word().substring(0, line.wordCursor()), candidates, false);
+                addPaths(typed, candidates, projects::isValidProject);
                 addStoppedIds(candidates);
             }
-            case "see" -> addPaths(line.word().substring(0, line.wordCursor()), candidates, false);
+            case "see" -> addPaths(typed, candidates, projects::isValidProject);
             case "edit" -> {
-                addPaths(line.word().substring(0, line.wordCursor()), candidates, false);
+                addPaths(typed, candidates, projects::isValidProject);
                 candidates.add(new Candidate("new", "new", null, "a new project", null, null, true));
             }
             case "stop", "tick" -> addIds(candidates, true, true);
@@ -116,11 +118,10 @@ public class CliCompleter implements Completer {
     }
 
     /** After {@code plugins add}, the JAR files; after {@code plugins remove}, the imported plugins. */
-    private void addPluginArgument(ParsedLine line, List<Candidate> candidates) {
-        String subcommand = line.words().get(1).toLowerCase(Locale.ROOT);
-        if ("add".equals(subcommand)) {
-            addPaths(line.word().substring(0, line.wordCursor()), candidates, true);
-        } else if ("remove".equals(subcommand)) {
+    private void addPluginArgument(String subcommand, String typed, List<Candidate> candidates) {
+        if ("add".equalsIgnoreCase(subcommand)) {
+            addPaths(typed, candidates, entry -> PluginCommands.isJar(String.valueOf(entry.getFileName())));
+        } else if ("remove".equalsIgnoreCase(subcommand)) {
             manager.connectors().stream().filter(ConnectorDescriptor::isExternal).forEach(connector ->
                 candidates.add(new Candidate(connector.getPluginId(), connector.getPluginId(), null,
                     connector.getDisplayName() + " " + connector.getPluginVersion(), null, null, true)));
@@ -159,8 +160,10 @@ public class CliCompleter implements Completer {
      * Adds the entries of the folder in {@code typed} (the text up to its last separator, or the
      * working folder when there is none). Hidden entries are offered only once the name typed
      * starts with a dot, as in a terminal.
+     *
+     * @param highlighted the files shown in green: valid projects, or plugin JARs
      */
-    private void addPaths(String typed, List<Candidate> candidates, boolean jars) {
+    private void addPaths(String typed, List<Candidate> candidates, Predicate<Path> highlighted) {
         int lastSeparator = lastSeparator(typed);
         String folderPart = typed.substring(0, lastSeparator + 1);
         String namePart = typed.substring(lastSeparator + 1);
@@ -180,7 +183,7 @@ public class CliCompleter implements Completer {
         try (DirectoryStream<Path> entries = Files.newDirectoryStream(folder)) {
             for (Path entry : entries) {
                 if (showHidden || !isHidden(entry)) {
-                    addEntry(entry, folderPart, separator, candidates, jars);
+                    addEntry(entry, folderPart, separator, candidates, highlighted);
                 }
             }
         } catch (IOException | SecurityException e) {
@@ -188,17 +191,14 @@ public class CliCompleter implements Completer {
         }
     }
 
-    /**
-     * Adds one entry of a folder: a folder to go on with, or a file (projects, or plugin JARs
-     * when {@code jars} is set, in color).
-     */
-    private void addEntry(Path entry, String folderPart, String separator, List<Candidate> candidates, boolean jars) {
+    /** Adds one entry of a folder: a folder to go on with, or a file (green when highlighted). */
+    private void addEntry(Path entry, String folderPart, String separator, List<Candidate> candidates,
+                          Predicate<Path> highlighted) {
         String name = entry.getFileName().toString();
         if (Files.isDirectory(entry)) {
             addFolder(folderPart + name, name, separator, candidates);
         } else {
-            boolean highlighted = jars ? isJar(name) : projects.isValidProject(entry);
-            String display = highlighted ? theme.paint(name, CliTheme.SUCCESS) : name;
+            String display = highlighted.test(entry) ? theme.paint(name, CliTheme.SUCCESS) : name;
             candidates.add(new Candidate(folderPart + name, display, null, null, null, null, true));
         }
     }
@@ -210,11 +210,6 @@ public class CliCompleter implements Completer {
     private void addFolder(String value, String name, String separator, List<Candidate> candidates) {
         candidates.add(new Candidate(value + separator, theme.paint(name + separator, CliTheme.INFO),
             null, null, separator, null, false));
-    }
-
-    /** A plugin JAR, offered in green like a project file (only {@code plugins add} accepts it). */
-    static boolean isJar(String name) {
-        return name.toLowerCase(Locale.ROOT).endsWith(".jar");
     }
 
     private static int lastSeparator(String typed) {

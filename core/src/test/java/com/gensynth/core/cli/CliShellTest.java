@@ -37,7 +37,7 @@ public class CliShellTest {
         workingDir = temp.newFolder("work").toPath();
         home = temp.newFolder("home").toPath();
         outputs = temp.newFolder("outputs").toPath();
-        manager = new SimulationManager(new ConnectorCatalogService(), () -> outputs.resolve("OUTPUT").toString());
+        manager = new SimulationManager(ConnectorCatalogService::new, () -> outputs.resolve("OUTPUT").toString());
     }
 
     @After

@@ -197,7 +197,8 @@ public class ConnectorPluginManager {
 
     /**
      * Unregisters a plugin and closes its class loader to release the JAR file.
-     * The catalog is not rebuilt because the application restarts after an uninstall.
+     * The catalog is not rebuilt: the caller builds a new manager afterwards (the desktop
+     * application restarts, the command line loads the connectors again).
      *
      * @param pluginId      plugin identifier
      * @param pluginVersion plugin version

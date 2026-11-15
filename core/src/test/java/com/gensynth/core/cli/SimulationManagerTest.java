@@ -33,7 +33,7 @@ public class SimulationManagerTest {
     @Before
     public void setUp() throws Exception {
         outputs = temp.newFolder("outputs").toPath();
-        manager = new SimulationManager(new ConnectorCatalogService(), () -> outputs.resolve("OUTPUT").toString());
+        manager = new SimulationManager(ConnectorCatalogService::new, () -> outputs.resolve("OUTPUT").toString());
     }
 
     @After
@@ -83,7 +83,7 @@ public class SimulationManagerTest {
     }
 
     @Test
-    public void aFixedCatalogRunsTheChangeWithoutLoadingAgain() {
+    public void aChangeWithoutImportedPluginsKeepsTheIncludedConnectors() {
         assertEquals("done", manager.changeConnectors(() -> "done"));
         assertTrue(manager.connectors().stream().anyMatch(c -> c.getPluginId().equals("rabbitmq")));
     }
@@ -288,7 +288,7 @@ public class SimulationManagerTest {
     @Test
     public void outputWarningsAreReportedWhenTheSimulationStarts() throws Exception {
         Path base = outputs.resolve("OUTPUT");
-        SimulationManager withWarning = new SimulationManager(new ConnectorCatalogService(), warnings -> {
+        SimulationManager withWarning = new SimulationManager(ConnectorCatalogService::new, warnings -> {
             warnings.accept("The chosen folder cannot be written");
             return base.toString();
         });

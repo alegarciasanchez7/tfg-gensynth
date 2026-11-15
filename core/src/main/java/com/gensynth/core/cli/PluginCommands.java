@@ -17,6 +17,8 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.function.Function;
+import java.util.function.Supplier;
 
 /**
  * The {@code plugins} command of the shell: lists the connectors, and imports or removes
@@ -31,7 +33,7 @@ final class PluginCommands {
 
     static final String USAGE = "Usage: plugins | plugins add <file.jar> | plugins remove <id>";
 
-    /** Name and version given to the validator when the JAR says nothing else (as the desktop does). */
+    /** Version given to the validator when the JAR says nothing else (as the desktop does). */
     private static final String DEFAULT_VERSION = "1.0.0";
 
     /** Asks the user a question; null at the end of the input. */
@@ -43,8 +45,9 @@ final class PluginCommands {
     private final ISimulationManager manager;
     private final IPluginInstaller installer;
     private final PrintStream out;
-    private final Path workingDir;
-    private final Path userHome;
+    private final CliTheme theme;
+    /** Resolves a path typed by the user ({@code ~} and relative paths). */
+    private final Function<String, Path> paths;
     private final Question question;
     /** Stops every running simulation, printing what each one sent. */
     private final Runnable stopAll;
@@ -53,32 +56,50 @@ final class PluginCommands {
      * @param manager   lists the connectors and loads them again after a change
      * @param installer validates, installs and removes the plugin JARs
      * @param out       where the command writes its output
-     * @param workingDir folder that relative paths are resolved against
-     * @param userHome  folder that {@code ~} expands to
+     * @param theme     colors of the output
+     * @param paths     resolves the path of {@code plugins add}
      * @param question  asks for a confirmation
      * @param stopAll   stops every running simulation, printing each one
      */
-    PluginCommands(ISimulationManager manager, IPluginInstaller installer, PrintStream out, Path workingDir,
-                   Path userHome, Question question, Runnable stopAll) {
+    PluginCommands(ISimulationManager manager, IPluginInstaller installer, PrintStream out, CliTheme theme,
+                   Function<String, Path> paths, Question question, Runnable stopAll) {
         this.manager = manager;
         this.installer = installer;
         this.out = out;
-        this.workingDir = workingDir;
-        this.userHome = userHome;
+        this.theme = theme;
+        this.paths = paths;
         this.question = question;
         this.stopAll = stopAll;
     }
 
     /**
+     * @param name a file name
+     * @return whether it is a JAR file, the only kind {@code plugins add} accepts
+     */
+    static boolean isJar(String name) {
+        return name.toLowerCase(Locale.ROOT).endsWith(".jar");
+    }
+
+    /**
+     * @param manager source of the connectors
+     * @param id      a plugin id, in any case
+     * @return the imported (not included) connector with that id, if any
+     */
+    static Optional<ConnectorDescriptor> imported(ISimulationManager manager, String id) {
+        return manager.connectors().stream()
+            .filter(connector -> connector.isExternal() && connector.getPluginId().equalsIgnoreCase(id))
+            .findFirst();
+    }
+
+    /**
      * Runs {@code plugins}, {@code plugins add <file.jar>} or {@code plugins remove <id>}.
      *
-     * @param args  the words after {@code plugins}
-     * @param theme colors of the output
+     * @param args the words after {@code plugins}
      * @throws IOException if the answer cannot be read
      */
-    void run(List<String> args, CliTheme theme) throws IOException {
+    void run(List<String> args) throws IOException {
         if (args.isEmpty()) {
-            list(theme);
+            list();
             return;
         }
         String subcommand = args.get(0).toLowerCase(Locale.ROOT);
@@ -86,13 +107,13 @@ final class PluginCommands {
             throw new IllegalArgumentException(USAGE);
         }
         if ("add".equals(subcommand)) {
-            add(CliShell.resolvePath(args.get(1), workingDir, userHome), theme);
+            add(paths.apply(args.get(1)));
         } else {
-            remove(args.get(1), theme);
+            remove(args.get(1));
         }
     }
 
-    private void list(CliTheme theme) {
+    private void list() {
         List<ConnectorDescriptor> connectors = manager.connectors();
         int idWidth = Math.max(4, connectors.stream().mapToInt(c -> c.getPluginId().length()).max().orElse(0));
         int nameWidth = Math.max(4, connectors.stream().mapToInt(c -> c.getDisplayName().length()).max().orElse(0));
@@ -106,12 +127,12 @@ final class PluginCommands {
         out.println("Import a plugin with 'plugins add <file.jar>'.");
     }
 
-    private void add(Path jar, CliTheme theme) throws IOException {
+    private void add(Path jar) throws IOException {
         byte[] bytes = readJar(jar);
         String fileName = String.valueOf(jar.getFileName());
         PluginValidationResult validation = installer.validate(bytes, fileName, DEFAULT_VERSION);
         if (!validation.isValid()) {
-            out.println(theme.paint("Error:", CliTheme.ERROR) + " '" + fileName + "' cannot be imported:");
+            out.println(theme.error("'" + fileName + "' cannot be imported:"));
             validation.getErrors().forEach(error -> out.println("  - " + error));
             return;
         }
@@ -124,65 +145,58 @@ final class PluginCommands {
         }
         for (ValidationEntry entry : validation.getLogs()) {
             if (entry.getLevel() == ValidationLevel.WARN) {
-                printWarning(entry.getMessage(), theme);
+                out.println(theme.warning(entry.getMessage()));
             }
         }
-        if (!confirm("Install " + plugin + "?", theme)) {
+        if (!confirm("Install " + plugin + "?") || !apply(() -> installer.install(bytes, fileName, DEFAULT_VERSION))) {
             return;
         }
-
-        stopAll.run();
-        PluginInstallResult result = manager.changeConnectors(
-            () -> installer.install(bytes, fileName, DEFAULT_VERSION));
-        if (!result.isSuccess()) {
-            out.println(theme.paint("Error:", CliTheme.ERROR) + " " + result.getMessage());
-            return;
-        }
-        boolean loaded = manager.connectors().stream().anyMatch(c -> c.isExternal()
-            && c.getPluginId().equals(validation.getPluginId())
-            && c.getPluginVersion().equals(validation.getPluginVersion()));
+        boolean loaded = imported(manager, validation.getPluginId())
+            .filter(connector -> connector.getPluginVersion().equals(validation.getPluginVersion()))
+            .isPresent();
         if (!loaded) {
-            printWarning(plugin + " was copied to the plugins folder but could not be loaded: see the log", theme);
+            out.println(theme.warning(plugin + " was copied to the plugins folder but could not be loaded: see the log"));
             return;
         }
         // Loaded fine: the desktop application must not remove it on its next start
         installer.confirmLoaded();
-        out.println(theme.paint("Installed " + plugin + ".", CliTheme.SUCCESS)
-            + " New simulations can use it now.");
+        out.println(theme.paint("Installed " + plugin + ".", CliTheme.SUCCESS) + " New simulations can use it now.");
         out.println("    Open GenSynth windows load it the next time they start.");
     }
 
-    private void remove(String id, CliTheme theme) throws IOException {
-        List<ConnectorDescriptor> withId = manager.connectors().stream()
-            .filter(c -> c.getPluginId().equalsIgnoreCase(id)).toList();
-        Optional<ConnectorDescriptor> imported = withId.stream().filter(ConnectorDescriptor::isExternal).findFirst();
-        if (imported.isEmpty()) {
-            throw new IllegalArgumentException(withId.isEmpty()
-                ? "There is no imported plugin with id '" + id + "'. Type 'plugins' to see them."
-                : withId.get(0).getDisplayName() + " is included in GenSynth and cannot be removed.");
-        }
-        ConnectorDescriptor connector = imported.get();
+    private void remove(String id) throws IOException {
+        ConnectorDescriptor connector = imported(manager, id).orElseThrow(() -> new IllegalArgumentException(
+            manager.connectors().stream().filter(c -> c.getPluginId().equalsIgnoreCase(id)).findFirst()
+                .map(included -> included.getDisplayName() + " is included in GenSynth and cannot be removed.")
+                .orElse("There is no imported plugin with id '" + id + "'. Type 'plugins' to see them.")));
         String plugin = connector.getDisplayName() + " " + connector.getPluginVersion();
-        if (!confirm("Remove " + plugin + "?", theme)) {
-            return;
-        }
-
-        stopAll.run();
-        PluginInstallResult result = manager.changeConnectors(
-            () -> installer.uninstall(connector.getPluginId(), connector.getPluginVersion()));
-        if (!result.isSuccess()) {
-            out.println(theme.paint("Error:", CliTheme.ERROR) + " " + result.getMessage());
+        if (!confirm("Remove " + plugin + "?")
+            || !apply(() -> installer.uninstall(connector.getPluginId(), connector.getPluginVersion()))) {
             return;
         }
         out.println(theme.paint("Removed " + plugin + ".", CliTheme.SUCCESS));
         out.println("    Open GenSynth windows keep it until they restart.");
     }
 
+    /**
+     * Stops the simulations, changes the plugins and loads the connectors again.
+     *
+     * @return whether the change succeeded (its error is printed otherwise)
+     */
+    private boolean apply(Supplier<PluginInstallResult> change) {
+        stopAll.run();
+        PluginInstallResult result = manager.changeConnectors(change);
+        if (!result.isSuccess()) {
+            out.println(theme.error(result.getMessage()));
+        }
+        return result.isSuccess();
+    }
+
     private static byte[] readJar(Path jar) {
         if (!Files.isRegularFile(jar)) {
             throw new IllegalArgumentException("File not found: " + jar);
         }
-        if (!CliCompleter.isJar(String.valueOf(jar.getFileName()))) {
+        if (!isJar(String.valueOf(jar.getFileName()))) {
             throw new IllegalArgumentException("Only .jar files can be imported: " + jar.getFileName());
         }
         try {
@@ -198,11 +212,11 @@ final class PluginCommands {
      *
      * @return whether the user answered yes
      */
-    private boolean confirm(String action, CliTheme theme) throws IOException {
+    private boolean confirm(String action) throws IOException {
         long running = manager.list().stream().filter(s -> s.status() == SimulationSnapshot.Status.RUNNING).count();
         if (running > 0) {
-            printWarning((running == 1 ? "The running simulation" : "The " + running + " running simulations")
-                + " will be stopped to load the connectors again.", theme);
+            out.println(theme.warning((running == 1 ? "The running simulation" : "The " + running + " running simulations")
+                + " will be stopped to load the connectors again."));
         }
         String answer = question.ask(action + " [y/N] ");
         boolean yes = answer != null && List.of("y", "yes").contains(answer.trim().toLowerCase(Locale.ROOT));
@@ -210,9 +224,5 @@ final class PluginCommands {
             out.println("Cancelled: nothing was changed.");
         }
         return yes;
-    }
-
-    private void printWarning(String message, CliTheme theme) {
-        out.println("    " + theme.paint("Warning:", CliTheme.WARNING) + " " + message);
     }
 }

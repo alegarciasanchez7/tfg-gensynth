@@ -52,7 +52,7 @@ public class TerminalInputTest {
         Files.createFile(workingDir.resolve("documents").resolve("plant").resolve("line.gsynth"));
         Files.createFile(workingDir.resolve("my project.gsynth"));
         Path outputs = temp.newFolder("outputs").toPath();
-        manager = new SimulationManager(new ConnectorCatalogService(), () -> outputs.resolve("OUTPUT").toString());
+        manager = new SimulationManager(ConnectorCatalogService::new, () -> outputs.resolve("OUTPUT").toString());
     }
 
     @After

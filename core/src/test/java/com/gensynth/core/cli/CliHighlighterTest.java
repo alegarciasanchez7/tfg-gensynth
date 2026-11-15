@@ -32,7 +32,7 @@ public class CliHighlighterTest {
         Files.writeString(workingDir.resolve("notes.txt"), "text");
         Files.createDirectories(workingDir.resolve("docs"));
         Path outputs = temp.newFolder("outputs").toPath();
-        manager = new SimulationManager(new ConnectorCatalogService(), () -> outputs.resolve("OUTPUT").toString());
+        manager = new SimulationManager(ConnectorCatalogService::new, () -> outputs.resolve("OUTPUT").toString());
         highlighter = new CliHighlighter(manager, new ProjectFileCheck(), workingDir, temp.getRoot().toPath());
     }
 

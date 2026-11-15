@@ -130,15 +130,13 @@ class CliHighlighter implements Highlighter {
             return CliTheme.INFO;
         }
         if (Files.isRegularFile(path)) {
-            return CliCompleter.isJar(raw) ? CliTheme.SUCCESS : CliTheme.WARNING;
+            return PluginCommands.isJar(raw) ? CliTheme.SUCCESS : CliTheme.WARNING;
         }
         return null;
     }
 
     private AttributedStyle importedPluginStyle(String raw) {
-        boolean imported = manager.connectors().stream()
-            .anyMatch(connector -> connector.isExternal() && connector.getPluginId().equalsIgnoreCase(raw));
-        return imported ? CliTheme.ACCENT : CliTheme.ERROR;
+        return PluginCommands.imported(manager, raw).isPresent() ? CliTheme.ACCENT : CliTheme.ERROR;
     }
 
     /** A path, or the id of a stopped simulation to start again. */

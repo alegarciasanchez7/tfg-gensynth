@@ -45,7 +45,7 @@ public class SimulationManager implements ISimulationManager {
         String newSession(Consumer<String> warnings);
     }
 
-    /** Builds the catalog again after a plugin change; null when the catalog is fixed. */
+    /** Loads the connector plugins: once at the start and again after every plugin change. */
     private final Supplier<ConnectorCatalogService> catalogFactory;
     /** Catalog of the next simulations (the running ones keep the catalog they started with). */
     private volatile ConnectorCatalogService connectorCatalog;
@@ -65,22 +65,13 @@ public class SimulationManager implements ISimulationManager {
     }
 
     /**
-     * @param connectorCatalog connector catalog shared by every simulation (plugins load once)
+     * @param catalogFactory   loads the connector plugins; called now and after every plugin change
+     *                         ({@link #changeConnectors})
      * @param outputDirFactory builds the base output folder of a new session; the simulation id
      *                         is appended so two simulations never share a folder
      */
-    public SimulationManager(ConnectorCatalogService connectorCatalog, Supplier<String> outputDirFactory) {
-        this(connectorCatalog, warnings -> outputDirFactory.get());
-    }
-
-    /**
-     * @param connectorCatalog connector catalog shared by every simulation (plugins load once)
-     * @param outputFolders    opens the output folder of each new simulation
-     */
-    public SimulationManager(ConnectorCatalogService connectorCatalog, OutputFolders outputFolders) {
-        this.catalogFactory = null;
-        this.connectorCatalog = connectorCatalog;
-        this.outputFolders = outputFolders;
+    public SimulationManager(Supplier<ConnectorCatalogService> catalogFactory, Supplier<String> outputDirFactory) {
+        this(catalogFactory, warnings -> outputDirFactory.get());
     }
 
     /**
@@ -202,23 +193,14 @@ public class SimulationManager implements ISimulationManager {
     }
 
     @Override
-    public synchronized List<ConnectorDescriptor> connectors() {
+    public List<ConnectorDescriptor> connectors() {
         return connectorCatalog.listAvailableConnectors();
     }
 
-    /**
-     * {@inheritDoc}
-     * <p>
-     * With a fixed catalog (built without a factory) the change runs but the plugins are not
-     * loaded again.
-     */
     @Override
     public synchronized <T> T changeConnectors(Supplier<T> change) {
         if (simulations.values().stream().anyMatch(HeadlessSimulation::isRunning)) {
             throw new IllegalStateException("Stop the running simulations before changing the connector plugins");
-        }
-        if (catalogFactory == null) {
-            return change.get();
         }
         connectorCatalog.getPluginManager().unloadExternalPlugins();
         try {
