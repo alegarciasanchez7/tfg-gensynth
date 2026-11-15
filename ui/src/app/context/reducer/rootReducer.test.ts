@@ -152,4 +152,37 @@ describe('rootReducer', () => {
     });
     expect(reconnected.sessionOutputDir).toBe('/out/OUTPUT_FILES_2');
   });
+
+  describe('connector editors on load', () => {
+    const catalog = [
+      { pluginId: 'file', displayName: 'File Output', pluginVersion: '1.0.0', description: '', apiVersion: '1.1', external: false, fields: [] },
+      { pluginId: 'rabbitmq', displayName: 'RabbitMQ', pluginVersion: '1.0.0', description: '', apiVersion: '1.1', external: false, fields: [] },
+    ];
+    const rabbitFlow = { ...flow('f1'), technology: 'rabbitmq', connectorConfig: { exchange: 'old' } };
+    const fileFlow = { ...flow('f1'), technology: 'file', connectorConfig: { format: 'json' } };
+    const opened = rootReducer({ ...initialState, connectorCatalog: catalog }, {
+      type: 'LOAD_INITIAL_STATE',
+      payload: { groups: [group('g1', [rabbitFlow])], variables: [], file: { fileName: 'a.gsynth', filePath: null, fileHandle: null } },
+    });
+
+    it('opening another file with the same flow ids shows that file\'s connector', () => {
+      const reopened = rootReducer(opened, {
+        type: 'LOAD_INITIAL_STATE',
+        payload: { groups: [group('g1', [fileFlow])], variables: [], file: { fileName: 'b.gsynth', filePath: null, fileHandle: null } },
+      });
+
+      expect(reopened.flowConnectorSelections.f1.pluginId).toBe('file');
+      expect(reopened.flowConnectorConfigs.f1).toEqual({ format: 'json' });
+    });
+
+    it('a resync of the same project keeps the connector being edited', () => {
+      const edited = { ...opened, flowConnectorConfigs: { f1: { exchange: 'typing…' } } };
+      const resynced = rootReducer(edited, {
+        type: 'LOAD_INITIAL_STATE',
+        payload: { groups: [group('g1', [rabbitFlow])], variables: [] },
+      });
+
+      expect(resynced.flowConnectorConfigs.f1).toEqual({ exchange: 'typing…' });
+    });
+  });
 });

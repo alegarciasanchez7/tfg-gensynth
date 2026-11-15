@@ -282,12 +282,20 @@ function loadInitialState(state: AppState, payload: ActionPayload<'LOAD_INITIAL_
 
   // Inject a critical recovery log if a rollback occurred
   const rollbackLog = rollbackLogEntry(payload.rollbackReport);
+  const file = payload.file;
 
+  // The loaded state becomes the saved baseline when opening a file, on the very first sync
+  // with the Core, or while a load/new-project is being applied. Any other resync (e.g. after
+  // a reconnection) must keep the baseline so unsaved changes are not silently forgotten.
+  const resetsBaseline = Boolean(file) || state.savedState === null || state.baselineSyncPending;
+
+  // A new project rebuilds the connector editors from its flows: a flow with the same id in the
+  // previous project (e.g. another copy of the same file) must not keep that project's settings
   const { selections, configs, healthSummary } = normalizeConnectorState(
     payload.groups,
     connectorCatalog,
-    state.flowConnectorSelections,
-    state.flowConnectorConfigs,
+    resetsBaseline ? {} : state.flowConnectorSelections,
+    resetsBaseline ? {} : state.flowConnectorConfigs,
   );
 
   const newTemplates = templatesWithLoadedFlows(state.formatTemplates, payload.groups);
@@ -299,12 +307,6 @@ function loadInitialState(state: AppState, payload: ActionPayload<'LOAD_INITIAL_
   const normalizedGroups = payload.groups;
   const normalizedVars = normalizeVariableListFromCore(payload.variables);
   const settings = payload.settings ?? state.settings;
-  const file = payload.file;
-
-  // The loaded state becomes the saved baseline when opening a file, on the very first sync
-  // with the Core, or while a load/new-project is being applied. Any other resync (e.g. after
-  // a reconnection) must keep the baseline so unsaved changes are not silently forgotten.
-  const resetsBaseline = Boolean(file) || state.savedState === null || state.baselineSyncPending;
   const savedState = resetsBaseline
     ? { groups: normalizedGroups, variables: normalizedVars, settings }
     : state.savedState;
