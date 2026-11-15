@@ -324,9 +324,7 @@ public class StateCommandHandler implements CommandHandler {
                 logger.debug("Scheduler stopped, writing the state now");
             }
         }
-        synchronized (ctx.getStateLock()) {
-            writeState();
-        }
+        writeStateLocked();
     }
 
     /**
@@ -335,9 +333,14 @@ public class StateCommandHandler implements CommandHandler {
      */
     public void flushPendingState() {
         if (cancelPendingPersist()) {
-            synchronized (ctx.getStateLock()) {
-                writeState();
-            }
+            writeStateLocked();
+        }
+    }
+
+    /** Writes the state while holding the state lock, so it is not changed halfway. */
+    private void writeStateLocked() {
+        synchronized (ctx.getStateLock()) {
+            writeState();
         }
     }
 

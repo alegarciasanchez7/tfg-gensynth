@@ -6,8 +6,8 @@ import org.slf4j.LoggerFactory;
 
 import java.awt.Desktop;
 import java.awt.GraphicsEnvironment;
+import java.io.IOException;
 import java.nio.file.Path;
-import java.util.Locale;
 import java.util.Optional;
 import java.util.function.BiConsumer;
 import java.util.function.BooleanSupplier;
@@ -31,7 +31,7 @@ public class DesktopFolderOpener implements IFolderOpener {
      * Opens folders with the desktop of this computer.
      */
     public DesktopFolderOpener() {
-        this(DesktopFolderOpener::canOpenWithAwt, DesktopFolderOpener::linuxXdgOpen, DesktopFolderOpener::openNow);
+        this(DesktopFolderOpener::canOpenWithAwt, ExternalLinkOpener::linuxXdgOpen, DesktopFolderOpener::openNow);
     }
 
     /**
@@ -65,13 +65,6 @@ public class DesktopFolderOpener implements IFolderOpener {
             && Desktop.getDesktop().isSupported(Desktop.Action.OPEN);
     }
 
-    private static Optional<Path> linuxXdgOpen() {
-        if (!System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("linux")) {
-            return Optional.empty();
-        }
-        return ExternalLinkOpener.findExecutable(ExternalLinkOpener.XDG_OPEN_PATHS);
-    }
-
     private static void openNow(Path folder, Path xdgOpen) {
         try {
             if (xdgOpen == null) {
@@ -79,7 +72,7 @@ public class DesktopFolderOpener implements IFolderOpener {
             } else {
                 new ProcessBuilder(xdgOpen.toString(), folder.toString()).start();
             }
-        } catch (Exception e) {
+        } catch (IOException | RuntimeException e) {
             logger.warn("Could not open the folder {}: {}", folder, e.getMessage());
         }
     }

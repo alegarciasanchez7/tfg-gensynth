@@ -24,6 +24,7 @@ import static com.gensynth.core.ws.BridgeProtocol.INVALID_PAYLOAD;
  */
 public class SettingsCommandHandler implements CommandHandler {
     private static final String FIELD = "field";
+    private static final String PATH = "path";
 
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
@@ -102,7 +103,7 @@ public class SettingsCommandHandler implements CommandHandler {
      */
     public void handleUpdateOutputFolder(WebSocket conn, JsonNode payload, String commandId) {
         UiBridgeWebSocketServer server = ctx.getServer();
-        JsonNode pathNode = payload == null ? null : payload.get("path");
+        JsonNode pathNode = payload == null ? null : payload.get(PATH);
         String rawPath = pathNode == null || pathNode.isNull() ? "" : pathNode.asText("").trim();
 
         Path folder = null;
@@ -132,13 +133,13 @@ public class SettingsCommandHandler implements CommandHandler {
         try {
             ctx.getDevicePreferences().setOutputFolder(folder);
         } catch (IOException e) {
-            server.sendError(conn, commandId, "INTERNAL_ERROR", "Could not save the output folder: " + e.getMessage(), Map.of(FIELD, "path"));
+            server.sendError(conn, commandId, "INTERNAL_ERROR", "Could not save the output folder: " + e.getMessage(), Map.of(FIELD, PATH));
             return;
         }
 
         Map<String, Object> outputFolder = ctx.outputFolderPayload();
         server.sendAck(conn, commandId, "output_folder_updated", Map.of("outputFolder", outputFolder));
-        server.logToBackend("info", "SETTINGS", "Output folder set to " + outputFolder.get("path"), commandId);
+        server.logToBackend("info", "SETTINGS", "Output folder set to " + outputFolder.get(PATH), commandId);
     }
 
     /**
@@ -156,19 +157,19 @@ public class SettingsCommandHandler implements CommandHandler {
             Files.createDirectories(folder);
         } catch (IOException | SecurityException e) {
             server.sendError(conn, commandId, "INTERNAL_ERROR", "Could not create the folder " + folder + ": " + e.getMessage(),
-                Map.of(FIELD, "path"));
+                Map.of(PATH, folder.toString()));
             return;
         }
         if (!ctx.getFolderOpener().open(folder)) {
             server.sendError(conn, commandId, "UNSUPPORTED_OPERATION",
-                "This computer cannot open folders (no graphical desktop). The folder is " + folder, Map.of("path", folder.toString()));
+                "This computer cannot open folders (no graphical desktop). The folder is " + folder, Map.of(PATH, folder.toString()));
             return;
         }
-        server.sendAck(conn, commandId, "output_folder_opened", Map.of("path", folder.toString()));
+        server.sendAck(conn, commandId, "output_folder_opened", Map.of(PATH, folder.toString()));
     }
 
     private void sendInvalidFolder(WebSocket conn, String commandId, String message) {
-        ctx.getServer().sendError(conn, commandId, INVALID_PAYLOAD, message, Map.of(FIELD, "path"));
+        ctx.getServer().sendError(conn, commandId, INVALID_PAYLOAD, message, Map.of(FIELD, PATH));
     }
 
     /**
