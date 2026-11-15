@@ -20,7 +20,7 @@ import {
   type FieldKey,
   type HandleType,
 } from './isometric3DHelpers';
-import { footprintPolygon } from './shape3DBounds';
+import { footprintPolygon, knownShape } from './shape3DBounds';
 
 export interface Isometric3DBoundaryEditorProps {
   minX: number;
@@ -75,7 +75,7 @@ const canvasCursorClass = (draggingHandle: HandleType, hoveredHandle: HandleType
 /** Shape as the Core sees it: the persisted dimensions, or the ones it derives from the bounds when unset. */
 const resolveShape = (p: Pick<Isometric3DBoundaryEditorProps,
   'minX' | 'maxX' | 'minY' | 'maxY' | 'minZ' | 'maxZ' | 'shape3DType' | 'shape3DWidth' | 'shape3DLength' | 'shape3DHeight' | 'shape3DRadius'>) => ({
-  shape: (p.shape3DType === ('custom' as Shape3DType) ? 'cube' : p.shape3DType ?? 'cube') as Shape3DType,
+  shape: knownShape(p.shape3DType),
   width: p.shape3DWidth ?? spanOr100(p.minX, p.maxX),
   length: p.shape3DLength ?? spanOr100(p.minY, p.maxY),
   height: p.shape3DHeight ?? p.maxZ - p.minZ,

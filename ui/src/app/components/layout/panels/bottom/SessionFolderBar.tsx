@@ -8,6 +8,8 @@ interface SessionFolderBarProps {
   onOpen?: () => void;
 }
 
+const MONO = { fontFamily: 'JetBrains Mono, monospace' };
+
 const BUTTON_CLASS =
   'flex items-center gap-1 px-1.5 py-0.5 rounded border border-[var(--c-br1)] text-[10px] text-[var(--c-tx3)] ' +
   'hover:text-[var(--c-tx1)] hover:border-[var(--c-br3)] hover:bg-[var(--c-bg5)] transition-all shrink-0';
@@ -30,7 +32,7 @@ export function SessionFolderBar({ path, onOpen }: Readonly<SessionFolderBarProp
   return (
     <div
       className="flex items-center gap-2 px-3 py-1 border-b border-[var(--c-br2)] bg-[var(--c-bg1)] shrink-0 min-w-0"
-      style={{ fontFamily: 'JetBrains Mono, monospace' }}
+      style={MONO}
     >
       <span className="text-[9px] text-[var(--c-tx5)] tracking-widest uppercase shrink-0">Session folder</span>
       {path ? (

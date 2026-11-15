@@ -6,7 +6,7 @@ import { Input } from '../../../ui/input';
 import { Label } from '../../../ui/label';
 import { centerOf } from '../../../../core/pointDefaults';
 import { randomUUID } from '../../../../core/randomId';
-import { parseVertexCoordinate, vertexRows } from './obstacleVertices';
+import { parseCoordinate, vertexRows } from './obstacleVertices';
 
 /** Names of the two axes of the obstacle points: X/Y, or Latitude/Longitude on a map. */
 export interface ObstacleAxisLabels {
@@ -47,7 +47,7 @@ const VertexCoordinateInput: React.FC<{
 
   const commit = () => {
     if (draft === null) return;
-    const parsed = parseVertexCoordinate(draft, value, limit);
+    const parsed = parseCoordinate(draft, value, limit);
     setDraft(null);
     if (parsed !== null) onCommit(parsed);
   };
@@ -63,7 +63,10 @@ const VertexCoordinateInput: React.FC<{
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') commit();
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            commit();
+          }
         }}
         className="h-7 text-xs font-mono"
       />

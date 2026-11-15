@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react';
-import { MapContainer, TileLayer, Polygon, Polyline, Marker, Rectangle, Tooltip as LeafletTooltip, useMapEvents, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Polygon, Marker, Rectangle, Tooltip as LeafletTooltip, useMapEvents, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 // Bundled by Vite, so vertex markers render without network access
@@ -15,7 +15,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '../../../ui/tooltip';
 import { useBoundaryModalContext } from './boundaryModalContext';
 import { centerOf, defaultBoundsFor } from '../../../../core/pointDefaults';
 import { formatDms } from '../../../../core/dms';
-import { OfflineGridOverlay } from './mapShared';
+import { ObstacleLayers, OfflineGridOverlay } from './mapShared';
 import { useDialogEscape } from './useDialogEscape';
 import { useCanvasPalette } from './canvasPalette';
 
@@ -65,39 +65,6 @@ const POLYGON_STYLE: L.PathOptions = {
   fillOpacity: 0.2,
   weight: 2,
 };
-
-/** Walls and forbidden zones, as in the route editor; the selected one in amber. */
-const obstacleStyle = (selected: boolean): L.PathOptions => ({
-  color: selected ? '#f59e0b' : '#f43f5e',
-  fillColor: selected ? '#f59e0b' : '#f43f5e',
-  fillOpacity: 0.22,
-  weight: selected ? 3 : 2,
-  dashArray: '4, 4',
-});
-
-/**
- * The enabled walls and forbidden zones, drawn over the map. They are edited in the obstacles
- * list, so they never take the clicks of the map (drawing and vertex editing keep working).
- */
-const ObstacleLayers: React.FC<{ obstacles: BoundaryObstacle[]; selectedObstacleId?: string | null }> = ({
-  obstacles,
-  selectedObstacleId,
-}) => (
-  <>
-    {obstacles.map((obs) => {
-      if (!obs.enabled) return null;
-      const positions = obs.points.map((p): [number, number] => [latOf(p), lonOf(p)]);
-      const style = obstacleStyle(obs.id === selectedObstacleId);
-      if (obs.type === 'WALL_SEGMENT' && positions.length >= 2) {
-        return <Polyline key={obs.id} positions={positions} pathOptions={style} interactive={false} />;
-      }
-      if (obs.type === 'OBSTACLE_POLYGON' && positions.length >= 3) {
-        return <Polygon key={obs.id} positions={positions} pathOptions={style} interactive={false} />;
-      }
-      return null;
-    })}
-  </>
-);
 
 const SELECTION_STYLE: L.PathOptions = {
   color: '#f43f5e',

@@ -20,12 +20,6 @@ interface ConnectorConfigFormProps {
   showAllErrors?: boolean;
 }
 
-/** Whether a value was set to something other than the field default (an empty value is the default). */
-function differsFromDefault(field: ConnectorFieldDescriptor, value: unknown): boolean {
-  if (value === undefined || value === null || (typeof value === 'string' && value.trim() === '')) return false;
-  return toTextValue(value) !== toTextValue(field.defaultValue);
-}
-
 /**
  * Connection section of a flow: renders the fields declared by the connector plugin, in the
  * plugin's order, with their tooltips, required marks and validation errors. Fields marked as
@@ -108,6 +102,12 @@ function toTextValue(value: unknown): string {
   if (value === undefined || value === null) return '';
   if (typeof value === 'object') return JSON.stringify(value);
   return String(value as string | number | boolean | bigint);
+}
+
+/** Whether a value was set to something other than the field default (an empty value is the default). */
+function differsFromDefault(field: ConnectorFieldDescriptor, value: unknown): boolean {
+  const text = toTextValue(value);
+  return text.trim() !== '' && text !== toTextValue(field.defaultValue);
 }
 
 function ConnectorFieldInput({ field, value, error, onChange }: Readonly<ConnectorFieldInputProps>) {
