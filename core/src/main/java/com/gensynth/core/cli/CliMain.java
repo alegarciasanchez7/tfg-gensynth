@@ -2,6 +2,7 @@ package com.gensynth.core.cli;
 
 import com.gensynth.core.config.AppEdition;
 import com.gensynth.core.config.AppPaths;
+import com.gensynth.core.connectors.plugin.PluginInstallerImpl;
 import com.gensynth.core.ws.UiBridgeWebSocketServer;
 import org.jline.terminal.Terminal;
 import org.slf4j.LoggerFactory;
@@ -87,6 +88,8 @@ public final class CliMain {
         if (!cliEdition) {
             shell.useDesktop(new DesktopLauncher());
         }
+        // Same plugins folder as the desktop application, in both editions
+        shell.usePluginInstaller(new PluginInstallerImpl(AppPaths.current().pluginsDir(), AppPaths.current().sharedLibsDir()));
         // Ctrl+C while a command runs: stop the simulations so their connectors are closed cleanly
         Runtime.getRuntime().addShutdownHook(new Thread(manager::shutdown, "gensynth-cli-shutdown"));
 

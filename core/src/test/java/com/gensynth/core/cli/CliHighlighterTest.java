@@ -67,6 +67,19 @@ public class CliHighlighterTest {
     }
 
     @Test
+    public void pluginsColorsItsSubcommandAndArgument() throws Exception {
+        Files.createFile(workingDir.resolve("kafka.jar"));
+
+        assertEquals(CliTheme.ACCENT, styleAt("plugins add", 8));
+        assertEquals(CliTheme.ERROR, styleAt("plugins update", 8));
+        assertEquals(CliTheme.SUCCESS, styleAt("plugins add kafka.jar", 12));
+        assertEquals(CliTheme.WARNING, styleAt("plugins add notes.txt", 12));
+        assertEquals(CliTheme.INFO, styleAt("plugins add docs", 12));
+        assertEquals(CliTheme.PLAIN, styleAt("plugins add kaf", 12));
+        assertEquals("only imported plugins can be removed", CliTheme.ERROR, styleAt("plugins remove rabbitmq", 15));
+    }
+
+    @Test
     public void stopIdsAreVioletWhenRunning() throws Exception {
         assertEquals(CliTheme.ERROR, styleAt("stop 1", 5));
         manager.start(workingDir.resolve("good.gsynth"));

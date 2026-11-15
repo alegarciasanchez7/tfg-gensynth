@@ -77,8 +77,10 @@ class CliHighlighter implements Highlighter {
             String name = command.text().toLowerCase(Locale.ROOT);
             boolean known = commands.contains(name);
             paint(styles, command, known ? CliTheme.PRIMARY.bold() : CliTheme.ERROR);
-            // The argument is colored while it is the last word (tick also takes a value after it)
-            if (known && words.size() == 2 || words.size() == 3 && "tick".equals(name)) {
+            if (known && "plugins".equals(name)) {
+                paintPluginsArguments(styles, words);
+            } else if (known && words.size() == 2 || words.size() == 3 && "tick".equals(name)) {
+                // The argument is colored while it is the last word (tick also takes a value after it)
                 String argument = words.get(1).text();
                 AttributedStyle style = switch (name) {
                     case "start" -> startStyle(argument);
@@ -96,6 +98,47 @@ class CliHighlighter implements Highlighter {
             line.append(String.valueOf(buffer.charAt(i)), styles[i] != null ? styles[i] : CliTheme.PLAIN);
         }
         return line.toAttributedString();
+    }
+
+    /**
+     * After {@code plugins}: the subcommand in magenta (red if unknown); then a JAR file of
+     * {@code add} in green, or the id of an imported plugin of {@code remove} in magenta.
+     */
+    private void paintPluginsArguments(AttributedStyle[] styles, List<Word> words) {
+        if (words.size() < 2) {
+            return;
+        }
+        String subcommand = words.get(1).text().toLowerCase(Locale.ROOT);
+        boolean known = PluginCommands.SUBCOMMANDS.contains(subcommand);
+        paint(styles, words.get(1), known ? CliTheme.ACCENT : CliTheme.ERROR);
+        if (!known || words.size() != 3) {
+            return;
+        }
+        String argument = words.get(2).text();
+        AttributedStyle style = "add".equals(subcommand) ? jarStyle(argument) : importedPluginStyle(argument);
+        paint(styles, words.get(2), style);
+    }
+
+    private AttributedStyle jarStyle(String raw) {
+        Path path;
+        try {
+            path = CliShell.resolvePath(raw, workingDir, userHome);
+        } catch (IllegalArgumentException e) {
+            return CliTheme.ERROR;
+        }
+        if (Files.isDirectory(path)) {
+            return CliTheme.INFO;
+        }
+        if (Files.isRegularFile(path)) {
+            return CliCompleter.isJar(raw) ? CliTheme.SUCCESS : CliTheme.WARNING;
+        }
+        return null;
+    }
+
+    private AttributedStyle importedPluginStyle(String raw) {
+        boolean imported = manager.connectors().stream()
+            .anyMatch(connector -> connector.isExternal() && connector.getPluginId().equalsIgnoreCase(raw));
+        return imported ? CliTheme.ACCENT : CliTheme.ERROR;
     }
 
     /** A path, or the id of a stopped simulation to start again. */

@@ -85,6 +85,24 @@ public class ConnectorPluginManagerTest {
     }
 
     @Test
+    public void unloadingTheExternalPluginsKeepsTheIncludedOnes() throws Exception {
+        Path dir = Files.createTempDirectory("gensynth-plugins-");
+        Files.write(dir.resolve("testconn-1.0.0.jar"),
+            com.gensynth.core.connectors.plugin.TestPluginJars.connector("testconn", "Test", "1.0.0"));
+        ConnectorPluginManager manager = new ConnectorPluginManager(dir);
+        assertTrue(manager.isExternalPlugin("testconn", "1.0.0"));
+
+        manager.unloadExternalPlugins();
+
+        assertTrue(manager.findDescriptor("testconn", "1.0.0").isEmpty());
+        assertFalse(manager.isExternalPlugin("testconn", "1.0.0"));
+        ConnectorDescriptor rabbitMq = manager.findDescriptor("rabbitmq", "1.0.0").orElseThrow();
+        assertTrue("the included ones stay usable", manager.findPlugin(rabbitMq).isPresent());
+        // The class loader is closed, so the JAR can be deleted (Windows keeps open JARs locked)
+        Files.delete(dir.resolve("testconn-1.0.0.jar"));
+    }
+
+    @Test
     public void legacyPluginJarsAreDetected() throws Exception {
         Path dir = Files.createTempDirectory("gensynth-plugins-");
         Path legacy = jarWith(dir.resolve("legacy.jar"), ConnectorPluginManager.LEGACY_SERVICE_FILE);

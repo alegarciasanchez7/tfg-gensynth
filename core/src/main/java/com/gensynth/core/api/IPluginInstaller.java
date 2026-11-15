@@ -61,4 +61,12 @@ public interface IPluginInstaller {
      * @return list of installed plugin metadata
      */
     List<InstalledPluginInfo> listInstalledPlugins();
+
+    /**
+     * Confirms that the last installed plugin loaded correctly, so the next start of the desktop
+     * application does not take it for the cause of a failed start and remove it. The desktop
+     * application confirms it itself once it has started; the command line, which loads the
+     * plugins again without restarting, calls this after checking the plugin loaded.
+     */
+    void confirmLoaded();
 }

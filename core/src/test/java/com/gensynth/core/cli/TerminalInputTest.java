@@ -86,6 +86,16 @@ public class TerminalInputTest {
     }
 
     @Test
+    public void answersAreReadWithoutCompletionOrTheCommandHistory() throws Exception {
+        try (TerminalInput input = type("li" + TAB + ENTER + "y" + TAB + ENTER)) {
+            assertEquals("list ", input.readLine(CliShell.PROMPT));
+            // Tab completes nothing in an answer, and the end of the input reads as no answer
+            assertEquals("y", input.readAnswer("Install? [y/N] ").trim());
+            assertNull(input.readAnswer("Install? [y/N] "));
+        }
+    }
+
+    @Test
     public void completedNamesWithSpacesAreQuoted() throws Exception {
         try (TerminalInput input = type("start my" + TAB + ENTER)) {
             String line = input.readLine(CliShell.PROMPT);

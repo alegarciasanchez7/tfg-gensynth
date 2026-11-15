@@ -74,8 +74,18 @@ public class CliCompleterTest {
 
     @Test
     public void firstWordCompletesCommands() {
-        assertEquals(Set.of("start", "see", "edit", "stop", "tick", "metrics", "list", "clear", "help", "exit"), values(""));
-        assertEquals(Set.of("start", "see", "edit", "stop", "tick", "metrics", "list", "clear", "help", "exit"), values("st"));
+        assertEquals(Set.of("start", "see", "edit", "stop", "tick", "metrics", "list", "plugins", "clear", "help", "exit"), values(""));
+        assertEquals(Set.of("start", "see", "edit", "stop", "tick", "metrics", "list", "plugins", "clear", "help", "exit"), values("st"));
+    }
+
+    @Test
+    public void pluginsCompletesItsSubcommandsTheJarsAndTheImportedPlugins() throws Exception {
+        assertEquals(Set.of("add", "remove"), values("plugins "));
+        Files.createFile(workingDir.resolve("kafka.jar"));
+        assertEquals(Set.of("a.gsynth", "notes.txt", "kafka.jar", "docs" + SEP), values("plugins add "));
+        assertTrue("only the included connectors: nothing to remove", values("plugins remove ").isEmpty());
+        assertTrue(values("plugins list ").isEmpty());
+        assertTrue(CliCompleter.isJar("Kafka.JAR"));
     }
 
     @Test
@@ -123,7 +133,7 @@ public class CliCompleterTest {
         completer = new CliCompleter(manager, workingDir, temp.getRoot().toPath().resolve("home"), CliTheme.noColors(), new ProjectFileCheck(),
             CliShell.commands(false));
 
-        assertEquals(Set.of("start", "see", "stop", "tick", "metrics", "list", "clear", "help", "exit"), values(""));
+        assertEquals(Set.of("start", "see", "stop", "tick", "metrics", "list", "plugins", "clear", "help", "exit"), values(""));
         assertTrue(values("edit ").isEmpty());
         assertFalse(values("see ").isEmpty());
     }

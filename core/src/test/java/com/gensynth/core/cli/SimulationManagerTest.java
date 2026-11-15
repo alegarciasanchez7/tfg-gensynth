@@ -46,6 +46,49 @@ public class SimulationManagerTest {
     }
 
     @Test
+    public void changingTheConnectorsLoadsThemAgainOnlyWithNothingRunning() throws Exception {
+        Path pluginsDir = temp.newFolder("plugins").toPath();
+        Path shared = temp.newFolder("shared").toPath();
+        List<ConnectorCatalogService> loaded = new ArrayList<>();
+        SimulationManager reloading = new SimulationManager(() -> {
+            ConnectorCatalogService catalog = new ConnectorCatalogService(pluginsDir, shared);
+            loaded.add(catalog);
+            return catalog;
+        }, warnings -> outputs.resolve("RELOAD").toString());
+        try {
+            assertEquals(1, loaded.size());
+            assertTrue(reloading.connectors().stream().noneMatch(c -> c.getPluginId().equals("testconn")));
+
+            byte[] jar = com.gensynth.core.connectors.plugin.TestPluginJars.connector("testconn", "Test", "1.0.0");
+            String result = reloading.changeConnectors(() -> {
+                try {
+                    Files.write(pluginsDir.resolve("testconn-1.0.0.jar"), jar);
+                } catch (java.io.IOException e) {
+                    throw new IllegalStateException(e);
+                }
+                return "written";
+            });
+            assertEquals("written", result);
+            assertEquals("loaded again after the change", 2, loaded.size());
+            assertTrue(reloading.connectors().stream().anyMatch(c -> c.isExternal() && c.getPluginId().equals("testconn")));
+
+            reloading.start(project("running.gsynth"));
+            IllegalStateException running = assertThrows(IllegalStateException.class,
+                () -> reloading.changeConnectors(() -> "never"));
+            assertTrue(running.getMessage(), running.getMessage().contains("Stop the running simulations"));
+            assertEquals(2, loaded.size());
+        } finally {
+            reloading.shutdown();
+        }
+    }
+
+    @Test
+    public void aFixedCatalogRunsTheChangeWithoutLoadingAgain() {
+        assertEquals("done", manager.changeConnectors(() -> "done"));
+        assertTrue(manager.connectors().stream().anyMatch(c -> c.getPluginId().equals("rabbitmq")));
+    }
+
+    @Test
     public void idsFollowTheStartOrderFromOne() throws Exception {
         assertEquals(1, manager.start(project("a.gsynth")).id());
         assertEquals(2, manager.start(project("b.gsynth")).id());

@@ -6,6 +6,7 @@ import com.gensynth.core.api.ISimulationManager;
 import com.gensynth.core.config.AppPaths;
 import com.gensynth.core.config.DevicePreferences;
 import com.gensynth.core.connectors.runtime.ConnectorCatalogService;
+import com.gensynth.core.connectors.runtime.ConnectorDescriptor;
 import com.gensynth.core.model.ProjectReport;
 import com.gensynth.core.model.SimulationSnapshot;
 import com.gensynth.core.model.TickSettings;
@@ -44,7 +45,10 @@ public class SimulationManager implements ISimulationManager {
         String newSession(Consumer<String> warnings);
     }
 
-    private final ConnectorCatalogService connectorCatalog;
+    /** Builds the catalog again after a plugin change; null when the catalog is fixed. */
+    private final Supplier<ConnectorCatalogService> catalogFactory;
+    /** Catalog of the next simulations (the running ones keep the catalog they started with). */
+    private volatile ConnectorCatalogService connectorCatalog;
     private final OutputFolders outputFolders;
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private final Map<Integer, HeadlessSimulation> simulations = new LinkedHashMap<>();
@@ -55,7 +59,7 @@ public class SimulationManager implements ISimulationManager {
      * application (Settings → Save &amp; Storage), or the default one of {@link AppPaths}.
      */
     public SimulationManager() {
-        this(new ConnectorCatalogService(AppPaths.current().pluginsDir(), AppPaths.current().sharedLibsDir()),
+        this(() -> new ConnectorCatalogService(AppPaths.current().pluginsDir(), AppPaths.current().sharedLibsDir()),
              preferredOutputFolders(AppPaths.current().stateDir().resolve(DevicePreferences.FILE_NAME),
                  AppPaths.current().outputsHome()));
     }
@@ -74,7 +78,19 @@ public class SimulationManager implements ISimulationManager {
      * @param outputFolders    opens the output folder of each new simulation
      */
     public SimulationManager(ConnectorCatalogService connectorCatalog, OutputFolders outputFolders) {
+        this.catalogFactory = null;
         this.connectorCatalog = connectorCatalog;
+        this.outputFolders = outputFolders;
+    }
+
+    /**
+     * @param catalogFactory loads the connector plugins; called now and after every plugin change
+     *                       ({@link #changeConnectors})
+     * @param outputFolders  opens the output folder of each new simulation
+     */
+    public SimulationManager(Supplier<ConnectorCatalogService> catalogFactory, OutputFolders outputFolders) {
+        this.catalogFactory = catalogFactory;
+        this.connectorCatalog = catalogFactory.get();
         this.outputFolders = outputFolders;
     }
 
@@ -126,16 +142,17 @@ public class SimulationManager implements ISimulationManager {
     public ProjectReport inspect(Path configFile) {
         Path file = resolveProjectFile(configFile);
         JsonNode project = readProject(file);
+        ConnectorCatalogService catalog = connectorCatalog;
         Map<String, String> connectors = new HashMap<>();
         for (JsonNode group : project.path("groups")) {
             for (JsonNode flow : group.path("flows")) {
                 // Same default as FlowDefinition.fromPayload
                 String technology = flow.path("technology").asText("rabbitmq");
-                connectorCatalog.findLatestConnector(technology).ifPresent(descriptor ->
+                catalog.findLatestConnector(technology).ifPresent(descriptor ->
                     connectors.put(technology, descriptor.getDisplayName() + " " + descriptor.getPluginVersion()));
             }
         }
-        return new ProjectReport(file, project, HeadlessSimulation.check(project, connectorCatalog), connectors);
+        return new ProjectReport(file, project, HeadlessSimulation.check(project, catalog), connectors);
     }
 
     @Override
@@ -182,6 +199,33 @@ public class SimulationManager implements ISimulationManager {
             snapshots.add(simulation.snapshot());
         }
         return snapshots;
+    }
+
+    @Override
+    public synchronized List<ConnectorDescriptor> connectors() {
+        return connectorCatalog.listAvailableConnectors();
+    }
+
+    /**
+     * {@inheritDoc}
+     * <p>
+     * With a fixed catalog (built without a factory) the change runs but the plugins are not
+     * loaded again.
+     */
+    @Override
+    public synchronized <T> T changeConnectors(Supplier<T> change) {
+        if (simulations.values().stream().anyMatch(HeadlessSimulation::isRunning)) {
+            throw new IllegalStateException("Stop the running simulations before changing the connector plugins");
+        }
+        if (catalogFactory == null) {
+            return change.get();
+        }
+        connectorCatalog.getPluginManager().unloadExternalPlugins();
+        try {
+            return change.get();
+        } finally {
+            connectorCatalog = catalogFactory.get();
+        }
     }
 
     @Override
