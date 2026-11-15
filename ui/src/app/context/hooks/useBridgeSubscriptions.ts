@@ -102,21 +102,17 @@ export function useBridgeSubscriptions({
   useEffect(() => {
     if (useMockData) return;
 
-    /** Reconciles the local variables (and their pending operations) with the Core's list. */
+    /**
+     * Reconciles the local variables (and their pending operations) with the Core's list, as
+     * the initial state does: confirmed operations are removed and expired ones marked failed.
+     */
     const reconcileVariables = (serverVariables: Variable[]) => {
       const reconciliation = reconcileState({
         optimisticManager,
         localState: { groups: stateRef.current.groups, variables: stateRef.current.variables },
         serverState: { groups: stateRef.current.groups, variables: serverVariables },
       });
-
-      if (optimisticManager) {
-        reconciliation.operationsResolved.forEach(op => {
-          if (op.success) {
-            optimisticManager.remove(op.commandId);
-          }
-        });
-      }
+      applyReconciliation(reconciliation, optimisticManager);
 
       dispatch({ type: 'SET_VARIABLES', payload: reconciliation.variablesToUpdate });
     };

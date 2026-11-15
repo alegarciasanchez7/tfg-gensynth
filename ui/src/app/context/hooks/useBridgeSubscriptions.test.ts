@@ -2,6 +2,7 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppAction, AppState } from '../reducer';
 import type { Variable } from '../../types';
+import { OptimisticManager, type OptimisticOperation } from '../optimisticManager';
 
 const { connect, getInitialState, subscribeMetrics, handlers } = vi.hoisted(() => ({
   connect: vi.fn(),
@@ -27,14 +28,18 @@ vi.mock('../../core/bridge', () => ({
 
 const { useBridgeSubscriptions } = await import('./useBridgeSubscriptions');
 
-function renderSubscriptions(dispatch: (action: AppAction) => void, variables: Variable[] = []) {
+function renderSubscriptions(
+  dispatch: (action: AppAction) => void,
+  variables: Variable[] = [],
+  optimisticManager: OptimisticManager | null = null,
+) {
   const state = { connectorHealthSummary: [], groups: [], variables } as unknown as AppState;
   return renderHook(() =>
     useBridgeSubscriptions({
       state,
       stateRef: { current: state },
       dispatch,
-      optimisticManager: null,
+      optimisticManager,
     }),
   );
 }
@@ -125,6 +130,25 @@ describe('useBridgeSubscriptions', () => {
       handlers.get('variable-changed')!({ ...label, name: 'label_2' });
 
       expect(lastVariables(dispatch).map(v => v.name)).toEqual(['speed_kmh', 'label_2']);
+    });
+
+    it('settles the pending operations as the initial state does', async () => {
+      const manager = new OptimisticManager();
+      const operation = (commandId: string, kind: OptimisticOperation['kind'], entityId: string, ageMs: number): OptimisticOperation =>
+        ({ commandId, kind, entityType: 'variable', entityId, createdAt: Date.now() - ageMs, ttlMs: 5000, applied: true });
+      // Confirmed: the Core has the variable. Lost: created long ago and never reached the Core
+      manager.register(operation('c-confirmed', 'update', 'v1', 0));
+      manager.register(operation('c-lost', 'create', 'v-lost', 60_000));
+      connect.mockResolvedValue(undefined);
+      renderSubscriptions(vi.fn(), [], manager);
+      await waitFor(() => expect(handlers.has('variable-changed')).toBe(true));
+
+      handlers.get('variable-changed')!({ ...speed, name: 'speed_kmh' });
+
+      expect(manager.get('c-confirmed')).toBeUndefined();
+      expect(manager.get('c-lost')?.failureReason).toBe('Create timed out');
+      // A failed operation is not evaluated again on the next update
+      expect(manager.getPendingOperations()).toEqual([]);
     });
 
     it('starts from the local variables when the Core has not sent a list yet', async () => {
