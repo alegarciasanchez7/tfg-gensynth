@@ -17,6 +17,7 @@ on:
       - packaging/**
       - core/pom.xml
       - .github/smoke/**
+      - .github/scripts/**
   workflow_dispatch:
     inputs:
       os:
@@ -239,20 +240,17 @@ jobs:
           /usr/local/bin/gensynth --version | grep -F "(CLI edition)"
           printf 'help\nexit\n' | /usr/local/bin/gensynth | grep -F "Bye."
 
+      # Both editions put their cli folder on the PATH (packaging/windows-msi/main.wxs): "gensynth"
+      # must work by name in a new terminal, and uninstalling must take the folder off the PATH
       - name: Install and run the CLI edition (Windows)
         if: runner.os == 'Windows' && env.EDITION != 'full'
         shell: pwsh
-        run: |
-          $msi = Resolve-Path "dist\GenSynth-cli-installer-$env:VERSION.msi"
-          $install = Start-Process msiexec.exe -ArgumentList "/i `"$msi`" /qn /l*v msi-cli.log" -Wait -PassThru
-          if ($install.ExitCode -ne 0) { Get-Content msi-cli.log -Tail 50; exit $install.ExitCode }
-          $gensynth = "$env:ProgramFiles\GenSynth-CLI\cli\gensynth.cmd"
-          $version = & $gensynth --version
-          Write-Output $version
-          if ($version -notmatch 'CLI edition') { Write-Error "Unexpected version: $version"; exit 1 }
-          $session = "help`nexit`n" | & $gensynth
-          Write-Output $session
-          if (-not ($session -match 'Bye\.')) { Write-Error 'The command line did not end'; exit 1 }
+        run: ./.github/scripts/check-windows-install.ps1 -Msi "dist\GenSynth-cli-installer-$env:VERSION.msi" -Folder "$env:ProgramFiles\GenSynth-CLI\cli" -CliEdition
+
+      - name: Install and run the command line of the application (Windows)
+        if: runner.os == 'Windows' && env.EDITION != 'cli'
+        shell: pwsh
+        run: ./.github/scripts/check-windows-install.ps1 -Msi "dist\GenSynth-installer-$env:VERSION.msi" -Folder "$env:ProgramFiles\GenSynth\cli"
 
       - uses: actions/upload-artifact@v7
         with:

@@ -1,4 +1,4 @@
 @echo off
-rem "gensynth" command on Windows: add this folder to PATH (see USER_GUIDE.md).
+rem "gensynth" command on Windows: the installer puts this folder on the PATH.
 rem It runs the console launcher installed one folder up.
 "%~dp0..\gensynth-cli.exe" %*
