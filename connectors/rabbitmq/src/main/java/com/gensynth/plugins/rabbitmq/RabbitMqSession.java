@@ -69,8 +69,11 @@ final class RabbitMqSession implements ConnectorSession {
         }
         String reason = returnedReason;
         if (reason != null) {
-            throw new IOException("Message not routed to any queue (" + reason + "): no queue is bound to exchange '"
-                + settings.exchange() + "' with routing key '" + settings.publishRoutingKey() + "'");
+            String cause = settings.usesExchange()
+                ? "no queue is bound to exchange '" + settings.exchange() + "' with routing key '"
+                    + settings.publishRoutingKey() + "'"
+                : "queue '" + settings.queue() + "' does not exist (was it deleted?)";
+            throw new IOException("Message not routed to any queue (" + reason + "): " + cause);
         }
     }
 
