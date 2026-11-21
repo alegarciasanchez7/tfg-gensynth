@@ -81,16 +81,7 @@ class CliHighlighter implements Highlighter {
                 paintPluginsArguments(styles, words);
             } else if (known && words.size() == 2 || words.size() == 3 && "tick".equals(name)) {
                 // The argument is colored while it is the last word (tick also takes a value after it)
-                String argument = words.get(1).text();
-                AttributedStyle style = switch (name) {
-                    case "start" -> startStyle(argument);
-                    case "see" -> pathStyle(argument);
-                    case "edit" -> "new".equalsIgnoreCase(argument) ? CliTheme.ACCENT : pathStyle(argument);
-                    case "stop", "tick" -> idStyle(argument, true, true);
-                    case "metrics" -> idStyle(argument, true, false);
-                    default -> null;
-                };
-                paint(styles, words.get(1), style);
+                paint(styles, words.get(1), argumentStyle(name, words.get(1).text()));
             }
         }
         AttributedStringBuilder line = new AttributedStringBuilder();
@@ -98,6 +89,22 @@ class CliHighlighter implements Highlighter {
             line.append(String.valueOf(buffer.charAt(i)), styles[i] != null ? styles[i] : CliTheme.PLAIN);
         }
         return line.toAttributedString();
+    }
+
+    /**
+     * @param command  the command, in lower case
+     * @param argument the word after it
+     * @return the color of the argument, or null to leave it plain
+     */
+    private AttributedStyle argumentStyle(String command, String argument) {
+        return switch (command) {
+            case "start" -> startStyle(argument);
+            case "see" -> pathStyle(argument);
+            case "edit" -> "new".equalsIgnoreCase(argument) ? CliTheme.ACCENT : pathStyle(argument);
+            case "stop", "tick" -> idStyle(argument, true, true);
+            case "metrics" -> idStyle(argument, true, false);
+            default -> null;
+        };
     }
 
     /**

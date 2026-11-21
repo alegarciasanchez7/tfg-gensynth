@@ -593,7 +593,7 @@ public class CliShell {
 
     /** Lists every reason why a project cannot start, one per line. */
     private void printCannotStart(ProjectStartException e) {
-        out.println(theme.error("'" + e.getFileName() + "' cannot start:"));
+        out.println(theme.errorLine("'" + e.getFileName() + "' cannot start:"));
         for (StartProblem problem : e.getProblems()) {
             out.println("  - " + ProjectSummary.describe(problem));
         }
@@ -604,11 +604,11 @@ public class CliShell {
     }
 
     private void printWarning(String message) {
-        out.println(theme.warning(message));
+        out.println(theme.warningLine(message));
     }
 
     private void printError(String message) {
-        out.println(theme.error(message));
+        out.println(theme.errorLine(message));
     }
 
     /**

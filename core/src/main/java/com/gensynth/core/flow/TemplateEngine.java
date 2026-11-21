@@ -26,6 +26,8 @@ public class TemplateEngine {
     private static final String LENGTH = "length";
     private static final int NOT_REACHABLE = -1;
     private static final Set<String> KNOWN_SCOPES = Set.of("local", "group", "global");
+    private static final String GROUP_SCOPE = "GROUP";
+    private static final String GLOBAL_SCOPE = "GLOBAL";
 
     private final DataGenerator dataGenerator;
     private static final Pattern VARIABLE_PATTERN = Pattern.compile("\\{\\{([^}]+)\\}\\}");
@@ -252,7 +254,7 @@ public class TemplateEngine {
                                  long tickNumber) {
         Map<String, Object> sharedContext = new java.util.HashMap<>();
         if (!dataGenerator.hasSharedValue(variable, tickNumber)) {
-            String ownerGroupId = "GROUP".equalsIgnoreCase(variable.getScope()) ? variable.getGroupId() : null;
+            String ownerGroupId = GROUP_SCOPE.equalsIgnoreCase(variable.getScope()) ? variable.getGroupId() : null;
             ensureDependenciesAvailable(variable, variables, null, ownerGroupId, sharedContext, resolutionStack, tickNumber);
         }
         return dataGenerator.sharedValue(variable, tickNumber, () -> dataGenerator.generateValue(variable, sharedContext));
@@ -263,7 +265,7 @@ public class TemplateEngine {
      * @return true for a GROUP or GLOBAL variable, which gives one value per tick to every flow
      */
     public static boolean isShared(Variable variable) {
-        return "GROUP".equalsIgnoreCase(variable.getScope()) || "GLOBAL".equalsIgnoreCase(variable.getScope());
+        return GROUP_SCOPE.equalsIgnoreCase(variable.getScope()) || GLOBAL_SCOPE.equalsIgnoreCase(variable.getScope());
     }
 
     private static void storeGenerated(Variable variable, Object value, Map<String, Object> context) {
@@ -684,10 +686,10 @@ public class TemplateEngine {
         if ("LOCAL".equals(vScope) && flowId != null && flowId.equals(v.getFlowId())) {
             return 0;
         }
-        if ("GROUP".equals(vScope) && groupId != null && groupId.equals(v.getGroupId())) {
+        if (GROUP_SCOPE.equals(vScope) && groupId != null && groupId.equals(v.getGroupId())) {
             return 1;
         }
-        if ("GLOBAL".equals(vScope)) {
+        if (GLOBAL_SCOPE.equals(vScope)) {
             return 2;
         }
         return NOT_REACHABLE;

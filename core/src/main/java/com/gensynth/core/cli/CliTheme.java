@@ -82,7 +82,7 @@ final class CliTheme {
      * @param message what went wrong
      * @return the line {@code Error: message}, with the label in red
      */
-    String error(String message) {
+    String errorLine(String message) {
         return paint("Error:", ERROR) + " " + message;
     }
 
@@ -91,7 +91,7 @@ final class CliTheme {
      * @return the line {@code     Warning: message}, indented under the line it refers to, with
      *         the label in yellow
      */
-    String warning(String message) {
+    String warningLine(String message) {
         return "    " + paint("Warning:", WARNING) + " " + message;
     }
 }

@@ -64,6 +64,8 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
     private static final String CONNECTOR_CONFIG = "connectorConfig";
     private static final String DISCONNECTED = "disconnected";
     private static final String FLOW_NOT_FOUND = "Flow not found: ";
+    private static final String GROUP_SCOPE = "GROUP";
+    private static final String GLOBAL_SCOPE = "GLOBAL";
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
     private final BridgeContext ctx;
     private final IFlowMessageHandler messageHandler;
@@ -503,7 +505,7 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
             if (!TemplateEngine.isShared(variable) || !isReachableFrom(group, variable)) {
                 continue;
             }
-            boolean groupScope = "GROUP".equalsIgnoreCase(variable.getScope());
+            boolean groupScope = GROUP_SCOPE.equalsIgnoreCase(variable.getScope());
             String ownerGroupId = groupScope ? variable.getGroupId() : null;
             for (String dependency : TemplateEngine.dependenciesOf(variable)) {
                 if (dependency.equals(variable.getName()) || dependency.equals(variable.getId())) {
@@ -525,12 +527,13 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
      * @return the user-facing message
      */
     public static String sharedDependencyMessage(Variable variable, String dependency, boolean groupScope) {
+        String scope = groupScope ? GROUP_SCOPE : GLOBAL_SCOPE;
         String reachable = groupScope ? "a GROUP variable of its group or a GLOBAL variable" : "a GLOBAL variable";
+        String flows = groupScope ? "of their group" : "of every group";
         String unreadable = groupScope ? "LOCAL variables" : "LOCAL or GROUP variables";
-        return (groupScope ? "GROUP" : "GLOBAL") + " variable '" + variable.getName() + "' depends on '" + dependency
-            + "', which is not " + reachable + ". " + (groupScope ? "GROUP" : "GLOBAL") + " variables give the same"
-            + " value to every flow " + (groupScope ? "of their group" : "of every group") + " on each tick, so they"
-            + " cannot read " + unreadable + ".";
+        return scope + " variable '" + variable.getName() + "' depends on '" + dependency + "', which is not "
+            + reachable + ". " + scope + " variables give the same value to every flow " + flows
+            + " on each tick, so they cannot read " + unreadable + ".";
     }
 
     /**
@@ -554,10 +557,10 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
 
     /** Whether a flow of the group can use the variable: a global one, one of the group or one of its flows. */
     private static boolean isReachableFrom(GroupRuntime group, Variable variable) {
-        if ("GLOBAL".equalsIgnoreCase(variable.getScope())) {
+        if (GLOBAL_SCOPE.equalsIgnoreCase(variable.getScope())) {
             return true;
         }
-        if ("GROUP".equalsIgnoreCase(variable.getScope()) && group.id.equals(variable.getGroupId())) {
+        if (GROUP_SCOPE.equalsIgnoreCase(variable.getScope()) && group.id.equals(variable.getGroupId())) {
             return true;
         }
         if (!"LOCAL".equalsIgnoreCase(variable.getScope())) {
