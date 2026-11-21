@@ -1,6 +1,6 @@
 # GenSynth: copy of the default jpackage 21 template, plus the lines marked "GenSynth" that
-# link the command line launcher as /usr/bin/gensynth. The UPPER_CASE words are filled in by
-# jpackage.
+# link the command line launcher as /usr/bin/gensynth and keep the menu entry on upgrade. The
+# UPPER_CASE words are filled in by jpackage.
 Summary: APPLICATION_SUMMARY
 Name: APPLICATION_PACKAGE
 Version: APPLICATION_VERSION
@@ -99,7 +99,12 @@ fi
 package_type=rpm
 DESKTOP_SCRIPTS
 LAUNCHER_AS_SERVICE_SCRIPTS
+# GenSynth: remove the menu entry and the file type on uninstall only ($1 = 0). On an upgrade
+# this script of the old version runs after the post-install script of the new one.
+if [ "$1" = 0 ]; then
+  true
 DESKTOP_COMMANDS_UNINSTALL
+fi
 LAUNCHER_AS_SERVICE_COMMANDS_UNINSTALL
 # GenSynth: on uninstall only ($1 = 0), not on upgrade; if the "gensynth" link is still ours,
 # hand it to the CLI edition when it is installed, or remove it
@@ -110,5 +115,13 @@ if [ "$1" = 0 ] && [ "$(readlink /usr/bin/gensynth)" = "/opt/gensynth/bin/gensyn
     rm -f /usr/bin/gensynth
   fi
 fi
+
+%posttrans
+package_type=rpm
+# GenSynth: add the menu entry and the file type again once the whole transaction is done. The
+# uninstall script of versions up to 0.6.0 removed them on upgrade, after they had been added.
+DESKTOP_COMMANDS_INSTALL
+# Never fail the transaction for it: GenSynth works without the menu entry
+true
 
 %clean

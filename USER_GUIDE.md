@@ -87,6 +87,8 @@ nothing happens). When there is one, a notice shows what is new and lets **you**
   - **Windows**: GenSynth closes and the installer opens; Windows asks for permission as in the
     first installation. Open GenSynth again when it finishes.
   - **Linux** (`.deb` / `.rpm`): enter your password when asked; GenSynth restarts by itself.
+    On Fedora or openSUSE, updating from 0.6.0 or earlier can remove GenSynth from the
+    applications menu, although it stays installed: see [Troubleshooting](#troubleshooting).
   - **macOS**: GenSynth closes and the disk image opens: drag GenSynth to *Applications* again.
 - **Not now**: keep working with the version you have; GenSynth asks again the next time it
   starts. A small **Update available** button stays next to the version in the top bar.
@@ -1772,6 +1774,7 @@ more detail. It only takes a couple of minutes, and it helps to improve the tool
 
 | Problem | Solution |
 |---|---|
+| After updating on Fedora or openSUSE, GenSynth is no longer in the applications menu | GenSynth is still installed (`/opt/gensynth`): the update script of 0.6.0 and earlier removed its menu entry. Add it again with `sudo xdg-desktop-menu install /opt/gensynth/lib/gensynth-GenSynth.desktop && sudo xdg-mime install /opt/gensynth/lib/gensynth-GenSynth-MimeInfo.xml`, then log out and in. Later versions keep it when they update. |
 | The window shows *Something went wrong* with a **Reload** button | The interface hit an unexpected error; it is written to the log. Click **Reload**: the project stays in GenSynth, but save it first if you can. |
 | The first start shows *"GenSynth could not set up its embedded browser"* | The embedded browser could not be downloaded. Check your internet connection (and proxy or firewall) and click **Retry**. |
 | The logs show *Invalid connector configuration…* when starting a group | A required connector field is empty or invalid; the message says which one. |
