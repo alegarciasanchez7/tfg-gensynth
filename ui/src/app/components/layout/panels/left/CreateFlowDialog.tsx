@@ -1,0 +1,353 @@
+import { useState, type FormEvent } from 'react';
+import { toast } from 'sonner';
+import { Button } from '../../../ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../../../ui/dialog';
+import { Input } from '../../../ui/input';
+import type { Group, Flow } from '../../../../types';
+import type { ConnectorPluginDescriptor } from '../../../../core/types';
+import { ConnectorConfigForm } from '../../../common/ConnectorConfigForm';
+import { NamingPatternFields } from '../../../common/NamingPatternFields';
+import { buildPatternNames } from '../../../../core/namingPattern';
+import { defaultConnectorConfig, validateConnectorConfig } from '../../../../core/connectorFields';
+import { findFlowNameConflict } from '../../../../core/flowNames';
+import { commandErrorMessage } from '../../../../core/errorMessage';
+import type { CreateFlowHandler } from '../../../../context/crudTypes';
+
+const DEFAULT_REPEAT_COUNT = '2';
+const DEFAULT_REPEAT_PATTERN = '${name} ${index}';
+
+function isPositiveInteger(value: string): boolean {
+  const parsed = Number(value);
+  return value.trim() !== '' && Number.isInteger(parsed) && parsed >= 1;
+}
+
+/** Subtitle of the dialog: Repeater, add to a given group, or pick the group. */
+function dialogDescription(repeat: boolean | undefined, groupId: string | undefined, targetGroup: Group | undefined): string {
+  if (repeat) return 'Create several flows with the same initial configuration.';
+  if (!groupId) return 'Create a new flow. Select a group first.';
+  const where = targetGroup ? `"${targetGroup.name}"` : 'this group';
+  return `Create a new flow inside ${where}.`;
+}
+
+/** The props and the chosen connector that the form follows. */
+interface FormSyncInputs {
+  open: boolean;
+  groupId: string | undefined;
+  flowTechnology: string;
+  latestConnectors: ConnectorPluginDescriptor[];
+}
+
+/** What the form does when its inputs change. */
+interface FormSyncHandlers {
+  /** A new groupId was given: select that group. */
+  onGroupChange: (groupId: string) => void;
+  /** Another connector (or a new catalog) was chosen: its default configuration. */
+  onConnectorChange: (config: Record<string, unknown>) => void;
+  /** The dialog was closed: reset the form. */
+  onClose: () => void;
+}
+
+/**
+ * Keeps the form in sync with its inputs while rendering (instead of in effects): follows a new
+ * groupId, loads the defaults of the chosen connector and resets the form when the dialog closes.
+ */
+function useFormSync(inputs: FormSyncInputs, handlers: FormSyncHandlers): void {
+  const [synced, setSynced] = useState(inputs);
+  const dialogChanged = synced.open !== inputs.open || synced.groupId !== inputs.groupId;
+  const connectorChanged = synced.flowTechnology !== inputs.flowTechnology || synced.latestConnectors !== inputs.latestConnectors;
+  if (!dialogChanged && !connectorChanged) return;
+
+  setSynced(inputs);
+  if (inputs.groupId && synced.groupId !== inputs.groupId) {
+    handlers.onGroupChange(inputs.groupId);
+  }
+  if (connectorChanged) {
+    const descriptor = inputs.flowTechnology
+      ? inputs.latestConnectors.find((c) => c.pluginId === inputs.flowTechnology)
+      : undefined;
+    handlers.onConnectorChange(descriptor ? defaultConnectorConfig(descriptor.fields) : {});
+  }
+  if (dialogChanged && !inputs.open) {
+    handlers.onClose();
+  }
+}
+
+interface CreateFlowDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** Groups of the project: used to check duplicate flow names and, without `groupId`, to pick the group. */
+  groups?: Group[];
+  /** If provided, binds directly to this group and hides the group selector. */
+  groupId?: string;
+  latestConnectors: ConnectorPluginDescriptor[];
+  onCreateFlow: CreateFlowHandler;
+  onSelectFlow?: (groupId: string, flowId: string) => void;
+  /** Repeater mode: creates N flows with the same initial configuration and a naming pattern. */
+  repeat?: boolean;
+}
+
+export function CreateFlowDialog({
+  open,
+  onOpenChange,
+  groups,
+  groupId,
+  latestConnectors,
+  onCreateFlow,
+  onSelectFlow,
+  repeat = false,
+}: Readonly<CreateFlowDialogProps>) {
+  const [selectedGroupId, setSelectedGroupId] = useState(groupId || '');
+  const [flowName, setFlowName] = useState('');
+  const [flowTechnology, setFlowTechnology] = useState('');
+  const [flowEveryTicks, setFlowEveryTicks] = useState('1');
+  const [repeatCount, setRepeatCount] = useState(DEFAULT_REPEAT_COUNT);
+  const [repeatPattern, setRepeatPattern] = useState(DEFAULT_REPEAT_PATTERN);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [connectorConfig, setConnectorConfig] = useState<Record<string, unknown>>({});
+
+  const selectedConnector = latestConnectors.find((c) => c.pluginId === flowTechnology);
+
+  useFormSync({ open, groupId, flowTechnology, latestConnectors }, {
+    onGroupChange: setSelectedGroupId,
+    onConnectorChange: setConnectorConfig,
+    onClose: () => {
+      setFlowName('');
+      setFlowTechnology('');
+      setConnectorConfig({});
+      setFlowEveryTicks('1');
+      setRepeatCount(DEFAULT_REPEAT_COUNT);
+      setRepeatPattern(DEFAULT_REPEAT_PATTERN);
+      setIsSubmitting(false);
+      if (!groupId) {
+        setSelectedGroupId('');
+      }
+    },
+  });
+
+  const everyTicksValid = isPositiveInteger(flowEveryTicks);
+  const repeatValid = !repeat || (isPositiveInteger(repeatCount) && repeatPattern.trim() !== '');
+  const connectorValid = Boolean(selectedConnector)
+    && Object.keys(validateConnectorConfig(selectedConnector?.fields ?? [], connectorConfig)).length === 0;
+
+  // Flow names must be unique inside the group (the Core rejects duplicates too). The Repeater
+  // instead asks the Core to rename taken names with a " (2)" suffix, shown in its preview
+  const targetGroup = groups?.find((g) => g.id === (groupId || selectedGroupId));
+  const existingFlows = targetGroup?.flows ?? [];
+  const existingNames = existingFlows.map((f) => f.name);
+  const nameError = repeat ? null : findFlowNameConflict(existingFlows, flowName);
+
+  const handleCreateFlow = async (event?: FormEvent<HTMLFormElement>) => {
+    event?.preventDefault();
+    if (isSubmitting || !everyTicksValid || !repeatValid || !connectorValid || !selectedConnector || nameError) return;
+    const targetGroupId = groupId || selectedGroupId;
+    if (!targetGroupId) {
+      toast.error('Please select a group first');
+      return;
+    }
+
+    const everyTicks = Number(flowEveryTicks);
+    const names = repeat
+      ? buildPatternNames(repeatPattern, flowName.trim(), Number(repeatCount))
+      : [flowName.trim()];
+
+    setIsSubmitting(true);
+    const created: Flow[] = [];
+    try {
+      // One after another so the flows keep the order of their names
+      for (const name of names) {
+        created.push(await onCreateFlow(targetGroupId, {
+          name,
+          technology: flowTechnology.trim(),
+          // Legacy host/port/topic: the destination is part of the connector configuration.
+          // Legacy interval/burst are left out: generation is paced by the global tick clock.
+          host: '',
+          port: 0,
+          template: '{}',
+          connectorConfig,
+          everyTicks,
+          autoRename: repeat, // the Repeater never fails on a taken name
+        }));
+      }
+      // With autoRename the Core answers with the final name of each flow
+      const renamed = created.filter((flow, i) => flow.name !== names[i].trim()).length;
+      const renamedNote = renamed > 0 ? ` (${renamed} renamed to keep the names unique)` : '';
+      toast.success(repeat ? `${created.length} flows created${renamedNote}` : `Flow "${created[0].name}" created`);
+    } catch (error) {
+      const message = commandErrorMessage(error, 'Unable to create flow');
+      toast.error(repeat ? `Created ${created.length} of ${names.length} flows: ${message}` : message);
+      if (created.length === 0) {
+        setIsSubmitting(false);
+        return;
+      }
+    }
+
+    if (onSelectFlow) {
+      onSelectFlow(targetGroupId, created[0].id);
+    }
+    onOpenChange(false);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg max-h-[75vh] flex flex-col bg-[var(--c-bg2)] border-[var(--c-br1)] text-[var(--c-tx2)]">
+        <form onSubmit={handleCreateFlow} className="flex-1 flex flex-col min-h-0">
+          <DialogHeader className="shrink-0 mb-4">
+            <DialogTitle className="text-[var(--c-tx1)]">{repeat ? 'Repeater' : 'Add flow'}</DialogTitle>
+            <DialogDescription className="text-[var(--c-tx4)]">
+              {dialogDescription(repeat, groupId, targetGroup)}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto pr-1 min-h-0 space-y-4">
+            {groups && !groupId && (
+              <div className="space-y-2">
+                <label className="text-xs text-[var(--c-tx3)]" htmlFor="flow-group-select">
+                  Group
+                </label>
+                <select
+                  id="flow-group-select"
+                  value={selectedGroupId}
+                  onChange={(event) => setSelectedGroupId(event.target.value)}
+                  className="flex h-9 w-full rounded-md border border-[var(--c-br1)] bg-[var(--c-bg1)] px-3 py-2 text-sm text-[var(--c-tx1)] shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-500"
+                  required
+                >
+                  <option value="">Select a group...</option>
+                  {groups.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-2 sm:col-span-2">
+                <label className="text-xs text-[var(--c-tx3)]" htmlFor="flow-name">
+                  {repeat ? 'Base name' : 'Name'}
+                </label>
+                <Input
+                  id="flow-name"
+                  value={flowName}
+                  onChange={(event) => setFlowName(event.target.value)}
+                  placeholder="Sensor 1"
+                  aria-invalid={nameError !== null}
+                  aria-describedby={nameError ? 'flow-name-error' : undefined}
+                  className="bg-[var(--c-bg1)] border-[var(--c-br1)] text-[var(--c-tx1)] placeholder-[var(--c-tx4)]"
+                  autoFocus
+                  required
+                />
+                {nameError && (
+                  <p id="flow-name-error" role="alert" className="text-[10px] text-red-500">
+                    {nameError}
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-2 sm:col-span-2">
+                <label className="text-xs text-[var(--c-tx3)]" htmlFor="flow-every-ticks">
+                  Every N ticks
+                </label>
+                <Input
+                  id="flow-every-ticks"
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={flowEveryTicks}
+                  onChange={(event) => setFlowEveryTicks(event.target.value)}
+                  placeholder="1"
+                  aria-invalid={!everyTicksValid}
+                  className="bg-[var(--c-bg1)] border-[var(--c-br1)] text-[var(--c-tx1)] placeholder-[var(--c-tx4)]"
+                />
+                <p className="text-[10px] text-[var(--c-tx4)]">1 message every N ticks (whole number ≥ 1)</p>
+              </div>
+
+              <div className="space-y-2 sm:col-span-2">
+                <label className="text-xs text-[var(--c-tx3)]" htmlFor="flow-connector">
+                  Connector
+                </label>
+                <select
+                  id="flow-connector"
+                  value={flowTechnology}
+                  onChange={(event) => setFlowTechnology(event.target.value)}
+                  className="flex h-9 w-full rounded-md border border-[var(--c-br1)] bg-[var(--c-bg1)] px-3 py-2 text-sm text-[var(--c-tx1)] shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-500"
+                  required
+                  disabled={latestConnectors.length === 0}
+                >
+                  <option value="">{latestConnectors.length > 0 ? 'Select a connector...' : 'No connectors installed'}</option>
+                  {latestConnectors.map((connector) => (
+                    <option key={connector.pluginId} value={connector.pluginId}>
+                      {connector.displayName} ({connector.pluginId}@{connector.pluginVersion})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {selectedConnector && (
+                <div className="sm:col-span-2 pt-1">
+                  <ConnectorConfigForm
+                    key={selectedConnector.pluginId}
+                    connector={selectedConnector}
+                    config={connectorConfig}
+                    onChange={setConnectorConfig}
+                  />
+                </div>
+              )}
+            </div>
+
+            {repeat && (
+              <div className="pt-2 border-t border-[var(--c-br2)]">
+                <NamingPatternFields
+                  count={repeatCount}
+                  onCountChange={setRepeatCount}
+                  pattern={repeatPattern}
+                  onPatternChange={setRepeatPattern}
+                  itemName={flowName.trim() || 'Flow'}
+                  countLabel="Number of flows"
+                  itemsNoun="flows"
+                  existingNames={existingNames}
+                  collisionMode="rename"
+                  onSubmit={() => void handleCreateFlow()}
+                />
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="shrink-0 pt-4 border-t border-[var(--c-br2)] mt-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              className="border-[var(--c-br1)] hover:bg-[var(--c-bg5)] text-[var(--c-tx2)]"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={
+                isSubmitting
+                || (!groupId && !selectedGroupId)
+                || !flowName.trim()
+                || !flowTechnology.trim()
+                || !everyTicksValid
+                || !repeatValid
+                || !connectorValid
+                || nameError !== null
+              }
+              className="bg-cyan-600 hover:bg-cyan-700 text-white"
+            >
+              {repeat ? `Create ${repeatCount} flows` : 'Create flow'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}

@@ -7,7 +7,7 @@ import java.util.regex.Pattern;
  * Naming patterns used to create several items at once (Clone, Repeater).
  * {@code ${name}} is replaced by the base name and {@code ${index}} by the 1-based position.
  * An offset such as {@code ${index+1}} shifts the numbering (so clones of "H1" can be "H2", "H3").
- * Mirrors {@code simulator-ui/src/app/core/namingPattern.ts}.
+ * Mirrors {@code ui/src/app/core/namingPattern.ts}.
  */
 public final class NamingPattern {
 

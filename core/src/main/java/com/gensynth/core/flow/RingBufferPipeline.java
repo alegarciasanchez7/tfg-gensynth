@@ -104,7 +104,7 @@ public class RingBufferPipeline implements IPipeline {
             return Collections.emptyList();
         }
 
-        int initialCapacity = (int) Math.min((long) maxBatchSize, buffer.size());
+        int initialCapacity = (int) Math.min(maxBatchSize, buffer.size());
         List<DataEvent> batch = new ArrayList<>(Math.max(0, initialCapacity));
         
         for (int i = 0; i < maxBatchSize; i++) {

@@ -93,9 +93,13 @@ public class LifecycleManagerImplTest {
                 callCount.incrementAndGet();
             }
             @Override
-            public void onStart() {}
+            public void onStart() {
+                // Not used by this test
+            }
             @Override
-            public void onStop() {}
+            public void onStop() {
+                // Not used by this test
+            }
         });
 
         manager.initialize();
@@ -108,13 +112,17 @@ public class LifecycleManagerImplTest {
 
         manager.addLifecycleListener(new ILifecycleListener() {
             @Override
-            public void onInitialize() {}
+            public void onInitialize() {
+                // Not used by this test
+            }
             @Override
             public void onStart() {
                 callCount.incrementAndGet();
             }
             @Override
-            public void onStop() {}
+            public void onStop() {
+                // Not used by this test
+            }
         });
 
         manager.initialize();
@@ -128,9 +136,13 @@ public class LifecycleManagerImplTest {
 
         manager.addLifecycleListener(new ILifecycleListener() {
             @Override
-            public void onInitialize() {}
+            public void onInitialize() {
+                // Not used by this test
+            }
             @Override
-            public void onStart() {}
+            public void onStart() {
+                // Not used by this test
+            }
             @Override
             public void onStop() {
                 callCount.incrementAndGet();
@@ -277,24 +289,32 @@ public class LifecycleManagerImplTest {
     public void testListenerExceptionAggregation() throws Exception {
         manager.addLifecycleListener(new ILifecycleListener() {
             @Override
-            public void onInitialize() throws Exception {
+            public void onInitialize() {
                 throw new RuntimeException("Error 1");
             }
             @Override
-            public void onStart() {}
+            public void onStart() {
+                // Not used by this test
+            }
             @Override
-            public void onStop() {}
+            public void onStop() {
+                // Not used by this test
+            }
         });
 
         manager.addLifecycleListener(new ILifecycleListener() {
             @Override
-            public void onInitialize() throws Exception {
+            public void onInitialize() {
                 throw new RuntimeException("Error 2");
             }
             @Override
-            public void onStart() {}
+            public void onStart() {
+                // Not used by this test
+            }
             @Override
-            public void onStop() {}
+            public void onStop() {
+                // Not used by this test
+            }
         });
 
         try {
@@ -312,11 +332,15 @@ public class LifecycleManagerImplTest {
 
         manager.addLifecycleListener(new ILifecycleListener() {
             @Override
-            public void onInitialize() {}
+            public void onInitialize() {
+                // Not used by this test
+            }
             @Override
-            public void onStart() {}
+            public void onStart() {
+                // Not used by this test
+            }
             @Override
-            public void onStop() throws Exception {
+            public void onStop() {
                 stopCount.incrementAndGet();
                 throw new RuntimeException("Stop failed");
             }
@@ -324,9 +348,13 @@ public class LifecycleManagerImplTest {
 
         manager.addLifecycleListener(new ILifecycleListener() {
             @Override
-            public void onInitialize() {}
+            public void onInitialize() {
+                // Not used by this test
+            }
             @Override
-            public void onStart() {}
+            public void onStart() {
+                // Not used by this test
+            }
             @Override
             public void onStop() {
                 stopCount.incrementAndGet();

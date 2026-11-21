@@ -110,50 +110,54 @@ public final class StructuredValueWriter {
     }
 
     private static void writeCompactJson(StringBuilder sb, Object value) {
-        if (value instanceof Map<?, ?> map) {
-            sb.append('{');
-            boolean first = true;
-            for (Map.Entry<?, ?> entry : map.entrySet()) {
-                if (!first) sb.append(", ");
-                first = false;
-                sb.append(jsonString(String.valueOf(entry.getKey()))).append(": ");
-                writeCompactJson(sb, entry.getValue());
+        switch (value) {
+            case Map<?, ?> map -> {
+                sb.append('{');
+                boolean first = true;
+                for (Map.Entry<?, ?> entry : map.entrySet()) {
+                    if (!first) sb.append(", ");
+                    first = false;
+                    sb.append(jsonString(String.valueOf(entry.getKey()))).append(": ");
+                    writeCompactJson(sb, entry.getValue());
+                }
+                sb.append('}');
             }
-            sb.append('}');
-        } else if (value instanceof List<?> list) {
-            sb.append('[');
-            for (int i = 0; i < list.size(); i++) {
-                if (i > 0) sb.append(", ");
-                writeCompactJson(sb, list.get(i));
+            case List<?> list -> {
+                sb.append('[');
+                for (int i = 0; i < list.size(); i++) {
+                    if (i > 0) sb.append(", ");
+                    writeCompactJson(sb, list.get(i));
+                }
+                sb.append(']');
             }
-            sb.append(']');
-        } else {
-            sb.append(jsonScalar(value));
+            case null, default -> sb.append(jsonScalar(value));
         }
     }
 
     /** Writes the value with each entry on its own line; the first line continues the template line. */
     private void writePrettyJson(StringBuilder sb, Object value, String indent) {
         String inner = indent + indentUnit;
-        if (value instanceof Map<?, ?> map && !map.isEmpty()) {
-            sb.append('{');
-            boolean first = true;
-            for (Map.Entry<?, ?> entry : map.entrySet()) {
-                sb.append(first ? "\n" : ",\n").append(inner);
-                first = false;
-                sb.append(jsonString(String.valueOf(entry.getKey()))).append(": ");
-                writePrettyJson(sb, entry.getValue(), inner);
+        switch (value) {
+            case Map<?, ?> map when !map.isEmpty() -> {
+                sb.append('{');
+                boolean first = true;
+                for (Map.Entry<?, ?> entry : map.entrySet()) {
+                    sb.append(first ? "\n" : ",\n").append(inner);
+                    first = false;
+                    sb.append(jsonString(String.valueOf(entry.getKey()))).append(": ");
+                    writePrettyJson(sb, entry.getValue(), inner);
+                }
+                sb.append('\n').append(indent).append('}');
             }
-            sb.append('\n').append(indent).append('}');
-        } else if (value instanceof List<?> list && !list.isEmpty()) {
-            sb.append('[');
-            for (int i = 0; i < list.size(); i++) {
-                sb.append(i == 0 ? "\n" : ",\n").append(inner);
-                writePrettyJson(sb, list.get(i), inner);
+            case List<?> list when !list.isEmpty() -> {
+                sb.append('[');
+                for (int i = 0; i < list.size(); i++) {
+                    sb.append(i == 0 ? "\n" : ",\n").append(inner);
+                    writePrettyJson(sb, list.get(i), inner);
+                }
+                sb.append('\n').append(indent).append(']');
             }
-            sb.append('\n').append(indent).append(']');
-        } else {
-            writeCompactJson(sb, value);
+            case null, default -> writeCompactJson(sb, value);
         }
     }
 
@@ -198,17 +202,20 @@ public final class StructuredValueWriter {
 
     /** The template's smallest indentation step, so nested lines follow its style (2 spaces by default). */
     private static String indentUnitOf(String template) {
-        String unit = null;
+        String unit = DEFAULT_INDENT;
+        int smallest = Integer.MAX_VALUE;
         for (String line : template.split("\n")) {
             int n = 0;
             while (n < line.length() && (line.charAt(n) == ' ' || line.charAt(n) == '\t')) {
                 n++;
             }
-            if (n > 0 && n < line.length() && (unit == null || n < unit.length())) {
+            // Only indented lines with content count
+            if (n > 0 && n < line.length() && n < smallest) {
+                smallest = n;
                 unit = line.substring(0, n);
             }
         }
-        return unit != null ? unit : DEFAULT_INDENT;
+        return unit;
     }
 
     private static String jsonScalar(Object value) {

@@ -23,6 +23,7 @@ dependency-reduced-pom.xml
 **/build/
 **/.vite/
 **/coverage/
+/ui/reports/
 npm-debug.log*
 npm-error.log*
 pnpm-debug.log*
@@ -33,7 +34,8 @@ yarn-error.log*
 .cache/
 
 # IDEs & Editors
-.vscode/
+.vscode/*
+!.vscode/extensions.json
 .idea/
 *.iml
 *.swp
@@ -55,6 +57,7 @@ CLAUDE.md
 **/logs/
 *.log
 /core/outputs/
+/core/OUTPUT_FILES_*/
 /core/lib/shared/
 /core/SMOKE_EVIDENCE.txt
 

@@ -22,6 +22,10 @@ import java.util.Set;
  *
  * The label defaults to the key in words ("virtualHost" becomes "Virtual host"). A select
  * without an explicit default uses its first option.
+ * <p>
+ * Fields marked {@link #advanced()} are shown in a collapsed "Advanced options" section, after
+ * the other fields, so the essential settings come first (since API 1.1; older GenSynth
+ * versions show them with the rest).
  */
 public final class ConnectorField {
 
@@ -56,24 +60,50 @@ public final class ConnectorField {
     private final String label;
     private final String tooltip;
     private final boolean required;
+    private final boolean advanced;
     private final Object defaultValue;
     private final String placeholder;
     private final Double min;
     private final Double max;
     private final List<Option> options;
 
-    private ConnectorField(String key, FieldType type, String label, String tooltip, boolean required,
-                           Object defaultValue, String placeholder, Double min, Double max, List<Option> options) {
+    /** Texts the UI shows for a field. */
+    private record Texts(String label, String tooltip, String placeholder) {
+    }
+
+    /** Whether a value is mandatory, and whether the field is in the advanced section. */
+    private record Flags(boolean required, boolean advanced) {
+    }
+
+    /** Accepted range of a number field; a null bound is open. */
+    private record Range(Double min, Double max) {
+    }
+
+    private ConnectorField(String key, FieldType type, Texts texts, Flags flags, Object defaultValue,
+                           Range range, List<Option> options) {
         this.key = key;
         this.type = type;
-        this.label = label;
-        this.tooltip = tooltip;
-        this.required = required;
+        this.label = texts.label();
+        this.tooltip = texts.tooltip();
+        this.required = flags.required();
+        this.advanced = flags.advanced();
         this.defaultValue = defaultValue;
-        this.placeholder = placeholder;
-        this.min = min;
-        this.max = max;
+        this.placeholder = texts.placeholder();
+        this.min = range.min();
+        this.max = range.max();
         this.options = options;
+    }
+
+    private Texts texts() {
+        return new Texts(label, tooltip, placeholder);
+    }
+
+    private Flags flags() {
+        return new Flags(required, advanced);
+    }
+
+    private Range range() {
+        return new Range(min, max);
     }
 
     private static ConnectorField create(String key, FieldType type, List<Option> options) {
@@ -81,7 +111,8 @@ public final class ConnectorField {
         if (!key.matches("[A-Za-z][A-Za-z0-9_.-]*")) {
             throw new IllegalArgumentException("Invalid field key '" + key + "': use letters, digits, '_', '.' or '-'");
         }
-        return new ConnectorField(key, type, humanize(key), "", false, null, "", null, null, options);
+        return new ConnectorField(key, type, new Texts(humanize(key), "", ""), new Flags(false, false), null,
+            new Range(null, null), options);
     }
 
     // ── Factories ────────────────────────────────────────────────
@@ -147,23 +178,37 @@ public final class ConnectorField {
 
     /** @param text label shown next to the input @return a copy with the label */
     public ConnectorField label(String text) {
-        return new ConnectorField(key, type, text == null || text.isBlank() ? humanize(key) : text, tooltip, required,
-            defaultValue, placeholder, min, max, options);
+        Texts texts = new Texts(text == null || text.isBlank() ? humanize(key) : text, tooltip, placeholder);
+        return new ConnectorField(key, type, texts, flags(), defaultValue, range(), options);
     }
 
     /** @param text help shown when hovering the field's info icon @return a copy with the tooltip */
     public ConnectorField tooltip(String text) {
-        return new ConnectorField(key, type, label, text == null ? "" : text, required, defaultValue, placeholder, min, max, options);
+        Texts texts = new Texts(label, text == null ? "" : text, placeholder);
+        return new ConnectorField(key, type, texts, flags(), defaultValue, range(), options);
     }
 
     /** @return a copy that must have a non-empty value */
     public ConnectorField required() {
-        return new ConnectorField(key, type, label, tooltip, true, defaultValue, placeholder, min, max, options);
+        return new ConnectorField(key, type, texts(), new Flags(true, advanced), defaultValue, range(), options);
+    }
+
+    /**
+     * Moves the field to the collapsed "Advanced options" section of the form, for settings most
+     * users never change. Give it a default (or make it optional) so the form works without
+     * opening that section.
+     *
+     * @return a copy shown among the advanced options
+     * @since 1.1
+     */
+    public ConnectorField advanced() {
+        return new ConnectorField(key, type, texts(), new Flags(required, true), defaultValue, range(), options);
     }
 
     /** @param text hint shown inside an empty input @return a copy with the placeholder */
     public ConnectorField placeholder(String text) {
-        return new ConnectorField(key, type, label, tooltip, required, defaultValue, text == null ? "" : text, min, max, options);
+        Texts texts = new Texts(label, tooltip, text == null ? "" : text);
+        return new ConnectorField(key, type, texts, flags(), defaultValue, range(), options);
     }
 
     /**
@@ -173,21 +218,21 @@ public final class ConnectorField {
     public ConnectorField defaultValue(Object value) {
         Object normalized = value == null ? null : normalizeDefault(value);
         checkRange(normalized, min, max);
-        return new ConnectorField(key, type, label, tooltip, required, normalized, placeholder, min, max, options);
+        return new ConnectorField(key, type, texts(), flags(), normalized, range(), options);
     }
 
     /** @param value smallest accepted number (INTEGER and DECIMAL only) @return a copy with the minimum */
     public ConnectorField min(double value) {
         requireNumeric("min");
         checkRange(defaultValue, value, max);
-        return new ConnectorField(key, type, label, tooltip, required, defaultValue, placeholder, value, max, options);
+        return new ConnectorField(key, type, texts(), flags(), defaultValue, new Range(value, max), options);
     }
 
     /** @param value largest accepted number (INTEGER and DECIMAL only) @return a copy with the maximum */
     public ConnectorField max(double value) {
         requireNumeric("max");
         checkRange(defaultValue, min, value);
-        return new ConnectorField(key, type, label, tooltip, required, defaultValue, placeholder, min, value, options);
+        return new ConnectorField(key, type, texts(), flags(), defaultValue, new Range(min, value), options);
     }
 
     // ── Getters ──────────────────────────────────────────────────
@@ -207,6 +252,9 @@ public final class ConnectorField {
     /** @return whether a value is mandatory */
     public boolean isRequired() { return required; }
 
+    /** @return whether the field is shown in the collapsed "Advanced options" section */
+    public boolean isAdvanced() { return advanced; }
+
     /** @return default value (String, Long, Double or Boolean), or null */
     public Object getDefaultValue() { return defaultValue; }
 
@@ -225,29 +273,26 @@ public final class ConnectorField {
     // ── Helpers ──────────────────────────────────────────────────
 
     private Object normalizeDefault(Object value) {
-        switch (type) {
-            case TEXT, PASSWORD -> {
-                if (value instanceof String) return value;
-            }
-            case INTEGER -> {
-                if (value instanceof Integer || value instanceof Long || value instanceof Short || value instanceof Byte) {
-                    return ((Number) value).longValue();
-                }
-            }
-            case DECIMAL -> {
-                if (value instanceof Number number) return number.doubleValue();
-            }
-            case BOOLEAN -> {
-                if (value instanceof Boolean) return value;
-            }
+        Object normalized = switch (type) {
+            case TEXT, PASSWORD -> value instanceof String ? value : null;
+            case INTEGER -> isWholeNumberType(value) ? Long.valueOf(((Number) value).longValue()) : null;
+            case DECIMAL -> value instanceof Number number ? Double.valueOf(number.doubleValue()) : null;
+            case BOOLEAN -> value instanceof Boolean ? value : null;
             case SELECT -> {
                 if (value instanceof String text && options.stream().anyMatch(option -> option.value().equals(text))) {
-                    return value;
+                    yield value;
                 }
                 throw new IllegalArgumentException("Default of '" + key + "' must be one of its option values");
             }
+        };
+        if (normalized == null) {
+            throw new IllegalArgumentException("Default of '" + key + "' does not match its type " + type + ": " + value);
         }
-        throw new IllegalArgumentException("Default of '" + key + "' does not match its type " + type + ": " + value);
+        return normalized;
+    }
+
+    private static boolean isWholeNumberType(Object value) {
+        return value instanceof Integer || value instanceof Long || value instanceof Short || value instanceof Byte;
     }
 
     private void requireNumeric(String what) {
@@ -276,7 +321,7 @@ public final class ConnectorField {
 
     @Override
     public String toString() {
-        return "ConnectorField{" + key + ":" + type + (required ? ", required" : "") + "}";
+        return "ConnectorField{" + key + ":" + type + (required ? ", required" : "") + (advanced ? ", advanced" : "") + "}";
     }
 
     /**

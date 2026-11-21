@@ -1,0 +1,135 @@
+# Runs the development scripts of scripts/ on the three operating systems when they change:
+# Linux and macOS (bash 3.2) with scripts/unix, Windows with the real batch files of
+# scripts/windows in cmd.exe. It compiles without the UI and drives the command line in both
+# editions.
+name: Scripts
+
+on:
+  push:
+    branches: [main, dev, 'feat/**', 'fix/**', 'ci/**']
+    paths:
+      - scripts/**
+      - .github/workflows/scripts.yml
+  pull_request:
+    branches: [main, dev]
+    paths:
+      - scripts/**
+      - .github/workflows/scripts.yml
+  workflow_dispatch:
+
+concurrency:
+  group: scripts-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # The scripts wait for a key when opened with a double click; never in the CI
+  GENSYNTH_NO_PAUSE: '1'
+
+jobs:
+  scripts:
+    name: Scripts (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Compile and run the command line (Linux and macOS)
+        if: runner.os != 'Windows'
+        run: |
+          set -euo pipefail
+          # /bin/bash is bash 3.2 on macOS (env bash could find a newer one from Homebrew)
+          /bin/bash --version | head -n 1
+          /bin/bash scripts/unix/compile.sh --skip-ui
+          full="$(printf 'help\nexit\n' | /bin/bash scripts/unix/run-cli.sh --no-build)"
+          echo "$full"
+          grep -qF 'edit <file.gsynth>' <<< "$full"
+          cli="$(printf 'help\nedit new\nsee ../.github/smoke/file-output.gsynth\nexit\n' | /bin/bash scripts/unix/run-cli.sh --cli-edition --no-build)"
+          echo "$cli"
+          grep -qF 'edit is not available in the GenSynth CLI edition' <<< "$cli"
+          grep -qF 'No problems found' <<< "$cli"
+          if grep -qF 'edit <file.gsynth>' <<< "$cli"; then echo "::error::edit is listed in the CLI edition"; exit 1; fi
+          /bin/bash scripts/unix/run-cli.sh --no-build --version | grep -F 'GenSynth dev'
+          # The findings listing runs with the source launcher of the JDK (no reports yet: 0 findings)
+          /bin/bash scripts/unix/analyze.sh core --report-only | grep -F '== core: 0 findings'
+
+      - name: Answer the questions of the scripts (Linux and macOS)
+        if: runner.os != 'Windows'
+        env:
+          # Asks even though the answers come through a pipe
+          GENSYNTH_ASK: '1'
+        run: |
+          set -euo pipefail
+          # run-cli: CLI edition, without compiling, then a session
+          out="$(printf '2\nn\nhelp\nedit x\nexit\n' | /bin/bash scripts/unix/run-cli.sh)"
+          echo "$out"
+          grep -qF 'next time, without questions: scripts/unix/run-cli.sh --cli-edition --no-build' <<< "$out"
+          grep -qF 'edit is not available in the GenSynth CLI edition' <<< "$out"
+          # analyze: a wrong answer, then core and the last analysis
+          out="$(printf '9\n2\n2\n\n' | /bin/bash scripts/unix/analyze.sh)"
+          echo "$out"
+          grep -qF 'Type a number from 1 to 4.' <<< "$out"
+          grep -qF '== core: 0 findings' <<< "$out"
+          # package only checks its options here (a real build takes too long)
+          if /bin/bash scripts/unix/package.sh --os solaris 2> package.txt; then exit 1; fi
+          grep -qF "Unknown system 'solaris'" package.txt
+
+      - name: Compile (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: call scripts\windows\compile.bat --skip-ui
+
+      - name: Run the command line (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          (echo help& echo exit) | call scripts\windows\run-cli.bat --no-build > full.txt || exit /b 1
+          type full.txt
+          findstr /c:"edit <file.gsynth>" full.txt >nul || (echo ::error::edit is missing in the full edition& exit /b 1)
+          (echo help& echo edit new& echo see ..\.github\smoke\file-output.gsynth& echo exit) | call scripts\windows\run-cli.bat --cli-edition --no-build > cli.txt || exit /b 1
+          type cli.txt
+          findstr /c:"edit is not available in the GenSynth CLI edition" cli.txt >nul || (echo ::error::edit is not disabled& exit /b 1)
+          findstr /c:"No problems found" cli.txt >nul || (echo ::error::see did not run& exit /b 1)
+          findstr /c:"edit <file.gsynth>" cli.txt >nul && (echo ::error::edit is listed in the CLI edition& exit /b 1)
+          exit /b 0
+
+      - name: Answer the questions of the scripts (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          rem run-cli: CLI edition, without compiling, then a session
+          (echo 2& echo n& echo help& echo edit x& echo exit) > answers.txt
+          call scripts\windows\run-cli.bat < answers.txt > interactive.txt || exit /b 1
+          type interactive.txt
+          findstr /c:"run-cli.bat --cli-edition --no-build" interactive.txt >nul || (echo ::error::The questions of run-cli failed& exit /b 1)
+          findstr /c:"edit is not available in the GenSynth CLI edition" interactive.txt >nul || (echo ::error::edit is not disabled& exit /b 1)
+          rem analyze: a wrong answer, then core and the last analysis
+          (echo 9& echo 2& echo 2& echo.) > answers.txt
+          call scripts\windows\analyze.bat < answers.txt > interactive.txt || exit /b 1
+          type interactive.txt
+          findstr /c:"Type a number from 1 to 4." interactive.txt >nul || (echo ::error::A wrong answer was accepted& exit /b 1)
+          findstr /c:"== core: 0 findings" interactive.txt >nul || (echo ::error::The questions of analyze failed& exit /b 1)
+          rem package only checks its options here: cmd splits --os at the comma
+          call scripts\windows\package.bat --os windows,solaris > package.txt && (echo ::error::An unknown system was accepted& exit /b 1)
+          type package.txt
+          findstr /c:"Unknown system 'solaris'" package.txt >nul || (echo ::error::The systems were not read& exit /b 1)
+          exit /b 0
+
+      - name: List the analysis findings (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          call scripts\windows\analyze.bat core plugin-api --report-only > findings.txt || exit /b 1
+          type findings.txt
+          findstr /c:"== plugin-api: 0 findings" findings.txt >nul || (echo ::error::The findings were not listed& exit /b 1)

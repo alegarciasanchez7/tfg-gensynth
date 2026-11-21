@@ -3,6 +3,7 @@ package com.gensynth.core.flow;
 import com.gensynth.core.api.IFlowEngine;
 import com.gensynth.core.config.AppConfig;
 import com.gensynth.core.lifecycle.ILifecycleListener;
+import com.gensynth.core.lifecycle.LifecycleException;
 
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicReference;
@@ -72,7 +73,7 @@ public class FlowEngineImpl implements IFlowEngine, ILifecycleListener {
     }
 
     @Override
-    public void onInitialize() throws Exception {
+    public void onInitialize() {
         // Create virtual thread executor for data generation
         if (config.useVirtualThreads()) {
             this.dataGenerationExecutor = Executors.newVirtualThreadPerTaskExecutor();
@@ -96,28 +97,33 @@ public class FlowEngineImpl implements IFlowEngine, ILifecycleListener {
     }
 
     @Override
-    public void onStart() throws Exception {
+    public void onStart() {
         state.set(EngineState.RUNNING);
         logger.info("FlowEngine started");
     }
 
     @Override
-    public void onStop() throws Exception {
+    public void onStop() throws LifecycleException {
         // Stop all active groups
         List<String> groupIds = new ArrayList<>(activeGroups.keySet());
         for (String groupId : groupIds) {
             try {
                 stopGroup(groupId);
             } catch (Exception e) {
-                logger.log(Level.WARNING, "Error stopping group: " + groupId, e);
+                logger.log(Level.WARNING, e, () -> "Error stopping group: " + groupId);
             }
         }
 
         // Shutdown executor
         if (dataGenerationExecutor != null && !dataGenerationExecutor.isShutdown()) {
             dataGenerationExecutor.shutdown();
-            if (!dataGenerationExecutor.awaitTermination(30, TimeUnit.SECONDS)) {
-                dataGenerationExecutor.shutdownNow();
+            try {
+                if (!dataGenerationExecutor.awaitTermination(30, TimeUnit.SECONDS)) {
+                    dataGenerationExecutor.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new LifecycleException("Interrupted while stopping the flow engine", e);
             }
         }
         state.set(EngineState.STOPPED);
@@ -136,7 +142,7 @@ public class FlowEngineImpl implements IFlowEngine, ILifecycleListener {
         }
         String groupId = group.getGroupId();
         registeredGroups.put(groupId, group);
-        logger.info(String.format("Group %s added with %d flows",
+        logger.info(() -> String.format("Group %s added with %d flows",
             groupId, group.getFlowCount()));
     }
 
@@ -152,7 +158,7 @@ public class FlowEngineImpl implements IFlowEngine, ILifecycleListener {
      */
     public void removeGroup(String groupId) {
         registeredGroups.remove(groupId);
-        logger.info(String.format("Group %s removed", groupId));
+        logger.info(() -> String.format("Group %s removed", groupId));
     }
 
     /**
@@ -202,11 +208,9 @@ public class FlowEngineImpl implements IFlowEngine, ILifecycleListener {
         // Perform validations and cycle checks fail-fast on variables
         Map<String, VariableConfiguration> flowConfigs = new HashMap<>();
         for (Flow flow : group.getFlows()) {
-            for (com.gensynth.core.api.IVariable var : flow.getVariables()) {
-                if (var instanceof com.gensynth.core.flow.variables.ConfigurableVariable) {
-                    com.gensynth.core.flow.variables.VariableConfiguration vc = 
-                        ((com.gensynth.core.flow.variables.ConfigurableVariable) var).getConfiguration();
-                    flowConfigs.put(var.getName(), vc);
+            for (com.gensynth.core.api.IVariable variable : flow.getVariables()) {
+                if (variable instanceof com.gensynth.core.flow.variables.ConfigurableVariable configurable) {
+                    flowConfigs.put(variable.getName(), configurable.getConfiguration());
                 }
             }
         }
@@ -232,13 +236,15 @@ public class FlowEngineImpl implements IFlowEngine, ILifecycleListener {
                 try {
                     runFlowDataGeneration(flow, context, interval);
                 } catch (Throwable e) {
-                    logger.log(Level.SEVERE, "Error in flow thread for " + flow.getFlowId(), e);
+                    // Throwable on purpose: an Error escaping a submitted task would be kept in its
+                    // Future, never read, so the flow would stop without any trace
+                    logger.log(Level.SEVERE, e, () -> "Error in flow thread for " + flow.getFlowId());
                     group.recordError();
                 }
             });
         }
 
-        logger.info(String.format("Group %s started with %d flows",
+        logger.info(() -> String.format("Group %s started with %d flows",
             groupId, group.getFlowCount()));
     }
 
@@ -246,54 +252,53 @@ public class FlowEngineImpl implements IFlowEngine, ILifecycleListener {
      * Data generation loop for a single flow within a group.
      */
     private void runFlowDataGeneration(Flow flow, GroupContext context, long interval) {
-        while (context.isRunning()) {
-            try {
-                // Check pause state
-                if (context.isPaused()) {
-                    Thread.sleep(100);
-                    continue;
-                }
-
-                // Check if group is enabled
-                if (!context.group.isEnabled()) {
-                    Thread.sleep(100);
-                    continue;
-                }
-
-                // Check if flow is enabled
-                if (!flow.isEnabled()) {
-                    Thread.sleep(100);
-                    continue;
-                }
-
-                // Generate events from all variables in the flow
-                List<DataEvent> events = flow.generateEvents();
-
-                // Submit events to pipeline and record metrics
-                for (DataEvent event : events) {
-                    if (pipeline != null && !pipeline.isFull()) {
-                        pipeline.submit(event);
-                    }
-                }
-
-                // Record metrics
-                generatedEventCount.addAndGet(events.size());
-                context.group.recordEventsSent(events.size());
-
-                // Sleep for configured interval
-                Thread.sleep(interval);
-
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                break;
-            } catch (Exception e) {
-                logger.log(Level.SEVERE, "Error in data generation for " + flow.getFlowId(), e);
-                context.group.recordError();
-                break;
-            }
+        boolean keepRunning = true;
+        while (keepRunning && context.isRunning()) {
+            keepRunning = runGenerationCycle(flow, context, interval);
         }
 
-        logger.fine("Flow " + flow.getFlowId() + " stopped");
+        logger.fine(() -> "Flow " + flow.getFlowId() + " stopped");
+    }
+
+    /**
+     * Runs one cycle of the data generation loop of a flow: generates and submits its events,
+     * then waits for the interval.
+     *
+     * @return false when the loop must end (interrupted or failed)
+     */
+    private boolean runGenerationCycle(Flow flow, GroupContext context, long interval) {
+        try {
+            // Paused, or group or flow disabled: check again a bit later
+            if (context.isPaused() || !context.group.isEnabled() || !flow.isEnabled()) {
+                Thread.sleep(100);
+                return true;
+            }
+
+            // Generate events from all variables in the flow
+            List<DataEvent> events = flow.generateEvents();
+
+            // Submit events to pipeline and record metrics
+            for (DataEvent event : events) {
+                if (pipeline != null && !pipeline.isFull()) {
+                    pipeline.submit(event);
+                }
+            }
+
+            // Record metrics
+            generatedEventCount.addAndGet(events.size());
+            context.group.recordEventsSent(events.size());
+
+            // Sleep for configured interval
+            Thread.sleep(interval);
+            return true;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        } catch (Exception e) {
+            logger.log(Level.SEVERE, e, () -> "Error in data generation for " + flow.getFlowId());
+            context.group.recordError();
+            return false;
+        }
     }
 
     @Override
@@ -314,7 +319,7 @@ public class FlowEngineImpl implements IFlowEngine, ILifecycleListener {
         context.stop();
         activeGroups.remove(groupId);
 
-        logger.info(String.format("Group %s stopped", groupId));
+        logger.info(() -> String.format("Group %s stopped", groupId));
     }
 
     @Override
@@ -333,7 +338,7 @@ public class FlowEngineImpl implements IFlowEngine, ILifecycleListener {
         }
 
         context.pause();
-        logger.info(String.format("Group %s paused", groupId));
+        logger.info(() -> String.format("Group %s paused", groupId));
     }
 
     /**
@@ -346,7 +351,7 @@ public class FlowEngineImpl implements IFlowEngine, ILifecycleListener {
         }
 
         context.resume();
-        logger.info(String.format("Group %s resumed", groupId));
+        logger.info(() -> String.format("Group %s resumed", groupId));
     }
 
     // ============ Metrics ============
@@ -356,17 +361,6 @@ public class FlowEngineImpl implements IFlowEngine, ILifecycleListener {
      */
     public long getGeneratedEventCount() {
         return generatedEventCount.get();
-    }
-
-    /**
-     * Get number of active (running) flows (alias for getActiveGroupCount for compatibility).
-     * @deprecated Use getActiveGroupCount() instead. Each "group" now represents a collection of flows.
-     */
-    @Deprecated
-    public int getActiveFlowCount() {
-        return (int) activeGroups.values().stream()
-            .map(ctx -> ctx.group.getFlowCount())
-            .reduce(0, Integer::sum);
     }
 
     // ============ Private Helpers ============

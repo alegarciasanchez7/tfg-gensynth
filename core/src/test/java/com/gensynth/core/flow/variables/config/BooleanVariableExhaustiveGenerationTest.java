@@ -263,26 +263,14 @@ public class BooleanVariableExhaustiveGenerationTest {
 
         // Test invalid probabilities
         config.trueProbability(0.5);
-        try {
-            config.trueProbability(1.5);
-            fail("Should throw IllegalArgumentException for probability > 1.0");
-        } catch (IllegalArgumentException expected) {}
+        assertThrows("Should throw IllegalArgumentException for probability > 1.0", IllegalArgumentException.class, () -> config.trueProbability(1.5));
 
-        try {
-            config.trueProbability(-0.1);
-            fail("Should throw IllegalArgumentException for probability < 0.0");
-        } catch (IllegalArgumentException expected) {}
+        assertThrows("Should throw IllegalArgumentException for probability < 0.0", IllegalArgumentException.class, () -> config.trueProbability(-0.1));
 
         // Test invalid intervals
-        try {
-            config.flipInterval(0);
-            fail("Should throw IllegalArgumentException for flipInterval <= 0");
-        } catch (IllegalArgumentException expected) {}
+        assertThrows("Should throw IllegalArgumentException for flipInterval <= 0", IllegalArgumentException.class, () -> config.flipInterval(0));
 
-        try {
-            config.burstDurationTicks(-5);
-            fail("Should throw IllegalArgumentException for burstDurationTicks <= 0");
-        } catch (IllegalArgumentException expected) {}
+        assertThrows("Should throw IllegalArgumentException for burstDurationTicks <= 0", IllegalArgumentException.class, () -> config.burstDurationTicks(-5));
     }
 
     /**

@@ -6,13 +6,17 @@ import com.gensynth.core.update.GitHubUpdateService;
 import com.fasterxml.jackson.core.StreamReadConstraints;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.gensynth.core.api.IFolderOpener;
 import com.gensynth.core.api.IPluginInstaller;
 import com.gensynth.core.api.ITickClock;
+import com.gensynth.core.desktop.DesktopFolderOpener;
 import com.gensynth.core.clock.TickClockImpl;
 import com.gensynth.core.connectors.plugin.PluginInstallerImpl;
 import com.gensynth.core.connectors.runtime.ConnectorCatalogService;
 import com.gensynth.plugin.api.ConnectorSession;
 import com.gensynth.core.model.Variable;
+import com.gensynth.core.model.StartProblem;
+import com.gensynth.core.model.TickSettings;
 import com.gensynth.core.flow.TemplateEngine;
 import com.gensynth.core.persistence.JsonStateRepositoryImpl;
 import com.gensynth.core.persistence.StateRepository;
@@ -40,6 +44,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -53,7 +58,7 @@ import static com.gensynth.core.ws.BridgeProtocol.STATUS;
 import static com.gensynth.core.ws.BridgeProtocol.TIMESTAMP;
 
 /**
- * Lightweight WebSocket bridge between simulator-ui and core runtime.
+ * Lightweight WebSocket bridge between the user interface (ui/) and the core runtime.
  */
 public class UiBridgeWebSocketServer extends WebSocketServer {
     private static final String CONNECTION_STATUS = "CONNECTION_STATUS";
@@ -94,9 +99,11 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         "CONVERT_MESSAGE_FORMAT",
         "UPDATE_SETTINGS",
         "UPDATE_OUTPUT_FOLDER",
+        "OPEN_OUTPUT_FOLDER",
         "CHECK_FOR_UPDATES",
         "INSTALL_UPDATE",
-        "CANCEL_UPDATE"
+        "CANCEL_UPDATE",
+        "REQUEST_OPEN_PROJECT"
     );
 
     private final ObjectMapper objectMapper = createConfiguredMapper();
@@ -143,7 +150,16 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
 
     final TemplateEngine templateEngine = new TemplateEngine();
     String currentOutputDir = null;
-    WebSocket desktopSocket = null;
+    /** Shows the session folder in the file explorer (OPEN_OUTPUT_FOLDER); replaceable in tests. */
+    final AtomicReference<IFolderOpener> folderOpener = new AtomicReference<>(new DesktopFolderOpener());
+    /** Set on the browser thread, read when a project arrives from outside (WebSocket, macOS). */
+    final AtomicReference<WebSocket> desktopSocket = new AtomicReference<>();
+    /** Project file the desktop window opens once its UI connects (from --open or a double click). */
+    private final AtomicReference<String> pendingOpenProject = new AtomicReference<>();
+    /** Makes "keep the file until the UI connects" and "the UI connected" happen one after the other. */
+    private final Object openProjectLock = new Object();
+    /** Brings the desktop window to the front; null when there is no window (browser mode, CLI). */
+    private final AtomicReference<Runnable> windowActivator = new AtomicReference<>();
     final BridgeContext bridgeContext = new BridgeContext(this);
     public final FlowCommandHandler flowCommandHandler = new FlowCommandHandler(bridgeContext);
     public final GroupCommandHandler groupCommandHandler = new GroupCommandHandler(bridgeContext, flowCommandHandler);
@@ -157,8 +173,101 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
     /** Global simulation clock; runs exactly while the system is running (see BridgeContext#setSystemRunning). */
     final ITickClock tickClock = new TickClockImpl(flowCommandHandler);
     
+    /**
+     * @return the virtual socket of the desktop window, or null when no desktop UI has connected
+     */
     public WebSocket getDesktopSocket() {
-        return desktopSocket;
+        return desktopSocket.get();
+    }
+
+    /**
+     * Marks this engine as the one of a desktop window and sets how to bring that window to the
+     * front, so projects can be opened in it (see {@link #requestOpenProject}).
+     *
+     * @param windowActivator brings the window to the front
+     */
+    public void setWindowActivator(Runnable windowActivator) {
+        this.windowActivator.set(windowActivator);
+    }
+
+    /**
+     * Sets how OPEN_OUTPUT_FOLDER shows a folder in the file explorer.
+     *
+     * @param folderOpener the opener to use (tests replace the desktop one)
+     */
+    public void setFolderOpener(IFolderOpener folderOpener) {
+        this.folderOpener.set(folderOpener);
+    }
+
+    /**
+     * @return whether a desktop window belongs to this engine (its UI may not have connected yet)
+     */
+    public boolean hasWindow() {
+        return windowActivator.get() != null;
+    }
+
+    /**
+     * Sets the project file the desktop window opens once its UI connects.
+     *
+     * @param filePath absolute path of the {@code .gsynth} file
+     */
+    public void setPendingOpenProject(String filePath) {
+        pendingOpenProject.set(filePath);
+    }
+
+    /**
+     * @return the project file waiting for the desktop UI, now taken (null if none)
+     */
+    public String takePendingOpenProject() {
+        return pendingOpenProject.getAndSet(null);
+    }
+
+    /**
+     * Asks the desktop window to open a project file, or a new project: the window comes to the
+     * front and its UI goes through the same steps as Load or New, asking first when there are
+     * unsaved changes. If its UI has not connected yet, the file waits until it does.
+     *
+     * @param filePath absolute path of the {@code .gsynth} file, or null for a new project
+     */
+    public void requestOpenProject(String filePath) {
+        Runnable activator = windowActivator.get();
+        if (activator != null) {
+            activator.run();
+        }
+        synchronized (openProjectLock) {
+            WebSocket desktop = desktopSocket.get();
+            if (desktop == null) {
+                // A new window starts with an empty project: only a file has to wait
+                if (filePath != null) {
+                    pendingOpenProject.set(filePath);
+                }
+                return;
+            }
+            sendOpenProjectRequested(desktop, filePath);
+        }
+    }
+
+    /**
+     * Sends the desktop UI the project that was waiting for it (see {@link #requestOpenProject}).
+     * Called once the UI has its initial state.
+     *
+     * @param desktop the desktop UI connection
+     */
+    public void deliverPendingOpenProject(WebSocket desktop) {
+        synchronized (openProjectLock) {
+            String pending = pendingOpenProject.getAndSet(null);
+            if (pending != null) {
+                sendOpenProjectRequested(desktop, pending);
+            }
+        }
+    }
+
+    private void sendOpenProjectRequested(WebSocket desktop, String filePath) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        if (filePath != null) {
+            payload.put("filePath", filePath);
+        }
+        sendMessage(desktop, "OPEN_PROJECT_REQUESTED", null, payload);
     }
 
     public UiBridgeWebSocketServer(String host, int port) {
@@ -198,8 +307,8 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         this.stateRepository = stateRepository;
         this.pluginInstaller = pluginInstaller;
         this.devicePreferences = DevicePreferences.inFolder(stateRepository.getStateDirectory());
-        if (this.pluginInstaller instanceof PluginInstallerImpl) {
-            ((PluginInstallerImpl) this.pluginInstaller).setPluginManager(this.connectorCatalogService.getPluginManager());
+        if (this.pluginInstaller instanceof PluginInstallerImpl installer) {
+            installer.setPluginManager(this.connectorCatalogService.getPluginManager());
         }
         this.scheduler = Executors.newScheduledThreadPool(Math.max(4, Runtime.getRuntime().availableProcessors() * 2));
         initializeRuntime();
@@ -249,12 +358,111 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
 
     @Override
     public void onStart() {
-        scheduler.scheduleAtFixedRate(systemCommandHandler::emitMetricsTick, 1, 1, TimeUnit.SECONDS);
-        scheduler.scheduleAtFixedRate(systemCommandHandler::emitGroupsHeartbeat, 1, 2, TimeUnit.SECONDS);
+        startBackgroundTasks();
         setConnectionLostTimeout(30);
     }
 
+    /**
+     * Schedules the periodic metrics tick (throughput rates) and groups heartbeat. Called once
+     * when the network server starts, or directly by a headless engine that never opens a port.
+     */
+    public void startBackgroundTasks() {
+        scheduler.scheduleAtFixedRate(systemCommandHandler::emitMetricsTick, 1, 1, TimeUnit.SECONDS);
+        scheduler.scheduleAtFixedRate(systemCommandHandler::emitGroupsHeartbeat, 1, 2, TimeUnit.SECONDS);
+    }
+
+    /**
+     * Creates an engine for the headless command line: it is never started as a network server
+     * (no port is opened), so several engines can run side by side in one process and next to
+     * the desktop application.
+     *
+     * @param connectorCatalogService the connector catalog, shared by every headless engine
+     * @param stateRepository         where imported state is persisted (a no-op repository keeps
+     *                                the desktop autosave untouched)
+     * @return a new engine; call {@link #startBackgroundTasks()} once to enable the rate metrics
+     */
+    public static UiBridgeWebSocketServer createHeadless(ConnectorCatalogService connectorCatalogService,
+                                                         StateRepository stateRepository) {
+        return new UiBridgeWebSocketServer(
+            new InetSocketAddress("localhost", 0),
+            connectorCatalogService,
+            stateRepository,
+            new PluginInstallerImpl(AppPaths.current().pluginsDir(), AppPaths.current().sharedLibsDir()));
+    }
+
+    /**
+     * @return the number of messages sent since the engine was created
+     */
+    public long getTotalMessages() {
+        return totalMessages.get();
+    }
+
+    /**
+     * @return the number of errors (failed sends, connector errors...) since the engine was created
+     */
+    public long getTotalErrors() {
+        return totalErrors.get();
+    }
+
+    /**
+     * @return messages sent during the last second (updated by the background tasks)
+     */
+    public double getMessagesPerSecond() {
+        return bridgeContext.getMessagesPerSecond();
+    }
+
+    /**
+     * @return ticks of the clock during the last second (updated by the background tasks)
+     */
+    public double getTicksPerSecond() {
+        return bridgeContext.getTicksPerSecond();
+    }
+
+    /**
+     * @return the tick settings of the clock now in use
+     */
+    public TickSettings getTickSettings() {
+        return bridgeContext.getProjectSettings().tick();
+    }
+
+    /**
+     * @return bytes sent during the last second (updated by the background tasks)
+     */
+    public double getNetworkUpPerSecond() {
+        return bridgeContext.getNetworkUpPerSecond();
+    }
+
+    /**
+     * Lists the flows whose connector failed to start, naming the connector and its version
+     * when it is installed.
+     *
+     * @return one {@link StartProblem.Kind#CONNECTOR_FAILED} problem per flow in error, empty when
+     *         every connector is up
+     */
+    public List<StartProblem> getConnectorErrors() {
+        synchronized (stateLock) {
+            List<StartProblem> errors = new ArrayList<>();
+            for (GroupRuntime group : groupsById.values()) {
+                for (FlowRuntime flow : group.flows) {
+                    if (flow.hasError) {
+                        String connector = connectorCatalogService.findLatestConnector(flow.technology)
+                            .map(d -> d.getDisplayName() + " " + d.getPluginVersion() + ": ")
+                            .orElse("");
+                        errors.add(new StartProblem(StartProblem.Kind.CONNECTOR_FAILED, group.name, flow.name,
+                            connector + flow.errorMessage, null));
+                    }
+                }
+            }
+            return errors;
+        }
+    }
+
+    /**
+     * Stops every group, the clock and the background tasks, writes any state still waiting to
+     * be saved and closes the server.
+     */
     public void shutdown() {
+        stateCommandHandler.flushPendingState();
         synchronized (stateLock) {
             for (GroupRuntime group : groupsById.values()) {
                 flowCommandHandler.stopGroupInternal(group);
@@ -281,23 +489,33 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
         }
     }
 
+    /**
+     * Writes the whole state to the repository now (see {@link StateCommandHandler#persistState()}).
+     */
     public void persistState() {
         stateCommandHandler.persistState();
     }
 
     /**
+     * Writes the whole state to the repository a little later, once for several edits in a row
+     * (see {@link StateCommandHandler#schedulePersistState()}).
+     */
+    public void schedulePersistState() {
+        stateCommandHandler.schedulePersistState();
+    }
+
+    /**
      * Entry point for desktop-mode commands (JCEF bridge).
      * This bypasses the WebSocket network layer but reuses the same business logic.
+     * The virtual socket is created by the desktop package, so this engine has no JCEF reference.
+     *
+     * @param rawMessage the command received from the desktop UI
+     * @param socket     the virtual socket of the desktop window, already set up to answer
+     *                   this command; it becomes the desktop connection of this engine
      */
-    public void handleDesktopCommand(String rawMessage, org.cef.callback.CefQueryCallback callback, org.cef.browser.CefBrowser browser) {
-        // Reuse or create the persistent desktop socket
-        if (this.desktopSocket == null) {
-            this.desktopSocket = new DesktopBridgeSocket(this, callback, objectMapper, browser);
-        } else {
-            // Update the callback for the current query, but keep the socket reference
-            ((DesktopBridgeSocket)this.desktopSocket).setCallback(callback);
-        }
-        handleCommand(this.desktopSocket, rawMessage);
+    public void handleDesktopCommand(String rawMessage, WebSocket socket) {
+        desktopSocket.set(socket);
+        handleCommand(socket, rawMessage);
     }
 
     private void handleCommand(WebSocket conn, String rawMessage) {
@@ -341,45 +559,8 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                 return;
             }
 
-            switch (type) {
-                case "GET_INITIAL_STATE" -> stateCommandHandler.handleGetInitialState(conn, commandId);
-                case "LOAD_STATE" -> stateCommandHandler.handleLoadState(conn, commandId);
-                case "SAVE_STATE" -> stateCommandHandler.handleSaveState(conn, commandId);
-                case "SUBSCRIBE_METRICS" -> systemCommandHandler.handleSubscribeMetrics(conn, commandId);
-                case "UNSUBSCRIBE_METRICS" -> systemCommandHandler.handleUnsubscribeMetrics(conn, commandId);
-                case "GET_CONNECTOR_CATALOG" -> systemCommandHandler.handleGetConnectorCatalog(conn, commandId);
-                case "GET_LATEST_CONNECTOR" -> systemCommandHandler.handleGetLatestConnector(conn, payload, commandId);
-                case "START_SYSTEM" -> systemCommandHandler.handleStartSystem(conn, commandId);
-                case "STOP_SYSTEM" -> systemCommandHandler.handleStopSystem(conn, commandId);
-                case "PAUSE_GROUP" -> groupCommandHandler.handlePauseGroup(conn, payload, commandId);
-                case "CLONE_GROUP" -> groupCommandHandler.handleCloneGroup(conn, payload, commandId);
-                case "CLONE_FLOW" -> flowCommandHandler.handleCloneFlow(conn, payload, commandId);
-                case "START_GROUP" -> groupCommandHandler.handleStartGroup(conn, payload, commandId);
-                case "STOP_GROUP" -> groupCommandHandler.handleStopGroup(conn, payload, commandId);
-                case "UI_LOG" -> systemCommandHandler.handleUiLog(conn, payload, commandId);
-                case "CREATE_GROUP" -> groupCommandHandler.handleCreateGroup(conn, payload, commandId);
-                case "DELETE_GROUP" -> groupCommandHandler.handleDeleteGroup(conn, payload, commandId);
-                case "UPDATE_GROUP_CONFIG" -> groupCommandHandler.handleUpdateGroupConfig(conn, payload, commandId);
-                case "CREATE_FLOW" -> flowCommandHandler.handleCreateFlow(conn, payload, commandId);
-                case "DELETE_FLOW" -> flowCommandHandler.handleDeleteFlow(conn, payload, commandId);
-                case "UPDATE_FLOW_CONFIG" -> flowCommandHandler.handleUpdateFlowConfig(conn, payload, commandId);
-                case "CREATE_VARIABLE" -> variableCommandHandler.handleCreateVariable(conn, payload, commandId);
-                case "DELETE_VARIABLE" -> variableCommandHandler.handleDeleteVariable(conn, payload, commandId);
-                case "UPDATE_VARIABLE" -> variableCommandHandler.handleUpdateVariable(conn, payload, commandId);
-                case "VALIDATE_PLUGIN" -> pluginCommandHandler.handleValidatePlugin(conn, payload, commandId);
-                case "INSTALL_PLUGIN" -> pluginCommandHandler.handleInstallPlugin(conn, payload, commandId);
-                case "UNINSTALL_PLUGIN" -> pluginCommandHandler.handleUninstallPlugin(conn, payload, commandId);
-                case "EXPORT_STATE" -> stateCommandHandler.handleExportState(conn, commandId, payload);
-                case "IMPORT_STATE" -> stateCommandHandler.handleImportState(conn, commandId, payload);
-                case "CONVERT_MESSAGE_FORMAT" -> handleConvertMessageFormat(conn, payload, commandId);
-                case "UPDATE_SETTINGS" -> settingsCommandHandler.handleUpdateSettings(conn, payload, commandId);
-                case "UPDATE_OUTPUT_FOLDER" -> settingsCommandHandler.handleUpdateOutputFolder(conn, payload, commandId);
-                case "CHECK_FOR_UPDATES" -> updateCommandHandler.handleCheckForUpdates(conn, commandId);
-                case "INSTALL_UPDATE" -> updateCommandHandler.handleInstallUpdate(conn, payload, commandId);
-                case "CANCEL_UPDATE" -> updateCommandHandler.handleCancelUpdate(conn, commandId);
-                default -> sendError(conn, commandId, "UNSUPPORTED_COMMAND", "Unsupported command: " + type, Map.of(
-                    "command", type
-                ));
+            if (!dispatchProjectCommand(conn, type, payload, commandId)) {
+                dispatchApplicationCommand(conn, type, payload, commandId);
             }
             sendTrace(conn, commandId, "END", type, System.currentTimeMillis() - startTime, "ok");
         } catch (Exception ex) {
@@ -393,6 +574,66 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             }
         } finally {
             MDC.remove(COMMAND_ID);
+        }
+    }
+
+    /**
+     * Runs a command that edits or runs the project: its groups, flows and variables.
+     *
+     * @return false when the command is not one of them
+     */
+    private boolean dispatchProjectCommand(WebSocket conn, String type, JsonNode payload, String commandId) {
+        switch (type) {
+            case "PAUSE_GROUP" -> groupCommandHandler.handlePauseGroup(conn, payload, commandId);
+            case "CLONE_GROUP" -> groupCommandHandler.handleCloneGroup(conn, payload, commandId);
+            case "CLONE_FLOW" -> flowCommandHandler.handleCloneFlow(conn, payload, commandId);
+            case "START_GROUP" -> groupCommandHandler.handleStartGroup(conn, payload, commandId);
+            case "STOP_GROUP" -> groupCommandHandler.handleStopGroup(conn, payload, commandId);
+            case "CREATE_GROUP" -> groupCommandHandler.handleCreateGroup(conn, payload, commandId);
+            case "DELETE_GROUP" -> groupCommandHandler.handleDeleteGroup(conn, payload, commandId);
+            case "UPDATE_GROUP_CONFIG" -> groupCommandHandler.handleUpdateGroupConfig(conn, payload, commandId);
+            case "CREATE_FLOW" -> flowCommandHandler.handleCreateFlow(conn, payload, commandId);
+            case "DELETE_FLOW" -> flowCommandHandler.handleDeleteFlow(conn, payload, commandId);
+            case "UPDATE_FLOW_CONFIG" -> flowCommandHandler.handleUpdateFlowConfig(conn, payload, commandId);
+            case "CREATE_VARIABLE" -> variableCommandHandler.handleCreateVariable(conn, payload, commandId);
+            case "DELETE_VARIABLE" -> variableCommandHandler.handleDeleteVariable(conn, payload, commandId);
+            case "UPDATE_VARIABLE" -> variableCommandHandler.handleUpdateVariable(conn, payload, commandId);
+            default -> {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** Runs the commands about the state, the system, plugins, settings and updates. */
+    private void dispatchApplicationCommand(WebSocket conn, String type, JsonNode payload, String commandId) {
+        switch (type) {
+            case "GET_INITIAL_STATE" -> stateCommandHandler.handleGetInitialState(conn, commandId);
+            case "LOAD_STATE" -> stateCommandHandler.handleLoadState(conn, commandId);
+            case "REQUEST_OPEN_PROJECT" -> stateCommandHandler.handleRequestOpenProject(conn, commandId, payload);
+            case "SAVE_STATE" -> stateCommandHandler.handleSaveState(conn, commandId);
+            case "SUBSCRIBE_METRICS" -> systemCommandHandler.handleSubscribeMetrics(conn, commandId);
+            case "UNSUBSCRIBE_METRICS" -> systemCommandHandler.handleUnsubscribeMetrics(conn, commandId);
+            case "GET_CONNECTOR_CATALOG" -> systemCommandHandler.handleGetConnectorCatalog(conn, commandId);
+            case "GET_LATEST_CONNECTOR" -> systemCommandHandler.handleGetLatestConnector(conn, payload, commandId);
+            case "START_SYSTEM" -> systemCommandHandler.handleStartSystem(conn, commandId);
+            case "STOP_SYSTEM" -> systemCommandHandler.handleStopSystem(conn, commandId);
+            case "UI_LOG" -> systemCommandHandler.handleUiLog(conn, payload, commandId);
+            case "VALIDATE_PLUGIN" -> pluginCommandHandler.handleValidatePlugin(conn, payload, commandId);
+            case "INSTALL_PLUGIN" -> pluginCommandHandler.handleInstallPlugin(conn, payload, commandId);
+            case "UNINSTALL_PLUGIN" -> pluginCommandHandler.handleUninstallPlugin(conn, payload, commandId);
+            case "EXPORT_STATE" -> stateCommandHandler.handleExportState(conn, commandId, payload);
+            case "IMPORT_STATE" -> stateCommandHandler.handleImportState(conn, commandId, payload);
+            case "CONVERT_MESSAGE_FORMAT" -> handleConvertMessageFormat(conn, payload, commandId);
+            case "UPDATE_SETTINGS" -> settingsCommandHandler.handleUpdateSettings(conn, payload, commandId);
+            case "UPDATE_OUTPUT_FOLDER" -> settingsCommandHandler.handleUpdateOutputFolder(conn, payload, commandId);
+            case "OPEN_OUTPUT_FOLDER" -> settingsCommandHandler.handleOpenOutputFolder(conn, commandId);
+            case "CHECK_FOR_UPDATES" -> updateCommandHandler.handleCheckForUpdates(conn, commandId);
+            case "INSTALL_UPDATE" -> updateCommandHandler.handleInstallUpdate(conn, payload, commandId);
+            case "CANCEL_UPDATE" -> updateCommandHandler.handleCancelUpdate(conn, commandId);
+            default -> sendError(conn, commandId, "UNSUPPORTED_COMMAND", "Unsupported command: " + type, Map.of(
+                "command", type
+            ));
         }
     }
 
@@ -465,6 +706,16 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
             }
         }
         broadcastMessage("VARIABLE_UPDATE", payload);
+    }
+
+    /**
+     * Sends the UI one variable that changed ({@code VARIABLE_CHANGED}), instead of every
+     * variable as {@link #sendVariablesUpdate()} does.
+     *
+     * @param variable the variable as it is now
+     */
+    public void sendVariableChanged(Variable variable) {
+        broadcastMessage("VARIABLE_CHANGED", VariableCommandHandler.normalizeVariablePayloadForUi(variable.toPayload()));
     }
 
     /**
@@ -652,8 +903,9 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
                 sendMessage(connection, type, commandId, payload);
             }
         }
-        if (desktopSocket != null) {
-            sendMessage(desktopSocket, type, commandId, payload);
+        WebSocket desktop = desktopSocket.get();
+        if (desktop != null) {
+            sendMessage(desktop, type, commandId, payload);
         }
     }
 

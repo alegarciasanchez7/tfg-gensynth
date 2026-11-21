@@ -126,12 +126,8 @@ public final class DesktopFileChooser {
         Set<String> extensions = new LinkedHashSet<>();
         if (acceptValues != null) {
             for (String value : acceptValues) {
-                if (value == null) continue;
-                for (String token : value.split("[;,]")) {
-                    String trimmed = token.trim();
-                    if (trimmed.startsWith(".") && trimmed.length() > 1) {
-                        extensions.add(trimmed.substring(1).toLowerCase(Locale.ROOT));
-                    }
+                if (value != null) {
+                    addExtensions(value, extensions);
                 }
             }
         }
@@ -143,6 +139,16 @@ public final class DesktopFileChooser {
                 ? description
                 : "Files (" + String.join(", ", Arrays.stream(array).map(e -> "*." + e).toList()) + ")";
         return new FileNameExtensionFilter(label, array);
+    }
+
+    /** Adds the extensions of one accept value (e.g. ".jpg;.jpeg"), without the dot and in lower case. */
+    private static void addExtensions(String acceptValue, Set<String> extensions) {
+        for (String token : acceptValue.split("[;,]")) {
+            String trimmed = token.trim();
+            if (trimmed.startsWith(".") && trimmed.length() > 1) {
+                extensions.add(trimmed.substring(1).toLowerCase(Locale.ROOT));
+            }
+        }
     }
 
     /**

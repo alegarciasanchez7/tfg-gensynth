@@ -91,24 +91,9 @@ public class StringVariableConfig extends VariableConfiguration {
         if (pattern == GenerationPattern.CONSTANT) {
             return errors;
         }
-        if (fixedSize) {
-            if (fixedLength <= 0) {
-                errors.add("Fixed string length must be greater than 0");
-            }
-        } else {
-            if (minLength < 0) {
-                errors.add("Minimum string length cannot be negative");
-            }
-            if (minLength > maxLength) {
-                errors.add("Minimum string length (" + minLength + ") cannot be greater than maximum string length (" + maxLength + ")");
-            }
-        }
-        if (pattern == GenerationPattern.REGEX && regexPattern != null && !regexPattern.trim().isEmpty()) {
-            try {
-                new RgxGen(regexPattern);
-            } catch (Exception e) {
-                errors.add("Invalid regex pattern: " + e.getMessage());
-            }
+        validateLength(errors);
+        if (pattern == GenerationPattern.REGEX && hasRegex()) {
+            validateRegex(errors);
         }
         if (pattern == GenerationPattern.TEMPLATE && (template == null || template.isEmpty())) {
             errors.add("Template pattern requires a valid template string");
@@ -116,57 +101,86 @@ public class StringVariableConfig extends VariableConfiguration {
         return errors;
     }
 
+    private void validateLength(List<String> errors) {
+        if (fixedSize) {
+            if (fixedLength <= 0) {
+                errors.add("Fixed string length must be greater than 0");
+            }
+            return;
+        }
+        if (minLength < 0) {
+            errors.add("Minimum string length cannot be negative");
+        }
+        if (minLength > maxLength) {
+            errors.add("Minimum string length (" + minLength + ") cannot be greater than maximum string length (" + maxLength + ")");
+        }
+    }
+
+    private void validateRegex(List<String> errors) {
+        try {
+            new RgxGen(regexPattern);
+        } catch (Exception e) {
+            errors.add("Invalid regex pattern: " + e.getMessage());
+        }
+    }
+
+    private boolean hasRegex() {
+        return regexPattern != null && !regexPattern.trim().isEmpty();
+    }
+
     @Override
     public Object generateNextValue() {
         tickCounter++;
-        
+
         if (sourceListVariableId != null && !sourceListVariableId.trim().isEmpty()) {
             Object refVal = resolveListReferenceValue();
             if (refVal != null) {
-                String result = String.valueOf(refVal);
-                if (corruptionEnabled && corruptionProbability > 0) {
-                    result = applyDataCorruption(result);
-                }
-                return result;
+                return corruptIfEnabled(String.valueOf(refVal));
             }
         }
 
-        String result = "";
-        
-        if (pattern == GenerationPattern.CONSTANT) {
-            result = constantValue != null ? constantValue : "";
-        } else if (pattern == GenerationPattern.REGEX) {
-            if (regexPattern != null && !regexPattern.trim().isEmpty()) {
-                if (rgxGen == null) {
-                    rgxGen = new RgxGen(regexPattern);
-                }
-                result = rgxGen.generate();
-            }
-        } else if (pattern == GenerationPattern.TEMPLATE) {
-            result = resolveTemplate();
-        } else if (pattern == GenerationPattern.FORMATTED_MASK) {
-            result = generateFormattedMask();
-        } else {
-            // RANDOM_STRING
-            if (needsRebuild) {
-                buildCharacterSetCache();
-            }
-            
-            ThreadLocalRandom random = ThreadLocalRandom.current();
-            int length = fixedSize ? fixedLength : random.nextInt(minLength, maxLength + 1);
-            char[] output = new char[length];
+        String result = switch (pattern) {
+            case CONSTANT -> constantValue != null ? constantValue : "";
+            case REGEX -> generateFromRegex();
+            case TEMPLATE -> resolveTemplate();
+            case FORMATTED_MASK -> generateFormattedMask();
+            case null, default -> generateRandomString();
+        };
+        return corruptIfEnabled(result);
+    }
 
-            for (int i = 0; i < length; i++) {
-                output[i] = characterPool[random.nextInt(characterPool.length)];
-            }
-            result = new String(output);
-        }
-        
+    private String corruptIfEnabled(String value) {
         if (corruptionEnabled && corruptionProbability > 0) {
-            result = applyDataCorruption(result);
+            return applyDataCorruption(value);
         }
-        
-        return result;
+        return value;
+    }
+
+    /** Regex pattern: a string matching the regex, or "" when no regex is set. */
+    private String generateFromRegex() {
+        if (!hasRegex()) {
+            return "";
+        }
+        if (rgxGen == null) {
+            rgxGen = new RgxGen(regexPattern);
+        }
+        return rgxGen.generate();
+    }
+
+    /** Random string pattern: characters drawn from the weighted character pool. */
+    private String generateRandomString() {
+        if (needsRebuild) {
+            buildCharacterSetCache();
+        }
+
+        ThreadLocalRandom random = ThreadLocalRandom.current();
+        int length = fixedSize ? fixedLength : random.nextInt(minLength, maxLength + 1);
+        char[] output = new char[length];
+
+        for (int i = 0; i < length; i++) {
+            output[i] = characterPool[random.nextInt(characterPool.length)];
+        }
+        return new String(output);
     }
 
     private String resolveTemplate() {
@@ -287,26 +301,26 @@ public class StringVariableConfig extends VariableConfiguration {
      */
     private void buildCharacterSetCache() {
         List<WeightedCharSet> enabledSets = new ArrayList<>(4);
+        addIfEnabled(enabledSets, lowerCase, LOWERCASE_CHARS);
+        addIfEnabled(enabledSets, upperCase, UPPERCASE_CHARS);
+        addIfEnabled(enabledSets, numbers, NUMBER_CHARS);
+        addIfEnabled(enabledSets, symbols, SYMBOL_CHARS);
 
-        if (lowerCase.enabled && lowerCase.probability > 0.0) {
-            enabledSets.add(new WeightedCharSet(LOWERCASE_CHARS.toCharArray(), lowerCase.probability));
-        }
-        if (upperCase.enabled && upperCase.probability > 0.0) {
-            enabledSets.add(new WeightedCharSet(UPPERCASE_CHARS.toCharArray(), upperCase.probability));
-        }
-        if (numbers.enabled && numbers.probability > 0.0) {
-            enabledSets.add(new WeightedCharSet(NUMBER_CHARS.toCharArray(), numbers.probability));
-        }
-        if (symbols.enabled && symbols.probability > 0.0) {
-            enabledSets.add(new WeightedCharSet(SYMBOL_CHARS.toCharArray(), symbols.probability));
-        }
+        this.characterPool = enabledSets.isEmpty() ? LOWERCASE_CHARS.toCharArray() : buildWeightedPool(enabledSets);
+        this.needsRebuild = false;
+    }
 
-        if (enabledSets.isEmpty()) {
-            this.characterPool = LOWERCASE_CHARS.toCharArray();
-            this.needsRebuild = false;
-            return;
+    private static void addIfEnabled(List<WeightedCharSet> enabledSets, CharacterSetConfig config, String chars) {
+        if (config.enabled && config.probability > 0.0) {
+            enabledSets.add(new WeightedCharSet(chars.toCharArray(), config.probability));
         }
+    }
 
+    /**
+     * Fills the pool with random characters of each set, in slots proportional to its probability
+     * (at least one each); the last set takes the slots left.
+     */
+    private static char[] buildWeightedPool(List<WeightedCharSet> enabledSets) {
         double totalProbability = 0.0;
         for (WeightedCharSet set : enabledSets) {
             totalProbability += set.probability;
@@ -335,9 +349,7 @@ public class StringVariableConfig extends VariableConfiguration {
             }
             remaining -= slots;
         }
-
-        this.characterPool = pool;
-        this.needsRebuild = false;
+        return pool;
     }
 
     @Override
@@ -360,7 +372,8 @@ public class StringVariableConfig extends VariableConfiguration {
 
     @Override
     public Map<String, Object> toMap() {
-        Map<String, Object> map = new HashMap<>(16);
+        // Same table size as before, so the keys keep their order
+        Map<String, Object> map = HashMap.newHashMap(12);
         map.put("identifier", identifier);
         map.put("type", type.name());
         map.put("pattern", pattern.name());

@@ -106,7 +106,10 @@ public final class ProjectFileFormat {
         try {
             root = objectMapper.readTree(content);
         } catch (JsonProcessingException e) {
-            throw new IllegalArgumentException("Not a GenSynth project file: invalid JSON content", e);
+            // Say where the JSON breaks, so a hand-edited file can be fixed
+            String where = e.getLocation() == null || e.getLocation().getLineNr() < 1 ? ""
+                : " at line " + e.getLocation().getLineNr() + ", column " + e.getLocation().getColumnNr();
+            throw new IllegalArgumentException("Not a GenSynth project file: invalid JSON content" + where, e);
         }
         validate(root);
         return (ObjectNode) root;

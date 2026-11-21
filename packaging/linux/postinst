@@ -1,0 +1,45 @@
+#!/bin/sh
+# GenSynth: copy of the default jpackage 21 template, plus the lines marked "GenSynth" that
+# link the command line launcher as /usr/bin/gensynth. The UPPER_CASE words are filled in by
+# jpackage.
+# postinst script for APPLICATION_PACKAGE
+#
+# see: dh_installdeb(1)
+
+set -e
+
+# summary of how this script can be called:
+#        * <postinst> `configure' <most-recently-configured-version>
+#        * <old-postinst> `abort-upgrade' <new version>
+#        * <conflictor's-postinst> `abort-remove' `in-favour' <package>
+#          <new-version>
+#        * <postinst> `abort-remove'
+#        * <deconfigured's-postinst> `abort-deconfigure' `in-favour'
+#          <failed-install-package> <version> `removing'
+#          <conflicting-package> <version>
+# for details, see https://www.debian.org/doc/debian-policy/ or
+# the debian-policy package
+
+package_type=deb
+LAUNCHER_AS_SERVICE_SCRIPTS
+
+case "$1" in
+    configure)
+DESKTOP_COMMANDS_INSTALL
+LAUNCHER_AS_SERVICE_COMMANDS_INSTALL
+# GenSynth: expose the command line launcher as "gensynth" (never replace a file of another package)
+if [ ! -e /usr/bin/gensynth ] || [ -L /usr/bin/gensynth ]; then
+  ln -sf /opt/gensynth/bin/gensynth-cli /usr/bin/gensynth
+fi
+    ;;
+
+    abort-upgrade|abort-remove|abort-deconfigure)
+    ;;
+
+    *)
+        echo "postinst called with unknown argument \`$1'" >&2
+        exit 1
+    ;;
+esac
+
+exit 0

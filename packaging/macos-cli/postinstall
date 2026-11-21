@@ -1,0 +1,15 @@
+#!/usr/bin/env sh
+# GenSynth CLI edition: the default jpackage 21 postinstall script of a .pkg (the permissions of
+# the installed app), plus the lines marked "GenSynth". $2 is the install location (/Applications).
+
+chown root:admin "$2"
+chmod a+rX "$2"
+chmod a+r "$2/"*.app
+
+# GenSynth: expose the command line as "gensynth" when nothing provides it yet
+mkdir -p /usr/local/bin
+if [ ! -e /usr/local/bin/gensynth ]; then
+  ln -sf "$2/GenSynth-CLI.app/Contents/MacOS/GenSynth-CLI" /usr/local/bin/gensynth
+fi
+
+exit 0

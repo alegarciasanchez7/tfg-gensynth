@@ -8,8 +8,12 @@ A plugin implements a single interface, `com.gensynth.plugin.api.ConnectorPlugin
 
 - `info()`: id, name, version and description of the connector;
 - `fields()`: the configuration fields it needs, in display order (type, label, tooltip,
-  required, default...). GenSynth renders them in the flow configuration and validates them;
+  required, default, advanced...). GenSynth renders them in the flow configuration and
+  validates them;
 - `connect(config, context)`: opens a `ConnectorSession` that sends the flow's messages.
+
+The current API version is **1.1** (`PluginApi.VERSION`, artifact `1.1.0`); it only grows
+backward-compatibly, so plugins built for 1.0 keep working.
 
 Build and install it locally with `mvn install` (here or at the repository root).
 

@@ -198,19 +198,8 @@ public class JsonStateRepositoryImpl implements StateRepository {
     @Override
     public void clear() throws StateRepositoryException {
         try {
-            File groupsFile = new File(stateDirectory, GROUPS_FILE);
-            if (groupsFile.exists() && !groupsFile.delete()) {
-                throw new IOException("Failed to delete " + GROUPS_FILE);
-            }
-
-            File variablesFile = new File(stateDirectory, VARIABLES_FILE);
-            if (variablesFile.exists() && !variablesFile.delete()) {
-                throw new IOException("Failed to delete " + VARIABLES_FILE);
-            }
-
-            File settingsFile = new File(stateDirectory, SETTINGS_FILE);
-            if (settingsFile.exists() && !settingsFile.delete()) {
-                throw new IOException("Failed to delete " + SETTINGS_FILE);
+            for (String fileName : List.of(GROUPS_FILE, VARIABLES_FILE, SETTINGS_FILE)) {
+                Files.deleteIfExists(new File(stateDirectory, fileName).toPath());
             }
         } catch (IOException e) {
             throw new StateRepositoryException("Failed to clear state directory", e);

@@ -279,7 +279,7 @@ public class FlowDefinition {
         if (Double.isNaN(value)) {
             return 0;
         }
-        return Math.min(100, Math.max(0, value));
+        return Math.clamp(value, 0, 100);
     }
 
     public void setTemplate(String template) {
@@ -358,15 +358,15 @@ public class FlowDefinition {
         String host = (String) payload.getOrDefault("host", "localhost");
         
         Object portObj = payload.get("port");
-        int port = (portObj instanceof Number) ? ((Number) portObj).intValue() : 5672;
+        int port = portObj instanceof Number portNumber ? portNumber.intValue() : 5672;
         
         String topic = (String) payload.getOrDefault("topic", "");
         
         Object intervalObj = payload.get("interval");
-        int interval = (intervalObj instanceof Number) ? ((Number) intervalObj).intValue() : 1000;
+        int interval = intervalObj instanceof Number intervalNumber ? intervalNumber.intValue() : 1000;
         
         Object burstObj = payload.get("burst");
-        int burst = (burstObj instanceof Number) ? ((Number) burstObj).intValue() : 1;
+        int burst = burstObj instanceof Number burstNumber ? burstNumber.intValue() : 1;
         
         String template = (String) payload.getOrDefault("template", "{\"eventId\":\"{{uuid}}\"}");
         String format = (String) payload.getOrDefault("format", "json");
@@ -378,20 +378,20 @@ public class FlowDefinition {
         FlowDefinition flow = new FlowDefinition(flowId, groupId, name, technology, host, port, topic, interval, burst, template, format, connectorId, connectorConfig);
         
         Object enabledObj = payload.get("enabled");
-        if (enabledObj instanceof Boolean) {
-            flow.setEnabled((Boolean) enabledObj);
+        if (enabledObj instanceof Boolean enabledValue) {
+            flow.setEnabled(enabledValue);
         }
 
         Object everyTicksObj = payload.get("everyTicks");
-        flow.setEveryTicks(everyTicksObj instanceof Number ? ((Number) everyTicksObj).intValue() : 1);
+        flow.setEveryTicks(everyTicksObj instanceof Number everyTicksNumber ? everyTicksNumber.intValue() : 1);
 
         // Event loss fields are optional: older project files load with event loss off
         Object lossObj = payload.get("lossPercent");
-        flow.setLossPercent(lossObj instanceof Number ? ((Number) lossObj).doubleValue() : 0);
+        flow.setLossPercent(lossObj instanceof Number lossNumber ? lossNumber.doubleValue() : 0);
         Object outageEveryObj = payload.get("outageEveryTicks");
-        flow.setOutageEveryTicks(outageEveryObj instanceof Number ? ((Number) outageEveryObj).intValue() : 0);
+        flow.setOutageEveryTicks(outageEveryObj instanceof Number outageEveryNumber ? outageEveryNumber.intValue() : 0);
         Object outageDurationObj = payload.get("outageDurationTicks");
-        flow.setOutageDurationTicks(outageDurationObj instanceof Number ? ((Number) outageDurationObj).intValue() : 0);
+        flow.setOutageDurationTicks(outageDurationObj instanceof Number outageDurationNumber ? outageDurationNumber.intValue() : 0);
         
         return flow;
     }

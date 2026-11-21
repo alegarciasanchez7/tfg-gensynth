@@ -85,17 +85,26 @@ public final class ExternalLinkOpener {
                 Desktop.getDesktop().browse(new URI(url));
                 return;
             }
-            if (System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("linux")) {
-                Optional<Path> xdgOpen = findExecutable(XDG_OPEN_PATHS);
-                if (xdgOpen.isPresent()) {
-                    new ProcessBuilder(xdgOpen.get().toString(), url).start();
-                    return;
-                }
+            Optional<Path> xdgOpen = linuxXdgOpen();
+            if (xdgOpen.isPresent()) {
+                new ProcessBuilder(xdgOpen.get().toString(), url).start();
+                return;
             }
             logger.warn("No way to open the browser on this system: {}", url);
         } catch (Exception e) {
             logger.warn("Could not open {} in the browser: {}", url, e.getMessage());
         }
+    }
+
+    /**
+     * @return the {@code xdg-open} executable on Linux (from {@link #XDG_OPEN_PATHS}), or empty on
+     *         other systems or when it is not installed
+     */
+    static Optional<Path> linuxXdgOpen() {
+        if (!System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("linux")) {
+            return Optional.empty();
+        }
+        return findExecutable(XDG_OPEN_PATHS);
     }
 
     /**

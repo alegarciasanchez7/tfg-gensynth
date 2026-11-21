@@ -10,20 +10,16 @@ import java.util.Objects;
 /**
  * Project-wide simulation settings, saved with the project file and the backend state.
  * Currently holds the tick clock configuration; future setting categories go here too.
+ *
+ * @param tick tick clock settings
  */
-public final class ProjectSettings {
+public record ProjectSettings(TickSettings tick) {
 
     private static final Logger logger = LoggerFactory.getLogger(ProjectSettings.class);
 
-    private final TickSettings tick;
-
-    /**
-     * Creates project settings.
-     *
-     * @param tick tick clock settings
-     */
-    public ProjectSettings(TickSettings tick) {
-        this.tick = Objects.requireNonNull(tick, "tick cannot be null");
+    // The tick settings are required
+    public ProjectSettings {
+        Objects.requireNonNull(tick, "tick cannot be null");
     }
 
     /**
@@ -64,24 +60,5 @@ public final class ProjectSettings {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("tick", tick.toPayload());
         return payload;
-    }
-
-    /**
-     * @return the tick clock settings
-     */
-    public TickSettings getTick() {
-        return tick;
-    }
-
-    @Override
-    public boolean equals(Object o) {
-        if (this == o) return true;
-        if (!(o instanceof ProjectSettings that)) return false;
-        return tick.equals(that.tick);
-    }
-
-    @Override
-    public int hashCode() {
-        return tick.hashCode();
     }
 }

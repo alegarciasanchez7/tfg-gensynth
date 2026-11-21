@@ -1,7 +1,9 @@
 package com.gensynth.core.ws;
 
+import com.gensynth.core.TestWaits;
 import com.gensynth.core.connectors.plugin.PluginInstallerImpl;
 import com.gensynth.core.connectors.runtime.ConnectorCatalogService;
+import com.gensynth.core.model.StartProblem;
 import com.gensynth.core.persistence.JsonStateRepositoryImpl;
 import com.gensynth.core.persistence.StateRepository;
 import com.gensynth.core.ws.runtime.GroupRuntime;
@@ -350,7 +352,7 @@ public class UiBridgeWebSocketServerTest {
         com.gensynth.core.model.TickSettings expected = new com.gensynth.core.model.TickSettings(
                 com.gensynth.core.model.TickSettings.Mode.FIXED_RATE, 250, com.gensynth.core.model.TickSettings.Unit.MILLISECONDS);
         assertEquals(expected, server.tickClock.getSettings());
-        assertEquals(expected, repository.loadSettings().getTick());
+        assertEquals(expected, repository.loadSettings().tick());
 
         // Desktop socket is null and the mock is not a registered connection, so only the ack reaches it
         List<JsonNode> messages = sentMessages(mockConn);
@@ -419,8 +421,8 @@ public class UiBridgeWebSocketServerTest {
                   }
                 }
                 """);
-        assertEquals(com.gensynth.core.model.TickSettings.Mode.AS_FAST_AS_POSSIBLE, server.tickClock.getSettings().getMode());
-        assertEquals(2, server.tickClock.getSettings().getValue());
+        assertEquals(com.gensynth.core.model.TickSettings.Mode.AS_FAST_AS_POSSIBLE, server.tickClock.getSettings().mode());
+        assertEquals(2, server.tickClock.getSettings().value());
 
         Path exportPath = tempDir.resolve("with-settings.gsynth");
         server.onMessage(mockConn, "{\"type\":\"EXPORT_STATE\",\"commandId\":\"cmd-export-settings\",\"protocolVersion\":\"1.0.0\","
@@ -446,8 +448,8 @@ public class UiBridgeWebSocketServerTest {
 
         server.onMessage(null, "{\"type\":\"LOAD_STATE\",\"commandId\":\"cmd-load\",\"protocolVersion\":\"1.0.0\",\"payload\":{}}");
 
-        assertEquals(5, server.tickClock.getSettings().getValue());
-        assertEquals(com.gensynth.core.model.TickSettings.Unit.SECONDS, server.tickClock.getSettings().getUnit());
+        assertEquals(5, server.tickClock.getSettings().value());
+        assertEquals(com.gensynth.core.model.TickSettings.Unit.SECONDS, server.tickClock.getSettings().unit());
         server.shutdown();
     }
 
@@ -490,6 +492,61 @@ public class UiBridgeWebSocketServerTest {
         server.onMessage(null, "{\"type\":\"STOP_SYSTEM\",\"commandId\":\"cmd-stop-folder\",\"protocolVersion\":\"1.0.0\",\"payload\":{}}");
         assertEquals(chosen.toAbsolutePath(), sessionDir.getParent());
         assertTrue(sessionDir.getFileName().toString().startsWith("OUTPUT_FILES_"));
+        server.shutdown();
+    }
+
+    @Test
+    public void systemStatusReportsTheSessionFolderAndKeepsItAfterStop() throws Exception {
+        Path tempDir = Files.createTempDirectory("gensynth-ws-test-session-status-");
+        UiBridgeWebSocketServer server = newServer(tempDir, new JsonStateRepositoryImpl(tempDir.toString()));
+        server.onMessage(null, outputFolderCommand("cmd-folder-status", tempDir.resolve("results")));
+        assertNull(server.systemCommandHandler.buildSystemStatusPayload(null).get("sessionOutputDir"));
+
+        server.onMessage(null, "{\"type\":\"START_SYSTEM\",\"commandId\":\"cmd-start-status\",\"protocolVersion\":\"1.0.0\",\"payload\":{}}");
+        String sessionDir = server.bridgeContext.getCurrentOutputDir();
+        assertNotNull(sessionDir);
+        assertEquals(sessionDir, server.systemCommandHandler.buildSystemStatusPayload(null).get("sessionOutputDir"));
+
+        server.onMessage(null, "{\"type\":\"STOP_SYSTEM\",\"commandId\":\"cmd-stop-status\",\"protocolVersion\":\"1.0.0\",\"payload\":{}}");
+        assertEquals("The folder is still shown after STOP, when the files are looked for",
+            sessionDir, server.systemCommandHandler.buildSystemStatusPayload(null).get("sessionOutputDir"));
+        server.shutdown();
+    }
+
+    @Test
+    public void openOutputFolderShowsTheSessionFolderOrElseTheOutputFolder() throws Exception {
+        Path tempDir = Files.createTempDirectory("gensynth-ws-test-open-folder-");
+        Path chosen = tempDir.resolve("results");
+        UiBridgeWebSocketServer server = newServer(tempDir, new JsonStateRepositoryImpl(tempDir.toString()));
+        List<Path> opened = new java.util.ArrayList<>();
+        server.setFolderOpener(folder -> opened.add(folder));
+        WebSocket mockConn = mock(WebSocket.class);
+        when(mockConn.isOpen()).thenReturn(true);
+        String open = "{\"type\":\"OPEN_OUTPUT_FOLDER\",\"commandId\":\"%s\",\"protocolVersion\":\"1.0.0\",\"payload\":{}}";
+
+        server.onMessage(mockConn, outputFolderCommand("cmd-folder-open", chosen));
+        server.onMessage(null, "{\"type\":\"START_SYSTEM\",\"commandId\":\"cmd-start-open\",\"protocolVersion\":\"1.0.0\",\"payload\":{}}");
+        Path sessionDir = Path.of(server.bridgeContext.getCurrentOutputDir()).toAbsolutePath();
+
+        // No connector wrote a file yet, so the session folder does not exist: the output folder is shown
+        server.onMessage(mockConn, String.format(open, "cmd-open-base"));
+        assertEquals(List.of(chosen.toAbsolutePath()), opened);
+        JsonNode ack = findMessage(sentMessages(mockConn), "CONNECTION_STATUS", "cmd-open-base");
+        assertNotNull("OPEN_OUTPUT_FOLDER should be acknowledged", ack);
+        assertEquals("output_folder_opened", ack.path("payload").path("result").asText());
+        assertEquals(chosen.toAbsolutePath().toString(), ack.path("payload").path("path").asText());
+
+        Files.createDirectories(sessionDir);
+        server.onMessage(mockConn, String.format(open, "cmd-open-session"));
+        assertEquals(sessionDir, opened.get(1));
+
+        server.setFolderOpener(folder -> false);
+        server.onMessage(mockConn, String.format(open, "cmd-open-headless"));
+        JsonNode error = findMessage(sentMessages(mockConn), "ERROR", "cmd-open-headless");
+        assertNotNull("A system without a desktop reports an error", error);
+        assertEquals("UNSUPPORTED_OPERATION", error.path("payload").path("code").asText());
+        assertTrue(error.path("payload").path("message").asText().contains(sessionDir.toString()));
+        server.onMessage(null, "{\"type\":\"STOP_SYSTEM\",\"commandId\":\"cmd-stop-open\",\"protocolVersion\":\"1.0.0\",\"payload\":{}}");
         server.shutdown();
     }
 
@@ -556,10 +613,7 @@ public class UiBridgeWebSocketServerTest {
                 + "\"payload\":{\"tick\":{\"mode\":\"FIXED_RATE\",\"value\":20,\"unit\":\"MILLISECONDS\"}}}");
 
         server.onMessage(null, "{\"type\":\"START_SYSTEM\",\"commandId\":\"c4\",\"protocolVersion\":\"1.0.0\",\"payload\":{}}");
-        long deadline = System.currentTimeMillis() + 5000;
-        while (server.totalMessages.get() < minMessages && System.currentTimeMillis() < deadline) {
-            Thread.sleep(10);
-        }
+        TestWaits.eventually().until(() -> server.totalMessages.get() >= minMessages);
         server.onMessage(null, "{\"type\":\"STOP_SYSTEM\",\"commandId\":\"c5\",\"protocolVersion\":\"1.0.0\",\"payload\":{}}");
 
         long[] result = { server.totalMessages.get(), server.tickClock.getTickCount() };
@@ -643,6 +697,212 @@ public class UiBridgeWebSocketServerTest {
         assertEquals("INVALID_PAYLOAD", error.path("payload").path("code").asText());
         assertEquals("sequential", server.groupsById.get("g-mode").outputMode);
         server.shutdown();
+    }
+
+    // ============ Headless engine (command line) ============
+
+    @Test
+    public void importProjectWithoutPersistLeavesTheRepositoryUntouched() throws Exception {
+        Path tempDir = Files.createTempDirectory("gensynth-ws-test-import-no-persist-");
+        StateRepository repository = new JsonStateRepositoryImpl(tempDir.toString());
+        UiBridgeWebSocketServer server = newServer(tempDir, repository);
+        JsonNode project = new ObjectMapper().readTree(
+                "{\"groups\":[{\"id\":\"g-cli\",\"name\":\"CLI\",\"flows\":[]}],\"variables\":[]}");
+
+        assertEquals(1, server.stateCommandHandler.importProject(project, false));
+
+        assertTrue(server.groupsById.containsKey("g-cli"));
+        assertTrue("nothing must be autosaved", repository.loadGroups().isEmpty());
+        JsonNode withoutGroups = new ObjectMapper().readTree("{}");
+        assertThrows(IllegalArgumentException.class,
+                () -> server.stateCommandHandler.importProject(withoutGroups, false));
+        server.shutdown();
+    }
+
+    @Test
+    public void headlessEngineRunsWithoutOpeningAPort() throws Exception {
+        UiBridgeWebSocketServer server = UiBridgeWebSocketServer.createHeadless(
+                new ConnectorCatalogService(), new com.gensynth.core.persistence.NoOpStateRepository());
+
+        String outputDir = Files.createTempDirectory("gensynth-ws-test-headless-").toString();
+        server.systemCommandHandler.startSystemInternal(() -> outputDir);
+        server.startBackgroundTasks();
+        assertTrue(server.tickClock.isRunning());
+        assertTrue(server.getConnectorErrors().isEmpty());
+
+        server.systemCommandHandler.stopSystemInternal();
+        assertFalse(server.tickClock.isRunning());
+        // Shutting down a server that never started must not fail
+        server.shutdown();
+    }
+
+    private static String flow(String id, String technology, boolean enabled, String template, String config) {
+        return "{\"id\":\"" + id + "\",\"name\":\"F" + id + "\",\"technology\":\"" + technology + "\",\"enabled\":"
+            + enabled + ",\"template\":\"" + template + "\",\"connectorConfig\":" + config + "}";
+    }
+
+    private static String group(String id, String name, String... flows) {
+        return "{\"id\":\"" + id + "\",\"name\":\"" + name + "\",\"flows\":[" + String.join(",", flows) + "]}";
+    }
+
+    private static String variable(String id, String scope, String flowId, String type, String config) {
+        return "{\"id\":\"" + id + "\",\"name\":\"" + id + "\",\"scope\":\"" + scope + "\",\"flowId\":"
+            + (flowId == null ? "null" : "\"" + flowId + "\"") + ",\"type\":\"" + type + "\",\"config\":" + config + "}";
+    }
+
+    private static UiBridgeWebSocketServer serverWithProject(String groups, String variables) throws Exception {
+        UiBridgeWebSocketServer server = UiBridgeWebSocketServer.createHeadless(
+                new ConnectorCatalogService(), new com.gensynth.core.persistence.NoOpStateRepository());
+        server.stateCommandHandler.importProject(new ObjectMapper().readTree(
+                "{\"groups\":[" + groups + "],\"variables\":[" + variables + "]}"), false);
+        return server;
+    }
+
+    @Test
+    public void checkProjectFindsEveryKindOfProblemWithoutStartingAnything() throws Exception {
+        String txt = "{\"format\":\"txt\"}";
+        UiBridgeWebSocketServer server = serverWithProject(String.join(",",
+                group("g1", "Cycle", flow("1", "file", true, "{{a}}", txt)),
+                group("g2", "Broken", flow("2", "file", true, "{{c}}", txt)),
+                group("g3", "Items", flow("3", "file", true, "{{colors.item1}}", txt)),
+                group("g4", "Invalid", flow("4", "file", true, "{{t}}", txt)),
+                group("g5", "Connectors",
+                        flow("5", "nope", true, "x", "{}"),
+                        flow("6", "file", true, "x", "{\"format\":\"bogus\"}"),
+                        flow("7", "nope", false, "x", "{}"))),
+                String.join(",",
+                variable("a", "local", "1", "numeric", "{\"pattern\":\"FORMULA\",\"formula\":\"{{b}} + 1\"}"),
+                variable("b", "local", "1", "numeric", "{\"pattern\":\"FORMULA\",\"formula\":\"{{a}} + 1\"}"),
+                variable("c", "local", "2", "numeric", "{\"pattern\":\"FORMULA\",\"formula\":\"{{nobody}} + 1\"}"),
+                variable("colors", "local", "3", "list",
+                        "{\"selectionStrategy\":\"RANDOM\",\"items\":[{\"id\":\"i1\",\"value\":\"red\",\"weight\":1.0}]}"),
+                variable("t", "local", "4", "numeric", "{\"pattern\":\"RANDOM\",\"min\":10,\"max\":1}")));
+        try {
+            List<StartProblem> problems = server.systemCommandHandler.checkProject();
+
+            assertEquals(List.of(StartProblem.Kind.CYCLE, StartProblem.Kind.BROKEN_REFERENCE,
+                    StartProblem.Kind.INVALID_ITEM_REFERENCE, StartProblem.Kind.INVALID_VARIABLE,
+                    StartProblem.Kind.CONNECTOR_NOT_INSTALLED, StartProblem.Kind.INVALID_CONNECTOR_CONFIG),
+                    problems.stream().map(StartProblem::kind).toList());
+            assertEquals(List.of("Cycle", "Broken", "Items", "Invalid", "Connectors", "Connectors"),
+                    problems.stream().map(StartProblem::group).toList());
+            assertTrue(problems.get(0).cycle().containsAll(List.of("a", "b")));
+            assertTrue(problems.get(1).message(), problems.get(1).message().contains("nobody"));
+            assertTrue(problems.get(3).message(), problems.get(3).message().contains("'t'"));
+            assertEquals("F5", problems.get(4).flow());
+            assertTrue(problems.get(5).message(), problems.get(5).message().startsWith("Invalid File Output settings: "));
+            // The disabled flow with the same missing connector is not reported
+            assertTrue(problems.stream().noneMatch(p -> "F7".equals(p.flow())));
+            assertFalse("nothing is started", server.tickClock.isRunning());
+            assertEquals(4, problems.stream().filter(StartProblem::blocking).count());
+        } finally {
+            server.shutdown();
+        }
+    }
+
+    @Test
+    public void sharedVariablesCannotStartWhenTheyReadLocalVariables() throws Exception {
+        String txt = "{\"format\":\"txt\"}";
+        String formula = "{\"pattern\":\"FORMULA\",\"formula\":\"{{%s}} + 1\"}";
+        UiBridgeWebSocketServer server = serverWithProject(String.join(",",
+                group("g1", "ReadsLocal", flow("1", "file", true, "{{shared}}", txt)),
+                group("g2", "ReadsGlobal", flow("2", "file", true, "{{ok}}", txt))),
+                String.join(",",
+                variable("temp", "local", "1", "numeric", "{\"pattern\":\"RANDOM\",\"min\":1,\"max\":5}"),
+                "{\"id\":\"shared\",\"name\":\"shared\",\"scope\":\"group\",\"groupId\":\"g1\",\"type\":\"numeric\","
+                    + "\"config\":" + String.format(formula, "temp") + "}",
+                variable("base", "global", null, "numeric", "{\"pattern\":\"RANDOM\",\"min\":1,\"max\":5}"),
+                "{\"id\":\"ok\",\"name\":\"ok\",\"scope\":\"group\",\"groupId\":\"g2\",\"type\":\"numeric\","
+                    + "\"config\":" + String.format(formula, "base") + "}"));
+        try {
+            List<StartProblem> problems = server.systemCommandHandler.checkProject();
+
+            assertEquals(1, problems.size());
+            assertEquals("ReadsLocal", problems.get(0).group());
+            assertTrue(problems.get(0).blocking());
+            assertTrue(problems.get(0).message(),
+                    problems.get(0).message().startsWith("GROUP variable 'shared' depends on 'temp'"));
+        } finally {
+            server.shutdown();
+        }
+    }
+
+    @Test
+    public void checkProjectReportsAProblemOfAGlobalVariableOnce() throws Exception {
+        String txt = "{\"format\":\"txt\"}";
+        UiBridgeWebSocketServer server = serverWithProject(String.join(",",
+                group("g1", "One", flow("1", "file", true, "{{shared}}", txt)),
+                group("g2", "Two", flow("2", "file", true, "{{shared}}", txt))),
+                variable("shared", "global", null, "numeric", "{\"pattern\":\"RANDOM\",\"min\":10,\"max\":1}"));
+        try {
+            List<StartProblem> problems = server.systemCommandHandler.checkProject();
+
+            assertEquals(1, problems.size());
+            assertEquals(StartProblem.Kind.INVALID_VARIABLE, problems.get(0).kind());
+            assertNull("it belongs to no group in particular", problems.get(0).group());
+        } finally {
+            server.shutdown();
+        }
+    }
+
+    @Test
+    public void connectorErrorsNameTheConnector() throws Exception {
+        UiBridgeWebSocketServer server = serverWithProject(
+                group("g1", "Sensors", flow("1", "file", true, "x", "{\"format\":\"bogus\"}")), "");
+        try {
+            String outputDir = Files.createTempDirectory("gensynth-ws-test-connector-").toString();
+            server.systemCommandHandler.startSystemInternal(() -> outputDir);
+
+            List<StartProblem> errors = server.getConnectorErrors();
+            assertEquals(1, errors.size());
+            assertEquals(StartProblem.Kind.CONNECTOR_FAILED, errors.get(0).kind());
+            assertEquals("F1", errors.get(0).flow());
+            assertTrue(errors.get(0).message(), errors.get(0).message().startsWith("File Output 1.0.0: "));
+        } finally {
+            server.systemCommandHandler.stopSystemInternal();
+            server.shutdown();
+        }
+    }
+
+    @Test
+    public void aWindowOpenedWithAProjectLoadsItOnceItsUiIsReady() throws Exception {
+        Path tempDir = Files.createTempDirectory("gensynth-ws-test-open-at-start-");
+        UiBridgeWebSocketServer server = newServer(tempDir, new JsonStateRepositoryImpl(tempDir.toString()));
+        server.setWindowActivator(() -> { });
+        server.setPendingOpenProject("/projects/plant.gsynth");
+        WebSocket window = mock(WebSocket.class);
+        when(window.isOpen()).thenReturn(true);
+        server.desktopSocket.set(window);
+        WebSocket browser = mock(WebSocket.class);
+        when(browser.isOpen()).thenReturn(true);
+        String getInitialState = "{\"type\":\"GET_INITIAL_STATE\",\"commandId\":\"%s\",\"protocolVersion\":\"1.0.0\",\"payload\":{}}";
+
+        // Another client asking first does not take it
+        server.onMessage(browser, String.format(getInitialState, "b1"));
+        verify(window, never()).send(anyString());
+
+        server.onMessage(window, String.format(getInitialState, "w1"));
+        server.onMessage(window, String.format(getInitialState, "w2"));
+
+        ArgumentCaptor<String> sent = ArgumentCaptor.forClass(String.class);
+        verify(window, atLeastOnce()).send(sent.capture());
+        List<String> requests = sent.getAllValues().stream().filter(m -> m.contains("OPEN_PROJECT_REQUESTED")).toList();
+        assertEquals("only once", 1, requests.size());
+        assertTrue(requests.get(0), requests.get(0).contains("plant.gsynth"));
+        // Right after the window's first INITIAL_STATE
+        int initialState = indexOf(sent.getAllValues(), "\"type\":\"INITIAL_STATE\"");
+        assertTrue(initialState >= 0 && sent.getAllValues().indexOf(requests.get(0)) > initialState);
+        assertNull(server.takePendingOpenProject());
+        server.shutdown();
+    }
+
+    private static int indexOf(List<String> messages, String text) {
+        for (int i = 0; i < messages.size(); i++) {
+            if (messages.get(i).contains(text)) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     // ============ Sequential order and flow order ============

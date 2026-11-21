@@ -58,6 +58,31 @@ public class TemplateEngineTest {
     }
 
     @Test
+    public void findReferencedVariablesListsEachVariableOnceInOrderOfUse() {
+        variables.put("v1", new Variable("v1", "temp", "LOCAL", "numeric", 0, Map.of(), "flow-1", null));
+        variables.put("v2", new Variable("v2", "temp", "GLOBAL", "numeric", 0, Map.of(), null, null));
+        variables.put("v3", new Variable("v3", "site", "GROUP", "list", "", Map.of(), null, "group-1"));
+        variables.put("v4", new Variable("v4", "other", "LOCAL", "numeric", 0, Map.of(), "flow-2", null));
+        String template = "{{uuid}} {{ts}} {{n}} {{flow.name}} {{site.item1.value}} {{temp.round}} "
+            + "{{global.temp}} {{temp}} {{group.site}} {{other}} {{missing}}";
+
+        List<TemplateEngine.VariableReference> references =
+            engine.findReferencedVariables(template, variables, "flow-1", "group-1");
+
+        // Built-ins are not variables; "temp" is the LOCAL one unless the scope says otherwise;
+        // "other" belongs to another flow, so like "missing" it is not reachable
+        assertEquals(List.of("site", "temp", "temp", "other", "missing"),
+            references.stream().map(TemplateEngine.VariableReference::name).toList());
+        assertEquals("v3", references.get(0).variable().getId());
+        assertEquals("v1", references.get(1).variable().getId());
+        assertEquals("v2", references.get(2).variable().getId());
+        assertEquals("global", references.get(2).scope());
+        assertNull(references.get(3).variable());
+        assertNull(references.get(4).variable());
+        assertTrue(engine.findReferencedVariables(null, variables, "flow-1", "group-1").isEmpty());
+    }
+
+    @Test
     public void testScopingEnforcement() {
         Variable groupVar = new Variable("v2", "shared", "GROUP", "numeric", 10.0, Map.of("min", 10.0, "max", 10.0), null, "group-A");
         variables.put("v2", groupVar);
@@ -679,9 +704,159 @@ public class TemplateEngineTest {
         variables.put("l1", new Variable("l1", "lista", "GROUP", "list", "", listConfig, null, "g1"));
 
         String template = "{\n  \"list\": {{group.lista}},\n  \"posicion\": {{local.puntito}},\n  \"n\": {{n}}\n}";
-        String message = engine.evaluate(template, 7, variables, "f1", "g1", "flow", null, "json");
+        String message = engine.evaluate(template, 7, variables, new TemplateEngine.RenderTarget("f1", "g1", "flow", "json"), null);
 
-        assertEquals("{\n  \"list\": [\n    \"A\",\n    \"B\"\n  ],\n"
-            + "  \"posicion\": {\n    \"x\": 1.5,\n    \"y\": 2.0\n  },\n  \"n\": 7\n}", message);
+        assertEquals("""
+                {
+                  "list": [
+                    "A",
+                    "B"
+                  ],
+                  "posicion": {
+                    "x": 1.5,
+                    "y": 2.0
+                  },
+                  "n": 7
+                }""", message);
+    }
+
+    private static Variable typed(String type, Map<String, Object> config) {
+        return new Variable("x", "x", "LOCAL", type, "", config, "flow-1", "group-1");
+    }
+
+    @Test
+    public void mapPropertiesReadKeysThenNodeAliases() {
+        Map<String, Object> withNull = new HashMap<>();
+        withNull.put("label", null);
+        Map<String, Object> snakeCase = Map.of("node_id", "7", "target_node_id", "9", "target_node_name", "B");
+
+        assertEquals("", TemplateEngine.resolveVariableProperty(withNull, "label", null));
+        assertEquals("A", TemplateEngine.resolveVariableProperty(Map.of("nodeName", "A"), "node", null));
+        assertEquals("7", TemplateEngine.resolveVariableProperty(snakeCase, "nodeId", null));
+        assertEquals("9", TemplateEngine.resolveVariableProperty(snakeCase, "targetNodeId", null));
+        assertEquals("B", TemplateEngine.resolveVariableProperty(snakeCase, "targetNode", null));
+        assertEquals("", TemplateEngine.resolveVariableProperty(Map.of(), "node", null));
+        // Not a key nor an alias: the map itself is written
+        assertEquals("{k=1}", TemplateEngine.resolveVariableProperty(Map.of("k", 1), "other", null));
+        assertNull(TemplateEngine.resolveVariableProperty(Map.of("k", 1), null, null));
+    }
+
+    @Test
+    public void temporalPropertiesReadIsoTextEpochMillisAndNumbers() {
+        Variable utc = typed("temporal", Map.of("timeZone", "UTC"));
+
+        assertEquals("8", TemplateEngine.resolveVariableProperty("2025-06-01T08:00:00Z", "hour", utc));
+        assertEquals("June", TemplateEngine.resolveVariableProperty("1748764800000", "monthName", utc));
+        assertEquals("1970", TemplateEngine.resolveVariableProperty(0L, "year", utc));
+        // Unreadable text falls back to the current time, still in the variable's zone
+        assertEquals("UTC", TemplateEngine.resolveVariableProperty("not a date", "tz", utc));
+        // A property no section knows writes the value as is
+        assertEquals("2025-06-01T08:00:00Z",
+                TemplateEngine.resolveVariableProperty(java.time.Instant.parse("2025-06-01T08:00:00Z"), "bogus", utc));
+    }
+
+    @Test
+    public void numericPropertiesReadNumbersAndNumericText() {
+        Variable numeric = typed("numeric", Map.of());
+
+        assertEquals("0", TemplateEngine.resolveVariableProperty("abc", "int", numeric));
+        assertEquals("2", TemplateEngine.resolveVariableProperty("2.5", "floor", numeric));
+        assertEquals("0", TemplateEngine.resolveVariableProperty(null, "sign", numeric));
+        assertEquals("25", TemplateEngine.resolveVariableProperty(3.25, "fraction", null));
+        assertEquals("0", TemplateEngine.resolveVariableProperty(3.0, "decimal", null));
+        assertEquals("2.5", TemplateEngine.resolveVariableProperty(-2.5, "abs", null));
+        assertEquals("4", TemplateEngine.resolveVariableProperty(3.2, "ceil", null));
+    }
+
+    @Test
+    public void stringBooleanAndListPropertiesHandleEmptyAndNullValues() {
+        assertEquals("0", TemplateEngine.resolveVariableProperty(null, "length", typed("string", Map.of())));
+        assertEquals("", TemplateEngine.resolveVariableProperty("", "lastChar", null));
+        assertEquals("HI", TemplateEngine.resolveVariableProperty("Hi", "upper", null));
+
+        Variable bool = typed("boolean", Map.of());
+        assertEquals("false", TemplateEngine.resolveVariableProperty("true", "not", bool));
+        assertEquals("FALSE", TemplateEngine.resolveVariableProperty(null, "asUpper", bool));
+        assertEquals("1", TemplateEngine.resolveVariableProperty(true, "binary", null));
+
+        assertEquals("", TemplateEngine.resolveVariableProperty(List.of(), "first", null));
+        assertEquals("", TemplateEngine.resolveVariableProperty(List.of(), "last", null));
+        assertEquals("", TemplateEngine.resolveVariableProperty(java.util.Arrays.asList((Object) null), "first", null));
+        assertEquals("b", TemplateEngine.resolveVariableProperty(List.of("a", "b"), "lastItem", null));
+        assertEquals("2", TemplateEngine.resolveVariableProperty(List.of("a", "b"), "count", null));
+    }
+
+    @Test
+    public void itemReferencesHandleBadAndOutOfRangeIndexes() {
+        variables.put("v_sub", new Variable("v_sub", "colors", "LOCAL", "list", List.of(),
+                Map.of("selectionStrategy", "FIXED_SUBSET", "items", List.of("Red", "Green")), "flow-1", "group-1"));
+
+        // "itemX" is not an index: the whole list is written; an index past the end writes nothing
+        assertEquals("[\"Red\", \"Green\"]|", engine.evaluate("{{colors.itemX}}|{{local.colors.item9}}",
+                1, variables, "flow-1", "group-1"));
+        assertEquals("GREEN", engine.evaluate("{{local.colors.item1.upper}}", 1, variables, "flow-1", "group-1"));
+    }
+
+    @Test
+    public void itemReferenceOnANonFixedSubsetListIsRejected() {
+        variables.put("v_pick", new Variable("v_pick", "fruit", "LOCAL", "list", List.of(),
+                Map.of("selectionStrategy", "RANDOM", "items", List.of("Apple")), "flow-1", "group-1"));
+
+        try {
+            engine.evaluate("{{fruit.item0}}", 1, variables, "flow-1", "group-1");
+            fail("Expected an IllegalStateException");
+        } catch (IllegalStateException e) {
+            assertTrue(e.getMessage().contains("'fruit' uses selection strategy 'RANDOM'"));
+        }
+    }
+
+    @Test
+    public void invalidConfigurationStillGeneratesTheTargetsOfItsConditionalRules() {
+        variables.put("b", new Variable("b", "base", "LOCAL", "numeric", 0,
+                Map.of("min", 5.0, "max", 5.0), "flow-1", "group-1"));
+        variables.put("w", new Variable("w", "weird", "LOCAL", "numeric", "fallback",
+                // min above max: the configuration cannot be built, only its raw rules are read
+                Map.of("min", 10.0, "max", 1.0, "conditionalRules", List.of(Map.of("targetVariable", " base "), Map.of("targetVariable", " "),
+                        "not a rule")), "flow-1", "group-1"));
+        Map<String, Object> context = new HashMap<>();
+
+        assertEquals("fallback", engine.evaluate("{{weird}}", 1, variables, "flow-1", "group-1", context));
+        assertEquals(5.0, context.get("base"));
+        assertEquals(5.0, context.get("b"));
+    }
+
+    @Test
+    public void dependencyCyclesSelfReferencesAndMissingTargetsAreSkipped() {
+        variables.put("w1", new Variable("w1", "first", "LOCAL", "numeric", "d1",
+                Map.of("min", 10.0, "max", 1.0, "conditionalRules", List.of(Map.of("targetVariable", "second"))),
+                "flow-1", "group-1"));
+        variables.put("w2", new Variable("w2", "second", "LOCAL", "numeric", "d2",
+                Map.of("min", 10.0, "max", 1.0, "conditionalRules", List.of(Map.of("targetVariable", "first"),
+                        Map.of("targetVariable", "second"), Map.of("targetVariable", "nobody"))),
+                "flow-1", "group-1"));
+        Map<String, Object> context = new HashMap<>();
+
+        assertEquals("d1", engine.evaluate("{{first}}", 1, variables, "flow-1", "group-1", context));
+        assertEquals("d2", context.get("second"));
+        assertFalse(context.containsKey("nobody"));
+    }
+
+    @Test
+    public void findReferencedVariablesSkipsBlankPlaceholdersAndBareScopes() {
+        variables.put("v1", new Variable("v1", "temp", "LOCAL", "numeric", 0, Map.of(), "flow-1", null));
+
+        List<TemplateEngine.VariableReference> references = engine.findReferencedVariables(
+                "{{ }} {{local.}} {{local. }} {{temp}} {{v1}} {{missing}} {{missing.round}}",
+                variables, "flow-1", "group-1");
+
+        // "temp" and its id "v1" are the same variable; a missing name counts once
+        assertEquals(List.of("temp", "missing"), references.stream().map(TemplateEngine.VariableReference::name).toList());
+    }
+
+    @Test
+    public void renderTargetOverloadWritesTheFlowNameAndKeepsItWhenAbsent() {
+        assertEquals("Room|{{flow.name}}",
+                engine.evaluate("{{flow.name}}", 1, variables, new TemplateEngine.RenderTarget("f1", "g1", "Room", null), null)
+                        + "|" + engine.evaluate("{{flow.name}}", 1, variables, new TemplateEngine.RenderTarget("f1", "g1", null, null), null));
     }
 }

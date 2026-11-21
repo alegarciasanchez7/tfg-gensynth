@@ -174,7 +174,7 @@ public class UiBridgeGraphPointGenerationIntegrationTest {
         assertEquals(120.5, fullJson.path("position").path("x").asDouble(), 0.001);
         assertEquals(450.0, fullJson.path("position").path("y").asDouble(), 0.001);
 
-        // Test 2: Specific sub-property {{local.cartesian_pos.x}}
+        // Test 2: the x and y sub-properties of the point
         String subPropTemplate = "{\"x_val\": {{local.cartesian_pos.x}}, \"y_val\": {{local.cartesian_pos.y}}}";
         String subPropResult = templateEngine.evaluate(subPropTemplate, 1L, variables, "f-monitor-2", "g-monitoring");
 

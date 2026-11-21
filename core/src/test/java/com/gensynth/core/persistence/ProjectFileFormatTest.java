@@ -1,5 +1,6 @@
 package com.gensynth.core.persistence;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.Test;
@@ -79,7 +80,8 @@ public class ProjectFileFormatTest {
 
     @Test
     public void validateRejectsNonObjectRoot() {
-        assertThrows(IllegalArgumentException.class, () -> ProjectFileFormat.validate(mapper.createArrayNode()));
+        JsonNode arrayRoot = mapper.createArrayNode();
+        assertThrows(IllegalArgumentException.class, () -> ProjectFileFormat.validate(arrayRoot));
         assertThrows(IllegalArgumentException.class, () -> ProjectFileFormat.validate(null));
     }
 
@@ -114,8 +116,11 @@ public class ProjectFileFormatTest {
         assertThrows(IllegalArgumentException.class, () -> ProjectFileFormat.read(jsonFile, mapper));
 
         Path brokenFile = dir.resolve("broken.gsynth");
-        Files.writeString(brokenFile, "{ not json");
-        assertThrows(IllegalArgumentException.class, () -> ProjectFileFormat.read(brokenFile, mapper));
+        Files.writeString(brokenFile, "{\n  \"format\": \"gensynth-project\",\n  not json\n}");
+        IllegalArgumentException invalid = assertThrows(IllegalArgumentException.class,
+            () -> ProjectFileFormat.read(brokenFile, mapper));
+        // Says where the JSON breaks
+        assertTrue(invalid.getMessage(), invalid.getMessage().contains("invalid JSON content at line 3, column"));
 
         Path foreignFile = dir.resolve("foreign.gsynth");
         Files.writeString(foreignFile, "{\"groups\":[],\"variables\":[]}");

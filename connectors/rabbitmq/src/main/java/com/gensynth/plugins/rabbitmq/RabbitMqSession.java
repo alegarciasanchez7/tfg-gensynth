@@ -33,17 +33,18 @@ final class RabbitMqSession implements ConnectorSession {
     }
 
     /**
-     * Connects, declares the exchange (and the queue, if any) and enables publisher confirms.
+     * Connects, declares the durable queue (and the exchange with its binding, when one is set)
+     * and enables publisher confirms.
      */
     static RabbitMqSession open(ConnectionFactory factory, RabbitMqSettings settings, String connectionName)
             throws IOException, TimeoutException {
         Connection connection = factory.newConnection(connectionName);
         try {
             Channel channel = connection.createChannel();
-            channel.exchangeDeclare(settings.exchange(), settings.exchangeType(), settings.exchangeDurable());
-            if (!settings.queue().isEmpty()) {
-                channel.queueDeclare(settings.queue(), true, false, false, null);
-                channel.queueBind(settings.queue(), settings.exchange(), settings.routingKey());
+            channel.queueDeclare(settings.queue(), true, false, false, null);
+            if (settings.usesExchange()) {
+                channel.exchangeDeclare(settings.exchange(), settings.exchangeType(), settings.exchangeDurable());
+                channel.queueBind(settings.queue(), settings.exchange(), settings.publishRoutingKey());
             }
             channel.confirmSelect();
             return new RabbitMqSession(connection, channel, settings);
@@ -62,14 +63,17 @@ final class RabbitMqSession implements ConnectorSession {
 
         returnedReason = null;
         // mandatory = true: the broker returns the message if no queue receives it
-        channel.basicPublish(settings.exchange(), settings.routingKey(), true, properties.build(), payload);
+        channel.basicPublish(settings.exchange(), settings.publishRoutingKey(), true, properties.build(), payload);
         if (!channel.waitForConfirms(CONFIRM_TIMEOUT_MS)) {
             throw new IOException("The broker rejected the message (nack)");
         }
         String reason = returnedReason;
         if (reason != null) {
-            throw new IOException("Message not routed to any queue (" + reason + "): no queue is bound to exchange '"
-                + settings.exchange() + "' with routing key '" + settings.routingKey() + "'");
+            String cause = settings.usesExchange()
+                ? "no queue is bound to exchange '" + settings.exchange() + "' with routing key '"
+                    + settings.publishRoutingKey() + "'"
+                : "queue '" + settings.queue() + "' does not exist (was it deleted?)";
+            throw new IOException("Message not routed to any queue (" + reason + "): " + cause);
         }
     }
 

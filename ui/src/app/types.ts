@@ -1,0 +1,419 @@
+export type SystemStatus = 'running' | 'stopped' | 'processing';
+export type ConnectionStatus = 'connected' | 'disconnected' | 'error' | 'warning';
+export type GroupStatus = 'running' | 'stopped' | 'paused';
+export type VariableScope = 'local' | 'group' | 'global';
+/** Format of a flow template and of the messages it generates. */
+export type MessageFormat = 'json' | 'xml' | 'csv' | 'plain';
+export type VariableType =
+  | 'numeric'
+  | 'list'
+  | 'string'
+  | 'temporal'
+  | 'point'
+  | 'boolean';
+
+export interface ConditionalRule {
+  targetVariable: string;
+  operator: 'EQUALS' | 'NOT_EQUALS' | 'GREATER_THAN' | 'LESS_THAN' | 'CONTAINS';
+  value: unknown;
+  overrides: Record<string, unknown>;
+}
+
+/** How a variable that is not a List takes its value from a list (a List cannot inherit from another list). */
+export type ListReferenceSelectionMode = 'RANDOM_ITEM' | 'FIXED_ITEM' | 'INHERITED_GENERATION';
+
+export interface BaseVariableConfig {
+  pattern?: string;
+  conditionalRules?: ConditionalRule[];
+  sourceListVariableId?: string;
+  sourceListSelectionMode?: ListReferenceSelectionMode;
+  selectedListItemId?: string;
+  [key: string]: unknown;
+}
+
+export interface NumericVariableConfig extends BaseVariableConfig {
+  min?: number;
+  max?: number;
+  precision?: 'INTEGER' | 'FLOAT' | 'DOUBLE';
+  formula?: string;
+  decimalPlaces?: number;
+  integerFormat?: string;
+  prefix?: string;
+  suffix?: string;
+  initialValue?: number;
+  step?: number;
+  constantValue?: number;
+  constantMargin?: number;
+  sequentialGraph?: Array<{ x: number; y: number }>;
+  distributionType?: 'UNIFORM' | 'NORMAL' | 'EXPONENTIAL' | 'CUSTOM';
+  customDistributionGraph?: Array<{ value?: number; from?: number; to?: number; weight: number }>;
+  boundaryMode?: 'LEFT' | 'RIGHT' | 'SPLIT';
+
+  // Sinusoidal / Periodic Wave Pattern
+  sineFrequency?: number;
+  sineAmplitude?: number;
+  sinePhase?: number;
+  sineOffset?: number;
+
+  // Drift Pattern
+  driftRate?: number;
+  driftInitialValue?: number;
+  driftLimitMode?: 'CLAMP' | 'WRAP' | 'RESET' | 'BOUNCE';
+
+  // Virtual Simulation Clock
+  simulationTimeStep?: number;
+
+  // Noise Modifier Layer
+  noiseEnabled?: boolean;
+  noiseType?: 'GAUSSIAN' | 'UNIFORM';
+  noiseAmplitude?: number;
+  noiseStdDev?: number;
+
+  // Spike Anomaly Modifier Layer
+  spikeEnabled?: boolean;
+  spikeProbability?: number;
+  spikeMode?: 'FIXED_OFFSET' | 'RANGE_SPIKE' | 'MULTIPLIER';
+  spikeMagnitude?: number;
+  spikeMin?: number;
+  spikeMax?: number;
+  spikeMultiplier?: number;
+}
+
+export type StringFormattedMaskType = 'MAC_ADDRESS' | 'IPV4' | 'IPV6' | 'UUID_V4' | 'CUSTOM_MASK' | 'ALPHANUMERIC';
+export type StringCorruptionMode = 'TRUNCATE' | 'INJECT_ANOMALOUS' | 'REPLACE_CHAR' | 'NULL_BYTE' | 'MIXED';
+
+export interface StringVariableConfig extends BaseVariableConfig {
+  fixedLength?: number;
+  regexPattern?: string;
+  constantValue?: string;
+  
+  template?: string;
+  formattedMaskType?: StringFormattedMaskType;
+  customMask?: string;
+  alphanumericCase?: 'UPPER' | 'LOWER' | 'MIXED';
+  
+  corruptionEnabled?: boolean;
+  corruptionProbability?: number;
+  corruptionMode?: StringCorruptionMode;
+  corruptionMagnitude?: number;
+}
+
+export type ListSelectionStrategy = 'WEIGHTED_RANDOM' | 'SEQUENTIAL' | 'SHUFFLE' | 'MARKOV_CHAIN' | 'FIXED_SUBSET';
+
+export interface ListItemConfig {
+  id: string;
+  value?: unknown;
+  weight?: number;
+  isEmbedded?: boolean;
+  embeddedType?: VariableType;
+  embeddedConfig?: VariableConfig;
+}
+
+export interface ListVariableConfig extends BaseVariableConfig {
+  selectionStrategy?: ListSelectionStrategy;
+  items?: ListItemConfig[];
+  transitionMatrix?: Record<string, Record<string, number>>;
+  shuffle?: boolean;
+  itemOrder?: string[];
+}
+
+export type BooleanGenerationPattern =
+  | 'CONSTANT_BOOLEAN'
+  | 'DUTY_CYCLE'
+  | 'ALTERNATING_BOOLEAN'
+  | 'PROBABILITY'
+  | 'FLIP_INTERVAL'
+  | 'BURST_MODE'
+  | 'MARKOV';
+
+export interface BooleanVariableConfig extends BaseVariableConfig {
+  pattern?: BooleanGenerationPattern;
+  currentValue?: boolean;
+  onDurationTicks?: number;
+  offDurationTicks?: number;
+  alternationInterval?: number;
+  trueProbability?: number;
+  flipInterval?: number;
+  burstDurationTicks?: number;
+  burstIdleTicks?: number;
+  pTrueToTrue?: number;
+  pFalseToTrue?: number;
+}
+
+export type TemporalType = 'DATE' | 'TIMESTAMP' | 'TIME';
+export type TimeAdvanceMode = 'WALL_CLOCK' | 'SIMULATED_STEP' | 'BACKFILL_HISTORICAL' | 'FIXED';
+export type ClockDriftType = 'RANDOM_JITTER' | 'CONSTANT_OFFSET' | 'PROGRESSIVE_DRIFT';
+export type BackfillStrategy = 'SEQUENTIAL_STEP' | 'RANDOM_IN_RANGE';
+
+export interface TemporalVariableConfig extends BaseVariableConfig {
+  temporalType?: TemporalType;
+  timeAdvanceMode?: TimeAdvanceMode;
+  dateFormat?: string;
+  timeZone?: string;
+  startDate?: string;
+  incrementMs?: number;
+  fixedDate?: string;
+  rangeStart?: string;
+  rangeEnd?: string;
+  backfillStrategy?: BackfillStrategy;
+  clockDriftEnabled?: boolean;
+  maxDriftMs?: number;
+  driftType?: ClockDriftType;
+  driftRateMsPerTick?: number;
+}
+
+export type CoordinateSystem = 'CARTESIAN_2D' | 'CARTESIAN_3D' | 'GEOSPATIAL';
+export type GeospatialFormat = 'DECIMAL_DEGREES' | 'DEGREES_MINUTES_SECONDS';
+export type BoundaryBehavior = 'BOUNCE' | 'CLAMP' | 'WRAP';
+
+export interface Point3DCoord {
+  x?: number;
+  y?: number;
+  z?: number;
+}
+
+export type AltitudeUnit = 'METERS' | 'FEET' | 'KILOMETERS' | 'MILES';
+export type AltitudeReference = 'MSL' | 'AGL' | 'ELLIPSOID';
+export type AltitudePattern = 'FOLLOW_XY' | 'FIXED_ALTITUDE' | 'RANDOM_UNIFORM' | 'RANDOM_WALK' | 'SINE_OSCILLATION';
+
+export type Shape3DType = 'cube' | 'pyramid' | 'cone' | 'sphere';
+export type SelectionMode3D = 'vertices' | 'edges' | 'faces';
+
+export type ObstacleType = 'WALL_SEGMENT' | 'OBSTACLE_POLYGON';
+
+export interface BoundaryObstacle {
+  id: string;
+  type: ObstacleType;
+  name?: string;
+  points: Point3DCoord[];
+  enabled?: boolean;
+}
+
+export interface GraphNode {
+  id: string;
+  name?: string;
+  x: number;
+  y: number;
+  z?: number;
+}
+
+export interface GraphEdge {
+  id: string;
+  fromNodeId: string;
+  toNodeId: string;
+  bidirectional?: boolean;
+}
+
+export type GraphNavigationMode = 'SEQUENCE' | 'RANDOM_NEIGHBOR';
+
+export interface PointVariableConfig extends BaseVariableConfig {
+  coordinateSystem?: CoordinateSystem;
+  geospatialFormat?: GeospatialFormat;
+  boundaryBehavior?: BoundaryBehavior;
+  shape3DType?: Shape3DType;
+  shape3DWidth?: number;
+  shape3DLength?: number;
+  shape3DRadius?: number;
+  shape3DHeight?: number;
+  minPoint?: Point3DCoord;
+  maxPoint?: Point3DCoord;
+  fixedPoint?: Point3DCoord;
+  maxStepDistance?: number;
+  inertia?: number;
+  waypoints?: Point3DCoord[];
+  interpolationSteps?: number;
+  loopPath?: boolean;
+  orbitCenter?: Point3DCoord;
+  orbitRadius?: number;
+  angularSpeed?: number;
+  spiralRate?: number;
+  gpsNoiseEnabled?: boolean;
+  jitterRadius?: number;
+  boundaryPolygon?: Point3DCoord[];
+  obstacles?: BoundaryObstacle[];
+  altitudeUnit?: AltitudeUnit;
+  altitudeReference?: AltitudeReference;
+  altitudePattern?: AltitudePattern;
+  initialAltitude?: number;
+  maxVerticalStep?: number;
+  altitudeOscillationSpeed?: number;
+  graphNodes?: GraphNode[];
+  graphEdges?: GraphEdge[];
+  graphNavigationMode?: GraphNavigationMode;
+  graphSequence?: string[];
+  graphLoopSequence?: boolean;
+  graphStopProbability?: number;
+  graphStopTicks?: number;
+  graphPreventCycles?: boolean;
+  graphInterpolationSteps?: number;
+}
+
+export type VariableConfig = 
+  | NumericVariableConfig 
+  | StringVariableConfig 
+  | ListVariableConfig 
+  | BooleanVariableConfig 
+  | TemporalVariableConfig 
+  | PointVariableConfig;
+
+export interface Flow {
+  id: string;
+  name: string;
+  technology: string;
+  connectionStatus: ConnectionStatus;
+  /** @deprecated Live rate comes from `state.flowMetrics` (FLOWS_METRICS). */
+  throughput: string;
+  latency: number;
+  hasError: boolean;
+  errorMessage?: string;
+  /**
+   * @deprecated Legacy publish interval in ms. Ignored by the engine since message generation
+   * is driven by the global tick clock; kept so existing project files round-trip.
+   */
+  interval: number;
+  /** @deprecated Legacy messages per send; ignored by the engine (one message per send). */
+  burst: number;
+  /** Number of global ticks between two messages of this flow (integer >= 1). */
+  everyTicks: number;
+  /** Event loss: percentage (0-100) of generated messages dropped at random. Missing = 0. */
+  lossPercent?: number;
+  /** Event loss: length in ticks of the outage cycle (integer >= 0, 0 = no outages). Missing = 0. */
+  outageEveryTicks?: number;
+  /** Event loss: ticks lost at the end of every outage cycle (integer >= 0, 0 = no outages). Missing = 0. */
+  outageDurationTicks?: number;
+  topic: string;
+  host: string;
+  port: number;
+  template?: string;
+  format?: MessageFormat;
+  connectorConfig?: Record<string, unknown>;
+  connectorVersion?: string;
+  enabled: boolean;
+}
+
+/** Tick clock mode. Mirrors TickSettings.Mode in the Core. */
+export type TickMode = 'FIXED_RATE' | 'AS_FAST_AS_POSSIBLE';
+/** Tick period unit. Mirrors TickSettings.Unit in the Core. */
+export type TickUnit = 'MILLISECONDS' | 'SECONDS' | 'MINUTES';
+
+/** Configuration of the global simulation tick clock. Mirrors TickSettings in the Core. */
+export interface TickSettings {
+  mode: TickMode;
+  /** Period value (kept in AS_FAST_AS_POSSIBLE mode so switching back restores it). */
+  value: number;
+  unit: TickUnit;
+}
+
+/** Project-wide simulation settings, saved with the project. Mirrors ProjectSettings in the Core. */
+export interface ProjectSettings {
+  tick: TickSettings;
+}
+
+/**
+ * Folder where each START creates its OUTPUT_FILES_<date> session folder. A preference of this
+ * computer, not saved with the project. Mirrors BridgeContext#outputFolderPayload in the Core.
+ */
+export interface OutputFolderInfo {
+  /** Folder in use: the chosen one, or the default one. */
+  path: string;
+  /** Default folder (~/GenSynth when installed). */
+  defaultPath: string;
+  /** Whether the user chose the folder. */
+  custom: boolean;
+}
+
+/** A newer release the user may install. Mirrors UpdateCheck in the Core. */
+export interface UpdateInfo {
+  currentVersion: string;
+  latestVersion: string;
+  /** Release page, to read the notes. */
+  releaseUrl: string;
+  /** Size of the installer, in bytes. */
+  assetSize: number;
+}
+
+/** How the flows of a group send: one FIFO queue + one sender, or one thread per flow. Mirrors OutputMode in the Core. */
+export type OutputMode = 'parallel' | 'sequential';
+
+/**
+ * Order of the messages due on the same tick in a sequential group: the flow list order, a
+ * random order every tick, or the order in which generation ends. Mirrors SequentialOrder in the Core.
+ */
+export type SequentialOrder = 'flow' | 'random' | 'generated';
+
+export interface Group {
+  id: string;
+  name: string;
+  status: GroupStatus;
+  /** @deprecated Live rate is the sum of the flows' `state.flowMetrics`. */
+  throughput: string;
+  description: string;
+  /** @deprecated Legacy; ignored by the engine. */
+  threads: number;
+  outputMode: OutputMode;
+  /** Used by sequential groups only; kept when the group is parallel. */
+  sequentialOrder: SequentialOrder;
+  flows: Flow[];
+  expanded: boolean;
+  enabled: boolean;
+}
+
+export interface Variable {
+  id: string;
+  name: string;
+  type: VariableType;
+  scope: VariableScope;
+  flowId?: string;
+  groupId?: string;
+  config: VariableConfig;
+  description?: string;
+}
+
+export type SelectionType = 'none' | 'group' | 'flow' | 'variable';
+
+export interface Selection {
+  type: SelectionType;
+  groupId?: string;
+  flowId?: string;
+  variableId?: string;
+}
+
+export interface LogEntry {
+  id: string;
+  timestamp: string;
+  level: 'info' | 'warn' | 'error' | 'debug' | 'data';
+  source: string;
+  message: string;
+  commandId?: string;
+}
+
+export type ConnectorHealthStatus = 'healthy' | 'degraded' | 'offline';
+
+export interface ConnectorHealthSummary {
+  pluginId: string;
+  pluginVersion: string;
+  displayName: string;
+  status: ConnectorHealthStatus;
+  flowCount: number;
+  connectedCount: number;
+  warningCount: number;
+  errorCount: number;
+  lastMessage?: string;
+}
+
+export interface StartGroupErrorPayload {
+  errorType: 'VALIDATION_ERROR' | 'CYCLIC_DEPENDENCY_ERROR' | 'BROKEN_REFERENCE_ERROR';
+  commandId?: string;
+  message: string;
+  variableId?: string;
+  errors?: string[];
+  cycle?: string[];
+}
+
+export interface FormatConversionPayload {
+  content: string;
+  sourceFormat: MessageFormat;
+  targetFormat: MessageFormat;
+  clientRequestId?: string;
+}
+

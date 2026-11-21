@@ -33,9 +33,9 @@ public interface ILifecycleListener {
      * - Thread pools are created
      * - Listeners should load their own configuration
      *
-     * @throws Exception if initialization fails
+     * @throws LifecycleException if initialization fails
      */
-    void onInitialize() throws Exception;
+    void onInitialize() throws LifecycleException;
 
     /**
      * Called when application transitions from INITIALIZED → RUNNING.
@@ -43,9 +43,9 @@ public interface ILifecycleListener {
      * - Framework is ready
      * - Listeners should start their services/threads
      *
-     * @throws Exception if startup fails
+     * @throws LifecycleException if startup fails
      */
-    void onStart() throws Exception;
+    void onStart() throws LifecycleException;
 
     /**
      * Called when application transitions to STOPPED (from any state).
@@ -54,8 +54,8 @@ public interface ILifecycleListener {
      * - Listeners should cleanup their resources
      * - Must be idempotent (safe to call multiple times)
      *
-     * @throws Exception if cleanup fails (non-blocking, logged)
+     * @throws LifecycleException if cleanup fails (non-blocking, logged)
      */
-    void onStop() throws Exception;
+    void onStop() throws LifecycleException;
 
 }

@@ -66,6 +66,8 @@ public class ConnectorPluginManagerTest {
         assertEquals(PluginApi.VERSION, descriptor.getApiVersion());
         assertEquals(List.of("host", "port"), descriptor.getFields().stream().map(f -> f.get("key")).toList());
         assertEquals(true, descriptor.getFields().get(0).get("required"));
+        assertEquals(false, descriptor.getFields().get(0).get("advanced"));
+        assertEquals(true, descriptor.getFields().get(1).get("advanced"));
         assertEquals("Where to connect", descriptor.getFields().get(0).get("tooltip"));
         assertEquals(5672L, descriptor.getFields().get(1).get("defaultValue"));
     }
@@ -80,6 +82,24 @@ public class ConnectorPluginManagerTest {
             assertFalse(id + " is built in", descriptor.isExternal());
         }
         assertEquals("1.0.0", manager.findLatestDescriptor("rabbitmq").orElseThrow().getPluginVersion());
+    }
+
+    @Test
+    public void unloadingTheExternalPluginsKeepsTheIncludedOnes() throws Exception {
+        Path dir = Files.createTempDirectory("gensynth-plugins-");
+        Files.write(dir.resolve("testconn-1.0.0.jar"),
+            com.gensynth.core.connectors.plugin.TestPluginJars.connector("testconn", "Test", "1.0.0"));
+        ConnectorPluginManager manager = new ConnectorPluginManager(dir);
+        assertTrue(manager.isExternalPlugin("testconn", "1.0.0"));
+
+        manager.unloadExternalPlugins();
+
+        assertTrue(manager.findDescriptor("testconn", "1.0.0").isEmpty());
+        assertFalse(manager.isExternalPlugin("testconn", "1.0.0"));
+        ConnectorDescriptor rabbitMq = manager.findDescriptor("rabbitmq", "1.0.0").orElseThrow();
+        assertTrue("the included ones stay usable", manager.findPlugin(rabbitMq).isPresent());
+        // The class loader is closed, so the JAR can be deleted (Windows keeps open JARs locked)
+        Files.delete(dir.resolve("testconn-1.0.0.jar"));
     }
 
     @Test
@@ -123,7 +143,7 @@ public class ConnectorPluginManagerTest {
         public List<ConnectorField> fields() {
             return List.of(
                 ConnectorField.text("host").required().tooltip("Where to connect"),
-                ConnectorField.integer("port").defaultValue(5672));
+                ConnectorField.integer("port").defaultValue(5672).advanced());
         }
 
         @Override
@@ -131,10 +151,12 @@ public class ConnectorPluginManagerTest {
             return new ConnectorSession() {
                 @Override
                 public void send(byte[] payload, java.util.Map<String, String> headers) {
+                    // A test session accepts every message
                 }
 
                 @Override
                 public void close() {
+                    // Nothing to release
                 }
             };
         }

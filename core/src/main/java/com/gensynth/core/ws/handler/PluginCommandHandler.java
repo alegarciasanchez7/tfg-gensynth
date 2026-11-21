@@ -9,6 +9,7 @@ import org.java_websocket.WebSocket;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -46,7 +47,7 @@ public class PluginCommandHandler implements CommandHandler {
     }
 
     @Override
-    public void handle(WebSocket conn, JsonNode payload, String commandId) throws Exception {
+    public void handle(WebSocket conn, JsonNode payload, String commandId) throws IOException {
         // Methods are routed individually by UiBridgeWebSocketServer.
     }
 
@@ -127,7 +128,7 @@ public class PluginCommandHandler implements CommandHandler {
         response.put(COMMAND_ID, commandId);
         response.put(STATUS, result.isSuccess() ? "ok" : ERROR);
         response.put("success", result.isSuccess());
-        response.put(MESSAGE, result.getMessage());
+        response.put(MESSAGE, desktopMessage(result));
         response.put("restartRequired", result.isRestartRequired());
         server.sendMessage(conn, "PLUGIN_INSTALL_RESULT", commandId, response);
 
@@ -168,7 +169,7 @@ public class PluginCommandHandler implements CommandHandler {
         response.put(COMMAND_ID, commandId);
         response.put(STATUS, result.isSuccess() ? "ok" : ERROR);
         response.put("success", result.isSuccess());
-        response.put(MESSAGE, result.getMessage());
+        response.put(MESSAGE, desktopMessage(result));
         response.put("restartRequired", result.isRestartRequired());
         server.sendMessage(conn, "PLUGIN_INSTALL_RESULT", commandId, response);
 
@@ -182,6 +183,11 @@ public class PluginCommandHandler implements CommandHandler {
         } else {
             server.logToBackend(ERROR, SOURCE_PLUGINS, "Plugin uninstall failed: " + result.getMessage(), commandId);
         }
+    }
+
+    /** The message of the result, saying that the application restarts when it does. */
+    private static String desktopMessage(PluginInstallResult result) {
+        return result.isSuccess() && result.isRestartRequired() ? result.getMessage() + " Restarting..." : result.getMessage();
     }
 
     /**

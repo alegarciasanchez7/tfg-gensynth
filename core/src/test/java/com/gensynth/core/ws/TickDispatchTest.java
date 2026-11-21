@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import static com.gensynth.core.TestWaits.eventually;
 import static org.junit.Assert.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -32,7 +33,6 @@ import static org.mockito.Mockito.*;
  */
 public class TickDispatchTest {
 
-    private static final long TIMEOUT_MS = 2000;
 
     private UiBridgeWebSocketServer server;
     private GroupRuntime group;
@@ -77,28 +77,18 @@ public class TickDispatchTest {
      * Runs a tick of the single-flow group. The worker clears its busy flag just after its
      * send, so a due tick may find it still busy and skip it: retry until it is handed over.
      */
-    private void tick(long tickNumber) throws InterruptedException {
-        long deadline = System.currentTimeMillis() + TIMEOUT_MS;
-        while (!server.flowCommandHandler.onTick(tickNumber) && flow.isDueOn(tickNumber, group.startTick)) {
-            assertTrue("tick " + tickNumber + " not dispatched", System.currentTimeMillis() < deadline);
-            Thread.sleep(5);
-        }
+    private void tick(long tickNumber) {
+        eventually().alias("tick " + tickNumber + " not dispatched")
+            .until(() -> server.flowCommandHandler.onTick(tickNumber) || !flow.isDueOn(tickNumber, group.startTick));
     }
 
     /** Hands one message of a flow to its worker, retrying while the worker finishes the previous one. */
-    private void dispatchWhenIdle(FlowRuntime target, long groupTick) throws InterruptedException {
-        long deadline = System.currentTimeMillis() + TIMEOUT_MS;
-        while (!group.dispatcher.dispatch(List.of(target), groupTick)) {
-            assertTrue(target.id + " not dispatched", System.currentTimeMillis() < deadline);
-            Thread.sleep(5);
-        }
+    private void dispatchWhenIdle(FlowRuntime target, long groupTick) {
+        eventually().alias(target.id + " not dispatched").until(() -> group.dispatcher.dispatch(List.of(target), groupTick, groupTick));
     }
 
-    private void awaitSent(FlowRuntime target, long expected) throws InterruptedException {
-        long deadline = System.currentTimeMillis() + TIMEOUT_MS;
-        while (target.sent.get() < expected && System.currentTimeMillis() < deadline) {
-            Thread.sleep(5);
-        }
+    private void awaitSent(FlowRuntime target, long expected) {
+        eventually().until(() -> target.sent.get() >= expected);
         assertEquals(expected, target.sent.get());
     }
 
@@ -185,6 +175,66 @@ public class TickDispatchTest {
     }
 
     @Test
+    public void flowsOfAGroupSendTheSameGroupValueOnEachTick() throws Exception {
+        server.variablesById.put("c", new com.gensynth.core.model.Variable("c", "counter", "GROUP", "numeric", 0,
+            Map.of("pattern", "SEQUENTIAL", "min", 0, "max", 1000, "precision", "INTEGER",
+                "sequentialGraph", List.of(Map.of("x", 0, "y", 0), Map.of("x", 1000, "y", 1000))), null, group.id));
+        for (String mode : List.of("parallel", "sequential")) {
+            List<List<String>> perTick = valuesPerTickOfThreeFlows(mode);
+            long first = Long.parseLong(perTick.get(0).get(0));
+            for (int tick = 0; tick < perTick.size(); tick++) {
+                String expected = String.valueOf(first + tick);
+                // Every flow sends the same value, and the variable moves one step per tick
+                assertEquals(mode + " tick " + tick, List.of(expected, expected, expected), perTick.get(tick));
+            }
+        }
+    }
+
+    /**
+     * Sends three ticks to three flows of the group in the given output mode.
+     *
+     * @return for each tick, the value each flow sent
+     */
+    private List<List<String>> valuesPerTickOfThreeFlows(String mode) throws Exception {
+        group.dispatcher.shutdown();
+        server.templateEngine.clearVariableCache();
+        group.outputMode = mode;
+        group.flows.clear();
+        server.connectorByFlowId.clear();
+        List<ConnectorSession> connectors = new java.util.ArrayList<>();
+        for (String id : List.of("a", "b", "c")) {
+            FlowRuntime sharing = newFlow(id, "topic", "{{group.counter}}");
+            group.flows.add(sharing);
+            ConnectorSession session = mock(ConnectorSession.class);
+            connectors.add(session);
+            server.connectorByFlowId.put(id, session);
+        }
+        group.dispatcher = server.flowCommandHandler.createDispatcher(group);
+
+        for (long tick = 1; tick <= 3; tick++) {
+            for (FlowRuntime sharing : group.flows) {
+                dispatchWhenIdle(sharing, tick);
+            }
+        }
+        List<List<String>> sentByFlow = new java.util.ArrayList<>();
+        for (int i = 0; i < connectors.size(); i++) {
+            awaitSent(group.flows.get(i), 3);
+            ArgumentCaptor<byte[]> payloads = ArgumentCaptor.forClass(byte[].class);
+            verify(connectors.get(i), times(3)).send(payloads.capture(), anyMap());
+            sentByFlow.add(payloads.getAllValues().stream().map(b -> new String(b, StandardCharsets.UTF_8)).toList());
+        }
+        List<List<String>> perTick = new java.util.ArrayList<>();
+        for (int tick = 0; tick < 3; tick++) {
+            List<String> values = new java.util.ArrayList<>();
+            for (List<String> sent : sentByFlow) {
+                values.add(sent.get(tick));
+            }
+            perTick.add(values);
+        }
+        return perTick;
+    }
+
+    @Test
     public void flowNameBuiltInSendsTheNameOfEachFlow() throws Exception {
         flow.template = "{\"id\":\"{{flow.name}}\"}";
 
@@ -202,10 +252,7 @@ public class TickDispatchTest {
 
         server.flowCommandHandler.onTick(1);
 
-        long deadline = System.currentTimeMillis() + TIMEOUT_MS;
-        while (flow.failed.get() < 1 && System.currentTimeMillis() < deadline) {
-            Thread.sleep(5);
-        }
+        eventually().until(() -> flow.failed.get() >= 1);
         assertEquals(1, flow.failed.get());
         assertEquals(0, flow.sent.get());
         assertEquals(1, flow.generated.get());
@@ -269,11 +316,8 @@ public class TickDispatchTest {
         assertFalse(server.flowCommandHandler.onTick(1));
     }
 
-    private void awaitDropped(FlowRuntime target, long expected) throws InterruptedException {
-        long deadline = System.currentTimeMillis() + TIMEOUT_MS;
-        while (target.dropped.get() < expected && System.currentTimeMillis() < deadline) {
-            Thread.sleep(5);
-        }
+    private void awaitDropped(FlowRuntime target, long expected) {
+        eventually().until(() -> target.dropped.get() >= expected);
         assertEquals(expected, target.dropped.get());
     }
 
@@ -389,7 +433,7 @@ public class TickDispatchTest {
         List<List<String>> dueOrders = new java.util.concurrent.CopyOnWriteArrayList<>();
         sequential.dispatcher = new IGroupDispatcher() {
             @Override
-            public boolean dispatch(List<FlowRuntime> dueFlows, long groupTick) {
+            public boolean dispatch(List<FlowRuntime> dueFlows, long tickNumber, long groupTick) {
                 dueOrders.add(dueFlows.stream().map(f -> f.id).toList());
                 return true;
             }

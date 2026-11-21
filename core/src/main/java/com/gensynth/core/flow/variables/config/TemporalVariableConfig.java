@@ -53,7 +53,7 @@ public class TemporalVariableConfig extends VariableConfiguration {
     private String dateFormat; // "yyyy-MM-dd'T'HH:mm:ss.SSSXXX", "UNIX_TIMESTAMP", or null (returns Instant)
     private String timeZone;   // e.g. "UTC", "Europe/Madrid"
     private String temporalType; // "DATE", "TIMESTAMP", "TIME"
-    private transient DateTimeFormatter formatter;
+    private DateTimeFormatter formatter;
 
     // Time Advance & Drift Settings
     private TimeAdvanceMode timeAdvanceMode;
@@ -158,6 +158,7 @@ public class TemporalVariableConfig extends VariableConfiguration {
                 this.timeAdvanceMode = TimeAdvanceMode.valueOf(modeStr.toUpperCase());
                 syncPatternWithTimeAdvanceMode();
             } catch (IllegalArgumentException ignored) {
+                // Unknown name: the current value is kept
             }
         }
         return this;
@@ -185,6 +186,7 @@ public class TemporalVariableConfig extends VariableConfiguration {
             try {
                 this.driftType = ClockDriftType.valueOf(typeStr.toUpperCase());
             } catch (IllegalArgumentException ignored) {
+                // Unknown name: the current value is kept
             }
         }
         return this;
@@ -207,6 +209,7 @@ public class TemporalVariableConfig extends VariableConfiguration {
             try {
                 this.backfillStrategy = BackfillStrategy.valueOf(strategyStr.toUpperCase());
             } catch (IllegalArgumentException ignored) {
+                // Unknown name: the current value is kept
             }
         }
         return this;
@@ -416,7 +419,8 @@ public class TemporalVariableConfig extends VariableConfiguration {
 
     @Override
     public Map<String, Object> toMap() {
-        Map<String, Object> map = new HashMap<>(18);
+        // Same table size as before, so the keys keep their order
+        Map<String, Object> map = HashMap.newHashMap(13);
         map.put("identifier", identifier);
         map.put("type", type.toString());
         map.put("pattern", pattern.toString());

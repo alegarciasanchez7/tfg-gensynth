@@ -41,34 +41,44 @@ public class DependencyResolver {
 
         VariableConfiguration config = configs.get(id);
         if (config != null) {
-            Set<String> deps = config.getDependencies();
-            for (String dep : deps) {
-                if (!configs.containsKey(dep)) {
-                    throw new IllegalArgumentException("Variable '" + id + "' references a nonexistent variable '" + dep + "'");
-                }
-                Color depColor = color.get(dep);
-                if (depColor == Color.GRAY) {
-                    // Cycle detected! Extract the cyclic path.
-                    List<String> cycle = new ArrayList<>();
-                    boolean foundStart = false;
-                    for (String node : path) {
-                        if (node.equals(dep)) {
-                            foundStart = true;
-                        }
-                        if (foundStart) {
-                            cycle.add(node);
-                        }
-                    }
-                    cycle.add(dep); // complete the cycle loop visually
-                    throw new CyclicDependencyException("Circular dependency detected: " + String.join(" -> ", cycle), cycle);
-                } else if (depColor == Color.WHITE) {
-                    visit(dep, configs, color, result, path);
-                }
+            for (String dep : config.getDependencies()) {
+                visitDependency(id, dep, configs, color, result, path);
             }
         }
 
         color.put(id, Color.BLACK);
         path.removeLast();
         result.add(id);
+    }
+
+    private void visitDependency(String id, String dep, Map<String, VariableConfiguration> configs,
+                                 Map<String, Color> color, List<String> result,
+                                 Deque<String> path) throws CyclicDependencyException {
+        if (!configs.containsKey(dep)) {
+            throw new IllegalArgumentException("Variable '" + id + "' references a nonexistent variable '" + dep + "'");
+        }
+        Color depColor = color.get(dep);
+        if (depColor == Color.GRAY) {
+            throw cycleException(dep, path);
+        }
+        if (depColor == Color.WHITE) {
+            visit(dep, configs, color, result, path);
+        }
+    }
+
+    /** The dependency is still on the path being visited: the cycle runs from it to the end of the path. */
+    private static CyclicDependencyException cycleException(String dep, Deque<String> path) {
+        List<String> cycle = new ArrayList<>();
+        boolean foundStart = false;
+        for (String node : path) {
+            if (node.equals(dep)) {
+                foundStart = true;
+            }
+            if (foundStart) {
+                cycle.add(node);
+            }
+        }
+        cycle.add(dep); // complete the cycle loop visually
+        return new CyclicDependencyException("Circular dependency detected: " + String.join(" -> ", cycle), cycle);
     }
 }

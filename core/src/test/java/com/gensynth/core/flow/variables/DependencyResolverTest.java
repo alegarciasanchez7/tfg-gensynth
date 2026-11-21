@@ -121,4 +121,35 @@ public class DependencyResolverTest {
         assertTrue(order.contains("vegetables_7"));
         assertTrue(order.contains("available_vegetables") || order.contains("v0000002-0000-4000-8000-000000000099"));
     }
+
+    @Test
+    public void testResolve_cycleBelowTheStart_reportsOnlyTheCyclicPart() {
+        NumericVariableConfig configA = VariableFactory.createNumeric("A").formula("[B] + 1");
+        configA.pattern(GenerationPattern.FORMULA);
+        NumericVariableConfig configB = VariableFactory.createNumeric("B").formula("[C] + 1");
+        configB.pattern(GenerationPattern.FORMULA);
+        NumericVariableConfig configC = VariableFactory.createNumeric("C").formula("[B] + 1");
+        configC.pattern(GenerationPattern.FORMULA);
+
+        Map<String, VariableConfiguration> configs = new java.util.LinkedHashMap<>();
+        configs.put("A", configA);
+        configs.put("B", configB);
+        configs.put("C", configC);
+
+        try {
+            new DependencyResolver().resolve(configs);
+            fail("Expected CyclicDependencyException");
+        } catch (CyclicDependencyException e) {
+            assertEquals(List.of("B", "C", "B"), e.getCycle());
+            assertEquals("Circular dependency detected: B -> C -> B", e.getMessage());
+        }
+    }
+
+    @Test
+    public void testResolve_missingConfig_isOrderedWithoutDependencies() throws Exception {
+        Map<String, VariableConfiguration> configs = new HashMap<>();
+        configs.put("A", null);
+
+        assertEquals(List.of("A"), new DependencyResolver().resolve(configs));
+    }
 }

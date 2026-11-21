@@ -1,0 +1,244 @@
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Selection, Variable } from '../../../../types';
+
+const { mockUseApp, mockToast } = vi.hoisted(() => ({
+  mockUseApp: vi.fn(),
+  mockToast: {
+    success: vi.fn(),
+    error: vi.fn(),
+  },
+}));
+
+vi.mock('../../../../context', () => ({
+  useApp: () => mockUseApp(),
+}));
+
+vi.mock('sonner', () => ({
+  toast: mockToast,
+}));
+
+import { RightPanel } from './RightPanel';
+
+describe('RightPanel', () => {
+  const onSelectVariable = vi.fn();
+  const onInsertVariable = vi.fn();
+
+  const selection: Selection = {
+    type: 'flow',
+    groupId: 'g1',
+    flowId: 'f1',
+  };
+
+  const variables: Variable[] = [
+    {
+      id: 'v1',
+      name: 'temperature',
+      type: 'numeric',
+      scope: 'local',
+      flowId: 'f1',
+      description: 'Temperatura del sensor',
+      config: {
+        min: 0,
+        max: 100,
+      },
+    },
+  ];
+
+  const actions = {
+    createVariable: vi.fn().mockResolvedValue({
+      id: 'v2',
+      name: 'pressure',
+      type: 'numeric',
+      scope: 'local',
+      config: { min: 0, max: 100, precision: 'DOUBLE', distribution: 'UNIFORM' },
+    }),
+    updateVariable: vi.fn().mockResolvedValue(undefined),
+    deleteVariable: vi.fn().mockResolvedValue(undefined),
+    clearVariableSelection: vi.fn(),
+    onSelectVariable: vi.fn(),
+  };
+
+  beforeEach(() => {
+    cleanup();
+    mockUseApp.mockReturnValue({ 
+      state: { groups: [{ id: 'g1', name: 'Group 1', flows: [{ id: 'f1', name: 'Flow 1' }] }] },
+      actions 
+    });
+    onSelectVariable.mockClear();
+    onInsertVariable.mockClear();
+    mockToast.success.mockClear();
+    mockToast.error.mockClear();
+    actions.createVariable.mockClear();
+    actions.updateVariable.mockClear();
+    actions.deleteVariable.mockClear();
+    actions.clearVariableSelection.mockClear();
+  });
+
+  it('opens the create variable modal from the active scope', async () => {
+    render(
+      <RightPanel
+        variables={variables}
+        selection={selection}
+        onSelectVariable={onSelectVariable}
+        onInsertVariable={onInsertVariable}
+      />,
+    );
+
+    // Open dropdown
+    const addBtn = screen.getByText(/ADD/i);
+    fireEvent.click(addBtn);
+
+    // Find and click 'numeric' option
+    const numericOption = await screen.findByText(/numeric/i);
+    fireEvent.click(numericOption);
+
+    // Dialog should be open
+    expect(await screen.findByText(/New Variable/i)).toBeInTheDocument();
+  });
+
+  it('creates a variable and selects an existing one', async () => {
+    render(
+      <RightPanel
+        variables={variables}
+        selection={selection}
+        onSelectVariable={onSelectVariable}
+        onInsertVariable={onInsertVariable}
+      />,
+    );
+
+    // Open dropdown and select numeric
+    fireEvent.click(screen.getByText(/ADD/i));
+    const numericOption = await screen.findByText(/numeric/i);
+    fireEvent.click(numericOption);
+
+    // Fill form
+    const nameInput = screen.getByLabelText(/Identification Name/i);
+    fireEvent.change(nameInput, { target: { value: 'pressure' } });
+    
+    const descInput = screen.getByLabelText(/Description \(Optional\)/i);
+    fireEvent.change(descInput, { target: { value: 'Pressure variable' } });
+    
+    // Submit
+    const createBtn = screen.getByRole('button', { name: /Create Variable/i });
+    fireEvent.click(createBtn);
+
+    await waitFor(() => expect(actions.createVariable).toHaveBeenCalled());
+    
+    const call = actions.createVariable.mock.calls[0];
+    expect(call[0]).toBe('pressure');
+    expect(call[1]).toBe('numeric');
+    expect(call[2]).toBe('local');
+    expect(call[3]).toMatchObject({
+      min: 0,
+      max: 100,
+      description: 'Pressure variable'
+    });
+    
+    await waitFor(() => expect(mockToast.success).toHaveBeenCalledWith('Variable created'));
+    // The editor of the new variable opens
+    expect(onSelectVariable).toHaveBeenCalledWith('v2');
+
+    fireEvent.click(screen.getByText('temperature'));
+    expect(onSelectVariable).toHaveBeenCalledWith('v1');
+  });
+
+  it('does not select anything when the variable cannot be created', async () => {
+    actions.createVariable.mockRejectedValueOnce(new Error('Core unavailable'));
+    render(<RightPanel variables={variables} selection={selection} onSelectVariable={onSelectVariable} onInsertVariable={onInsertVariable} />);
+
+    await createFromAddMenu(/^numeric$/i, 'pressure');
+
+    await waitFor(() => expect(mockToast.error).toHaveBeenCalledWith('Core unavailable'));
+    expect(onSelectVariable).not.toHaveBeenCalled();
+  });
+
+  const createFromAddMenu = async (type: RegExp, name: string) => {
+    fireEvent.click(screen.getByText(/ADD/i));
+    fireEvent.click(await screen.findByText(type));
+    fireEvent.change(screen.getByLabelText(/Identification Name/i), { target: { value: name } });
+    fireEvent.click(screen.getByRole('button', { name: /Create Variable/i }));
+    await waitFor(() => expect(actions.createVariable).toHaveBeenCalled());
+    return actions.createVariable.mock.calls[0];
+  };
+
+  it('creates a Boolean from the ADD menu with the OFF state its editor shows', async () => {
+    render(<RightPanel variables={variables} selection={selection} onSelectVariable={onSelectVariable} onInsertVariable={onInsertVariable} />);
+
+    const [name, type, , config] = await createFromAddMenu(/^boolean$/i, 'door_open');
+
+    expect(name).toBe('door_open');
+    expect(type).toBe('boolean');
+    expect(config).toEqual({ pattern: 'CONSTANT_BOOLEAN', currentValue: false });
+  });
+
+  it('creates a Temporal from the ADD menu with the default format preset', async () => {
+    render(<RightPanel variables={variables} selection={selection} onSelectVariable={onSelectVariable} onInsertVariable={onInsertVariable} />);
+
+    const [, type, , config] = await createFromAddMenu(/^temporal$/i, 'ts');
+
+    expect(type).toBe('temporal');
+    expect(config).toMatchObject({ temporalType: 'TIMESTAMP', dateFormat: "yyyy-MM-dd'T'HH:mm:ss.SSSZ" });
+    expect(config).not.toHaveProperty('min');
+  });
+
+  it('confirms delete variable from the row action', async () => {
+    render(
+      <RightPanel
+        variables={variables}
+        selection={selection}
+        onSelectVariable={onSelectVariable}
+        onInsertVariable={onInsertVariable}
+      />,
+    );
+
+    // Click delete in the list item
+    const deleteBtn = screen.getAllByTitle(/Delete variable/i)[0];
+    fireEvent.click(deleteBtn);
+    
+    expect(await screen.findByText(/Delete variable/i)).toBeInTheDocument();
+
+    // Confirm deletion
+    const confirmBtn = screen.getByRole('button', { name: /Delete/i });
+    fireEvent.click(confirmBtn);
+    
+    await waitFor(() => expect(actions.deleteVariable).toHaveBeenCalledWith('v1'));
+    await waitFor(() => expect(mockToast.success).toHaveBeenCalledWith('Variable deleted'));
+  });
+
+  it('switches to the scope of a new selection type', () => {
+    const { rerender } = render(<RightPanel variables={variables} selection={selection} onSelectVariable={onSelectVariable} onInsertVariable={onInsertVariable} />);
+    expect(screen.getByText('temperature')).toBeInTheDocument();
+
+    rerender(<RightPanel variables={variables} selection={{ type: 'group', groupId: 'g1' }} onSelectVariable={onSelectVariable} onInsertVariable={onInsertVariable} />);
+    expect(screen.getByText(/No variables found in group scope/i)).toBeInTheDocument();
+  });
+
+  it('keeps the scope the user picked while another flow is selected', () => {
+    const { rerender } = render(<RightPanel variables={variables} selection={selection} onSelectVariable={onSelectVariable} onInsertVariable={onInsertVariable} />);
+    fireEvent.click(screen.getByRole('button', { name: 'GLOBAL' }));
+    expect(screen.getByText(/No variables found in global scope/i)).toBeInTheDocument();
+
+    rerender(<RightPanel variables={variables} selection={{ type: 'flow', groupId: 'g1', flowId: 'f2' }} onSelectVariable={onSelectVariable} onInsertVariable={onInsertVariable} />);
+    expect(screen.getByText(/No variables found in global scope/i)).toBeInTheDocument();
+  });
+
+  it('starts in the scope of the selected variable and creates new variables in the selected group', async () => {
+    const groupVariable: Variable = { id: 'v9', name: 'humidity', type: 'numeric', scope: 'group', groupId: 'g1', config: {} };
+    render(
+      <RightPanel
+        variables={[...variables, groupVariable]}
+        selection={{ type: 'variable', variableId: 'v9', groupId: 'g1' }}
+        onSelectVariable={onSelectVariable}
+        onInsertVariable={onInsertVariable}
+      />,
+    );
+    expect(screen.getByText('humidity')).toBeInTheDocument();
+
+    const call = await createFromAddMenu(/^numeric$/i, 'pressure');
+    expect(call[2]).toBe('group');
+    expect(call[4]).toBeUndefined();
+    expect(call[5]).toBe('g1');
+  });
+});
+

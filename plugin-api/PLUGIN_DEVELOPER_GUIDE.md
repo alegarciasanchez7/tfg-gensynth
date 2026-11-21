@@ -78,7 +78,8 @@ Register it in `src/main/resources/META-INF/services/com.gensynth.plugin.api.Con
 com.example.gensynth.udp.UdpConnectorPlugin
 ```
 
-Build the JAR, and import it from **Connectors → Import plugin** in GenSynth. That's it: the
+Build the JAR, and import it from **Connectors → Import plugin** in GenSynth (or with
+`plugins add <file.jar>` in the `gensynth` command line). That's it: the
 "UDP" connector appears in the connector selector of every flow, with a *Host* and a *Port* field.
 
 > Note: this example uses `java.net.DatagramSocket`, which the plugin sandbox blocks (see §8).
@@ -96,7 +97,7 @@ scope: GenSynth supplies the API at runtime, so it must never be bundled in your
     <dependency>
         <groupId>com.gensynth</groupId>
         <artifactId>gensynth-plugin-api</artifactId>
-        <version>1.0.0</version>
+        <version>1.1.0</version>
         <scope>provided</scope>
     </dependency>
 
@@ -200,6 +201,15 @@ ConnectorField.text("host")                // factory: key and type
     .required();                            // must have a value
 ```
 
+Settings most users never change can go in the collapsed **Advanced options** section of the
+form, after the other fields, with `.advanced()` (since API 1.1). Give them a default or keep
+them optional, so the form works without opening that section; it opens by itself when one of
+them has a value of its own or an error:
+
+```java
+ConnectorField.integer("retries").defaultValue(3).min(0).advanced()
+```
+
 | Factory | Input in the UI | Value type in `ConnectorConfig` |
 |---|---|---|
 | `text(key)` | text box | `String` → `getString` |
@@ -224,7 +234,8 @@ ConnectorField.select("qos",
 ### Guidelines for good fields
 
 - **Order matters**: list them as a user thinks about the connection: where (host, port),
-  who (credentials), what (topic/queue/key), then optional tuning.
+  who (credentials), what (topic/queue/key), then optional tuning, marked `advanced()`. The
+  RabbitMQ connector only shows the broker and the queue; the exchange settings are advanced.
 - **Every field gets a tooltip.** Say what the value is, give an example, and mention any trap
   (e.g. "the default `guest` user only works from localhost").
 - Mark as `required()` only what the connection really cannot work without. Prefer sensible
@@ -232,9 +243,11 @@ ConnectorField.select("qos",
 - Use `password(...)` for every secret.
 - **Keys are part of saved projects.** Renaming a key loses the value of existing flows; add a
   new key instead and keep reading the old one if needed.
-- Rules that involve several fields (e.g. "routing key is required unless the exchange is
-  fanout") cannot be expressed per field: check them at the start of `connect` and throw an
-  `IllegalArgumentException` with a clear message.
+- Rules that involve several fields (e.g. "a routing key is required with a topic exchange")
+  cannot be expressed per field: check them at the start of `connect` and throw an
+  `IllegalArgumentException` with a clear message. They are only reported when the group
+  starts, so prefer a default that makes the rule unnecessary (the RabbitMQ connector uses the
+  queue name when the routing key is empty).
 
 ---
 
@@ -328,15 +341,17 @@ When a plugin is imported, GenSynth validates it before installing:
 4. `info()` and `fields()` must load within 5 seconds and be valid (no duplicated keys);
 5. a plugin with the same `id@version` is overwritten.
 
-Installing restarts GenSynth. Only one version of each plugin `id` is kept; previous ones are
-moved to `core/plugins/backup/`.
+Installing restarts GenSynth (the command line loads the connectors again instead, after
+stopping its simulations). Only one version of each plugin `id` is kept; previous ones are moved
+to `backup/` inside the plugins folder.
 
 ## 10. Versioning
 
-`PluginApi.VERSION` (currently **1.0**) is the version of the plugin API, independent of the
+`PluginApi.VERSION` (currently **1.1**) is the version of the plugin API, independent of the
 version of GenSynth itself. Within a major version the API only grows backward-compatibly (new
 default methods, new field types), so a plugin built for API 1.0 keeps working with any GenSynth
-that provides API 1.x. Plugins built for the legacy pre-release API
+that provides API 1.x. API 1.1 (GenSynth 0.6.0) added `ConnectorField.advanced()`; a plugin
+that uses it needs GenSynth 0.6.0 or later. Plugins built for the legacy pre-release API
 (`ConnectorPluginProvider`) are rejected with a message asking to rebuild them.
 
 ## 11. Testing
@@ -369,6 +384,10 @@ itself, prefer an integration test against a local broker (e.g. a Docker contain
 2. In GenSynth: **Connectors → Import plugin**, drop the JAR, check the validation log
    (it shows the plugin id, API version and number of fields) and install.
 3. GenSynth restarts and the connector appears in the connector selector of the flows.
+
+From a terminal, `plugins add target/<artifact>-<version>.jar` in the `gensynth` command line
+runs the same validation, asks for confirmation and installs it in the same plugins folder; the
+next `start` can use it without restarting, and `plugins remove <id>` removes it.
 
 Developers can also copy the JAR into GenSynth's `core/plugins/` folder and restart; the API
 compatibility check still applies.

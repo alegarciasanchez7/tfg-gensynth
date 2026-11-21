@@ -9,6 +9,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
 
@@ -40,6 +41,29 @@ public class PluginInstallerImplTest {
 
         assertTrue(Files.isDirectory(subDir));
         assertNotNull(subInstaller.listInstalledPlugins());
+    }
+
+    @Test
+    public void installsAValidPluginAndRemovesIt() throws Exception {
+        byte[] jar = TestPluginJars.connector("testconn", "Test Connector", "2.0.0");
+
+        PluginValidationResult validation = installer.validate(jar, "test.jar", "1.0.0");
+        assertTrue(validation.getErrors().toString(), validation.isValid());
+        assertEquals("testconn", validation.getPluginId());
+        assertEquals(1, validation.getFieldCount());
+
+        PluginInstallResult installed = installer.install(jar, "test.jar", "1.0.0");
+        assertTrue(installed.getMessage(), installed.isSuccess());
+        assertEquals("Plugin 'Test Connector' installed successfully.", installed.getMessage());
+        assertEquals(List.of(".pending_install.json", "backup", "testconn-2.0.0.jar"), TestPluginJars.fileNames(tempDir));
+        assertEquals("testconn", installer.listInstalledPlugins().get(0).pluginId());
+
+        installer.confirmLoaded();
+        assertFalse("a confirmed install is not rolled back", Files.exists(tempDir.resolve(".pending_install.json")));
+
+        PluginInstallResult removed = installer.uninstall("testconn", "2.0.0");
+        assertTrue(removed.getMessage(), removed.isSuccess());
+        assertTrue(installer.listInstalledPlugins().isEmpty());
     }
 
     @Test

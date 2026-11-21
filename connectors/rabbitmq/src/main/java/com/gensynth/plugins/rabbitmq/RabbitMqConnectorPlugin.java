@@ -12,7 +12,8 @@ import com.rabbitmq.client.ConnectionFactory;
 import java.util.List;
 
 /**
- * Publishes the messages of a flow to a RabbitMQ exchange with a routing key.
+ * Publishes the messages of a flow to a RabbitMQ queue: straight to it by default, or through
+ * an exchange with a routing key (advanced options).
  *
  * Every message waits for the broker's publisher confirm, and is published as mandatory, so a
  * message that no queue receives (wrong exchange or routing key) counts as failed instead of
@@ -24,8 +25,9 @@ public class RabbitMqConnectorPlugin implements ConnectorPlugin {
         "rabbitmq",
         "RabbitMQ",
         "1.0.0",
-        "Publishes each message to a RabbitMQ exchange with a routing key, waiting for the broker confirmation.");
+        "Publishes each message to a RabbitMQ queue (optionally through an exchange), waiting for the broker confirmation.");
 
+    // Essential settings first; the exchange options are in the collapsed "Advanced options"
     private static final List<ConnectorField> FIELDS = List.of(
         ConnectorField.text("host")
             .label("Host")
@@ -37,10 +39,6 @@ public class RabbitMqConnectorPlugin implements ConnectorPlugin {
             .defaultValue(5672)
             .min(1).max(65535)
             .tooltip("AMQP port of the broker. 5672 by default (5671 is usually TLS, not supported here)."),
-        ConnectorField.text("virtualHost")
-            .label("Virtual host")
-            .defaultValue("/")
-            .tooltip("Virtual host to connect to. Use / unless your broker separates environments with vhosts."),
         ConnectorField.text("username")
             .label("Username")
             .defaultValue("guest")
@@ -51,31 +49,44 @@ public class RabbitMqConnectorPlugin implements ConnectorPlugin {
             .defaultValue("guest")
             .required()
             .tooltip("Password of the broker user. 'guest' is the default of a local RabbitMQ."),
+        // Key kept from earlier versions so saved projects keep their queue
+        ConnectorField.text("declareQueue")
+            .label("Queue")
+            .required()
+            .placeholder("gensynth.messages")
+            .tooltip("Queue that receives the messages. It is created (durable) if it does not exist."),
+        ConnectorField.text("virtualHost")
+            .label("Virtual host")
+            .defaultValue("/")
+            .advanced()
+            .tooltip("Virtual host to connect to. Use / unless your broker separates environments with vhosts."),
         ConnectorField.text("exchange")
             .label("Exchange")
-            .required()
-            .placeholder("gensynth.exchange")
-            .tooltip("Exchange that receives the messages. It is created if it does not exist."),
+            .placeholder("Empty: send straight to the queue")
+            .advanced()
+            .tooltip("Optional. Exchange that receives the messages instead of the queue; it is created if it does "
+                + "not exist and the queue is bound to it. Leave it empty to send straight to the queue."),
         ConnectorField.select("exchangeType",
                 Option.of("topic", "topic: routing key patterns (*, #)"),
                 Option.of("direct", "direct: exact routing key"),
                 Option.of("fanout", "fanout: every bound queue, key ignored"),
                 Option.of("headers", "headers: match on message headers"))
             .label("Exchange type")
-            .tooltip("How the exchange routes messages to queues. Must match the type of an existing exchange."),
+            .advanced()
+            .tooltip("How the exchange routes messages to queues. Only used with an exchange; must match the type "
+                + "of an existing exchange."),
         ConnectorField.bool("exchangeDurable")
             .label("Durable exchange")
             .defaultValue(true)
-            .tooltip("Declare the exchange as durable so it survives a broker restart. Must match an existing exchange."),
+            .advanced()
+            .tooltip("Declare the exchange as durable so it survives a broker restart. Only used with an exchange; "
+                + "must match an existing exchange."),
         ConnectorField.text("routingKey")
             .label("Routing key")
-            .placeholder("sensors.temperature")
-            .tooltip("Routing key of every message. Required for topic and direct exchanges; ignored by fanout and headers."),
-        ConnectorField.text("declareQueue")
-            .label("Queue (optional)")
-            .placeholder("Leave empty to not create a queue")
-            .tooltip("If set, this durable queue is created and bound to the exchange with the routing key, "
-                + "so the messages can be read right away.")
+            .placeholder("Empty: the queue name")
+            .advanced()
+            .tooltip("Routing key of every message sent to the exchange, also used to bind the queue. "
+                + "Empty uses the queue name. Ignored without an exchange.")
     );
 
     @Override

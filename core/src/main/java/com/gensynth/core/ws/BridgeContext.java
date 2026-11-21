@@ -1,11 +1,11 @@
 package com.gensynth.core.ws;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.gensynth.core.api.IFolderOpener;
 import com.gensynth.core.api.IPluginInstaller;
 import com.gensynth.core.api.ITickClock;
 import com.gensynth.core.config.AppPaths;
 import com.gensynth.core.config.DevicePreferences;
-import com.gensynth.core.config.FolderAccess;
 import com.gensynth.core.connectors.runtime.ConnectorCatalogService;
 import com.gensynth.core.flow.TemplateEngine;
 import com.gensynth.core.model.ProjectSettings;
@@ -14,7 +14,6 @@ import com.gensynth.core.persistence.StateRepository;
 import com.gensynth.core.ws.runtime.GroupRuntime;
 import org.java_websocket.WebSocket;
 
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
@@ -165,7 +164,7 @@ public class BridgeContext {
      * @param settings the settings to apply
      */
     public void applyProjectSettings(ProjectSettings settings) {
-        server.tickClock.applySettings(settings.getTick());
+        server.tickClock.applySettings(settings.tick());
     }
 
     public long getSystemStartedAt() {
@@ -192,6 +191,32 @@ public class BridgeContext {
     }
 
     /**
+     * @return how OPEN_OUTPUT_FOLDER shows a folder in the file explorer
+     */
+    public IFolderOpener getFolderOpener() {
+        return server.folderOpener.get();
+    }
+
+    /**
+     * Finds the folder that OPEN_OUTPUT_FOLDER shows: the folder of the current (or last) session
+     * when it exists, otherwise the folder where each START creates its session folder. The
+     * session folder only exists once a connector writes a file in it.
+     *
+     * @return absolute path of the folder to show; it may not exist yet when it is the base folder
+     */
+    public Path folderToOpen() {
+        String session = server.currentOutputDir;
+        if (session != null) {
+            Path sessionPath = Path.of(session).toAbsolutePath();
+            if (Files.isDirectory(sessionPath)) {
+                return sessionPath;
+            }
+        }
+        return server.devicePreferences.sessionsFolder(AppPaths.current().outputsHome(), warning -> { })
+            .toAbsolutePath();
+    }
+
+    /**
      * Describes the folder where each START creates its session folder.
      *
      * @return map with {@code path} (folder in use), {@code defaultPath} and {@code custom}
@@ -215,29 +240,12 @@ public class BridgeContext {
      * @return absolute path of the session output folder
      */
     public String startOutputSession() {
-        Path base = AppPaths.current().outputsHome();
-        Path chosen = server.devicePreferences.outputFolder().orElse(null);
-        if (chosen != null) {
-            if (isWritableFolder(chosen)) {
-                base = chosen;
-            } else {
-                server.sendLogToAll("warn", "SYSTEM", FolderAccess.noPermissionMessage(chosen)
-                    + " Using the default output folder instead.");
-            }
-        }
+        Path base = server.devicePreferences.sessionsFolder(AppPaths.current().outputsHome(),
+            warning -> server.sendLogToAll("warn", "SYSTEM", warning));
         String sessionDir = AppPaths.newSessionOutputDir(base);
         server.currentOutputDir = sessionDir;
         server.sendLogToAll("info", "SYSTEM", "Output folder of this session: " + sessionDir);
         return sessionDir;
-    }
-
-    private static boolean isWritableFolder(Path folder) {
-        try {
-            Files.createDirectories(folder);
-        } catch (IOException | SecurityException e) {
-            return false;
-        }
-        return FolderAccess.canWriteIn(folder);
     }
 
     public double getMessagesPerSecond() {

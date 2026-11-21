@@ -14,6 +14,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 /**
  * Preferences of this computer, kept out of the project files: a path such as
@@ -60,6 +61,36 @@ public final class DevicePreferences {
      */
     public Optional<Path> outputFolder() {
         return Optional.ofNullable(outputFolder.get());
+    }
+
+    /**
+     * Folder where a new session creates its own folder: the chosen one when it can be written
+     * (it is created if missing), otherwise the default one. Shared by the desktop application
+     * and the command line, so both write where the user chose.
+     *
+     * @param defaultFolder folder used when none was chosen or the chosen one cannot be written
+     * @param warnings      receives the reason when the chosen folder cannot be used
+     * @return the folder for the new session
+     */
+    public Path sessionsFolder(Path defaultFolder, Consumer<String> warnings) {
+        Path chosen = outputFolder.get();
+        if (chosen == null) {
+            return defaultFolder;
+        }
+        if (isWritableFolder(chosen)) {
+            return chosen;
+        }
+        warnings.accept(FolderAccess.noPermissionMessage(chosen) + " Using the default output folder instead.");
+        return defaultFolder;
+    }
+
+    private static boolean isWritableFolder(Path folder) {
+        try {
+            Files.createDirectories(folder);
+        } catch (IOException | SecurityException e) {
+            return false;
+        }
+        return FolderAccess.canWriteIn(folder);
     }
 
     /**

@@ -87,26 +87,29 @@ public class ConnectorPluginManager {
     private void register(Iterable<ConnectorPlugin> plugins, boolean external, URLClassLoader loader) {
         for (ConnectorPlugin plugin : plugins) {
             // A plugin JAR's ServiceLoader also sees the core's built-in plugins: keep only its own
-            if (loader != null && plugin.getClass().getClassLoader() != loader) {
-                continue;
+            if (loader == null || plugin.getClass().getClassLoader() == loader) {
+                registerPlugin(plugin, external, loader);
             }
-            try {
-                ConnectorInfo info = plugin.info();
-                List<ConnectorField> fields = ConnectorField.requireUniqueKeys(List.copyOf(plugin.fields()));
-                ConnectorDescriptor descriptor = new ConnectorDescriptor(info, fields, external);
-                String key = descriptor.key();
-                if (pluginsByKey.containsKey(key)) {
-                    logger.warn("Duplicate connector plugin registration (skipped): {}", key);
-                    continue;
-                }
-                pluginsByKey.put(key, plugin);
-                descriptorsByKey.put(key, descriptor);
-                if (loader != null) {
-                    classLoadersByKey.put(key, loader);
-                }
-            } catch (RuntimeException e) {
-                logger.warn("Invalid connector plugin {} (skipped): {}", plugin.getClass().getName(), e.getMessage());
+        }
+    }
+
+    private void registerPlugin(ConnectorPlugin plugin, boolean external, URLClassLoader loader) {
+        try {
+            ConnectorInfo info = plugin.info();
+            List<ConnectorField> fields = ConnectorField.requireUniqueKeys(List.copyOf(plugin.fields()));
+            ConnectorDescriptor descriptor = new ConnectorDescriptor(info, fields, external);
+            String key = descriptor.key();
+            if (pluginsByKey.containsKey(key)) {
+                logger.warn("Duplicate connector plugin registration (skipped): {}", key);
+                return;
             }
+            pluginsByKey.put(key, plugin);
+            descriptorsByKey.put(key, descriptor);
+            if (loader != null) {
+                classLoadersByKey.put(key, loader);
+            }
+        } catch (RuntimeException e) {
+            logger.warn("Invalid connector plugin {} (skipped): {}", plugin.getClass().getName(), e.getMessage());
         }
     }
 
@@ -194,7 +197,8 @@ public class ConnectorPluginManager {
 
     /**
      * Unregisters a plugin and closes its class loader to release the JAR file.
-     * The catalog is not rebuilt because the application restarts after an uninstall.
+     * The catalog is not rebuilt: the caller builds a new manager afterwards (the desktop
+     * application restarts, the command line loads the connectors again).
      *
      * @param pluginId      plugin identifier
      * @param pluginVersion plugin version
@@ -215,6 +219,20 @@ public class ConnectorPluginManager {
             }
         }
         return true;
+    }
+
+    /**
+     * Unregisters every plugin loaded from the plugins directory and closes their class loaders,
+     * so their JAR files can be replaced or deleted (Windows keeps open JARs locked). The
+     * plugins included in GenSynth stay registered. As with {@link #unloadPlugin}, the catalog
+     * is not rebuilt: create a new manager to load the plugins again.
+     */
+    public void unloadExternalPlugins() {
+        for (ConnectorDescriptor descriptor : listDescriptors()) {
+            if (descriptor.isExternal()) {
+                unloadPlugin(descriptor.getPluginId(), descriptor.getPluginVersion());
+            }
+        }
     }
 
     /**

@@ -1,0 +1,365 @@
+import { useState, useRef, useEffect, useCallback, useId } from 'react';
+import { Upload, X, Check, AlertTriangle, Loader2, FileArchive, ArrowRight, ShieldCheck } from 'lucide-react';
+import { CoreCommands, bridge } from '../../../core/bridge';
+import type { PluginValidationResultPayload, ValidationEntry } from '../../../core/types';
+import {
+  dropZoneStateClass,
+  notAJarResult,
+  requestFailedResult,
+  validationIdentity,
+  withUniqueKeys,
+  type ValidationState,
+} from './pluginImportHelpers';
+
+
+/** Text colour of each validation log level (unknown levels from the Core fall back to cyan). */
+const LOG_LEVEL_CLASS: Record<ValidationEntry['level'], string> = {
+  ERROR: 'text-red-400',
+  WARN: 'text-amber-400',
+  INFO: 'text-cyan-400',
+};
+
+/** Terminal-style list of the validation log entries. */
+function ValidationLogs({ logs, succeeded }: Readonly<{ logs: ValidationEntry[] | undefined; succeeded: boolean }>) {
+  return (
+    <div className="mt-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+      <div className="flex items-center gap-2 mb-2">
+        <ShieldCheck size={12} className={succeeded ? 'text-emerald-400' : 'text-red-400'} />
+        <span className="text-[10px] text-[var(--c-tx4)] font-bold uppercase tracking-wider">Validation Logs</span>
+      </div>
+      <div className="bg-black/60 border border-[var(--c-br1)] rounded-lg p-2.5 font-mono text-[10px] max-h-40 overflow-y-auto custom-scrollbar shadow-inner">
+        {logs && logs.length > 0 ? (
+          withUniqueKeys(logs).map(({ key, entry: log }) => (
+            <div key={key} className="mb-2 last:mb-0 border-l border-white/5 pl-2">
+              <div className="flex items-center gap-2">
+                <span className={LOG_LEVEL_CLASS[log.level] ?? 'text-cyan-400'}>
+                  [{log.level}]
+                </span>
+                <span className="text-[var(--c-tx3)]">{log.message}</span>
+              </div>
+              {log.context && (
+                <div className="text-[9px] text-[var(--c-tx5)] italic ml-6 mt-0.5 break-all">
+                  ↳ {log.context}
+                </div>
+              )}
+            </div>
+          ))
+        ) : (
+          <div className="text-[var(--c-tx5)] italic">No detailed logs available.</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Content of the drop zone: validating, validated, file picked or empty. */
+function DropZoneContent({ validationState, fileName }: Readonly<{ validationState: ValidationState; fileName: string | null }>) {
+  if (validationState === 'validating') {
+    return (
+      <div className="flex flex-col items-center gap-3 py-2">
+        <Loader2 size={24} className="text-amber-400 animate-spin" />
+        <span className="text-[11px] text-amber-600 dark:text-amber-300 font-medium animate-pulse">Verifying bytecode integrity...</span>
+      </div>
+    );
+  }
+  if (validationState === 'success') {
+    return (
+      <div className="flex flex-col items-center gap-2">
+        <div className="w-10 h-10 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-400">
+          <ShieldCheck size={24} />
+        </div>
+        <span className="text-[11px] text-emerald-600 dark:text-emerald-300 font-bold">{fileName}</span>
+        <span className="text-[9px] text-emerald-500/70 uppercase tracking-tighter">Integrity Verified</span>
+      </div>
+    );
+  }
+  if (fileName) {
+    return (
+      <>
+        <FileArchive size={24} className="text-cyan-400" />
+        <span className="text-[11px] text-[var(--c-tx2)] text-center font-medium">{fileName}</span>
+        <span className="text-[9px] text-[var(--c-tx5)] uppercase">Ready to Validate</span>
+      </>
+    );
+  }
+  return (
+    <>
+      <div className="w-10 h-10 rounded-full bg-[var(--c-bg4)] flex items-center justify-center text-[var(--c-tx4)] mb-1">
+        <Upload size={20} />
+      </div>
+      <div className="text-center">
+        <span className="text-[11px] text-[var(--c-tx4)] block font-medium">Drop plugin .jar here</span>
+        <span className="text-[9px] text-[var(--c-tx5)]">or click to browse filesystem</span>
+      </div>
+    </>
+  );
+}
+
+/** A file dropped on the native desktop window, sent by the Core (JCEF drop fix). */
+interface NativeFileDrop {
+  filename: string;
+  base64: string;
+}
+
+interface PluginImportPanelProps {
+  onClose: () => void;
+}
+
+export function PluginImportPanel({ onClose }: Readonly<PluginImportPanelProps>) {
+  const ref = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const nameInputId = useId();
+  const versionInputId = useId();
+
+  const [pluginName, setPluginName] = useState('');
+  const [pluginVersion, setPluginVersion] = useState('');
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [jarBase64, setJarBase64] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [validationState, setValidationState] = useState<ValidationState>('idle');
+  const [validationResult, setValidationResult] = useState<PluginValidationResultPayload | null>(null);
+  const [showRestartConfirm, setShowRestartConfirm] = useState(false);
+  const [isInstalling, setIsInstalling] = useState(false);
+
+  // Close on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node) && !showRestartConfirm) {
+        onClose();
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [onClose, showRestartConfirm]);
+
+  const readFileAsBase64 = useCallback((file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        const base64 = result.split(',')[1] || result;
+        resolve(base64);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }, []);
+
+  /**
+   * Validates a picked or dropped file: rejects anything that is not a .jar, otherwise loads its
+   * Base64 content and asks the Core to validate it, filling the empty name and version fields.
+   */
+  const validateJar = useCallback(async (jarFileName: string, loadBase64: () => Promise<string>) => {
+    if (!jarFileName.endsWith('.jar')) {
+      setValidationState('error');
+      setValidationResult(notAJarResult());
+      return;
+    }
+
+    setFileName(jarFileName);
+    setValidationState('validating');
+    setValidationResult(null);
+
+    try {
+      const base64 = await loadBase64();
+      setJarBase64(base64);
+
+      const { name, version } = validationIdentity(jarFileName, pluginName, pluginVersion);
+      const response = await CoreCommands.validatePlugin(base64, name, version);
+
+      setValidationResult(response);
+      setValidationState(response.valid ? 'success' : 'error');
+
+      if (response.displayName && !pluginName.trim()) {
+        setPluginName(response.displayName);
+      }
+      if (response.pluginVersion && !pluginVersion.trim()) {
+        setPluginVersion(response.pluginVersion);
+      }
+    } catch {
+      setValidationState('error');
+      setValidationResult(requestFailedResult());
+    }
+  }, [pluginName, pluginVersion]);
+
+  const handleFileSelected = useCallback(
+    (file: File) => validateJar(file.name, () => readFileAsBase64(file)),
+    [validateJar, readFileAsBase64],
+  );
+
+  const handleInstall = useCallback(async () => {
+    if (!jarBase64 || !validationResult?.valid) return;
+
+    setIsInstalling(true);
+    try {
+      const name = pluginName.trim() || validationResult.displayName || 'unknown';
+      const version = pluginVersion.trim() || validationResult.pluginVersion || '1.0.0';
+
+      await CoreCommands.installPlugin(jarBase64, name, version);
+    } catch {
+      setIsInstalling(false);
+      setShowRestartConfirm(false);
+    }
+  }, [jarBase64, pluginName, pluginVersion, validationResult]);
+
+  // Handle file coming from native Desktop App bridge (JCEF drop fix)
+  useEffect(() => {
+    const handleNativeDrop = async (payload: NativeFileDrop) => {
+      if (payload.filename && payload.base64) {
+        await validateJar(payload.filename, () => Promise.resolve(payload.base64));
+      }
+    };
+
+    bridge.on('NATIVE_FILE_DROPPED', handleNativeDrop);
+    return () => {
+      bridge.off('NATIVE_FILE_DROPPED', handleNativeDrop);
+    };
+  }, [validateJar]);
+
+  return (
+    <div
+        ref={ref}
+        className="absolute left-0 top-full mt-2 z-[100] bg-[var(--c-bg2)] border border-[var(--c-br1)] rounded-lg shadow-2xl shadow-black/50 py-4 px-5 animate-in fade-in slide-in-from-top-2 duration-200"
+        style={{ fontFamily: 'JetBrains Mono, monospace', width: 420 }}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between mb-5">
+          <div className="flex items-center gap-2">
+            <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+            <span className="text-[10px] text-[var(--c-tx4)] tracking-widest uppercase font-bold">Import Plugin</span>
+          </div>
+          <button onClick={onClose} className="p-1 hover:bg-[var(--c-bg5)] rounded transition-colors text-[var(--c-tx4)] hover:text-[var(--c-tx2)]">
+            <X size={14} />
+          </button>
+        </div>
+
+        {/* Form fields */}
+        <div className="grid grid-cols-3 gap-3 mb-4">
+          <div className="col-span-2">
+            <label htmlFor={nameInputId} className="text-[9px] text-[var(--c-tx4)] uppercase tracking-wider block mb-1 font-semibold">Plugin Name</label>
+            <input
+              id={nameInputId}
+              type="text"
+              value={pluginName}
+              onChange={(e) => setPluginName(e.target.value)}
+              placeholder="Display name"
+              className="w-full px-2.5 py-1.5 text-[11px] bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded text-[var(--c-tx2)] placeholder:text-[var(--c-tx5)] focus:outline-none focus:border-cyan-500/50 transition-all"
+            />
+          </div>
+          <div>
+            <label htmlFor={versionInputId} className="text-[9px] text-[var(--c-tx4)] uppercase tracking-wider block mb-1 font-semibold">Version</label>
+            <input
+              id={versionInputId}
+              type="text"
+              value={pluginVersion}
+              onChange={(e) => setPluginVersion(e.target.value)}
+              placeholder="1.0.0"
+              className="w-full px-2.5 py-1.5 text-[11px] bg-[var(--c-bg1)] border border-[var(--c-br1)] rounded text-[var(--c-tx2)] placeholder:text-[var(--c-tx5)] focus:outline-none focus:border-cyan-500/50 transition-all"
+            />
+          </div>
+        </div>
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".jar"
+          className="hidden"
+          onChange={(e) => e.target.files?.[0] && handleFileSelected(e.target.files[0])}
+        />
+
+        {/* Drop zone */}
+        <button
+          type="button"
+          className={`relative w-full border-2 border-dashed rounded-xl p-6 flex flex-col items-center justify-center gap-3 cursor-pointer transition-all duration-300 ${dropZoneStateClass(isDragging, validationState, fileName)}`}
+          onDragOver={validationState !== 'validating' ? (e) => { e.preventDefault(); setIsDragging(true); } : undefined}
+          onDragLeave={() => setIsDragging(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setIsDragging(false);
+            if (e.dataTransfer.files.length > 0) handleFileSelected(e.dataTransfer.files[0]);
+          }}
+          onClick={() => fileInputRef.current?.click()}
+        >
+          <DropZoneContent validationState={validationState} fileName={fileName} />
+        </button>
+
+        {/* Summary of the validated plugin */}
+        {validationResult?.valid && validationResult.pluginId && (
+          <div
+            className="mt-4 rounded border border-emerald-500/30 bg-emerald-500/5 px-2.5 py-2 text-[10px] text-[var(--c-tx3)] flex flex-col gap-0.5"
+            data-testid="plugin-summary"
+          >
+            <span className="text-[var(--c-tx1)] font-semibold">
+              {validationResult.displayName} · {validationResult.pluginId}@{validationResult.pluginVersion}
+            </span>
+            {validationResult.description && <span>{validationResult.description}</span>}
+            <span className="text-[var(--c-tx4)]">
+              Plugin API {validationResult.apiVersion} · {validationResult.fieldCount ?? 0} configuration fields
+            </span>
+          </div>
+        )}
+
+        {/* Validation Logs (Terminal Style) */}
+        {validationResult && (
+          <ValidationLogs logs={validationResult.logs} succeeded={validationState === 'success'} />
+        )}
+
+        {/* Action Button Section */}
+        <div className="mt-5">
+          {!showRestartConfirm ? (
+            <button
+              onClick={() => setShowRestartConfirm(true)}
+              disabled={validationState !== 'success' || isInstalling}
+              className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border text-[11px] font-bold uppercase tracking-wider transition-all duration-300 transform active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed disabled:grayscale ${
+                validationState === 'success'
+                  ? 'border-emerald-500 bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 shadow-lg shadow-emerald-500/10'
+                  : 'border-cyan-500/50 bg-cyan-500/5 text-cyan-400 hover:bg-cyan-500/10'
+              }`}
+            >
+              {validationState === 'success' ? (
+                <>
+                  <ArrowRight size={14} />
+                  Import Validated Plugin
+                </>
+              ) : (
+                <>
+                  <Upload size={14} />
+                  Import Plugin
+                </>
+              )}
+            </button>
+          ) : (
+            <div className="flex flex-col gap-3 animate-in fade-in zoom-in-95 duration-200">
+              <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2.5 text-[10px] text-amber-600 dark:text-amber-300 flex items-start gap-3">
+                <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+                <span className="leading-relaxed">The system will restart to finalize installation. Active flows will be interrupted. Proceed?</span>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowRestartConfirm(false)}
+                  disabled={isInstalling}
+                  className="flex-1 px-4 py-2 rounded-lg border border-[var(--c-br1)] text-[10px] font-bold text-[var(--c-tx4)] hover:bg-[var(--c-bg5)] hover:text-[var(--c-tx2)] transition-all disabled:opacity-50"
+                >
+                  ABORT
+                </button>
+                <button
+                  onClick={handleInstall}
+                  disabled={isInstalling}
+                  className="flex-2 flex items-center justify-center gap-2 px-4 py-2 rounded-lg border border-emerald-500 bg-emerald-500 text-black text-[10px] font-black hover:bg-emerald-400 transition-all disabled:opacity-50"
+                >
+                  {isInstalling ? (
+                    <Loader2 size={12} className="animate-spin" />
+                  ) : (
+                    <>
+                      <Check size={12} />
+                      INSTALL & RESTART
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+}

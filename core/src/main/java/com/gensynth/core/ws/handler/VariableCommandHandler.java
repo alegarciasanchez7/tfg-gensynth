@@ -10,6 +10,7 @@ import com.gensynth.core.flow.variables.InvalidVariableConfigException;
 import com.gensynth.core.flow.variables.VariableType;
 import org.java_websocket.WebSocket;
 
+import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -23,6 +24,8 @@ import static com.gensynth.core.ws.BridgeProtocol.VARIABLE_ID;
 
 /**
  * Handles variable management commands (CREATE_VARIABLE, DELETE_VARIABLE, UPDATE_VARIABLE).
+ * UPDATE_VARIABLE, the most frequent one, schedules the write of the state and sends only the
+ * changed variable ({@code VARIABLE_CHANGED}).
  */
 public class VariableCommandHandler implements CommandHandler {
     private static final String CREATE_VARIABLE = "CREATE_VARIABLE";
@@ -43,7 +46,7 @@ public class VariableCommandHandler implements CommandHandler {
     }
 
     @Override
-    public void handle(WebSocket conn, JsonNode payload, String commandId) throws Exception {
+    public void handle(WebSocket conn, JsonNode payload, String commandId) throws IOException {
         // Methods are routed individually by UiBridgeWebSocketServer.
     }
 
@@ -159,7 +162,7 @@ public class VariableCommandHandler implements CommandHandler {
             return;
         }
 
-        String updatedVariableName;
+        Variable updated;
         synchronized (ctx.getStateLock()) {
             Variable existing = ctx.getVariablesById().get(variableId);
             if (existing == null) {
@@ -168,7 +171,6 @@ public class VariableCommandHandler implements CommandHandler {
             }
 
             String name = payload.path("name").asText(existing.getName());
-            updatedVariableName = name;
             String type = normalizeVariableTypeForCore(payload.path("type").asText(existing.getType()));
             String scope = payload.path(SCOPE).asText(existing.getScope()).toUpperCase();
             
@@ -187,10 +189,11 @@ public class VariableCommandHandler implements CommandHandler {
             Object defaultValue = payload.has(CONFIG) ? payload.get(CONFIG).toString() : existing.getDefaultValue();
 
             try {
-                Variable updated = new Variable(variableId, name, scope, type, defaultValue, config, flowId, groupId);
+                updated = new Variable(variableId, name, scope, type, defaultValue, config, flowId, groupId);
                 ctx.getVariablesById().put(variableId, updated);
                 ctx.getTemplateEngine().removeCachedVariable(variableId);
-                server.persistState();
+                // Edits come in a row (every committed field): write the project once for them
+                server.schedulePersistState();
             } catch (InvalidVariableConfigException ex) {
                 server.sendError(conn, commandId, "VALIDATION_ERROR", ex.getMessage(), Map.of(VARIABLE_ID, variableId, "errors", ex.getErrors()));
                 return;
@@ -201,8 +204,9 @@ public class VariableCommandHandler implements CommandHandler {
         }
 
         server.sendAck(conn, commandId, "variable_updated");
-        server.logToBackend("info", SOURCE_VARIABLES, "Updated variable '" + updatedVariableName + "'", commandId);
-        server.sendVariablesUpdate();
+        server.logToBackend("info", SOURCE_VARIABLES, "Updated variable '" + updated.getName() + "'", commandId);
+        // Only this variable changed: the UI does not need the whole list again
+        server.sendVariableChanged(updated);
     }
 
     /**
@@ -228,8 +232,8 @@ public class VariableCommandHandler implements CommandHandler {
             normalized.put("type", "temporal");
         }
         Object scope = normalized.get(SCOPE);
-        if (scope instanceof String) {
-            normalized.put(SCOPE, ((String) scope).toLowerCase());
+        if (scope instanceof String scopeName) {
+            normalized.put(SCOPE, scopeName.toLowerCase());
         }
         return normalized;
     }

@@ -11,11 +11,13 @@ public interface IFlowMessageHandler {
     /**
      * Generates the next message of a flow from its template.
      *
-     * @param group the group that owns the flow
-     * @param flow  the flow
+     * @param group      the group that owns the flow
+     * @param flow       the flow
+     * @param tickNumber global tick the message belongs to: every flow that generates on the same
+     *                   tick gets the same value of a GROUP or GLOBAL variable
      * @return the payload, or null if generation failed (already reported)
      */
-    String generate(GroupRuntime group, FlowRuntime flow);
+    String generate(GroupRuntime group, FlowRuntime flow, long tickNumber);
 
     /**
      * Publishes a generated message through the flow's connector, unless the flow's event loss
