@@ -37,13 +37,13 @@ public class ParallelGroupDispatcher implements IGroupDispatcher {
     }
 
     @Override
-    public boolean dispatch(List<FlowRuntime> dueFlows, long groupTick) {
+    public boolean dispatch(List<FlowRuntime> dueFlows, long tickNumber, long groupTick) {
         if (closed) {
             return false;
         }
         boolean handedOff = false;
         for (FlowRuntime flow : dueFlows) {
-            switch (workers.tryRun(flow, () -> sendOne(flow, groupTick))) {
+            switch (workers.tryRun(flow, () -> sendOne(flow, tickNumber, groupTick))) {
                 case STARTED -> handedOff = true;
                 case BUSY -> handler.onTickSkipped(group, flow);
                 case UNAVAILABLE -> {
@@ -54,11 +54,11 @@ public class ParallelGroupDispatcher implements IGroupDispatcher {
         return handedOff;
     }
 
-    private void sendOne(FlowRuntime flow, long groupTick) {
+    private void sendOne(FlowRuntime flow, long tickNumber, long groupTick) {
         if (closed) {
             return;
         }
-        String payload = handler.generate(group, flow);
+        String payload = handler.generate(group, flow, tickNumber);
         if (payload != null && !closed) {
             handler.publish(group, flow, payload, groupTick);
         }

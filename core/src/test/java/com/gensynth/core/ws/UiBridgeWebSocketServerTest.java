@@ -801,6 +801,33 @@ public class UiBridgeWebSocketServerTest {
     }
 
     @Test
+    public void sharedVariablesCannotStartWhenTheyReadLocalVariables() throws Exception {
+        String txt = "{\"format\":\"txt\"}";
+        String formula = "{\"pattern\":\"FORMULA\",\"formula\":\"{{%s}} + 1\"}";
+        UiBridgeWebSocketServer server = serverWithProject(String.join(",",
+                group("g1", "ReadsLocal", flow("1", "file", true, "{{shared}}", txt)),
+                group("g2", "ReadsGlobal", flow("2", "file", true, "{{ok}}", txt))),
+                String.join(",",
+                variable("temp", "local", "1", "numeric", "{\"pattern\":\"RANDOM\",\"min\":1,\"max\":5}"),
+                "{\"id\":\"shared\",\"name\":\"shared\",\"scope\":\"group\",\"groupId\":\"g1\",\"type\":\"numeric\","
+                    + "\"config\":" + String.format(formula, "temp") + "}",
+                variable("base", "global", null, "numeric", "{\"pattern\":\"RANDOM\",\"min\":1,\"max\":5}"),
+                "{\"id\":\"ok\",\"name\":\"ok\",\"scope\":\"group\",\"groupId\":\"g2\",\"type\":\"numeric\","
+                    + "\"config\":" + String.format(formula, "base") + "}"));
+        try {
+            List<StartProblem> problems = server.systemCommandHandler.checkProject();
+
+            assertEquals(1, problems.size());
+            assertEquals("ReadsLocal", problems.get(0).group());
+            assertTrue(problems.get(0).blocking());
+            assertTrue(problems.get(0).message(),
+                    problems.get(0).message().startsWith("GROUP variable 'shared' depends on 'temp'"));
+        } finally {
+            server.shutdown();
+        }
+    }
+
+    @Test
     public void checkProjectReportsAProblemOfAGlobalVariableOnce() throws Exception {
         String txt = "{\"format\":\"txt\"}";
         UiBridgeWebSocketServer server = serverWithProject(String.join(",",

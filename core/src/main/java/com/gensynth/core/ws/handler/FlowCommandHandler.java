@@ -68,8 +68,8 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
     private final BridgeContext ctx;
     private final IFlowMessageHandler messageHandler;
 
-    /** The flows of one group due on a tick, with the group tick they were due on. */
-    private record GroupWork(IGroupDispatcher dispatcher, List<FlowRuntime> dueFlows, long groupTick) {
+    /** The flows of one group due on a tick, with the global tick and the group tick they were due on. */
+    private record GroupWork(IGroupDispatcher dispatcher, List<FlowRuntime> dueFlows, long tickNumber, long groupTick) {
     }
 
     public FlowCommandHandler(BridgeContext ctx) {
@@ -458,8 +458,9 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
 
     /**
      * Checks that a group can start: every variable it can use has a valid configuration,
-     * there are no circular or broken references, and item references ({@code .itemX}) only
-     * point to Fixed Subset lists. Nothing is opened or changed.
+     * there are no circular or broken references, GROUP and GLOBAL variables only read variables
+     * of their own scope or a wider one, and item references ({@code .itemX}) only point to Fixed
+     * Subset lists. Nothing is opened or changed.
      *
      * @param group the group to check
      * @throws IllegalStateException naming the first problem found
@@ -474,6 +475,7 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
         } catch (IllegalArgumentException e) {
             throw new IllegalStateException("Broken reference detected: " + e.getMessage(), e);
         }
+        checkSharedDependencies(group);
 
         // Validate flow templates for invalid sub-item access on non-FIXED_SUBSET list strategies
         for (FlowRuntime flow : group.flows) {
@@ -485,6 +487,50 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
                 }
             }
         }
+    }
+
+    /**
+     * Checks that every GROUP and GLOBAL variable the group can use reads only variables it can
+     * reach from its own scope: a GROUP variable the GROUP variables of its group and the GLOBAL
+     * ones, a GLOBAL variable only GLOBAL ones. Their value is the same for every flow on a tick,
+     * so it cannot come from the LOCAL variables of one flow.
+     *
+     * @throws IllegalStateException naming the variable and the dependency it cannot read
+     */
+    private void checkSharedDependencies(GroupRuntime group) {
+        Map<String, Variable> variables = ctx.getVariablesById();
+        for (Variable variable : variables.values()) {
+            if (!TemplateEngine.isShared(variable) || !isReachableFrom(group, variable)) {
+                continue;
+            }
+            boolean groupScope = "GROUP".equalsIgnoreCase(variable.getScope());
+            String ownerGroupId = groupScope ? variable.getGroupId() : null;
+            for (String dependency : TemplateEngine.dependenciesOf(variable)) {
+                if (dependency.equals(variable.getName()) || dependency.equals(variable.getId())) {
+                    continue;
+                }
+                if (ctx.getTemplateEngine().findAccessibleVariable(variables, dependency, null, null, ownerGroupId) == null) {
+                    throw new IllegalStateException(sharedDependencyMessage(variable, dependency, groupScope));
+                }
+            }
+        }
+    }
+
+    /**
+     * Error raised when a GROUP or GLOBAL variable reads a variable outside its reach.
+     *
+     * @param variable   the GROUP or GLOBAL variable
+     * @param dependency the name of the variable it reads
+     * @param groupScope whether the variable is a GROUP one
+     * @return the user-facing message
+     */
+    public static String sharedDependencyMessage(Variable variable, String dependency, boolean groupScope) {
+        String reachable = groupScope ? "a GROUP variable of its group or a GLOBAL variable" : "a GLOBAL variable";
+        String unreadable = groupScope ? "LOCAL variables" : "LOCAL or GROUP variables";
+        return (groupScope ? "GROUP" : "GLOBAL") + " variable '" + variable.getName() + "' depends on '" + dependency
+            + "', which is not " + reachable + ". " + (groupScope ? "GROUP" : "GLOBAL") + " variables give the same"
+            + " value to every flow " + (groupScope ? "of their group" : "of every group") + " on each tick, so they"
+            + " cannot read " + unreadable + ".";
     }
 
     /**
@@ -736,14 +782,14 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
                 }
                 if (!due.isEmpty()) {
                     // Ticks since the group started: same reference as everyTicks, used by the outage rule
-                    work.add(new GroupWork(group.dispatcher, due, tickNumber - group.startTick));
+                    work.add(new GroupWork(group.dispatcher, due, tickNumber, tickNumber - group.startTick));
                 }
             }
         }
 
         boolean dispatched = false;
         for (GroupWork groupWork : work) {
-            dispatched |= groupWork.dispatcher().dispatch(groupWork.dueFlows(), groupWork.groupTick());
+            dispatched |= groupWork.dispatcher().dispatch(groupWork.dueFlows(), groupWork.tickNumber(), groupWork.groupTick());
         }
         return dispatched;
     }

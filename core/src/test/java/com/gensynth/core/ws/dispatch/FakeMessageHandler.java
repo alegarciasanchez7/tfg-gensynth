@@ -38,7 +38,7 @@ class FakeMessageHandler implements IFlowMessageHandler {
     volatile boolean failNextPublish;
 
     @Override
-    public String generate(GroupRuntime group, FlowRuntime flow) {
+    public String generate(GroupRuntime group, FlowRuntime flow, long tickNumber) {
         generateThreads.add(Thread.currentThread().getName());
         CountDownLatch latch = blockedGenerations.get(flow.id);
         if (latch != null) {

@@ -34,7 +34,7 @@ public class ParallelGroupDispatcherTest {
     public void eachFlowSendsOnItsOwnThread() throws Exception {
         dispatcher = new ParallelGroupDispatcher(group, List.of(a, b), handler);
 
-        assertTrue(dispatcher.dispatch(List.of(a, b), 0L));
+        assertTrue(dispatcher.dispatch(List.of(a, b), 0L, 0L));
 
         await("both flows should publish", () -> handler.published.size() == 2);
         assertEquals(2, new HashSet<>(handler.publishThreads).size());
@@ -45,7 +45,7 @@ public class ParallelGroupDispatcherTest {
     public void publishReceivesTheDispatchedGroupTick() throws Exception {
         dispatcher = new ParallelGroupDispatcher(group, List.of(a), handler);
 
-        assertTrue(dispatcher.dispatch(List.of(a), 7L));
+        assertTrue(dispatcher.dispatch(List.of(a), 7L, 7L));
 
         await("the flow should publish", () -> handler.published.size() == 1);
         assertEquals(List.of(7L), handler.publishedTicks);
@@ -58,9 +58,9 @@ public class ParallelGroupDispatcherTest {
         dispatcher = new ParallelGroupDispatcher(group, List.of(a, b), handler);
 
         for (int tick = 0; tick < 5; tick++) {
-            dispatcher.dispatch(List.of(a), 0L);
+            dispatcher.dispatch(List.of(a), 0L, 0L);
             // B's worker clears its busy flag just after recording the send: retry until B takes it
-            await("B keeps accepting ticks while A is blocked", () -> dispatcher.dispatch(List.of(b), 0L));
+            await("B keeps accepting ticks while A is blocked", () -> dispatcher.dispatch(List.of(b), 0L, 0L));
             int expected = tick + 1;
             await("B keeps sending while A is blocked", () -> b.sent.get() == expected);
         }
@@ -71,14 +71,14 @@ public class ParallelGroupDispatcherTest {
 
         release.countDown();
         await("A finishes its message", () -> a.sent.get() == 1);
-        await("A accepts ticks again", () -> dispatcher.dispatch(List.of(a), 0L));
+        await("A accepts ticks again", () -> dispatcher.dispatch(List.of(a), 0L, 0L));
         await("A sends again", () -> a.sent.get() == 2);
     }
 
     @Test
     public void flowsWithoutWorkerAreIgnored() {
         dispatcher = new ParallelGroupDispatcher(group, List.of(a), handler);
-        assertFalse(dispatcher.dispatch(List.of(b), 0L));
+        assertFalse(dispatcher.dispatch(List.of(b), 0L, 0L));
     }
 
     @Test
@@ -86,7 +86,7 @@ public class ParallelGroupDispatcherTest {
         dispatcher = new ParallelGroupDispatcher(group, List.of(a, b), handler);
         dispatcher.shutdown();
 
-        assertFalse(dispatcher.dispatch(List.of(a, b), 0L));
+        assertFalse(dispatcher.dispatch(List.of(a, b), 0L, 0L));
         TestWaits.eventually().during(Duration.ofMillis(50)).until(handler.published::isEmpty);
     }
 }

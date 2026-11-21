@@ -41,9 +41,9 @@ public class SequentialGroupDispatcherTest {
     public void publishesInGenerationOrderFromASingleThread() throws Exception {
         dispatcher = new SequentialGroupDispatcher(group, handler, 100);
 
-        assertTrue(dispatcher.dispatch(List.of(a, b, c), 0L));
-        assertTrue(dispatcher.dispatch(List.of(a, b, c), 0L));
-        assertTrue(dispatcher.dispatch(List.of(a, c), 0L));
+        assertTrue(dispatcher.dispatch(List.of(a, b, c), 0L, 0L));
+        assertTrue(dispatcher.dispatch(List.of(a, b, c), 0L, 0L));
+        assertTrue(dispatcher.dispatch(List.of(a, c), 0L, 0L));
 
         await("all messages published", () -> handler.published.size() == 8);
         assertEquals(List.of("A1", "B1", "C1", "A2", "B2", "C2", "A3", "C3"), handler.published);
@@ -55,8 +55,8 @@ public class SequentialGroupDispatcherTest {
     public void queuedMessagesKeepTheGroupTickThatGeneratedThem() throws Exception {
         dispatcher = new SequentialGroupDispatcher(group, handler, 100);
 
-        assertTrue(dispatcher.dispatch(List.of(a, b), 3L));
-        assertTrue(dispatcher.dispatch(List.of(a), 4L));
+        assertTrue(dispatcher.dispatch(List.of(a, b), 3L, 3L));
+        assertTrue(dispatcher.dispatch(List.of(a), 4L, 4L));
 
         await("all messages published", () -> handler.published.size() == 3);
         assertEquals(List.of(3L, 3L, 4L), handler.publishedTicks);
@@ -68,13 +68,13 @@ public class SequentialGroupDispatcherTest {
         handler.blockedFlows.put("A", release);
         dispatcher = new SequentialGroupDispatcher(group, handler, 2);
 
-        assertTrue(dispatcher.dispatch(List.of(a), 0L));
+        assertTrue(dispatcher.dispatch(List.of(a), 0L, 0L));
         // Once publishing starts, the sender has taken A1 out of the queue and freed its place
         await("sender takes A1 and blocks on it", () -> handler.publishStarted.contains("A1"));
-        assertTrue(dispatcher.dispatch(List.of(b, c), 0L));
+        assertTrue(dispatcher.dispatch(List.of(b, c), 0L, 0L));
 
         // Queue (capacity 2) is full: the next tick is skipped for every due flow
-        assertFalse(dispatcher.dispatch(List.of(a, b), 0L));
+        assertFalse(dispatcher.dispatch(List.of(a, b), 0L, 0L));
         assertEquals(1, handler.skipped("A"));
         assertEquals(1, handler.skipped("B"));
         assertEquals(1, handler.generated("A"));
@@ -90,7 +90,7 @@ public class SequentialGroupDispatcherTest {
         handler.blockedFlows.put("A", release);
         dispatcher = new SequentialGroupDispatcher(group, handler, 100);
 
-        dispatcher.dispatch(List.of(a, b, c), 0L);
+        dispatcher.dispatch(List.of(a, b, c), 0L, 0L);
         await("sender takes A1", () -> dispatcher.pendingMessages() == 2);
         dispatcher.shutdown();
         release.countDown();
@@ -100,7 +100,7 @@ public class SequentialGroupDispatcherTest {
 
         assertEquals("only the message in progress is sent", List.of("A1"), handler.published);
         assertEquals("dropped messages are generated but not sent", 1, b.generated.get() - b.sent.get());
-        assertFalse(dispatcher.dispatch(List.of(a), 0L));
+        assertFalse(dispatcher.dispatch(List.of(a), 0L, 0L));
     }
 
     @Test
@@ -108,8 +108,8 @@ public class SequentialGroupDispatcherTest {
         handler.failingFlows.add("A");
         dispatcher = new SequentialGroupDispatcher(group, handler, 100);
 
-        assertFalse("nothing generated", dispatcher.dispatch(List.of(a), 0L));
-        assertTrue(dispatcher.dispatch(List.of(a, b), 0L));
+        assertFalse("nothing generated", dispatcher.dispatch(List.of(a), 0L, 0L));
+        assertTrue(dispatcher.dispatch(List.of(a, b), 0L, 0L));
 
         await("the other flow is still sent", () -> handler.published.size() == 1);
         assertEquals(List.of("B1"), handler.published);
@@ -121,7 +121,7 @@ public class SequentialGroupDispatcherTest {
         handler.failNextPublish = true;
         dispatcher = new SequentialGroupDispatcher(group, handler, 100);
 
-        dispatcher.dispatch(List.of(a, b), 0L);
+        dispatcher.dispatch(List.of(a, b), 0L, 0L);
 
         await("the next message is still sent", () -> handler.published.size() == 1);
         assertEquals(List.of("B1"), handler.published);
@@ -144,7 +144,7 @@ public class SequentialGroupDispatcherTest {
             for (FlowRuntime flow : due) {
                 expectedOrder.add(flow.id + tick);
             }
-            assertTrue(dispatcher.dispatch(List.of(a, b, c), tick));
+            assertTrue(dispatcher.dispatch(List.of(a, b, c), tick, tick));
         }
 
         await("all messages published", () -> handler.published.size() == 15);
@@ -160,7 +160,7 @@ public class SequentialGroupDispatcherTest {
         handler.blockedGenerations.put("A", slowA);
         dispatcher = dispatcher(SequentialOrder.GENERATED, new Random(), 100);
 
-        assertTrue(dispatcher.dispatch(List.of(a, b, c), 1L));
+        assertTrue(dispatcher.dispatch(List.of(a, b, c), 1L, 1L));
         await("B and C published while A is still generating", () -> handler.published.size() == 2);
         slowA.countDown();
 
@@ -177,13 +177,13 @@ public class SequentialGroupDispatcherTest {
         handler.blockedGenerations.put("A", slowA);
         dispatcher = dispatcher(SequentialOrder.GENERATED, new Random(), 100);
 
-        assertTrue(dispatcher.dispatch(List.of(a, b), 1L));
+        assertTrue(dispatcher.dispatch(List.of(a, b), 1L, 1L));
         await("B1 published", () -> handler.published.contains("B1"));
         // B's worker frees itself just after queueing B1, so the next ticks may still find it busy
         AtomicInteger ticks = new AtomicInteger();
         await("B generates again", () -> {
             ticks.incrementAndGet();
-            return dispatcher.dispatch(List.of(a, b), 2L);
+            return dispatcher.dispatch(List.of(a, b), 2L, 2L);
         });
         await("B2 published", () -> handler.published.contains("B2"));
 
@@ -199,13 +199,13 @@ public class SequentialGroupDispatcherTest {
         handler.blockedFlows.put("A", release);
         dispatcher = dispatcher(SequentialOrder.GENERATED, new Random(), 2);
 
-        assertTrue(dispatcher.dispatch(List.of(a), 1L));
+        assertTrue(dispatcher.dispatch(List.of(a), 1L, 1L));
         // Once publishing starts, the sender has taken A1 out of the queue and freed its place
         await("sender busy with A1", () -> handler.publishStarted.contains("A1"));
-        assertTrue(dispatcher.dispatch(List.of(b, c), 2L));
+        assertTrue(dispatcher.dispatch(List.of(b, c), 2L, 2L));
         await("B2 and C2 queued", () -> dispatcher.pendingMessages() == 2);
 
-        assertFalse(dispatcher.dispatch(List.of(b), 3L));
+        assertFalse(dispatcher.dispatch(List.of(b), 3L, 3L));
         assertEquals(1, handler.skipped("B"));
         release.countDown();
         await("all queued messages published", () -> handler.published.size() == 3);
@@ -218,11 +218,11 @@ public class SequentialGroupDispatcherTest {
             handler.published.clear();
             dispatcher = dispatcher(order, new Random(), 1);
             for (int tick = 1; tick <= 3; tick++) {
-                dispatcher.dispatch(List.of(a), tick);
+                dispatcher.dispatch(List.of(a), tick, tick);
             }
             // With capacity 1, B can only be queued if A's failed generations freed their place
             final SequentialGroupDispatcher current = dispatcher;
-            await(order + ": the place of A is free again", () -> current.dispatch(List.of(b), 9L));
+            await(order + ": the place of A is free again", () -> current.dispatch(List.of(b), 9L, 9L));
             await(order + ": B published", () -> !handler.published.isEmpty());
             dispatcher.shutdown();
         }
@@ -234,7 +234,7 @@ public class SequentialGroupDispatcherTest {
         handler.blockedGenerations.put("A", slowA);
         dispatcher = dispatcher(SequentialOrder.GENERATED, new Random(), 100);
 
-        assertTrue(dispatcher.dispatch(List.of(a), 1L));
+        assertTrue(dispatcher.dispatch(List.of(a), 1L, 1L));
         await("A is generating", () -> !handler.generateThreads.isEmpty());
         dispatcher.shutdown();
         slowA.countDown();
