@@ -6,7 +6,7 @@ import { Input } from '../../../ui/input';
 import { Label } from '../../../ui/label';
 import { centerOf } from '../../../../core/pointDefaults';
 import { randomUUID } from '../../../../core/randomId';
-import { parseCoordinate, vertexRows } from './obstacleVertices';
+import { parseCoordinate } from './obstacleVertices';
 
 /** Names of the two axes of the obstacle points: X/Y, or Latitude/Longitude on a map. */
 export interface ObstacleAxisLabels {
@@ -90,8 +90,10 @@ const ObstacleVerticesEditor: React.FC<{
       <div className="text-[10px] font-semibold uppercase text-[var(--c-tx3)]">
         Vertices of {obstacle.name || 'Obstacle'}
       </div>
-      {vertexRows(obstacle.points).map(({ point, key }, i) => (
-        <div key={key} className="flex items-end gap-2">
+      {obstacle.points.map((point, i) => (
+        // Keyed by position: a key made of the coordinates would change when one is edited, and
+        // the inputs of the row would be mounted again, losing the focus moved to the next field
+        <div key={`${obstacle.id}-vertex-${i}`} className="flex items-end gap-2">
           <span className="w-14 shrink-0 pb-1.5 text-[10px] font-mono text-[var(--c-tx4)]">Point {i + 1}</span>
           <VertexCoordinateInput
             id={`obs-${obstacle.id}-${i}-x`}
