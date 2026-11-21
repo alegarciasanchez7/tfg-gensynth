@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import { useState } from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { BoundaryObstaclesEditor } from './BoundaryObstaclesEditor';
 import { BoundaryObstacle } from '../../../../types';
@@ -89,6 +90,25 @@ describe('BoundaryObstaclesEditor', () => {
       expect(screen.getByText('Vertices of Forbidden Pillar Zone')).toBeInTheDocument();
       expect(screen.getAllByLabelText('X')).toHaveLength(4);
       expect(screen.getAllByLabelText('Y')[2]).toHaveValue('20');
+    });
+
+    it('keeps the next field of the row focused after a coordinate is applied', () => {
+      const Editable = () => {
+        const [obstacles, setObstacles] = useState(sampleObstacles);
+        return <BoundaryObstaclesEditor obstacles={obstacles} selectedObstacleId="obs_1" onChange={setObstacles} />;
+      };
+      render(<Editable />);
+
+      const secondX = screen.getAllByLabelText('X')[1];
+      const secondY = screen.getAllByLabelText('Y')[1];
+      fireEvent.change(secondX, { target: { value: '42' } });
+      // Tab: the focus moves to Y, then X is left and its value applied
+      secondY.focus();
+      fireEvent.blur(secondX);
+
+      expect(screen.getAllByLabelText('X')[1]).toHaveValue('42');
+      expect(screen.getAllByLabelText('Y')[1]).toBe(secondY);
+      expect(secondY).toHaveFocus();
     });
 
     it('applies a typed coordinate when leaving the field, and only to that vertex', () => {

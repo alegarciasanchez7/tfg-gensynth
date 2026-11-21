@@ -15,18 +15,21 @@ function visibleFromLocal(v: Variable, flowId: string | undefined, effectiveGrou
   return v.scope === 'global';
 }
 
-/** Whether a variable is visible from a group variable (its flows' locals, the group and globals). */
-function visibleFromGroup(v: Variable, groupFlowIds: string[], effectiveGroupId: string | undefined): boolean {
-  if (v.scope === 'local') return Boolean(v.flowId) && groupFlowIds.includes(v.flowId as string);
+/**
+ * Whether a variable is visible from a group variable: the group and the globals. A group
+ * variable gives the same value to every flow on each tick, so it cannot read their locals.
+ */
+function visibleFromGroup(v: Variable, effectiveGroupId: string | undefined): boolean {
   if (v.scope === 'group') return Boolean(effectiveGroupId) && v.groupId === effectiveGroupId;
   return v.scope === 'global';
 }
 
 /**
  * Names of the variables a conditional rule may target, following the scope rules: a local
- * variable sees its flow's locals, its group and the globals; a group variable sees the locals of
- * its flows, the group and the globals; a global (or unknown scope) sees everything. The owner
- * itself is never a target.
+ * variable sees its flow's locals, its group and the globals; a group variable sees its group and
+ * the globals; a global variable sees only the globals (GROUP and GLOBAL variables give one value
+ * per tick to every flow, so they cannot read the variables of one flow). An unknown scope sees
+ * everything. The owner itself is never a target.
  */
 export function ruleTargetNames(
   variables: Variable[] | undefined,
@@ -40,13 +43,13 @@ export function ruleTargetNames(
     (flowId && g.flows.some(f => f.id === flowId))
   );
   const effectiveGroupId = groupId || srcGroup?.id;
-  const groupFlowIds = srcGroup?.flows.map(f => f.id) || [];
 
   return variables
     .filter(v => {
       if (currentVariableName && v.name === currentVariableName) return false;
       if (variableScope === 'local') return visibleFromLocal(v, flowId, effectiveGroupId);
-      if (variableScope === 'group') return visibleFromGroup(v, groupFlowIds, effectiveGroupId);
+      if (variableScope === 'group') return visibleFromGroup(v, effectiveGroupId);
+      if (variableScope === 'global') return v.scope === 'global';
       return true;
     })
     .map(v => v.name);

@@ -76,6 +76,25 @@ public class TemplateEngine {
      * @return the rendered message, or an empty string for an empty template
      */
     public String evaluate(String template, long sequenceNumber, Map<String, Variable> variables, RenderTarget target, Map<String, Object> context) {
+        return evaluate(template, sequenceNumber, variables, target, context, DataGenerator.NO_TICK);
+    }
+
+    /**
+     * Renders a flow template into one message of a tick. LOCAL variables give a new value on
+     * every message; GROUP and GLOBAL variables give one value per tick, the same for every flow
+     * that renders a message on that tick.
+     *
+     * @param template       template with {@code {{...}}} placeholders
+     * @param sequenceNumber value of the {@code {{n}}} built-in
+     * @param variables      all variables, by id
+     * @param target         flow, group, flow name and format the message is rendered for
+     * @param context        values generated for this message, by variable id and name; may be {@code null}
+     * @param tickNumber     global tick of the message, or {@link DataGenerator#NO_TICK} to give
+     *                       GROUP and GLOBAL variables a new value on every call
+     * @return the rendered message, or an empty string for an empty template
+     */
+    public String evaluate(String template, long sequenceNumber, Map<String, Variable> variables, RenderTarget target,
+                           Map<String, Object> context, long tickNumber) {
         if (template == null || template.isEmpty()) {
             return "";
         }
@@ -99,7 +118,7 @@ public class TemplateEngine {
                 case "ts" -> currentTs;
                 case "n" -> currentSeq;
                 case FLOW_NAME_PLACEHOLDER -> target.flowName() != null ? target.flowName() : matcher.group(0);
-                default -> resolveUserVariable(fullVarSpec, matcher, variables, target, messageContext, structuredWriter);
+                default -> resolveUserVariable(fullVarSpec, matcher, variables, target, messageContext, structuredWriter, tickNumber);
             };
 
             // Matcher.appendReplacement has issues with literal $ and \, so we quote replacement
@@ -162,7 +181,7 @@ public class TemplateEngine {
     /** Resolves a user variable placeholder with scope enforcement; unknown variables are left as is. */
     private String resolveUserVariable(String fullVarSpec, Matcher matcher, Map<String, Variable> variables,
                                        RenderTarget target, Map<String, Object> context,
-                                       StructuredValueWriter structuredWriter) {
+                                       StructuredValueWriter structuredWriter, long tickNumber) {
         PlaceholderSpec spec = PlaceholderSpec.parse(fullVarSpec);
         Variable variable = findAccessibleVariable(variables, spec.name(), spec.scope(), target.flowId(), target.groupId());
         if (variable == null) {
@@ -170,7 +189,7 @@ public class TemplateEngine {
             return matcher.group(0);
         }
 
-        Object generatedValue = valueForMessage(variable, variables, target, context);
+        Object generatedValue = valueForMessage(variable, variables, target, context, tickNumber);
         Map<String, Object> varConfig = variable.getConfig();
         boolean constantPattern = isConstantPattern(varConfig);
         checkItemReference(variable, varConfig, spec.itemIndex());
@@ -191,15 +210,60 @@ public class TemplateEngine {
 
     /** The variable's value for this message: generated (with its dependencies) on first use, then reused. */
     private Object valueForMessage(Variable variable, Map<String, Variable> variables, RenderTarget target,
-                                   Map<String, Object> context) {
+                                   Map<String, Object> context, long tickNumber) {
         if (variable.getId() != null && context.containsKey(variable.getId())) {
             // Already generated for this message (repeated reference or dependency)
             return context.get(variable.getId());
         }
-        ensureDependenciesAvailable(variable, variables, target.flowId(), target.groupId(), context, new HashSet<>());
-        Object generatedValue = dataGenerator.generateValue(variable, context);
-        storeGenerated(variable, generatedValue, context);
-        return generatedValue;
+        return generateInto(variable, variables, target.flowId(), target.groupId(), context, new HashSet<>(), tickNumber);
+    }
+
+    /**
+     * Generates the variable for a message and stores the value in its context. A LOCAL variable
+     * is generated with its dependencies in that context; a GROUP or GLOBAL one takes its value
+     * of the tick (see {@link #generateShared}).
+     */
+    private Object generateInto(Variable variable, Map<String, Variable> variables, String flowId, String groupId,
+                                Map<String, Object> context, Set<String> resolutionStack, long tickNumber) {
+        Object value;
+        if (isShared(variable)) {
+            value = sharedValueOf(variable, variables, resolutionStack, tickNumber);
+            // Sub-properties and inheriting variables of this message read the generator
+            dataGenerator.exposeGenerator(variable, context);
+        } else {
+            ensureDependenciesAvailable(variable, variables, flowId, groupId, context, resolutionStack, tickNumber);
+            value = dataGenerator.generateValue(variable, context);
+        }
+        storeGenerated(variable, value, context);
+        return value;
+    }
+
+    /**
+     * The value of a GROUP or GLOBAL variable on the tick. A new value is generated in a context
+     * of its own, with its dependencies resolved from its scope (the GROUP variables of its group
+     * and the GLOBAL ones), never from the flow that happens to ask first: the value is the same
+     * for every flow.
+     *
+     * The dependencies are resolved before the variable's lock is taken, so a thread never waits
+     * for one shared variable while holding another; the resolution stack of the message stops a
+     * cycle made by an edit while the simulation runs (cycles are only checked at START).
+     */
+    private Object sharedValueOf(Variable variable, Map<String, Variable> variables, Set<String> resolutionStack,
+                                 long tickNumber) {
+        Map<String, Object> sharedContext = new java.util.HashMap<>();
+        if (!dataGenerator.hasSharedValue(variable, tickNumber)) {
+            String ownerGroupId = "GROUP".equalsIgnoreCase(variable.getScope()) ? variable.getGroupId() : null;
+            ensureDependenciesAvailable(variable, variables, null, ownerGroupId, sharedContext, resolutionStack, tickNumber);
+        }
+        return dataGenerator.sharedValue(variable, tickNumber, () -> dataGenerator.generateValue(variable, sharedContext));
+    }
+
+    /**
+     * @param variable a variable
+     * @return true for a GROUP or GLOBAL variable, which gives one value per tick to every flow
+     */
+    public static boolean isShared(Variable variable) {
+        return "GROUP".equalsIgnoreCase(variable.getScope()) || "GLOBAL".equalsIgnoreCase(variable.getScope());
     }
 
     private static void storeGenerated(Variable variable, Object value, Map<String, Object> context) {
@@ -639,7 +703,8 @@ public class TemplateEngine {
         String flowId,
         String groupId,
         Map<String, Object> context,
-        Set<String> resolutionStack
+        Set<String> resolutionStack,
+        long tickNumber
     ) {
         if (variable == null || variable.getConfig() == null) {
             return;
@@ -651,11 +716,10 @@ public class TemplateEngine {
         }
 
         try {
-            for (String depNameOrId : collectDependencies(variable)) {
+            for (String depNameOrId : dependenciesOf(variable)) {
                 Variable dependencyVariable = missingDependency(variable, depNameOrId, variables, flowId, groupId, context);
                 if (dependencyVariable != null) {
-                    ensureDependenciesAvailable(dependencyVariable, variables, flowId, groupId, context, resolutionStack);
-                    storeGenerated(dependencyVariable, dataGenerator.generateValue(dependencyVariable, context), context);
+                    generateInto(dependencyVariable, variables, flowId, groupId, context, resolutionStack, tickNumber);
                 }
             }
         } finally {
@@ -665,8 +729,18 @@ public class TemplateEngine {
         }
     }
 
-    /** Names or ids the variable depends on: from its parsed configuration, else from its raw conditional rules. */
-    private static Set<String> collectDependencies(Variable variable) {
+    /**
+     * Names or ids the variable depends on (conditional rule targets, the inherited list, and the
+     * references of formulas and string templates): from its parsed configuration, else from its
+     * raw conditional rules.
+     *
+     * @param variable a variable
+     * @return the names or ids it reads; empty when it reads none
+     */
+    public static Set<String> dependenciesOf(Variable variable) {
+        if (variable.getConfig() == null) {
+            return new HashSet<>();
+        }
         VariableConfiguration varConfig = parseConfiguration(variable);
         Set<String> deps = new HashSet<>();
         if (varConfig != null) {

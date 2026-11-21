@@ -31,9 +31,9 @@ describe('ruleTargetNames', () => {
       .toEqual(['localF1', 'groupG1', 'global']);
   });
 
-  it('lets a group variable target the locals of its flows, the group and the globals', () => {
+  it('lets a group variable target its group and the globals, never the locals of its flows', () => {
     expect(ruleTargetNames(variables, groups, { variableScope: 'group', groupId: 'g1' }))
-      .toEqual(['owner', 'localF1', 'localF2', 'groupG1', 'global']);
+      .toEqual(['groupG1', 'global']);
   });
 
   it('finds the group of a local variable from its flow', () => {
@@ -46,10 +46,13 @@ describe('ruleTargetNames', () => {
     expect(ruleTargetNames(variables, groups, { variableScope: 'group' })).toEqual(['global']);
   });
 
-  it('lets a global variable (or an unknown scope) target everything but itself', () => {
-    const all = variables.map(v => v.name);
-    expect(ruleTargetNames(variables, groups, { variableScope: 'global', currentVariableName: 'global' }))
-      .toEqual(all.filter(n => n !== 'global'));
-    expect(ruleTargetNames(variables, groups, {})).toEqual(all);
+  it('lets a global variable target only the other globals', () => {
+    const withAnotherGlobal = [...variables, variable('otherGlobal', 'global')];
+    expect(ruleTargetNames(withAnotherGlobal, groups, { variableScope: 'global', currentVariableName: 'global' }))
+      .toEqual(['otherGlobal']);
+  });
+
+  it('lets an unknown scope target everything', () => {
+    expect(ruleTargetNames(variables, groups, {})).toEqual(variables.map(v => v.name));
   });
 });

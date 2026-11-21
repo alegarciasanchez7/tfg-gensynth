@@ -54,12 +54,12 @@ public class FlowMessagePublisher implements IFlowMessageHandler {
     }
 
     @Override
-    public String generate(GroupRuntime group, FlowRuntime flow) {
+    public String generate(GroupRuntime group, FlowRuntime flow, long tickNumber) {
         try {
             // Global sequence: {{n}} is unique even across flows running in parallel
             long sequence = ctx.getMessageSequence().incrementAndGet();
             String payload = ctx.getTemplateEngine().evaluate(flow.template, sequence, ctx.getVariablesById(),
-                new TemplateEngine.RenderTarget(flow.id, group.id, flow.name, flow.format), null);
+                new TemplateEngine.RenderTarget(flow.id, group.id, flow.name, flow.format), null, tickNumber);
             flow.generated.incrementAndGet();
             return payload;
         } catch (Exception ex) {

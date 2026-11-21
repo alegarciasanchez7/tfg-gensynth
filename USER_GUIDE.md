@@ -173,9 +173,10 @@ It takes about five minutes.
    ![Create flow dialog](docs-assets/user-guide/05-create-flow-dialog.png)
 
 3. **Create the variables of the station.** In the right panel, select the **LOCAL** tab, click
-   **+ ADD**, choose the type and fill in the dialog. Set **Target Flow Assignment** to
-   *Station 1* and click **Create Variable**: the editor of the new variable opens in the centre,
-   ready to configure (to come back to it later, click the variable in the right panel). Create:
+   **+ ADD** and pick the type in the menu that opens (for example **Numeric**). In the dialog,
+   type the name, set **Target Flow Assignment** to *Station 1* and click **Create Variable**: the
+   editor of the new variable opens in the centre, ready to configure (to come back to it later,
+   click the variable in the right panel). Create:
 
    | Name | Type | Configuration (Visual Editor) |
    |---|---|---|
@@ -703,11 +704,11 @@ Each flow sends **one message every N ticks** (its *Every N ticks*). For example
 the first tick after START. Changing the tick applies immediately, even while the simulation is
 running. While running, the settings show the measured tick rate.
 
-> **Important:** variables do not look at the global tick. They advance **once per value they
-> generate**, that is, once per message that uses them. A Sinusoidal, Drift, Sequential, Boolean
-> duty cycle or Simulated Step variable used by a flow with *Every 5 ticks* advances one step every
-> 5 ticks. A GROUP or GLOBAL variable used by three flows advances three steps per tick (see
-> [Scopes](#scopes)).
+> **Important:** a LOCAL variable advances **once per message that uses it**. A Sinusoidal, Drift,
+> Sequential, Boolean duty cycle or Simulated Step variable used by a flow with *Every 5 ticks*
+> advances one step every 5 ticks. A GROUP or GLOBAL variable gives **one value per tick**: every
+> flow that sends on that tick receives the same value, and it advances one step per tick however
+> many flows use it (see [Scopes](#scopes)).
 
 ### Settings
 
@@ -781,14 +782,19 @@ Variable**, the editor of the new variable opens in the centre of the window.
 | Scope | Reachable from | Use it for |
 |---|---|---|
 | **LOCAL** | Only its flow. Copied when the flow is cloned. | Anything that belongs to one device: its sensors, its state, its clock. |
-| **GROUP** | Every flow of its group. Copied when the group is cloned. | A value that the whole group must share in the same instant, such as a common setting. |
-| **GLOBAL** | Every flow. | Shared values and the lists that other variables inherit from. |
+| **GROUP** | Every flow of its group. Copied when the group is cloned. | A value that the whole group must share in the same instant, such as the outdoor temperature of a site or a common setting. |
+| **GLOBAL** | Every flow. | Values shared by every group in the same instant, and the lists that other variables inherit from. |
 
-> **Important:** a GROUP or GLOBAL variable is **one single generator shared by every flow that
-> uses it**. Each use takes the next value: if three stations use a GROUP `temperature`, they
-> receive three different consecutive values, and a sequence or a drift advances three steps per
-> tick. To give each device its own sensor, create LOCAL variables (or configure one flow and clone
-> it).
+> **Important:** a GROUP or GLOBAL variable gives **one value per tick, the same for every flow
+> that uses it**. If three stations use a GROUP `temperature`, the three messages of a tick carry
+> the same temperature, and a sequence or a drift advances one step per tick. A GLOBAL variable
+> does the same for the flows of every group. To give each device its own sensor, create LOCAL
+> variables (or configure one flow and clone it).
+>
+> Because their value is the same for every flow, a GROUP variable can only read (in its rules,
+> formulas, templates or inherited list) the GROUP variables of its group and the GLOBAL ones, and
+> a GLOBAL variable only the GLOBAL ones. A GROUP or GLOBAL variable that reads a LOCAL variable
+> stops the simulation from starting, with a message that names both.
 
 When names clash, the closest scope wins: LOCAL, then GROUP, then GLOBAL. Use the
 `{{local.…}}` / `{{group.…}}` / `{{global.…}}` form to be explicit.
@@ -834,7 +840,7 @@ condition on another variable is true.
 
 | Field | What it does |
 |---|---|
-| Variable | The variable to watch (suggestions show the ones you can reach). |
+| Variable | The variable to watch (suggestions show the ones you can reach: a GROUP variable watches GROUP and GLOBAL variables, a GLOBAL variable only GLOBAL ones). |
 | Operator | **EQUALS**, **NOT EQUALS**, **GREATER THAN**, **LESS THAN** or **CONTAINS**. Numbers are compared as numbers; anything else as text. |
 | Value | The value to compare with. |
 | **Overrides Configuration** | The value to send while the condition holds. |
@@ -1747,8 +1753,8 @@ more detail. It only takes a couple of minutes, and it helps to improve the tool
 
 ## Limitations
 
-- **GROUP and GLOBAL variables are shared generators.** Every flow that uses them takes the next
-  value, so per-device sensors must be LOCAL ([Scopes](#scopes)).
+- **GROUP and GLOBAL variables give one value per tick to every flow** and cannot read LOCAL
+  variables, so per-device sensors must be LOCAL ([Scopes](#scopes)).
 - **Deleting a flow keeps its LOCAL variables in the saved file.** They are no longer used and do
   no harm.
 - **The Trend pattern is not available** for Numeric variables.
@@ -1779,7 +1785,8 @@ more detail. It only takes a couple of minutes, and it helps to improve the tool
 | RabbitMQ: *Queue is required* | Fill in **Queue** with the queue that should receive the messages. Projects made before 0.6.0 that only set an exchange need it too. |
 | RabbitMQ: *Message not routed to any queue* | With an exchange, no queue is bound to it with that routing key. Leave **Routing key** empty (the queue name is used) or bind the queue in the management UI. |
 | RabbitMQ: *PRECONDITION_FAILED – inequivalent arg* | The exchange or the queue already exists with other settings (type, durability). GenSynth declares the queue durable: match **Exchange type** / **Durable exchange**, or delete the old exchange or queue in the management UI. |
-| Values look wrong (all devices share a sequence, values jump, a placeholder stays as `{{…}}`) | Check the **scope** of the variable (per-device values must be LOCAL), the name in the template (a typo leaves the placeholder unchanged) and the Preview of the flow. |
+| Values look wrong (all devices send the same value, values jump, a placeholder stays as `{{…}}`) | Check the **scope** of the variable (per-device values must be LOCAL; GROUP and GLOBAL give the same value to every flow), the name in the template (a typo leaves the placeholder unchanged) and the Preview of the flow. |
+| START says *GROUP (or GLOBAL) variable '…' depends on '…', which is not …* | A GROUP or GLOBAL variable reads a LOCAL variable (or a GLOBAL one reads a GROUP variable) in a rule, formula, template or inherited list. Make the variable it reads GROUP or GLOBAL, or make the reading variable LOCAL. |
 | A variable sends a value that does not match its pattern | Check its **Rules** tab: while a rule matches, the override configuration is used instead. |
 | The JSON received is invalid | Text values need quotes (`"{{name}}"`); numbers with prefix, suffix or padding are text too. |
 | Saving says *You do not have permission to write in …* | The folder is read-only for your user, like the installation folder (`C:\Program Files\GenSynth`). Save the project in a folder of yours, such as *Documents*. Spaces in the path are not a problem. |

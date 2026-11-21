@@ -1,6 +1,7 @@
 import { act, render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { MapAutoFit, OfflineGridOverlay } from './mapShared';
+import { MapAutoFit, ObstacleLayers, OfflineGridOverlay } from './mapShared';
+import type { BoundaryObstacle } from '../../../../types';
 import { cachedDivIcon } from './mapIcons';
 import { DARK_CANVAS_PALETTE, LIGHT_CANVAS_PALETTE } from './canvasPalette';
 
@@ -19,6 +20,9 @@ vi.mock('react-leaflet', () => ({
   useMap: () => h.map,
   Polyline: ({ positions, pathOptions }: { positions: [number, number][]; pathOptions: { color?: string } }) => (
     <div data-testid="grid-line" data-positions={JSON.stringify(positions)} data-color={pathOptions.color} />
+  ),
+  Polygon: ({ positions }: { positions: [number, number][] }) => (
+    <div data-testid="polygon" data-positions={JSON.stringify(positions)} />
   ),
 }));
 
@@ -93,5 +97,20 @@ describe('cachedDivIcon', () => {
     expect(cachedDivIcon('test-2', '<b>2</b>')).not.toBe(a);
     expect(a.options.iconSize).toEqual([22, 22]);
     expect(a.options.iconAnchor).toEqual([11, 11]);
+  });
+});
+
+describe('ObstacleLayers', () => {
+  it('skips an obstacle saved without points instead of failing', () => {
+    const obstacles = [
+      { id: 'o1', name: 'No points', type: 'OBSTACLE_POLYGON', enabled: true },
+      { id: 'o2', name: 'Wall', type: 'WALL_SEGMENT', enabled: true, points: [{ x: 40.1, y: -3.6 }, { x: 40.2, y: -3.7 }] },
+    ] as unknown as BoundaryObstacle[];
+
+    render(<ObstacleLayers obstacles={obstacles} />);
+
+    expect(screen.queryByTestId('polygon')).toBeNull();
+    expect(screen.getByTestId('grid-line').getAttribute('data-positions'))
+      .toBe(JSON.stringify([[40.1, -3.6], [40.2, -3.7]]));
   });
 });

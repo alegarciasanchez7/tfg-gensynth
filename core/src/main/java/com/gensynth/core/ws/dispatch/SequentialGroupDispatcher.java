@@ -94,7 +94,7 @@ public class SequentialGroupDispatcher implements IGroupDispatcher {
     }
 
     @Override
-    public boolean dispatch(List<FlowRuntime> dueFlows, long groupTick) {
+    public boolean dispatch(List<FlowRuntime> dueFlows, long tickNumber, long groupTick) {
         if (closed || dueFlows.isEmpty()) {
             return false;
         }
@@ -105,7 +105,7 @@ public class SequentialGroupDispatcher implements IGroupDispatcher {
             return false;
         }
         if (order == SequentialOrder.GENERATED) {
-            return dispatchAsGenerated(dueFlows, groupTick);
+            return dispatchAsGenerated(dueFlows, tickNumber, groupTick);
         }
 
         List<FlowRuntime> ordered = dueFlows;
@@ -115,16 +115,16 @@ public class SequentialGroupDispatcher implements IGroupDispatcher {
         }
         boolean generated = false;
         for (FlowRuntime flow : ordered) {
-            generated |= generateAndQueue(flow, groupTick);
+            generated |= generateAndQueue(flow, tickNumber, groupTick);
         }
         return generated;
     }
 
     /** Hands every due flow to its own thread; each message is queued when its generation ends. */
-    private boolean dispatchAsGenerated(List<FlowRuntime> dueFlows, long groupTick) {
+    private boolean dispatchAsGenerated(List<FlowRuntime> dueFlows, long tickNumber, long groupTick) {
         boolean handedOff = false;
         for (FlowRuntime flow : dueFlows) {
-            switch (workers.tryRun(flow, () -> generateAndQueue(flow, groupTick))) {
+            switch (workers.tryRun(flow, () -> generateAndQueue(flow, tickNumber, groupTick))) {
                 case STARTED -> handedOff = true;
                 case BUSY -> {
                     slots.release();
@@ -140,8 +140,8 @@ public class SequentialGroupDispatcher implements IGroupDispatcher {
      * Generates the message of a flow and queues it, using a slot already taken for it.
      * The slot is given back when nothing is queued.
      */
-    private boolean generateAndQueue(FlowRuntime flow, long groupTick) {
-        String payload = closed ? null : handler.generate(group, flow);
+    private boolean generateAndQueue(FlowRuntime flow, long tickNumber, long groupTick) {
+        String payload = closed ? null : handler.generate(group, flow, tickNumber);
         if (payload == null || closed) {
             slots.release();
             return false;
