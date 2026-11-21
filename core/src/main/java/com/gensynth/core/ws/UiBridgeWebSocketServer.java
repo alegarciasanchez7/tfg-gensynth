@@ -151,7 +151,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
     final TemplateEngine templateEngine = new TemplateEngine();
     String currentOutputDir = null;
     /** Shows the session folder in the file explorer (OPEN_OUTPUT_FOLDER); replaceable in tests. */
-    volatile IFolderOpener folderOpener = new DesktopFolderOpener();
+    final AtomicReference<IFolderOpener> folderOpener = new AtomicReference<>(new DesktopFolderOpener());
     /** Set on the browser thread, read when a project arrives from outside (WebSocket, macOS). */
     final AtomicReference<WebSocket> desktopSocket = new AtomicReference<>();
     /** Project file the desktop window opens once its UI connects (from --open or a double click). */
@@ -196,7 +196,7 @@ public class UiBridgeWebSocketServer extends WebSocketServer {
      * @param folderOpener the opener to use (tests replace the desktop one)
      */
     public void setFolderOpener(IFolderOpener folderOpener) {
-        this.folderOpener = folderOpener;
+        this.folderOpener.set(folderOpener);
     }
 
     /**
