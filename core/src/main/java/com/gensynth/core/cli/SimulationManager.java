@@ -20,6 +20,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
@@ -48,7 +49,7 @@ public class SimulationManager implements ISimulationManager {
     /** Loads the connector plugins: once at the start and again after every plugin change. */
     private final Supplier<ConnectorCatalogService> catalogFactory;
     /** Catalog of the next simulations (the running ones keep the catalog they started with). */
-    private volatile ConnectorCatalogService connectorCatalog;
+    private final AtomicReference<ConnectorCatalogService> connectorCatalog = new AtomicReference<>();
     private final OutputFolders outputFolders;
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private final Map<Integer, HeadlessSimulation> simulations = new LinkedHashMap<>();
@@ -81,7 +82,7 @@ public class SimulationManager implements ISimulationManager {
      */
     public SimulationManager(Supplier<ConnectorCatalogService> catalogFactory, OutputFolders outputFolders) {
         this.catalogFactory = catalogFactory;
-        this.connectorCatalog = catalogFactory.get();
+        this.connectorCatalog.set(catalogFactory.get());
         this.outputFolders = outputFolders;
     }
 
@@ -119,7 +120,7 @@ public class SimulationManager implements ISimulationManager {
         List<String> warnings = new ArrayList<>();
         String outputDir = outputFolders.newSession(warnings::add) + "_sim" + id;
         HeadlessSimulation simulation = new HeadlessSimulation(
-            id, file, project, outputDir, warnings, connectorCatalog);
+            id, file, project, outputDir, warnings, connectorCatalog.get());
         simulation.start();
         if (knownId == null) {
             nextId++;
@@ -133,7 +134,7 @@ public class SimulationManager implements ISimulationManager {
     public ProjectReport inspect(Path configFile) {
         Path file = resolveProjectFile(configFile);
         JsonNode project = readProject(file);
-        ConnectorCatalogService catalog = connectorCatalog;
+        ConnectorCatalogService catalog = connectorCatalog.get();
         Map<String, String> connectors = new HashMap<>();
         for (JsonNode group : project.path("groups")) {
             for (JsonNode flow : group.path("flows")) {
@@ -194,7 +195,7 @@ public class SimulationManager implements ISimulationManager {
 
     @Override
     public List<ConnectorDescriptor> connectors() {
-        return connectorCatalog.listAvailableConnectors();
+        return connectorCatalog.get().listAvailableConnectors();
     }
 
     @Override
@@ -202,11 +203,11 @@ public class SimulationManager implements ISimulationManager {
         if (simulations.values().stream().anyMatch(HeadlessSimulation::isRunning)) {
             throw new IllegalStateException("Stop the running simulations before changing the connector plugins");
         }
-        connectorCatalog.getPluginManager().unloadExternalPlugins();
+        connectorCatalog.get().getPluginManager().unloadExternalPlugins();
         try {
             return change.get();
         } finally {
-            connectorCatalog = catalogFactory.get();
+            connectorCatalog.set(catalogFactory.get());
         }
     }
 

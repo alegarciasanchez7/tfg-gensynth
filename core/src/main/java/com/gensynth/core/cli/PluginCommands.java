@@ -35,6 +35,8 @@ final class PluginCommands {
 
     /** Version given to the validator when the JAR says nothing else (as the desktop does). */
     private static final String DEFAULT_VERSION = "1.0.0";
+    /** Width of the VERSION column of the plugin list. */
+    private static final int VERSION_WIDTH = 8;
 
     /** Asks the user a question; null at the end of the input. */
     @FunctionalInterface
@@ -117,14 +119,21 @@ final class PluginCommands {
         List<ConnectorDescriptor> connectors = manager.connectors();
         int idWidth = Math.max(4, connectors.stream().mapToInt(c -> c.getPluginId().length()).max().orElse(0));
         int nameWidth = Math.max(4, connectors.stream().mapToInt(c -> c.getDisplayName().length()).max().orElse(0));
-        String format = "%-" + idWidth + "s  %-" + nameWidth + "s  %-8s  %s";
-        out.println(theme.paint(String.format(format, "ID", "NAME", "VERSION", "SOURCE"), AttributedStyle.BOLD));
+        out.println(theme.paint(padRight("ID", idWidth) + "  " + padRight("NAME", nameWidth) + "  "
+            + padRight("VERSION", VERSION_WIDTH) + "  SOURCE", AttributedStyle.BOLD));
         for (ConnectorDescriptor connector : connectors) {
-            out.println(theme.paint(String.format("%-" + idWidth + "s", connector.getPluginId()), CliTheme.ACCENT)
-                + String.format("  %-" + nameWidth + "s  %-8s  ", connector.getDisplayName(), connector.getPluginVersion())
+            out.println(theme.paint(padRight(connector.getPluginId(), idWidth), CliTheme.ACCENT)
+                + "  " + padRight(connector.getDisplayName(), nameWidth)
+                + "  " + padRight(connector.getPluginVersion(), VERSION_WIDTH) + "  "
                 + (connector.isExternal() ? theme.paint("imported", CliTheme.SUCCESS) : "included"));
         }
         out.println("Import a plugin with 'plugins add <file.jar>'.");
+    }
+
+    /** The text followed by spaces up to the width (longer text is kept whole), as {@code %-Ns} does. */
+    private static String padRight(String text, int width) {
+        String value = String.valueOf(text);
+        return value + " ".repeat(Math.max(0, width - value.length()));
     }
 
     private void add(Path jar) throws IOException {
@@ -132,7 +141,7 @@ final class PluginCommands {
         String fileName = String.valueOf(jar.getFileName());
         PluginValidationResult validation = installer.validate(bytes, fileName, DEFAULT_VERSION);
         if (!validation.isValid()) {
-            out.println(theme.error("'" + fileName + "' cannot be imported:"));
+            out.println(theme.errorLine("'" + fileName + "' cannot be imported:"));
             validation.getErrors().forEach(error -> out.println("  - " + error));
             return;
         }
@@ -145,7 +154,7 @@ final class PluginCommands {
         }
         for (ValidationEntry entry : validation.getLogs()) {
             if (entry.getLevel() == ValidationLevel.WARN) {
-                out.println(theme.warning(entry.getMessage()));
+                out.println(theme.warningLine(entry.getMessage()));
             }
         }
         if (!confirm("Install " + plugin + "?") || !apply(() -> installer.install(bytes, fileName, DEFAULT_VERSION))) {
@@ -155,7 +164,7 @@ final class PluginCommands {
             .filter(connector -> connector.getPluginVersion().equals(validation.getPluginVersion()))
             .isPresent();
         if (!loaded) {
-            out.println(theme.warning(plugin + " was copied to the plugins folder but could not be loaded: see the log"));
+            out.println(theme.warningLine(plugin + " was copied to the plugins folder but could not be loaded: see the log"));
             return;
         }
         // Loaded fine: the desktop application must not remove it on its next start
@@ -187,7 +196,7 @@ final class PluginCommands {
         stopAll.run();
         PluginInstallResult result = manager.changeConnectors(change);
         if (!result.isSuccess()) {
-            out.println(theme.error(result.getMessage()));
+            out.println(theme.errorLine(result.getMessage()));
         }
         return result.isSuccess();
     }
@@ -215,7 +224,7 @@ final class PluginCommands {
     private boolean confirm(String action) throws IOException {
         long running = manager.list().stream().filter(s -> s.status() == SimulationSnapshot.Status.RUNNING).count();
         if (running > 0) {
-            out.println(theme.warning((running == 1 ? "The running simulation" : "The " + running + " running simulations")
+            out.println(theme.warningLine((running == 1 ? "The running simulation" : "The " + running + " running simulations")
                 + " will be stopped to load the connectors again."));
         }
         String answer = question.ask(action + " [y/N] ");

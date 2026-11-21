@@ -194,7 +194,7 @@ public class BridgeContext {
      * @return how OPEN_OUTPUT_FOLDER shows a folder in the file explorer
      */
     public IFolderOpener getFolderOpener() {
-        return server.folderOpener;
+        return server.folderOpener.get();
     }
 
     /**
