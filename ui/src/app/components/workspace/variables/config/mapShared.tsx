@@ -124,7 +124,8 @@ export const ObstacleLayers = ({
   <>
     {obstacles.map((obs) => {
       if (!obs.enabled) return null;
-      const positions = obs.points.map((p): [number, number] => [p.x ?? 0, p.y ?? 0]);
+      // A saved obstacle may come without points: draw nothing for it instead of failing
+      const positions = (obs.points ?? []).map((p): [number, number] => [p.x ?? 0, p.y ?? 0]);
       const style = obstacleStyle(obs.id === selectedObstacleId);
       if (obs.type === 'WALL_SEGMENT' && positions.length >= 2) {
         return <Polyline key={obs.id} positions={positions} pathOptions={style} interactive={false} />;
