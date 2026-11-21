@@ -17,7 +17,7 @@ public class DesktopFolderOpenerTest {
     public void opensWithTheDesktopWhenAwtCanOpenFolders() throws Exception {
         CompletableFuture<Path[]> launched = new CompletableFuture<>();
         DesktopFolderOpener opener = new DesktopFolderOpener(() -> true,
-            () -> { throw new AssertionError("xdg-open is not needed"); },
+            () -> Optional.of(Path.of("usr", "bin", "xdg-open").toAbsolutePath()),
             (opened, xdgOpen) -> launched.complete(new Path[] {opened, xdgOpen}));
 
         assertTrue(opener.open(folder));
@@ -33,6 +33,22 @@ public class DesktopFolderOpenerTest {
         CompletableFuture<Path> launchedWith = new CompletableFuture<>();
         DesktopFolderOpener opener = new DesktopFolderOpener(() -> false, () -> Optional.of(xdgOpen),
             (opened, executable) -> launchedWith.complete(executable));
+
+        assertTrue(opener.open(folder));
+        assertEquals(xdgOpen, launchedWith.get(5, TimeUnit.SECONDS));
+    }
+
+    @Test
+    public void triesXdgOpenWhenTheDesktopFailsToOpenTheFolder() throws Exception {
+        Path xdgOpen = Path.of("usr", "bin", "xdg-open").toAbsolutePath();
+        CompletableFuture<Path> launchedWith = new CompletableFuture<>();
+        DesktopFolderOpener opener = new DesktopFolderOpener(() -> true, () -> Optional.of(xdgOpen),
+            (opened, executable) -> {
+                if (executable == null) {
+                    throw new java.io.IOException("Failed to show URI");
+                }
+                launchedWith.complete(executable);
+            });
 
         assertTrue(opener.open(folder));
         assertEquals(xdgOpen, launchedWith.get(5, TimeUnit.SECONDS));
