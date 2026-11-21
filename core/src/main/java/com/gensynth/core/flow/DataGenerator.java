@@ -72,14 +72,33 @@ public class DataGenerator {
             return generate.get();
         }
         SharedValue shared = sharedValues.computeIfAbsent(variable.getId(), id -> new SharedValue());
-        // Generating a dependency takes its own lock; dependencies never form cycles, so the
-        // locks are always taken in the same order and cannot deadlock
+        // The caller resolves the dependencies before: no other shared lock is taken while this
+        // one is held, so flows that need several shared variables cannot deadlock
         synchronized (shared) {
             if (shared.tick == NO_TICK || tick > shared.tick) {
                 shared.value = generate.get();
                 shared.tick = tick;
             }
             return shared.value;
+        }
+    }
+
+    /**
+     * @param variable a shared variable
+     * @param tick     the global tick
+     * @return true when the variable already has its value of that tick (or of a later one), so
+     *         {@link #sharedValue} will not generate a new one
+     */
+    public boolean hasSharedValue(Variable variable, long tick) {
+        if (tick == NO_TICK || variable.getId() == null) {
+            return false;
+        }
+        SharedValue shared = sharedValues.get(variable.getId());
+        if (shared == null) {
+            return false;
+        }
+        synchronized (shared) {
+            return shared.tick != NO_TICK && tick <= shared.tick;
         }
     }
 

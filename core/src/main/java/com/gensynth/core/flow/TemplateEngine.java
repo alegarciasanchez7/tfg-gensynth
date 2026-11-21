@@ -227,7 +227,7 @@ public class TemplateEngine {
                                 Map<String, Object> context, Set<String> resolutionStack, long tickNumber) {
         Object value;
         if (isShared(variable)) {
-            value = dataGenerator.sharedValue(variable, tickNumber, () -> generateShared(variable, variables, tickNumber));
+            value = sharedValueOf(variable, variables, resolutionStack, tickNumber);
             // Sub-properties and inheriting variables of this message read the generator
             dataGenerator.exposeGenerator(variable, context);
         } else {
@@ -239,15 +239,23 @@ public class TemplateEngine {
     }
 
     /**
-     * Generates a new value of a GROUP or GLOBAL variable in a context of its own, with its
-     * dependencies resolved from its scope (the GROUP variables of its group and the GLOBAL ones),
-     * never from the flow that happens to ask first: the value is the same for every flow.
+     * The value of a GROUP or GLOBAL variable on the tick. A new value is generated in a context
+     * of its own, with its dependencies resolved from its scope (the GROUP variables of its group
+     * and the GLOBAL ones), never from the flow that happens to ask first: the value is the same
+     * for every flow.
+     *
+     * The dependencies are resolved before the variable's lock is taken, so a thread never waits
+     * for one shared variable while holding another; the resolution stack of the message stops a
+     * cycle made by an edit while the simulation runs (cycles are only checked at START).
      */
-    private Object generateShared(Variable variable, Map<String, Variable> variables, long tickNumber) {
+    private Object sharedValueOf(Variable variable, Map<String, Variable> variables, Set<String> resolutionStack,
+                                 long tickNumber) {
         Map<String, Object> sharedContext = new java.util.HashMap<>();
-        String ownerGroupId = "GROUP".equalsIgnoreCase(variable.getScope()) ? variable.getGroupId() : null;
-        ensureDependenciesAvailable(variable, variables, null, ownerGroupId, sharedContext, new HashSet<>(), tickNumber);
-        return dataGenerator.generateValue(variable, sharedContext);
+        if (!dataGenerator.hasSharedValue(variable, tickNumber)) {
+            String ownerGroupId = "GROUP".equalsIgnoreCase(variable.getScope()) ? variable.getGroupId() : null;
+            ensureDependenciesAvailable(variable, variables, null, ownerGroupId, sharedContext, resolutionStack, tickNumber);
+        }
+        return dataGenerator.sharedValue(variable, tickNumber, () -> dataGenerator.generateValue(variable, sharedContext));
     }
 
     /**

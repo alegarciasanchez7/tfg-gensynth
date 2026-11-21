@@ -132,6 +132,40 @@ public class SharedVariablesPerTickTest {
         assertEquals("1748764804000", render("{{eventTime.timestamp}}", "f2", "g1", 2));
     }
 
+    /** Two GROUP formulas that read each other, as an edit can leave them while running. */
+    private void addSharedCycle() {
+        variables.put("b", new Variable("b", "b", "GROUP", "numeric", 0,
+                Map.of("pattern", "FORMULA", "formula", "{{c}} + 1", "precision", "INTEGER"), null, "g1"));
+        variables.put("c", new Variable("c", "c", "GROUP", "numeric", 0,
+                Map.of("pattern", "FORMULA", "formula", "{{b}} + 1", "precision", "INTEGER"), null, "g1"));
+    }
+
+    @Test
+    public void aCycleMadeWhileRunningDoesNotOverflowTheStack() {
+        addSharedCycle();
+
+        String first = render("{{b}}|{{c}}", "f1", "g1", 1);
+        assertEquals(first, render("{{b}}|{{c}}", "f2", "g1", 1));
+        render("{{c}}|{{b}}", "f1", "g1", 2);
+    }
+
+    @Test(timeout = 30_000)
+    public void flowsReadingSharedVariablesInAnyOrderNeverDeadlock() throws Exception {
+        addSharedCycle();
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+        try {
+            for (long tick = 1; tick <= 500; tick++) {
+                final long t = tick;
+                java.util.concurrent.Future<String> one = pool.submit(() -> render("{{b}}|{{c}}", "f1", "g1", t));
+                java.util.concurrent.Future<String> two = pool.submit(() -> render("{{c}}|{{b}}", "f2", "g1", t));
+                one.get(5, java.util.concurrent.TimeUnit.SECONDS);
+                two.get(5, java.util.concurrent.TimeUnit.SECONDS);
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
     @Test
     public void localListInheritingFromAGroupListStillWorks() {
         variables.put("colors", new Variable("colors", "colors", "GROUP", "list", "", Map.of(
