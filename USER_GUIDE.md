@@ -173,9 +173,10 @@ It takes about five minutes.
    ![Create flow dialog](docs-assets/user-guide/05-create-flow-dialog.png)
 
 3. **Create the variables of the station.** In the right panel, select the **LOCAL** tab, click
-   **+ ADD**, choose the type and fill in the dialog. Set **Target Flow Assignment** to
-   *Station 1* and click **Create Variable**: the editor of the new variable opens in the centre,
-   ready to configure (to come back to it later, click the variable in the right panel). Create:
+   **+ ADD** and pick the type in the menu that opens (for example **Numeric**). In the dialog,
+   type the name, set **Target Flow Assignment** to *Station 1* and click **Create Variable**: the
+   editor of the new variable opens in the centre, ready to configure (to come back to it later,
+   click the variable in the right panel). Create:
 
    | Name | Type | Configuration (Visual Editor) |
    |---|---|---|
