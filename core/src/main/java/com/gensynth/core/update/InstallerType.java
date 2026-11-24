@@ -16,7 +16,11 @@ import java.util.function.Predicate;
  * Commands use fixed absolute paths, never {@code PATH}, like {@code ExternalLinkOpener}.
  */
 public enum InstallerType {
-    /** Windows installer, run with {@code msiexec}; it replaces the previous version. */
+    /**
+     * Windows installer, run with {@code msiexec}; it replaces the previous version. It runs with
+     * a progress bar only ({@code /passive}), in the folder of the version it replaces, and never
+     * restarts Windows by itself.
+     */
     MSI("msi", true),
     /** Debian/Ubuntu package, installed with {@code apt-get} through {@code pkexec}. */
     DEB("deb", false),
@@ -114,6 +118,10 @@ public enum InstallerType {
             }
         }
         command.add(file);
+        if (this == MSI) {
+            // An update, not a new installation: no wizard, and no automatic restart of Windows
+            command.addAll(List.of("/passive", "/norestart"));
+        }
         return command;
     }
 

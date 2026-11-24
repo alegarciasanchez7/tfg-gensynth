@@ -84,8 +84,10 @@ nothing happens). When there is one, a notice shows what is new and lets **you**
 - **Update now**: GenSynth asks for confirmation (save your project first), downloads the installer
   of your system, checks that it is complete and has not been modified (SHA-256), and installs it.
   The download can be cancelled.
-  - **Windows**: GenSynth closes and the installer opens; Windows asks for permission as in the
-    first installation. Open GenSynth again when it finishes.
+  - **Windows**: GenSynth closes and the new version installs with only a progress bar, in the
+    same folder as before; Windows asks for permission as in the first installation. Open
+    GenSynth again when it finishes. (From 0.6.0, the update still opens the installer wizard:
+    check the installation folder if you changed it.)
   - **Linux** (`.deb` / `.rpm`): enter your password when asked; GenSynth restarts by itself.
     On Fedora or openSUSE, updating from 0.6.0 or earlier can remove GenSynth from the
     applications menu, although it stays installed: see [Troubleshooting](#troubleshooting).

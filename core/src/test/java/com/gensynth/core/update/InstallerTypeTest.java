@@ -34,7 +34,7 @@ public class InstallerTypeTest {
         Path installer = Paths.get("updates", "GenSynth-installer-0.5.3.msi").toAbsolutePath();
         String file = installer.toString();
 
-        assertEquals(List.of(Paths.get("D:\\Win", "System32", "msiexec.exe").toString(), "/i", file),
+        assertEquals(List.of(Paths.get("D:\\Win", "System32", "msiexec.exe").toString(), "/i", file, "/passive", "/norestart"),
             InstallerType.MSI.installCommand(installer, Map.of("SystemRoot", "D:\\Win"), path -> true));
         assertEquals(List.of("/usr/bin/open", file), InstallerType.DMG.installCommand(installer, Map.of(), path -> true));
         assertEquals(List.of("/usr/bin/pkexec", "/usr/bin/apt-get", "install", "-y", file),
