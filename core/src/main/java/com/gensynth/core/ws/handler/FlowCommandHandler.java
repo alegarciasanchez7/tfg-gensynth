@@ -23,6 +23,7 @@ import com.gensynth.core.model.SequentialOrder;
 import com.gensynth.core.ws.dispatch.FlowMessagePublisher;
 import com.gensynth.core.ws.dispatch.ParallelGroupDispatcher;
 import com.gensynth.core.ws.dispatch.SequentialGroupDispatcher;
+import com.gensynth.core.flow.FlowFormats;
 import com.gensynth.core.flow.TemplateEngine;
 import com.gensynth.core.util.NamingPattern;
 import com.gensynth.core.util.UniqueNames;
@@ -61,6 +62,8 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
     private static final String EVERY_TICKS = "everyTicks";
     private static final String TEMPLATE = "template";
     private static final String FORMAT = "format";
+    /** Plugin id of File Output. */
+    private static final String FILE_TECHNOLOGY = "file";
     private static final String CONNECTOR_CONFIG = "connectorConfig";
     private static final String DISCONNECTED = "disconnected";
     private static final String FLOW_NOT_FOUND = "Flow not found: ";
@@ -138,7 +141,7 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
             int burst = Math.max(1, payload.path(BURST).asInt(1));
             int everyTicks = Math.max(1, payload.path(EVERY_TICKS).asInt(1));
             String template = payload.path(TEMPLATE).asText("{\"eventId\":\"{{uuid}}\",\"timestamp\":\"{{ts}}\",\"source\":\"gen-synth\",\"value\":{{n}}}");
-            String format = payload.path(FORMAT).asText(technology.equalsIgnoreCase("file") ? "plain" : "json");
+            String format = payload.path(FORMAT).asText(FlowFormats.JSON);
             Map<String, Object> connectorConfig = parseConnectorConfig(payload.path(CONNECTOR_CONFIG));
 
             group.flows.add(new FlowRuntime(
@@ -671,13 +674,26 @@ public class FlowCommandHandler implements CommandHandler, ITickListener {
         }
     }
 
+    /**
+     * Connector settings a flow's session opens with: File Output writes the file in the flow's
+     * message format (.json, .xml, .csv or .txt), not in a setting of its own.
+     */
+    static Map<String, Object> sessionConfig(FlowRuntime flow) {
+        if (!FILE_TECHNOLOGY.equalsIgnoreCase(flow.technology)) {
+            return flow.connectorConfig;
+        }
+        Map<String, Object> config = new LinkedHashMap<>(flow.connectorConfig);
+        config.put(FORMAT, FlowFormats.fileFormat(flow.format, flow.template));
+        return config;
+    }
+
     private boolean openFlowSession(GroupRuntime group, FlowRuntime flow) {
         try {
             ConnectorContext context = new ConnectorContext(flow.name, group.name, ctx.getCurrentOutputDir());
             // The session outlives this method: connectorByFlowId owns it and closeSession() closes it
             @SuppressWarnings("java:S2095")
             ConnectorSession session = ctx.getConnectorCatalogService()
-                .openSession(flow.technology, flow.connectorConfig, context);
+                .openSession(flow.technology, sessionConfig(flow), context);
             ctx.getConnectorByFlowId().put(flow.id, session);
 
             flow.connectionStatus = "connected";

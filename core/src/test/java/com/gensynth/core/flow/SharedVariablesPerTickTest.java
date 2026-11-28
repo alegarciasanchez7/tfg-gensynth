@@ -72,14 +72,15 @@ public class SharedVariablesPerTickTest {
     }
 
     @Test
-    public void aFlowThatLagsBehindTheClockGetsTheLatestValue() {
+    public void aFlowThatLagsBehindTheClockGetsTheValueOfItsTick() {
         variables.put("c", new Variable("c", "counter", "GROUP", "numeric", 0, COUNTER, null, "g1"));
 
         long first = number("{{counter}}", "f1", "g1", 1);
         long second = number("{{counter}}", "f1", "g1", 2);
         assertEquals(first + 1, second);
-        // A worker still generating tick 1 does not move the variable back or forward
-        assertEquals(second, number("{{counter}}", "f2", "g1", 1));
+        // A worker still generating tick 1 sends what the others sent on tick 1, and does not
+        // move the variable
+        assertEquals(first, number("{{counter}}", "f2", "g1", 1));
         assertEquals(second + 1, number("{{counter}}", "f2", "g1", 3));
     }
 

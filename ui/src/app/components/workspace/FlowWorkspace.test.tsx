@@ -12,11 +12,12 @@ vi.mock('../../context', () => ({
   useApp: () => mockUseApp(),
 }));
 
+const { mockToast } = vi.hoisted(() => ({
+  mockToast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
+}));
+
 vi.mock('sonner', () => ({
-  toast: {
-    success: vi.fn(),
-    error: vi.fn(),
-  },
+  toast: mockToast,
 }));
 
 describe('FlowWorkspace', () => {
@@ -161,17 +162,73 @@ describe('FlowWorkspace', () => {
 
     // Converting to CSV starts from JSON, not from PLAIN ("message\n{...}")
     fireEvent.click(screen.getByRole('button', { name: 'CSV' }));
-    expect(screen.getByText('Current Template (JSON)')).toBeInTheDocument();
+    expect(mockActions.updateFlowConfig).toHaveBeenCalledWith('g1', 'f1', {
+      template: 'id,t\n{{uuid}},{{temperature}}',
+      format: 'csv',
+    });
   });
 
-  it('does not open the converter when the active format is clicked', () => {
-    render(<FlowWorkspace flow={flow} group={group} template={'{"id": 1}'} onTemplateChange={vi.fn()} />);
+  it('converts at once when another format is clicked, with an Undo', () => {
+    const onTemplateChange = vi.fn();
+    render(<FlowWorkspace flow={{ ...flow, format: 'json' }} group={group} template={'{"id": 1}'} onTemplateChange={onTemplateChange} />);
 
+    // The active format does nothing
     fireEvent.click(screen.getByRole('button', { name: 'JSON' }));
-    expect(screen.queryByText('Convert Message Format')).not.toBeInTheDocument();
+    expect(mockActions.updateFlowConfig).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: 'XML' }));
-    expect(screen.getByText('Convert Message Format')).toBeInTheDocument();
+    const xml = '<?xml version="1.0" encoding="UTF-8"?>\n<root>\n  <id>1</id>\n</root>';
+    expect(onTemplateChange).toHaveBeenCalledWith(xml);
+    expect(mockActions.updateFlowConfig).toHaveBeenCalledWith('g1', 'f1', { template: xml, format: 'xml' });
+    expect(mockToast.success).toHaveBeenCalledWith('Converted to XML', expect.objectContaining({
+      action: expect.objectContaining({ label: 'Undo' }),
+    }));
+
+    const undo = mockToast.success.mock.calls[0][1].action.onClick as () => void;
+    undo();
+    expect(mockActions.updateFlowConfig).toHaveBeenLastCalledWith('g1', 'f1', { template: '{"id": 1}', format: 'json' });
+  });
+
+  it('gives the original message back after going round the formats', () => {
+    const original = '{"id": "{{uuid}}", "t": {{temperature}}}';
+    const roundFlow = { ...flow, id: 'round', format: 'json' as const };
+    let template = original;
+    const onTemplateChange = vi.fn((value: string) => { template = value; });
+    const { rerender } = render(<FlowWorkspace flow={roundFlow} group={group} template={template} onTemplateChange={onTemplateChange} />);
+    const seen: string[] = [];
+    for (const label of ['XML', 'CSV', 'PLAIN', 'JSON', 'XML', 'CSV', 'PLAIN', 'JSON']) {
+      fireEvent.click(screen.getByRole('button', { name: label }));
+      const format = label.toLowerCase() as 'json' | 'xml' | 'csv' | 'plain';
+      seen.push(template);
+      rerender(<FlowWorkspace flow={{ ...roundFlow, format }} group={group} template={template} onTemplateChange={onTemplateChange} />);
+    }
+    expect(seen.slice(4)).toEqual(seen.slice(0, 4));
+    expect(seen[3]).toBe(original);
+  });
+
+  it('only changes the format of an empty template or of JSON still being written', () => {
+    const { rerender } = render(<FlowWorkspace flow={{ ...flow, format: 'json' }} group={group} template="" onTemplateChange={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'XML' }));
+    expect(mockActions.updateFlowConfig).toHaveBeenLastCalledWith('g1', 'f1', { template: '', format: 'xml' });
+
+    // Unfinished JSON in a flow stored as plain: switching to JSON keeps the text
+    rerender(<FlowWorkspace flow={{ ...flow, format: 'plain' }} group={group} template={'{"id": '} onTemplateChange={vi.fn()} />);
+    expect(currentFormatButton().map((b) => b.textContent)).toEqual(['PLAIN']);
+    fireEvent.click(screen.getByRole('button', { name: 'JSON' }));
+    expect(mockActions.updateFlowConfig).toHaveBeenLastCalledWith('g1', 'f1', { template: '{"id": ', format: 'json' });
+    expect(mockToast.success).toHaveBeenLastCalledWith('Format set to JSON', expect.anything());
+  });
+
+  it('keeps the chosen format while the template is being written and explains why it cannot convert', () => {
+    render(<FlowWorkspace flow={{ ...flow, format: 'json' }} group={group} template={'{"id": '} onTemplateChange={vi.fn()} />);
+    expect(currentFormatButton().map((b) => b.textContent)).toEqual(['JSON']);
+
+    fireEvent.click(screen.getByRole('button', { name: 'XML' }));
+    expect(mockActions.updateFlowConfig).not.toHaveBeenCalled();
+    expect(mockToast.warning).toHaveBeenCalledWith(
+      'The template is not valid JSON yet: finish it before converting it.',
+      expect.anything(),
+    );
   });
 
   it('keeps a duplicate or empty flow name local with a warning and restores it on blur', () => {

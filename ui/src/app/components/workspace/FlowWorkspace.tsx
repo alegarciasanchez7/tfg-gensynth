@@ -10,8 +10,8 @@ import { useApp } from '../../context';
 import { TemplateEditor } from './flows/TemplateEditor';
 import { TechnicalConfigPanel } from './flows/TechnicalConfigPanel';
 import { compareVersions } from '../../context/helpers/connectorHelpers';
-import { FormatConverterModal } from './flows/FormatConverterModal';
 import { resolveTemplateFormat, type TemplateFormat } from './flows/templateFormat';
+import { switchTemplateFormat, type TemplateFormatOrigin } from './flows/templateConversion';
 import { findFlowNameConflict } from '../../core/flowNames';
 import type { ConnectorPluginDescriptor } from '../../core/types';
 import { formatRate } from '../../core/metricsFormat';
@@ -36,6 +36,12 @@ interface FlowWorkspaceProps {
   template: string;
   onTemplateChange: (t: string) => void;
 }
+
+/**
+ * Origin of each flow's template while its format buttons are clicked (see TemplateFormatOrigin),
+ * kept while GenSynth is open, so going round the formats never changes the message.
+ */
+const formatOrigins = new Map<string, TemplateFormatOrigin>();
 
 export function FlowWorkspace({ flow, group, template, onTemplateChange }: Readonly<FlowWorkspaceProps>) {
   const conn = connCfg[normalizeConnectionStatus(flow.connectionStatus)];
@@ -88,14 +94,12 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: Reado
   ) ?? null;
 
   const currentTemplate = template ?? flow.template ?? '';
-  // The label follows the stored format when the template fits it, otherwise the template content
-  // (new File Output flows are stored as "plain" even when their template is JSON)
+  // The chosen format, unless the template is a complete JSON or XML document (File Output flows
+  // up to 0.6.0 were stored as "plain" even when their template is JSON)
   const formatMode = useMemo(() => resolveTemplateFormat(flow.format, currentTemplate), [flow.format, currentTemplate]);
   const [draftName, setDraftName] = useState(flow.name);
   const [draftEveryTicks, setDraftEveryTicks] = useState(String(flow.everyTicks));
   const [isDeletingFlow, setIsDeletingFlow] = useState(false);
-  const [isConverterOpen, setIsConverterOpen] = useState(false);
-  const [selectedTargetFormat, setSelectedTargetFormat] = useState<TemplateFormat>('xml');
 
   // Reset the drafts when the flow (or its saved name / ticks) changes (adjusting state while rendering)
   const [syncedFlow, setSyncedFlow] = useState({ id: flow.id, name: flow.name, everyTicks: flow.everyTicks });
@@ -137,11 +141,27 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: Reado
     });
   };
 
+  const applyTemplateFormat = (content: string, format: TemplateFormat) => {
+    onTemplateChange(content);
+    handleUpdateConfig({ template: content, format });
+  };
+
   const handleFormatBadgeClick = (mode: TemplateFormat) => {
     // The active format has nothing to convert
     if (mode === formatMode) return;
-    setSelectedTargetFormat(mode);
-    setIsConverterOpen(true);
+    const { change, origin } = switchTemplateFormat(formatOrigins.get(flow.id), currentTemplate, formatMode, mode);
+    formatOrigins.set(flow.id, origin);
+    const toastId = `flow-format-${flow.id}`;
+    if (!change.ok) {
+      toast.warning(change.reason, { id: toastId });
+      return;
+    }
+    const previous = { content: currentTemplate, format: formatMode };
+    applyTemplateFormat(change.content, mode);
+    toast.success(change.converted ? `Converted to ${mode.toUpperCase()}` : `Format set to ${mode.toUpperCase()}`, {
+      id: toastId,
+      action: { label: 'Undo', onClick: () => applyTemplateFormat(previous.content, previous.format) },
+    });
   };
 
   const handleConnectorChange = (pluginId: string) => {
@@ -355,20 +375,6 @@ export function FlowWorkspace({ flow, group, template, onTemplateChange }: Reado
           </div>
         </div>
       </div>
-
-      <FormatConverterModal
-        isOpen={isConverterOpen}
-        onOpenChange={setIsConverterOpen}
-        currentContent={currentTemplate}
-        currentFormat={formatMode}
-        initialTargetFormat={selectedTargetFormat}
-        onApplyConversion={(convertedContent, newFormat) => {
-          const labelOnly = convertedContent === currentTemplate;
-          onTemplateChange(convertedContent);
-          handleUpdateConfig({ template: convertedContent, format: newFormat });
-          toast.success(labelOnly ? `Format set to ${newFormat.toUpperCase()}` : `Converted format to ${newFormat.toUpperCase()}`);
-        }}
-      />
     </div>
   );
 }

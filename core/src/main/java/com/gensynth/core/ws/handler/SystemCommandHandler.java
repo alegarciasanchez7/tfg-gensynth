@@ -164,7 +164,7 @@ public class SystemCommandHandler implements CommandHandler {
                 "Connector '" + flow.technology + "' is not installed", null));
         }
         try {
-            ConnectorConfig.resolve(descriptor.get().fieldDefinitions(), flow.connectorConfig);
+            ConnectorConfig.resolve(descriptor.get().fieldDefinitions(), FlowCommandHandler.sessionConfig(flow));
             return Optional.empty();
         } catch (ConnectorConfigException e) {
             return Optional.of(new StartProblem(StartProblem.Kind.INVALID_CONNECTOR_CONFIG, group.name, flow.name,

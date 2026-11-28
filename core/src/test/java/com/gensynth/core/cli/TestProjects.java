@@ -26,8 +26,8 @@ final class TestProjects {
               "id": "g1", "name": "Sensors", "enabled": true, "outputMode": "parallel",
               "flows": [{
                 "id": "f1", "name": "Temperature", "technology": "file", "enabled": true, "everyTicks": 1,
-                "template": "{\\"n\\":{{n}}}",
-                "connectorConfig": { "format": "txt" }
+                "template": "n={{n}}", "format": "plain",
+                "connectorConfig": {}
               }]
             }]
             """, "[]"));

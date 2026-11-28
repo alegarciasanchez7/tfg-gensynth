@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Catalog entry of a loaded connector plugin, as sent to the UI (serialized through its getters).
@@ -16,6 +17,8 @@ public final class ConnectorDescriptor {
 
     private final ConnectorInfo info;
     private final List<ConnectorField> fields;
+    /** Keys of the fields the Core sets itself (see {@link CoreSetFields}): validated, not shown. */
+    private final Set<String> coreSetFields;
     private final boolean external;
 
     /**
@@ -24,8 +27,19 @@ public final class ConnectorDescriptor {
      * @param external true if loaded from the plugins directory
      */
     public ConnectorDescriptor(ConnectorInfo info, List<ConnectorField> fields, boolean external) {
+        this(info, fields, Set.of(), external);
+    }
+
+    /**
+     * @param info          plugin identity
+     * @param fields        plugin fields, in display order
+     * @param coreSetFields keys of the fields the Core sets itself, left out of {@link #getFields()}
+     * @param external      true if loaded from the plugins directory
+     */
+    public ConnectorDescriptor(ConnectorInfo info, List<ConnectorField> fields, Set<String> coreSetFields, boolean external) {
         this.info = info;
         this.fields = List.copyOf(fields);
+        this.coreSetFields = Set.copyOf(coreSetFields);
         this.external = external;
     }
 
@@ -47,16 +61,18 @@ public final class ConnectorDescriptor {
     /** @return true if the plugin was installed in the plugins directory */
     public boolean isExternal() { return external; }
 
-    /** @return the fields serialized for the UI, in display order */
+    /** @return the fields serialized for the UI, in display order, without those the Core sets */
     public List<Map<String, Object>> getFields() {
         List<Map<String, Object>> payload = new ArrayList<>(fields.size());
         for (ConnectorField field : fields) {
-            payload.add(toPayload(field));
+            if (!coreSetFields.contains(field.getKey())) {
+                payload.add(toPayload(field));
+            }
         }
         return payload;
     }
 
-    /** @return the plugin fields, in display order (not serialized) */
+    /** @return all the plugin fields, in display order (not serialized), to validate a configuration */
     public List<ConnectorField> fieldDefinitions() {
         return fields;
     }

@@ -116,22 +116,31 @@ export function detectTemplateFormat(template: string): TemplateFormat | null {
   return 'plain';
 }
 
-/** CSV and plain text are both lines of text: either label fits the other content. */
-const isTextFormat = (format: TemplateFormat): boolean => format === 'csv' || format === 'plain';
-
 /**
- * Format label of a flow: the stored format when the template content fits it, otherwise the
- * format detected from the content. The stored format is not always a user choice (the Core
- * stores `plain` for every new File Output flow), so it never wins over a JSON or XML template.
+ * Format of a flow, shown on the editor and used for the File Output extension: the stored
+ * format, unless the template is a complete JSON document or XML, which is always sent as such.
+ * So text still being written keeps the chosen format, and flows stored as `plain` with a JSON
+ * template (new File Output flows up to 0.6.0) are JSON. The Core applies the same rule
+ * (`FlowFormats.effectiveFormat`).
  *
  * @param stored   format saved with the flow, if any
  * @param template current template text
  */
 export function resolveTemplateFormat(stored: TemplateFormat | undefined, template: string): TemplateFormat {
   const detected = detectTemplateFormat(template);
-  if (!detected) return stored ?? 'json';
-  if (stored && (stored === detected || (isTextFormat(stored) && isTextFormat(detected)))) return stored;
-  return detected;
+  if (detected === 'json' || detected === 'xml') return detected;
+  return stored ?? detected ?? 'json';
+}
+
+/**
+ * Whether the template starts like a document of the format (`{` or `[` for JSON, `<` for XML)
+ * without being one yet, as while it is being written.
+ */
+export function looksLikeTemplateFormat(template: string, format: TemplateFormat): boolean {
+  const text = neutralizePlaceholders(template).trim();
+  if (format === 'json') return text.startsWith('{') || text.startsWith('[');
+  if (format === 'xml') return text.startsWith('<');
+  return false;
 }
 
 /**

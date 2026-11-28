@@ -20,6 +20,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.Optional;
 import java.util.ServiceConfigurationError;
 import java.util.ServiceLoader;
@@ -97,7 +98,8 @@ public class ConnectorPluginManager {
         try {
             ConnectorInfo info = plugin.info();
             List<ConnectorField> fields = ConnectorField.requireUniqueKeys(List.copyOf(plugin.fields()));
-            ConnectorDescriptor descriptor = new ConnectorDescriptor(info, fields, external);
+            Set<String> coreSet = plugin instanceof CoreSetFields managed ? managed.coreSetFields() : Set.of();
+            ConnectorDescriptor descriptor = new ConnectorDescriptor(info, fields, coreSet, external);
             String key = descriptor.key();
             if (pluginsByKey.containsKey(key)) {
                 logger.warn("Duplicate connector plugin registration (skipped): {}", key);

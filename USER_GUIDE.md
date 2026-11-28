@@ -173,8 +173,8 @@ It takes about five minutes.
    ![Create group dialog](docs-assets/user-guide/03-create-group-dialog.png)
 
 2. **Add a flow.** Click **+ add flow** under the group (or **+ ADD → Add Flow**). Name it
-   `Station 1`, keep **Every N ticks** = `1`, choose the connector **File Output** and set
-   **File format** to **Text (one message per line)**. Click **Create flow**.
+   `Station 1`, keep **Every N ticks** = `1` and choose the connector **File Output**. Click
+   **Create flow**.
 
    ![Create flow dialog](docs-assets/user-guide/05-create-flow-dialog.png)
 
@@ -230,7 +230,8 @@ It takes about five minutes.
    message of a flow, or **Logs** to see every flow (filter with **only data**).
 
 8. **Stop and find the files.** Click **STOP**. The messages are in
-   `~/GenSynth/OUTPUT_FILES_<date>/Weather_network/Station_1.txt` (one file per station); on
+   `~/GenSynth/OUTPUT_FILES_<date>/Weather_network/Station_1.json` (one file per station, a JSON
+   array because the message format is JSON); on
    Windows, `~` is your user folder, `C:\Users\<you>`. The **Session folder** line at the top of
    **Logs** shows the exact folder from the moment you click START, and keeps it after STOP:
    **Copy** copies the path and **Open** shows the folder in your file explorer. To write the
@@ -386,7 +387,8 @@ The flow cannot be created until every required connector field (marked with **\
   several versions of a plugin are installed), a line with the plugin id, its plugin API version
   and its health, the connector fields and the **EVENT LOSS** section (see
   [Event loss](#event-loss)).
-- **Message Format:** the template editor, with the **JSON / XML / CSV / PLAIN** buttons.
+- **Message Format:** the template editor, with the **JSON / XML / CSV / PLAIN** buttons. The
+  format also sets the extension of the [File Output](#file-output-built-in) file.
 
 In the left panel, the **⋮** menu of a flow offers **Lock flow** / **Unlock flow**, **Clone flow**
 (copies the template, the connector settings, *Every N ticks*, the event loss and the LOCAL
@@ -484,25 +486,35 @@ red.
 
 ### Converting the format
 
-The highlighted button is the format of the template, detected from its text. Click **JSON**,
-**XML**, **CSV** or **PLAIN** above the editor to open **Convert Message Format**. It shows the
-**Source Format** (current), lets you pick the **Target Format** and previews the result before
-you apply it. When the template is already valid in the target format, only the label changes.
-Otherwise the conversion rewrites the template text:
+The highlighted button is the format you chose for the template. It only changes by itself when
+the text is a complete JSON document or XML, which are always sent as such. While you write, it
+keeps your choice. Click **JSON**, **XML**, **CSV** or **PLAIN** above the editor to switch: the
+template is converted at once, and a notice confirms it with **Undo** to go back.
 
-- From JSON, placeholders may be quoted or not (`"t": {{temp}}`). JSON with nested objects or
-  lists cannot become CSV: the dialog says which field to flatten.
-- From CSV, the first line is the header; text without data rows is converted as plain text.
-- From XML, each child element becomes a field (repeated elements become a list). XML with
-  attributes, comments or text mixed with elements is not converted, so nothing is lost.
-- Plain text becomes a single `message` field.
-- The result must be valid in the target format; otherwise the dialog explains why and **Apply**
-  stays disabled. JSON or XML content always keeps its label, so it is not converted to **PLAIN**.
-- Converting CSV or XML to JSON writes the placeholders between quotes, so a number arrives as
-  text; remove the quotes of numeric placeholders afterwards if needed.
+Every format is converted from the template you had before clicking, not from the last
+conversion, so going round the formats never changes the message: each format always gives the
+same text, and the first format gives back exactly what you wrote. Once you edit the text, the
+edited template is the new starting point. GenSynth remembers the starting point of each flow
+until you close it.
 
-The selected format is only a label for the editor: GenSynth sends exactly the text of the
-template, whatever button is highlighted.
+- When the template is empty, already valid in the new format, or the new format still being
+  written (such as `{"id": ` for JSON), only the format changes and the text stays the same.
+- Otherwise the text is converted:
+  - From JSON, placeholders may be quoted or not (`"t": {{temp}}`). JSON with nested objects or
+    lists cannot become CSV: the notice says which field to flatten.
+  - From CSV, the first line is the header; text without data rows is converted as plain text.
+  - From XML, each child element becomes a field (repeated elements become a list). XML with
+    attributes, comments or text mixed with elements is not converted, so nothing is lost.
+  - Plain text becomes a single `message` field.
+  - Converting CSV or XML to JSON writes the placeholders between quotes, so a number arrives as
+    text; remove the quotes of numeric placeholders afterwards if needed.
+- When the template cannot be converted (unfinished JSON or XML, content that would be lost),
+  nothing changes and the notice says why. JSON or XML content is always sent as JSON or XML, so
+  it cannot be set to **PLAIN**.
+
+GenSynth sends exactly the text of the template. The format decides the kind of file
+[File Output](#file-output-built-in) writes (`.json`, `.xml`, `.csv` or `.txt`) and how points
+and lists are written in CSV.
 
 ### Event loss
 
@@ -596,11 +608,19 @@ to a file, and [RabbitMQ](#rabbitmq-connector-built-in).
 
 | Field | What it does | Default |
 |---|---|---|
-| **File format** | *JSON array*, *Text* (one message per line), *XML dataset* or *CSV* (one message per line). | JSON array |
 | **Output directory** | Optional. When empty, files go to the folder of the current session, `OUTPUT_FILES_<date>/`, inside the **Output folder** of [Settings](#settings) (see [Where GenSynth keeps its files](#where-gensynth-keeps-its-files)). A sub-folder with the group name is always added. | Session folder |
 | **File name** | Optional. When empty, the flow name is used. The extension is added automatically. | Flow name |
 
-For example, with the Text format a flow *Sensor 1* in group *Plant A* writes to
+The file follows the **Message Format** of the flow (the highlighted button above the editor):
+
+| Message Format | File |
+|---|---|
+| **JSON** | `.json`: a JSON array with one message per entry |
+| **XML** | `.xml`: an XML `<dataset>` with one message per entry |
+| **CSV** | `.csv`: one message per line |
+| **PLAIN** | `.txt`: one message per line |
+
+For example, with PLAIN a flow *Sensor 1* in group *Plant A* writes to
 `~/GenSynth/OUTPUT_FILES_<date>/Plant_A/Sensor_1.txt` (characters other than letters, digits, `.`,
 `_` and `-` become `_`).
 
@@ -611,11 +631,13 @@ Good to know:
   (*Sensor 1* and *Sensor_1*), two flows with the same **File name**, or groups that map to the
   same folder (*Plant A* and *Plant_A*) make the second flow fail to start with *File "…" is
   already used by another flow*; give it a different name or **File name**.
-- With *JSON array* the `[` … `]` is closed when you click **STOP**. If you set an **Output
-  directory**, a new run appends a second array to the same file; use *Text* if you want a file
-  you can keep appending to (one JSON object per line).
-- *CSV* writes each message as one line and adds no header: write the header yourself if your
-  tool needs one.
+- With JSON the `[` … `]` is closed when you click **STOP**. If you set an **Output directory**, a
+  new run appends a second array to the same file; use PLAIN text if you want a file you can keep
+  appending to.
+- CSV writes each message as one line and adds no header: write the header yourself if your tool
+  needs one.
+- The file format is set when the flow starts: after changing the Message Format of a running
+  flow, stop and start its group to write the new kind of file.
 
 ### Connector catalog
 
