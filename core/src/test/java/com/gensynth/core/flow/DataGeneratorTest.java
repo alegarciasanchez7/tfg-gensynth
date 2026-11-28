@@ -112,12 +112,30 @@ public class DataGeneratorTest {
         assertEquals(1, generator.sharedValue(shared, 1, next));
         assertEquals(1, generator.sharedValue(shared, 1, next));
         assertEquals(2, generator.sharedValue(shared, 2, next));
-        assertEquals("an older tick gets the latest value", 2, generator.sharedValue(shared, 1, next));
+        assertEquals("a flow that lags gets the value of its own tick", 1, generator.sharedValue(shared, 1, next));
         assertEquals(3, generator.sharedValue(shared, DataGenerator.NO_TICK, next));
         assertEquals(3, calls.get());
 
         generator.clearCache();
         assertEquals("a cleared cache generates again", 4, generator.sharedValue(shared, 2, next));
+    }
+
+    @Test
+    public void aTickNobodyAskedForOrTooOldGetsTheNextValueKept() {
+        Variable shared = new Variable("g", "g", "GROUP", "numeric", 0.0, Map.of("min", 0.0, "max", 100.0), null, "g1");
+        java.util.concurrent.atomic.AtomicInteger calls = new java.util.concurrent.atomic.AtomicInteger();
+        java.util.function.Supplier<Object> next = calls::incrementAndGet;
+
+        assertEquals(1, generator.sharedValue(shared, 1, next));
+        assertEquals(2, generator.sharedValue(shared, 5, next));
+        assertEquals("tick 3 was skipped: the value of tick 5", 2, generator.sharedValue(shared, 3, next));
+
+        for (long tick = 6; tick < 6 + DataGenerator.KEPT_TICKS; tick++) {
+            generator.sharedValue(shared, tick, next);
+        }
+        // Tick 6 is the oldest one kept now: ticks 1 and 5 were dropped
+        assertEquals(3, generator.sharedValue(shared, 1, next));
+        assertEquals("only newer ticks generate", 2 + DataGenerator.KEPT_TICKS, calls.get());
     }
 
     @Test

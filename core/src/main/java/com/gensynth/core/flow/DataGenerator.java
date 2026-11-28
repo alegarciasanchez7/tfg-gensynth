@@ -16,13 +16,19 @@ public class DataGenerator {
     private static final String CONFIG_SUFFIX = "_config";
 
     private final Map<String, ConfigurableVariable> variableCache;
-    /** Last value of each GROUP or GLOBAL variable, with the tick it belongs to. */
+    /** Ticks whose values a shared variable keeps, for flows that lag behind the clock. */
+    static final int KEPT_TICKS = 32;
+
+    /** Recent values of each GROUP or GLOBAL variable, by the tick they belong to. */
     private final Map<String, SharedValue> sharedValues;
 
-    /** Value a shared variable gave on a tick; its monitor serializes generation of that variable. */
+    /** Values a shared variable gave on its last ticks; its monitor serializes generation of that variable. */
     private static final class SharedValue {
-        private long tick = NO_TICK;
-        private Object value;
+        private final java.util.TreeMap<Long, Object> byTick = new java.util.TreeMap<>();
+
+        private long lastTick() {
+            return byTick.isEmpty() ? NO_TICK : byTick.lastKey();
+        }
     }
 
     public DataGenerator() {
@@ -59,8 +65,9 @@ public class DataGenerator {
     /**
      * Value of a GROUP or GLOBAL variable on a tick: the first flow that asks for it on that
      * tick generates it, and every other flow gets the same value. A flow that asks for an older
-     * tick (it lagged behind the clock) gets the latest value instead of a new one, so the
-     * variable never advances more than once per tick.
+     * tick (it lagged behind the clock while others went on to the next tick) gets the value of
+     * that tick, or the next one kept if that tick is too old or nobody asked for it. Only a newer
+     * tick generates a value, so the variable never advances more than once per tick.
      *
      * @param variable the shared variable
      * @param tick     the global tick, or {@link #NO_TICK} to generate a new value on every call
@@ -75,11 +82,15 @@ public class DataGenerator {
         // The caller resolves the dependencies before: no other shared lock is taken while this
         // one is held, so flows that need several shared variables cannot deadlock
         synchronized (shared) {
-            if (shared.tick == NO_TICK || tick > shared.tick) {
-                shared.value = generate.get();
-                shared.tick = tick;
+            if (tick > shared.lastTick()) {
+                Object value = generate.get();
+                shared.byTick.put(tick, value);
+                if (shared.byTick.size() > KEPT_TICKS) {
+                    shared.byTick.pollFirstEntry();
+                }
+                return value;
             }
-            return shared.value;
+            return shared.byTick.ceilingEntry(tick).getValue();
         }
     }
 
@@ -98,7 +109,7 @@ public class DataGenerator {
             return false;
         }
         synchronized (shared) {
-            return shared.tick != NO_TICK && tick <= shared.tick;
+            return tick <= shared.lastTick();
         }
     }
 
