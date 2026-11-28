@@ -1,6 +1,6 @@
 # GenSynth: copy of the default jpackage 21 template, plus the lines marked "GenSynth" that
-# link the command line launcher as /usr/bin/gensynth and keep the menu entry on upgrade. The
-# UPPER_CASE words are filled in by jpackage.
+# link the command line launcher as /usr/bin/gensynth, keep the menu entry on upgrade and install
+# the AppStream file for software centers. The UPPER_CASE words are filled in by jpackage.
 Summary: APPLICATION_SUMMARY
 Name: APPLICATION_PACKAGE
 Version: APPLICATION_VERSION
@@ -40,7 +40,9 @@ Requires: PACKAGE_DEFAULT_DEPENDENCIES PACKAGE_CUSTOM_DEPENDENCIES
 %define app_filelist %{_builddir}/%{name}.app.files
 %define filesystem_filelist %{_builddir}/%{name}.filesystem.files
 
-%define default_filesystem / /opt /usr /usr/bin /usr/lib /usr/local /usr/local/bin /usr/local/lib
+# GenSynth: /usr/share and /usr/share/metainfo added, for builds where the filesystem package is
+# not installed (the RPM is built on Ubuntu), so that the package never claims those folders
+%define default_filesystem / /opt /usr /usr/bin /usr/lib /usr/local /usr/local/bin /usr/local/lib /usr/share /usr/share/metainfo
 
 %description
 APPLICATION_DESCRIPTION
@@ -55,6 +57,8 @@ APPLICATION_DESCRIPTION
 rm -rf %{buildroot}
 install -d -m 755 %{buildroot}APPLICATION_DIRECTORY
 cp -r %{_sourcedir}APPLICATION_DIRECTORY/* %{buildroot}APPLICATION_DIRECTORY
+# GenSynth: the AppStream file (name, summary, icon, screenshots) where software centers read it
+install -D -m 644 %{buildroot}APPLICATION_DIRECTORY/lib/metainfo/io.github.alegarciasanchez7.gensynth.metainfo.xml %{buildroot}/usr/share/metainfo/io.github.alegarciasanchez7.gensynth.metainfo.xml
 if [ "$(echo %{_sourcedir}/lib/systemd/system/*.service)" != '%{_sourcedir}/lib/systemd/system/*.service' ]; then
   install -d -m 755 %{buildroot}/lib/systemd/system
   cp %{_sourcedir}/lib/systemd/system/*.service %{buildroot}/lib/systemd/system
