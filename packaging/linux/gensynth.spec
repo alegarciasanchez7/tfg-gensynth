@@ -40,8 +40,9 @@ Requires: PACKAGE_DEFAULT_DEPENDENCIES PACKAGE_CUSTOM_DEPENDENCIES
 %define app_filelist %{_builddir}/%{name}.app.files
 %define filesystem_filelist %{_builddir}/%{name}.filesystem.files
 
-# GenSynth: /usr/share and /usr/share/metainfo added, for builds where the filesystem package is
-# not installed (the RPM is built on Ubuntu), so that the package never claims those folders
+# GenSynth: used where the filesystem package is not installed, as on Ubuntu, where the RPM is
+# built: /usr/share and /usr/share/metainfo added, and one folder per line below (the template
+# wrote them on one line, so the package claimed /opt), so that it claims no system folder
 %define default_filesystem / /opt /usr /usr/bin /usr/lib /usr/local /usr/local/bin /usr/local/lib /usr/share /usr/share/metainfo
 
 %description
@@ -69,7 +70,7 @@ fi
   install -m 644 "APPLICATION_LICENSE_FILE" "%{buildroot}%{license_install_file}"
 %endif
 (cd %{buildroot} && find . -path ./lib/systemd -prune -o -type d -print) | sed -e 's/^\.//' -e '/^$/d' | sort > %{app_filelist}
-{ rpm -ql filesystem || echo %{default_filesystem}; } | sort > %{filesystem_filelist}
+{ rpm -ql filesystem || echo %{default_filesystem} | tr ' ' '\n'; } | sort > %{filesystem_filelist}
 comm -23 %{app_filelist} %{filesystem_filelist} > %{package_filelist}
 sed -i -e 's/.*/%dir "&"/' %{package_filelist}
 (cd %{buildroot} && find . -not -type d) | sed -e 's/^\.//' -e 's/.*/"&"/' >> %{package_filelist}

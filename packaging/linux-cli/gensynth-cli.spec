@@ -40,6 +40,8 @@ Requires: PACKAGE_DEFAULT_DEPENDENCIES PACKAGE_CUSTOM_DEPENDENCIES
 %define app_filelist %{_builddir}/%{name}.app.files
 %define filesystem_filelist %{_builddir}/%{name}.filesystem.files
 
+# GenSynth: one folder per line below (the template wrote them on one line, so where the
+# filesystem package is not installed, as on Ubuntu, the package claimed /opt)
 %define default_filesystem / /opt /usr /usr/bin /usr/lib /usr/local /usr/local/bin /usr/local/lib
 
 %description
@@ -65,7 +67,7 @@ fi
   install -m 644 "APPLICATION_LICENSE_FILE" "%{buildroot}%{license_install_file}"
 %endif
 (cd %{buildroot} && find . -path ./lib/systemd -prune -o -type d -print) | sed -e 's/^\.//' -e '/^$/d' | sort > %{app_filelist}
-{ rpm -ql filesystem || echo %{default_filesystem}; } | sort > %{filesystem_filelist}
+{ rpm -ql filesystem || echo %{default_filesystem} | tr ' ' '\n'; } | sort > %{filesystem_filelist}
 comm -23 %{app_filelist} %{filesystem_filelist} > %{package_filelist}
 sed -i -e 's/.*/%dir "&"/' %{package_filelist}
 (cd %{buildroot} && find . -not -type d) | sed -e 's/^\.//' -e 's/.*/"&"/' >> %{package_filelist}
