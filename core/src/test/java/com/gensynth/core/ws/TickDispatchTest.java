@@ -408,7 +408,8 @@ public class TickDispatchTest {
 
     @Test
     public void invalidConnectorConfigurationMarksTheFlowAsFailedWithoutConnecting() {
-        flow.connectorConfig = Map.of("format", "pdf");
+        flow.technology = "rabbitmq";
+        flow.connectorConfig = Map.of("port", "abc");
         server.connectorByFlowId.clear();
         group.status = "stopped";
 
@@ -418,7 +419,7 @@ public class TickDispatchTest {
 
         assertTrue(flow.hasError);
         assertEquals("error", flow.connectionStatus);
-        assertTrue(flow.errorMessage, flow.errorMessage.startsWith("Invalid connector configuration: File format must be one of"));
+        assertTrue(flow.errorMessage, flow.errorMessage.startsWith("Invalid connector configuration: Port must be a whole number"));
         assertFalse(server.connectorByFlowId.containsKey(flow.id));
     }
 

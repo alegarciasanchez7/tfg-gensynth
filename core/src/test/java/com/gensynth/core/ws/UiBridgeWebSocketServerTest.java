@@ -768,7 +768,7 @@ public class UiBridgeWebSocketServerTest {
                 group("g4", "Invalid", flow("4", "file", true, "{{t}}", txt)),
                 group("g5", "Connectors",
                         flow("5", "nope", true, "x", "{}"),
-                        flow("6", "file", true, "x", "{\"format\":\"bogus\"}"),
+                        flow("6", "rabbitmq", true, "x", "{\"port\":\"abc\"}"),
                         flow("7", "nope", false, "x", "{}"))),
                 String.join(",",
                 variable("a", "local", "1", "numeric", "{\"pattern\":\"FORMULA\",\"formula\":\"{{b}} + 1\"}"),
@@ -790,7 +790,7 @@ public class UiBridgeWebSocketServerTest {
             assertTrue(problems.get(1).message(), problems.get(1).message().contains("nobody"));
             assertTrue(problems.get(3).message(), problems.get(3).message().contains("'t'"));
             assertEquals("F5", problems.get(4).flow());
-            assertTrue(problems.get(5).message(), problems.get(5).message().startsWith("Invalid File Output settings: "));
+            assertTrue(problems.get(5).message(), problems.get(5).message().startsWith("Invalid RabbitMQ settings: "));
             // The disabled flow with the same missing connector is not reported
             assertTrue(problems.stream().noneMatch(p -> "F7".equals(p.flow())));
             assertFalse("nothing is started", server.tickClock.isRunning());
@@ -847,8 +847,10 @@ public class UiBridgeWebSocketServerTest {
 
     @Test
     public void connectorErrorsNameTheConnector() throws Exception {
+        // The output folder is a file, so File Output cannot create its folder
+        String blocked = Files.createTempFile("gensynth-ws-test-not-a-folder-", ".txt").toString().replace("\\", "\\\\");
         UiBridgeWebSocketServer server = serverWithProject(
-                group("g1", "Sensors", flow("1", "file", true, "x", "{\"format\":\"bogus\"}")), "");
+                group("g1", "Sensors", flow("1", "file", true, "x", "{\"outputDir\":\"" + blocked + "\"}")), "");
         try {
             String outputDir = Files.createTempDirectory("gensynth-ws-test-connector-").toString();
             server.systemCommandHandler.startSystemInternal(() -> outputDir);

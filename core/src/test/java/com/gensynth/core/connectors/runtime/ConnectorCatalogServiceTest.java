@@ -29,10 +29,11 @@ public class ConnectorCatalogServiceTest {
         assertFalse(file.getDescription().isBlank());
         assertFalse(file.isExternal());
         List<Map<String, Object>> fields = file.getFields();
-        assertEquals(List.of("format", "outputDir", "fileName"), fields.stream().map(f -> f.get("key")).toList());
-        assertEquals("SELECT", fields.get(0).get("type"));
+        // The file format follows the message format of the flow: the Core sets it, nobody edits it
+        assertEquals(List.of("outputDir", "fileName"), fields.stream().map(f -> f.get("key")).toList());
         assertFalse(((String) fields.get(1).get("tooltip")).isBlank());
-        assertEquals(4, ((List<?>) fields.get(0).get("options")).size());
+        assertEquals(List.of("format", "outputDir", "fileName"),
+            file.fieldDefinitions().stream().map(f -> f.getKey()).toList());
     }
 
     @Test

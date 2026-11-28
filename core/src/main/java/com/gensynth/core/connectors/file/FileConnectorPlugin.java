@@ -2,6 +2,7 @@ package com.gensynth.core.connectors.file;
 
 import com.gensynth.plugin.api.ConnectorConfig;
 import com.gensynth.plugin.api.ConnectorContext;
+import com.gensynth.core.connectors.runtime.CoreSetFields;
 import com.gensynth.plugin.api.ConnectorField;
 import com.gensynth.plugin.api.ConnectorInfo;
 import com.gensynth.plugin.api.ConnectorPlugin;
@@ -27,26 +28,31 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * The file is written to {@code <outputDir>/<group>/<fileName>.<ext>}. By default the output
  * directory is the folder of the current simulation session and the file name is the flow name.
+ * The {@code format} setting (json, xml, csv or txt) is not a field: the Core sets it from the
+ * flow's message format when it opens the session.
  *
  * A file can only be open in one session at a time: names that sanitize to the same file
  * ("Sensor 1" and "Sensor_1"), two flows with the same File name or two groups mapped to the same
  * folder would otherwise interleave their messages in one file, so the second flow fails to start.
  */
-public class FileConnectorPlugin implements ConnectorPlugin {
+public class FileConnectorPlugin implements ConnectorPlugin, CoreSetFields {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(FileConnectorPlugin.class);
 
     private static final ConnectorInfo INFO = new ConnectorInfo(
         "file", "File Output", "1.0.0", "Writes the messages of the flow to a local file.");
 
+    /** Key of the file format setting (json, xml, csv or txt). */
+    public static final String FORMAT = "format";
+
     private static final List<ConnectorField> FIELDS = List.of(
-        ConnectorField.select("format",
+        // Set by the Core from the flow's message format, so it is not shown (see coreSetFields)
+        ConnectorField.select(FORMAT,
                 ConnectorField.Option.of("json", "JSON array"),
                 ConnectorField.Option.of("txt", "Text (one message per line)"),
                 ConnectorField.Option.of("xml", "XML dataset"),
                 ConnectorField.Option.of("csv", "CSV (one message per line)"))
-            .label("File format")
-            .tooltip("How messages are written: a JSON array, an XML <dataset>, or one message per line."),
+            .label("File format"),
         ConnectorField.text("outputDir")
             .label("Output directory")
             .placeholder("Session folder")
@@ -56,8 +62,14 @@ public class FileConnectorPlugin implements ConnectorPlugin {
         ConnectorField.text("fileName")
             .label("File name")
             .placeholder("Flow name")
-            .tooltip("File name without extension. Leave empty to use the flow name.")
+            .tooltip("File name without extension: the extension follows the Message Format of the flow "
+                + "(.json, .xml, .csv or .txt). Leave empty to use the flow name.")
     );
+
+    @Override
+    public Set<String> coreSetFields() {
+        return Set.of(FORMAT);
+    }
 
     @Override
     public ConnectorInfo info() {
@@ -77,7 +89,7 @@ public class FileConnectorPlugin implements ConnectorPlugin {
 
     @Override
     public ConnectorSession connect(ConnectorConfig config, ConnectorContext context) throws IOException {
-        String format = config.getString("format", "json");
+        String format = config.getString(FORMAT, "json");
         String baseDir = config.getString("outputDir",
             context.outputDirectory() == null || context.outputDirectory().isBlank() ? "OUTPUT_FILES" : context.outputDirectory());
         Path directory = Paths.get(baseDir).resolve(sanitize(context.groupName(), "group"));

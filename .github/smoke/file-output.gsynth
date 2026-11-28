@@ -6,7 +6,7 @@
     "flows": [{
       "id": "f1", "name": "Temperature", "technology": "file", "enabled": true, "everyTicks": 1,
       "template": "{\"n\":{{n}}}",
-      "connectorConfig": { "format": "txt" }
+      "connectorConfig": {}
     }]
   }],
   "variables": [],
