@@ -70,9 +70,11 @@ Everything GenSynth needs is included: you do not need to install Java.
 >
 > - **Windows:** GenSynth is not signed, so SmartScreen may show *"Windows protected your PC"*.
 >   Click **More info → Run anyway**.
-> - **macOS:** the first time, right-click GenSynth in *Applications* and choose **Open** (or
->   *System Settings → Privacy & Security → Open Anyway*). The disk image includes a
->   `READ_ME_FIRST.txt` file with these steps.
+> - **macOS:** GenSynth is not signed by Apple, so the first time macOS does not open it. Click
+>   **Done**, go to *System Settings → Privacy & Security*, click **Open Anyway** next to
+>   *"GenSynth" was blocked* and confirm with your password; then **Open Anyway** again. Only once.
+>   (Up to macOS 14, right-click GenSynth in *Applications* → **Open** also works; macOS 15 no
+>   longer allows it.) The disk image includes a `READ_ME_FIRST.txt` file with these steps.
 > - **First start:** GenSynth downloads its embedded browser (about 150 MB), so it needs an
 >   internet connection. A window shows the progress; it only happens once.
 
@@ -1716,7 +1718,7 @@ downloads it.
 | Windows 10/11 (64-bit) | `GenSynth-cli-installer-<version>.msi` | Added by the installer (`C:\Program Files\GenSynth-CLI\cli` on the `PATH`) |
 | Ubuntu, Debian… | `GenSynth-cli-installer-<version>.deb` (`sudo apt install ./GenSynth-cli-installer-<version>.deb`) | Added by the installer (`/usr/bin/gensynth`) |
 | Fedora, openSUSE, RHEL… | `GenSynth-cli-installer-<version>.rpm` (`sudo dnf install ./GenSynth-cli-installer-<version>.rpm`) | Added by the installer (`/usr/bin/gensynth`) |
-| macOS (Apple Silicon) | `GenSynth-cli-installer-<version>.pkg` (right-click → **Open** the first time, as it is not signed) | Added by the installer (`/usr/local/bin/gensynth`) |
+| macOS (Apple Silicon) | `GenSynth-cli-installer-<version>.pkg` (the first time, as it is not signed: *System Settings → Privacy & Security → Open Anyway*) | Added by the installer (`/usr/local/bin/gensynth`) |
 
 It works like the command line of the full application, with these differences:
 

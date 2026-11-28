@@ -5,13 +5,14 @@ GenSynth - Read me first
    Drag GenSynth into the Applications folder.
 
 2. First start: macOS may block the app
-   GenSynth is not signed by Apple, so the first time you open it macOS shows
-   "GenSynth cannot be opened because the developer cannot be verified".
-   To open it:
-     - Right-click (or Control-click) GenSynth in Applications and choose "Open",
-       then "Open" again in the dialog.
-     - Or go to System Settings > Privacy & Security and click "Open Anyway".
-   You only need to do this once.
+   GenSynth is not signed by Apple, so the first time you open it macOS says
+   it could not verify GenSynth and does not open it. Click "Done", then:
+     1. Open System Settings > Privacy & Security.
+     2. Scroll down to Security: next to "GenSynth was blocked", click
+        "Open Anyway" and confirm with your password.
+     3. Click "Open Anyway" again in the dialog that appears.
+   You only need to do this once. (Up to macOS 14 you can also right-click
+   GenSynth in Applications and choose "Open"; macOS 15 no longer allows it.)
 
 3. First start: internet connection needed
    On the first start GenSynth downloads its embedded browser (Chromium,
