@@ -376,13 +376,6 @@ export const mockConnectorCatalog: ConnectorPluginDescriptor[] = [
     apiVersion: '1.0',
     external: false,
     fields: [
-      mockField({
-        key: 'format',
-        type: 'SELECT',
-        label: 'File format',
-        defaultValue: 'json',
-        options: [{ value: 'json', label: 'JSON array' }, { value: 'txt', label: 'Text' }],
-      }),
       mockField({ key: 'outputDir', type: 'TEXT', label: 'Output directory', placeholder: 'Session folder' }),
       mockField({ key: 'fileName', type: 'TEXT', label: 'File name', placeholder: 'Flow name' }),
     ],

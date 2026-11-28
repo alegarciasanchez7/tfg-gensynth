@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { detectTemplateFormat, isTemplateInFormat, parseCsv, resolveTemplateFormat } from './templateFormat';
+import { detectTemplateFormat, isTemplateInFormat, looksLikeTemplateFormat, parseCsv, resolveTemplateFormat } from './templateFormat';
 
 const JSON_TEMPLATE = '{\n  "id": "{{uuid}}",\n  "t": {{temperature}}\n}';
 
@@ -28,6 +28,23 @@ describe('templateFormat', () => {
     expect(resolveTemplateFormat(undefined, 'hello')).toBe('plain');
     expect(resolveTemplateFormat('xml', '')).toBe('xml');
     expect(resolveTemplateFormat(undefined, '')).toBe('json');
+  });
+
+  it('keeps the chosen format while the template is being written', () => {
+    expect(resolveTemplateFormat('json', '{"id": ')).toBe('json');
+    expect(resolveTemplateFormat('xml', 'hello')).toBe('xml');
+    expect(resolveTemplateFormat('json', 'id,t\n1,2')).toBe('json');
+    // A complete JSON document or XML is always sent as such
+    expect(resolveTemplateFormat('csv', JSON_TEMPLATE)).toBe('json');
+    expect(resolveTemplateFormat('json', '<a/>')).toBe('xml');
+  });
+
+  it('tells whether a template starts like a document of a format', () => {
+    expect(looksLikeTemplateFormat('  {"id": ', 'json')).toBe(true);
+    expect(looksLikeTemplateFormat('[{{n}}', 'json')).toBe(true);
+    expect(looksLikeTemplateFormat('<root', 'xml')).toBe(true);
+    expect(looksLikeTemplateFormat('hello', 'json')).toBe(false);
+    expect(looksLikeTemplateFormat('{"id": 1}', 'csv')).toBe(false);
   });
 
   it('tells whether a template already is valid in a format', () => {

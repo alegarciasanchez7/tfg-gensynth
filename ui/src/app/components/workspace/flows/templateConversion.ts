@@ -1,5 +1,12 @@
 import { findTemplatePlaceholders } from '../../../core/templatePlaceholders';
-import { neutralizePlaceholders, parseCsv, type TemplateFormat } from './templateFormat';
+import {
+  isTemplateInFormat,
+  looksLikeTemplateFormat,
+  neutralizePlaceholders,
+  parseCsv,
+  resolveTemplateFormat,
+  type TemplateFormat,
+} from './templateFormat';
 
 /** A value of a parsed template (JSON data model). */
 type TemplateValue = string | number | boolean | null | TemplateValue[] | { [key: string]: TemplateValue };
@@ -174,7 +181,7 @@ function fromXmlElement(element: Element): TemplateValue {
 
 function fromXml(text: string): TemplateValue {
   const doc = parseXmlDocument(text);
-  if (!doc) throw new ConversionError('The template is not valid XML, so it cannot be converted.');
+  if (!doc) throw new ConversionError('The template is not valid XML yet: finish it before converting it.');
   const root = doc.documentElement;
   const value = fromXmlElement(root);
   // Our own wrapper is dropped; any other root element keeps its name
@@ -211,12 +218,13 @@ function parseSource(text: string, source: TemplateFormat): TemplateValue {
     try {
       return JSON.parse(text) as TemplateValue;
     } catch {
-      throw new ConversionError('The template is not valid JSON, so it cannot be converted.');
+      throw new ConversionError('The template is not valid JSON yet: finish it before converting it.');
     }
   }
   if (source === 'xml') return fromXml(text);
-  // Text labelled CSV that is not a table (e.g. a single line) is converted as plain text
-  const table = source === 'csv' ? csvTable(text, 2) : null;
+  // CSV and plain text are both lines of text: a table is converted as CSV whatever its label, and
+  // anything else (e.g. a single line) as plain text, so the same text always gives the same result
+  const table = csvTable(text, 2);
   return table ? fromCsv(table) : { [PLAIN_FIELD]: text.trim() };
 }
 
@@ -252,4 +260,94 @@ export function convertTemplate(content: string, source: TemplateFormat, target:
     if (error instanceof ConversionError) return { ok: false, reason: error.message };
     return { ok: false, reason: `The template could not be converted to ${target.toUpperCase()}.` };
   }
+}
+
+/* ───────────────────────────── Format buttons ───────────────────────────── */
+
+/**
+ * Result of choosing a format on the editor: the template in that format (`converted` tells
+ * whether its text changed), or why the format cannot change.
+ */
+export type TemplateFormatChange = { ok: true; content: string; converted: boolean } | { ok: false; reason: string };
+
+/**
+ * What choosing another format does to a template. The format alone changes when the template is
+ * empty, already is valid in the target, or is that format still being written (`{"a": ` for
+ * JSON). Otherwise the text is converted, unless that would lose content or the result would not be
+ * recognised as the target (JSON or XML content is always sent as JSON or XML, never as PLAIN).
+ *
+ * @param content the template
+ * @param source  its current format
+ * @param target  the chosen format
+ * @returns the template in the target format, or the reason why the format cannot change
+ */
+export function changeTemplateFormat(content: string, source: TemplateFormat, target: TemplateFormat): TemplateFormatChange {
+  const recognised = (text: string) => resolveTemplateFormat(target, text) === target;
+  const name = target.toUpperCase();
+  if (source === target) return { ok: true, content, converted: false };
+  if (!content.trim() || isTemplateInFormat(content, target) || looksLikeTemplateFormat(content, target)) {
+    if (recognised(content)) return { ok: true, content, converted: false };
+    const current = source.toUpperCase();
+    return { ok: false, reason: `${current} content is always sent as ${current}, so it cannot be ${name}.` };
+  }
+  const result = convertTemplate(content, source, target);
+  if (!result.ok) return result;
+  if (!recognised(result.content)) return { ok: false, reason: `The result would not be recognised as ${name}.` };
+  return { ok: true, content: result.content, converted: true };
+}
+
+/**
+ * The template a flow had before its format buttons were clicked: every other format is converted
+ * from it, so each format always gives the same text, and its own format gives it back exactly.
+ */
+export interface TemplateFormatOrigin {
+  content: string;
+  format: TemplateFormat;
+  /** Texts converted from it: while the template is one of them, it still comes from this origin. */
+  converted: string[];
+}
+
+/**
+ * Switches a template to another format from its origin (see {@link TemplateFormatOrigin}), never
+ * from the last conversion, which may have lost what the target format can hold (such as a
+ * number without quotes in JSON). A template that is not the origin or one of its conversions,
+ * because it was edited, becomes the new origin.
+ *
+ * @param origin  origin of the flow's template, if its format was switched before
+ * @param content the current template
+ * @param format  its current format
+ * @param target  the chosen format
+ * @returns the change, and the origin to keep for the next switch
+ */
+export function switchTemplateFormat(
+  origin: TemplateFormatOrigin | undefined,
+  content: string,
+  format: TemplateFormat,
+  target: TemplateFormat,
+): { change: TemplateFormatChange; origin: TemplateFormatOrigin } {
+  const current = origin && (content === origin.content || origin.converted.includes(content))
+    ? origin
+    : { content, format, converted: [] };
+  if (target === current.format) {
+    return { change: { ok: true, content: current.content, converted: current.content !== content }, origin: current };
+  }
+  let change = changeTemplateFormat(current.content, current.format, target);
+  if (!change.ok && target === 'plain') {
+    // JSON or XML cannot be plain text, but its CSV form can: plain text only changes the label, so
+    // it takes the current text as it is
+    const labelOnly = changeTemplateFormat(content, format, target);
+    if (labelOnly.ok) change = labelOnly;
+  }
+  if (!change.ok) return { change, origin: current };
+  let next: TemplateFormatOrigin;
+  if (change.content === current.content) {
+    // Only the label changed: the origin is now read in the chosen format (JSON being written that
+    // was labelled plain is JSON from now on)
+    next = { ...current, format: target };
+  } else if (current.converted.includes(change.content)) {
+    next = current;
+  } else {
+    next = { ...current, converted: [...current.converted, change.content] };
+  }
+  return { change: { ...change, converted: change.content !== content }, origin: next };
 }
