@@ -1,7 +1,7 @@
 #!/bin/sh
 # GenSynth: copy of the default jpackage 21 template, plus the lines marked "GenSynth" that
-# link the command line launcher as /usr/bin/gensynth. The UPPER_CASE words are filled in by
-# jpackage.
+# link the command line launcher as /usr/bin/gensynth and the AppStream file for software centers.
+# The UPPER_CASE words are filled in by jpackage.
 # prerm script for APPLICATION_PACKAGE
 #
 # see: dh_installdeb(1)
@@ -37,6 +37,8 @@ if [ "$(readlink /usr/bin/gensynth)" = "/opt/gensynth/bin/gensynth-cli" ]; then
     rm -f /usr/bin/gensynth
   fi
 fi
+# GenSynth: the link to the AppStream file (the new version links it again on upgrade)
+rm -f /usr/share/metainfo/io.github.alegarciasanchez7.gensynth.metainfo.xml
     ;;
 
     failed-upgrade)

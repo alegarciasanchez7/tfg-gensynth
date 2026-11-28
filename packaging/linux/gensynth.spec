@@ -1,6 +1,6 @@
 # GenSynth: copy of the default jpackage 21 template, plus the lines marked "GenSynth" that
-# link the command line launcher as /usr/bin/gensynth. The UPPER_CASE words are filled in by
-# jpackage.
+# link the command line launcher as /usr/bin/gensynth, keep the menu entry on upgrade and install
+# the AppStream file for software centers. The UPPER_CASE words are filled in by jpackage.
 Summary: APPLICATION_SUMMARY
 Name: APPLICATION_PACKAGE
 Version: APPLICATION_VERSION
@@ -40,7 +40,10 @@ Requires: PACKAGE_DEFAULT_DEPENDENCIES PACKAGE_CUSTOM_DEPENDENCIES
 %define app_filelist %{_builddir}/%{name}.app.files
 %define filesystem_filelist %{_builddir}/%{name}.filesystem.files
 
-%define default_filesystem / /opt /usr /usr/bin /usr/lib /usr/local /usr/local/bin /usr/local/lib
+# GenSynth: used where the filesystem package is not installed, as on Ubuntu, where the RPM is
+# built: /usr/share and /usr/share/metainfo added, and one folder per line below (the template
+# wrote them on one line, so the package claimed /opt), so that it claims no system folder
+%define default_filesystem / /opt /usr /usr/bin /usr/lib /usr/local /usr/local/bin /usr/local/lib /usr/share /usr/share/metainfo
 
 %description
 APPLICATION_DESCRIPTION
@@ -55,6 +58,8 @@ APPLICATION_DESCRIPTION
 rm -rf %{buildroot}
 install -d -m 755 %{buildroot}APPLICATION_DIRECTORY
 cp -r %{_sourcedir}APPLICATION_DIRECTORY/* %{buildroot}APPLICATION_DIRECTORY
+# GenSynth: the AppStream file (name, summary, icon, screenshots) where software centers read it
+install -D -m 644 %{buildroot}APPLICATION_DIRECTORY/lib/metainfo/io.github.alegarciasanchez7.gensynth.metainfo.xml %{buildroot}/usr/share/metainfo/io.github.alegarciasanchez7.gensynth.metainfo.xml
 if [ "$(echo %{_sourcedir}/lib/systemd/system/*.service)" != '%{_sourcedir}/lib/systemd/system/*.service' ]; then
   install -d -m 755 %{buildroot}/lib/systemd/system
   cp %{_sourcedir}/lib/systemd/system/*.service %{buildroot}/lib/systemd/system
@@ -65,7 +70,7 @@ fi
   install -m 644 "APPLICATION_LICENSE_FILE" "%{buildroot}%{license_install_file}"
 %endif
 (cd %{buildroot} && find . -path ./lib/systemd -prune -o -type d -print) | sed -e 's/^\.//' -e '/^$/d' | sort > %{app_filelist}
-{ rpm -ql filesystem || echo %{default_filesystem}; } | sort > %{filesystem_filelist}
+{ rpm -ql filesystem || echo %{default_filesystem} | tr ' ' '\n'; } | sort > %{filesystem_filelist}
 comm -23 %{app_filelist} %{filesystem_filelist} > %{package_filelist}
 sed -i -e 's/.*/%dir "&"/' %{package_filelist}
 (cd %{buildroot} && find . -not -type d) | sed -e 's/^\.//' -e 's/.*/"&"/' >> %{package_filelist}
@@ -99,7 +104,12 @@ fi
 package_type=rpm
 DESKTOP_SCRIPTS
 LAUNCHER_AS_SERVICE_SCRIPTS
+# GenSynth: remove the menu entry and the file type on uninstall only ($1 = 0). On an upgrade
+# this script of the old version runs after the post-install script of the new one.
+if [ "$1" = 0 ]; then
+  true
 DESKTOP_COMMANDS_UNINSTALL
+fi
 LAUNCHER_AS_SERVICE_COMMANDS_UNINSTALL
 # GenSynth: on uninstall only ($1 = 0), not on upgrade; if the "gensynth" link is still ours,
 # hand it to the CLI edition when it is installed, or remove it
@@ -110,5 +120,13 @@ if [ "$1" = 0 ] && [ "$(readlink /usr/bin/gensynth)" = "/opt/gensynth/bin/gensyn
     rm -f /usr/bin/gensynth
   fi
 fi
+
+%posttrans
+package_type=rpm
+# GenSynth: add the menu entry and the file type again once the whole transaction is done. The
+# uninstall script of versions up to 0.6.0 removed them on upgrade, after they had been added.
+DESKTOP_COMMANDS_INSTALL
+# Never fail the transaction for it: GenSynth works without the menu entry
+true
 
 %clean

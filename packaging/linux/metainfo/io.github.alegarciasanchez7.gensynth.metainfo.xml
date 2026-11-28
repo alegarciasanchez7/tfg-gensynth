@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  GenSynth: AppStream description of the application, read by the software centers of Linux (GNOME
+  Software, KDE Discover...) to show its name, summary, icon and screenshots, and an "Open" button
+  once it is installed. The packages put it in /usr/share/metainfo (gensynth.spec, postinst).
+-->
+<component type="desktop-application">
+  <id>io.github.alegarciasanchez7.gensynth</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <name>GenSynth</name>
+  <summary>Generate synthetic data for IoT and messaging systems</summary>
+  <developer id="io.github.alegarciasanchez7">
+    <name>Alejandro Garcia Sanchez</name>
+  </developer>
+  <description>
+    <p>
+      GenSynth simulates devices that send data: you describe groups of flows, their variables and
+      where each message goes, and GenSynth sends realistic data on a clock, without writing code.
+    </p>
+    <ul>
+      <li>Numeric, text, list, boolean, date and GPS point variables, with formulas and rules</li>
+      <li>Connectors for files and RabbitMQ, and plugins for more</li>
+      <li>Live preview, logs and statistics while the simulation runs</li>
+      <li>A command line to run projects without the window</li>
+    </ul>
+    <p>
+      The first start downloads the embedded browser (about 150 MB) and needs an internet
+      connection.
+    </p>
+  </description>
+  <launchable type="desktop-id">gensynth-GenSynth.desktop</launchable>
+  <icon type="remote" width="256" height="256">https://raw.githubusercontent.com/alegarciasanchez7/tfg-gensynth/main/packaging/icons/gensynth.png</icon>
+  <url type="homepage">https://github.com/alegarciasanchez7/tfg-gensynth</url>
+  <url type="bugtracker">https://github.com/alegarciasanchez7/tfg-gensynth/issues</url>
+  <url type="help">https://github.com/alegarciasanchez7/tfg-gensynth/blob/main/USER_GUIDE.md</url>
+  <categories>
+    <category>Development</category>
+  </categories>
+  <provides>
+    <binary>gensynth</binary>
+  </provides>
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+  <content_rating type="oars-1.1"/>
+  <screenshots>
+    <screenshot type="default">
+      <caption>A group of flows and its variables</caption>
+      <image>https://raw.githubusercontent.com/alegarciasanchez7/tfg-gensynth/main/docs-assets/user-guide/01-workspace-overview.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>The message template of a flow</caption>
+      <image>https://raw.githubusercontent.com/alegarciasanchez7/tfg-gensynth/main/docs-assets/user-guide/08-template-editor.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>A GPS point variable that moves on a map</caption>
+      <image>https://raw.githubusercontent.com/alegarciasanchez7/tfg-gensynth/main/docs-assets/user-guide/27-point-map.png</image>
+    </screenshot>
+  </screenshots>
+</component>

@@ -1,7 +1,7 @@
 #!/bin/sh
 # GenSynth: copy of the default jpackage 21 template, plus the lines marked "GenSynth" that
-# link the command line launcher as /usr/bin/gensynth. The UPPER_CASE words are filled in by
-# jpackage.
+# link the command line launcher as /usr/bin/gensynth and the AppStream file for software centers.
+# The UPPER_CASE words are filled in by jpackage.
 # postinst script for APPLICATION_PACKAGE
 #
 # see: dh_installdeb(1)
@@ -31,6 +31,9 @@ LAUNCHER_AS_SERVICE_COMMANDS_INSTALL
 if [ ! -e /usr/bin/gensynth ] || [ -L /usr/bin/gensynth ]; then
   ln -sf /opt/gensynth/bin/gensynth-cli /usr/bin/gensynth
 fi
+# GenSynth: the AppStream file (name, summary, icon, screenshots) where software centers read it
+mkdir -p /usr/share/metainfo
+ln -sf /opt/gensynth/lib/metainfo/io.github.alegarciasanchez7.gensynth.metainfo.xml /usr/share/metainfo/io.github.alegarciasanchez7.gensynth.metainfo.xml
     ;;
 
     abort-upgrade|abort-remove|abort-deconfigure)

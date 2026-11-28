@@ -722,6 +722,10 @@
                                 <configuration>
                                     <type>DEB</type>
                                     <skip>${installer.skipFullDeb}</skip>
+                                    <!-- lib/metainfo: the AppStream file for software centers (postinst, gensynth.spec) -->
+                                    <appContentPaths combine.children="append">
+                                        <appContentPath>${installer.packaging}/linux/metainfo</appContentPath>
+                                    </appContentPaths>
                                 </configuration>
                             </execution>
                             <execution>
@@ -731,6 +735,10 @@
                                 <configuration>
                                     <type>RPM</type>
                                     <skip>${installer.skipFullRpm}</skip>
+                                    <!-- lib/metainfo: the AppStream file for software centers (postinst, gensynth.spec) -->
+                                    <appContentPaths combine.children="append">
+                                        <appContentPath>${installer.packaging}/linux/metainfo</appContentPath>
+                                    </appContentPaths>
                                 </configuration>
                             </execution>
                             <execution>

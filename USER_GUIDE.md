@@ -61,7 +61,7 @@ Everything GenSynth needs is included: you do not need to install Java.
 
 | Your system | File | How to install |
 |---|---|---|
-| Windows 10/11 (64-bit) | `GenSynth-installer-<version>.msi` | Double-click it and follow the steps. GenSynth appears in the Start menu. |
+| Windows 10/11 (64-bit) | `GenSynth-installer-<version>.msi` | Double-click it and follow the steps; leave **Open GenSynth** checked on the last page to start it. GenSynth appears in the Start menu. |
 | Ubuntu, Debian, Linux Mint… | `GenSynth-installer-<version>.deb` | Double-click it, or `sudo apt install ./GenSynth-installer-<version>.deb` |
 | Fedora, openSUSE, RHEL… | `GenSynth-installer-<version>.rpm` | `sudo dnf install ./GenSynth-installer-<version>.rpm` |
 | macOS (Apple Silicon) | `GenSynth-installer-<version>.dmg` | Open it and drag GenSynth into *Applications*. |
@@ -70,9 +70,11 @@ Everything GenSynth needs is included: you do not need to install Java.
 >
 > - **Windows:** GenSynth is not signed, so SmartScreen may show *"Windows protected your PC"*.
 >   Click **More info → Run anyway**.
-> - **macOS:** the first time, right-click GenSynth in *Applications* and choose **Open** (or
->   *System Settings → Privacy & Security → Open Anyway*). The disk image includes a
->   `READ_ME_FIRST.txt` file with these steps.
+> - **macOS:** GenSynth is not signed by Apple, so the first time macOS does not open it. Click
+>   **Done**, go to *System Settings → Privacy & Security*, click **Open Anyway** next to
+>   *"GenSynth" was blocked* and confirm with your password; then **Open Anyway** again. Only once.
+>   (Up to macOS 14, right-click GenSynth in *Applications* → **Open** also works; macOS 15 no
+>   longer allows it.) The disk image includes a `READ_ME_FIRST.txt` file with these steps.
 > - **First start:** GenSynth downloads its embedded browser (about 150 MB), so it needs an
 >   internet connection. A window shows the progress; it only happens once.
 
@@ -84,9 +86,13 @@ nothing happens). When there is one, a notice shows what is new and lets **you**
 - **Update now**: GenSynth asks for confirmation (save your project first), downloads the installer
   of your system, checks that it is complete and has not been modified (SHA-256), and installs it.
   The download can be cancelled.
-  - **Windows**: GenSynth closes and the installer opens; Windows asks for permission as in the
-    first installation. Open GenSynth again when it finishes.
+  - **Windows**: GenSynth closes and the new version installs with only a progress bar, in the
+    same folder as before; Windows asks for permission as in the first installation. GenSynth
+    opens again when it finishes. (From 0.6.0, the update still opens the installer wizard:
+    check the installation folder if you changed it, and leave **Open GenSynth** checked at the end.)
   - **Linux** (`.deb` / `.rpm`): enter your password when asked; GenSynth restarts by itself.
+    On Fedora or openSUSE, updating from 0.6.0 or earlier can remove GenSynth from the
+    applications menu, although it stays installed: see [Troubleshooting](#troubleshooting).
   - **macOS**: GenSynth closes and the disk image opens: drag GenSynth to *Applications* again.
 - **Not now**: keep working with the version you have; GenSynth asks again the next time it
   starts. A small **Update available** button stays next to the version in the top bar.
@@ -1712,7 +1718,7 @@ downloads it.
 | Windows 10/11 (64-bit) | `GenSynth-cli-installer-<version>.msi` | Added by the installer (`C:\Program Files\GenSynth-CLI\cli` on the `PATH`) |
 | Ubuntu, Debian… | `GenSynth-cli-installer-<version>.deb` (`sudo apt install ./GenSynth-cli-installer-<version>.deb`) | Added by the installer (`/usr/bin/gensynth`) |
 | Fedora, openSUSE, RHEL… | `GenSynth-cli-installer-<version>.rpm` (`sudo dnf install ./GenSynth-cli-installer-<version>.rpm`) | Added by the installer (`/usr/bin/gensynth`) |
-| macOS (Apple Silicon) | `GenSynth-cli-installer-<version>.pkg` (right-click → **Open** the first time, as it is not signed) | Added by the installer (`/usr/local/bin/gensynth`) |
+| macOS (Apple Silicon) | `GenSynth-cli-installer-<version>.pkg` (the first time, as it is not signed: *System Settings → Privacy & Security → Open Anyway*) | Added by the installer (`/usr/local/bin/gensynth`) |
 
 It works like the command line of the full application, with these differences:
 
@@ -1772,6 +1778,7 @@ more detail. It only takes a couple of minutes, and it helps to improve the tool
 
 | Problem | Solution |
 |---|---|
+| After updating on Fedora or openSUSE, GenSynth is no longer in the applications menu | GenSynth is still installed (`/opt/gensynth`): the update script of 0.6.0 and earlier removed its menu entry. Add it again with `sudo xdg-desktop-menu install /opt/gensynth/lib/gensynth-GenSynth.desktop && sudo xdg-mime install /opt/gensynth/lib/gensynth-GenSynth-MimeInfo.xml`, then log out and in. Later versions keep it when they update. |
 | The window shows *Something went wrong* with a **Reload** button | The interface hit an unexpected error; it is written to the log. Click **Reload**: the project stays in GenSynth, but save it first if you can. |
 | The first start shows *"GenSynth could not set up its embedded browser"* | The embedded browser could not be downloaded. Check your internet connection (and proxy or firewall) and click **Retry**. |
 | The logs show *Invalid connector configuration…* when starting a group | A required connector field is empty or invalid; the message says which one. |

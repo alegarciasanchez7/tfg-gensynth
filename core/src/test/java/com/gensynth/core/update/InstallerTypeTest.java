@@ -2,8 +2,10 @@ package com.gensynth.core.update;
 
 import org.junit.Test;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -30,11 +32,31 @@ public class InstallerTypeTest {
     }
 
     @Test
+    public void windowsReopensGenSynthWhenTheInstallerEnds() {
+        List<String> install = List.of("D:\\Win\\System32\\msiexec.exe", "/i",
+            "C:\\Users\\José O'Neil\\updates\\GenSynth-installer-0.7.0.msi", "/passive", "/norestart");
+
+        List<String> command = InstallerType.reopeningAfterwards(install,
+            "C:\\Program Files\\GenSynth\\GenSynth.exe", Map.of("SystemRoot", "D:\\Win"));
+
+        assertEquals(Paths.get("D:\\Win", "System32", "WindowsPowerShell", "v1.0", "powershell.exe").toString(),
+            command.get(0));
+        assertEquals(List.of("-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-EncodedCommand"),
+            command.subList(1, 6));
+        String script = new String(Base64.getDecoder().decode(command.get(6)), StandardCharsets.UTF_16LE);
+        // Waits for the installer, quoting the path with spaces, and opens GenSynth even if it fails
+        assertEquals("try { Start-Process -FilePath 'D:\\Win\\System32\\msiexec.exe' -ArgumentList '/i',"
+                + "'\"C:\\Users\\José O''Neil\\updates\\GenSynth-installer-0.7.0.msi\"','/passive','/norestart' -Wait }"
+                + " finally { Start-Process -FilePath 'C:\\Program Files\\GenSynth\\GenSynth.exe' }",
+            script);
+    }
+
+    @Test
     public void buildsTheInstallCommandWithAbsolutePaths() {
         Path installer = Paths.get("updates", "GenSynth-installer-0.5.3.msi").toAbsolutePath();
         String file = installer.toString();
 
-        assertEquals(List.of(Paths.get("D:\\Win", "System32", "msiexec.exe").toString(), "/i", file),
+        assertEquals(List.of(Paths.get("D:\\Win", "System32", "msiexec.exe").toString(), "/i", file, "/passive", "/norestart"),
             InstallerType.MSI.installCommand(installer, Map.of("SystemRoot", "D:\\Win"), path -> true));
         assertEquals(List.of("/usr/bin/open", file), InstallerType.DMG.installCommand(installer, Map.of(), path -> true));
         assertEquals(List.of("/usr/bin/pkexec", "/usr/bin/apt-get", "install", "-y", file),
