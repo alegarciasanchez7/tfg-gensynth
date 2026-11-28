@@ -1,11 +1,10 @@
-## What's new in 0.6.0
+## What's new in 0.6.1
 
-- **Command line:** `gensynth` runs `.gsynth` projects from a terminal, without the window, and imports connector plugins with `plugins add <file.jar>`.
-- **CLI edition:** installers with only the command line, for servers.
-- **Double click:** `.gsynth` files open in GenSynth.
-- **Simpler RabbitMQ:** fill in the broker and the **Queue**; the exchange settings are under **Advanced options**. Projects that only set an exchange now ask for the queue.
-- **Shared variables:** a GROUP or GLOBAL variable gives one value per tick, the same for every flow that uses it, and it can no longer read LOCAL variables.
-- **Session folder:** the top of **Logs** shows where the files are written, with **Copy** and **Open**.
+- **Easier updates on Windows:** the update installs in the same folder as before, with only a progress bar, and GenSynth opens again when it finishes. The installer also offers **Open GenSynth** on its last page. (Updating from 0.6.0 still shows the installer wizard once.)
+- **Linux menu entry:** updating the `.rpm` no longer removes GenSynth from the applications menu. If 0.6.0 removed it, see *Troubleshooting* in the User Guide.
+- **Software centers on Linux:** GNOME Software and similar apps show GenSynth with its description, screenshots and an **Open** button.
+- **Shared variables:** a flow that falls behind the clock now sends the GROUP or GLOBAL value of its own tick, so every flow sends the same value on each tick.
+- **macOS:** updated steps to open the app the first time on macOS 15.
 
 See the [User Guide](https://github.com/alegarciasanchez7/tfg-gensynth/blob/main/USER_GUIDE.md) for details.
 
@@ -22,5 +21,5 @@ Java is included. `SHA256SUMS.txt` lists the checksum of every file.
 
 > [!IMPORTANT]
 > - **Windows:** GenSynth is not signed: in *"Windows protected your PC"*, click **More info → Run anyway**.
-> - **macOS:** the first time, right-click GenSynth (or the CLI `.pkg`) and choose **Open**.
+> - **macOS:** GenSynth is not signed: the first time, go to *System Settings → Privacy & Security* and click **Open Anyway** (for the app or the CLI `.pkg`).
 > - **First start:** the application downloads its embedded browser once (about 150 MB), so it needs an internet connection.
