@@ -61,7 +61,7 @@ Everything GenSynth needs is included: you do not need to install Java.
 
 | Your system | File | How to install |
 |---|---|---|
-| Windows 10/11 (64-bit) | `GenSynth-installer-<version>.msi` | Double-click it and follow the steps. GenSynth appears in the Start menu. |
+| Windows 10/11 (64-bit) | `GenSynth-installer-<version>.msi` | Double-click it and follow the steps; leave **Open GenSynth** checked on the last page to start it. GenSynth appears in the Start menu. |
 | Ubuntu, Debian, Linux Mint… | `GenSynth-installer-<version>.deb` | Double-click it, or `sudo apt install ./GenSynth-installer-<version>.deb` |
 | Fedora, openSUSE, RHEL… | `GenSynth-installer-<version>.rpm` | `sudo dnf install ./GenSynth-installer-<version>.rpm` |
 | macOS (Apple Silicon) | `GenSynth-installer-<version>.dmg` | Open it and drag GenSynth into *Applications*. |
@@ -85,9 +85,9 @@ nothing happens). When there is one, a notice shows what is new and lets **you**
   of your system, checks that it is complete and has not been modified (SHA-256), and installs it.
   The download can be cancelled.
   - **Windows**: GenSynth closes and the new version installs with only a progress bar, in the
-    same folder as before; Windows asks for permission as in the first installation. Open
-    GenSynth again when it finishes. (From 0.6.0, the update still opens the installer wizard:
-    check the installation folder if you changed it.)
+    same folder as before; Windows asks for permission as in the first installation. GenSynth
+    opens again when it finishes. (From 0.6.0, the update still opens the installer wizard:
+    check the installation folder if you changed it, and leave **Open GenSynth** checked at the end.)
   - **Linux** (`.deb` / `.rpm`): enter your password when asked; GenSynth restarts by itself.
     On Fedora or openSUSE, updating from 0.6.0 or earlier can remove GenSynth from the
     applications menu, although it stays installed: see [Troubleshooting](#troubleshooting).

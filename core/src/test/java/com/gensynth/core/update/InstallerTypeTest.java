@@ -2,8 +2,10 @@ package com.gensynth.core.update;
 
 import org.junit.Test;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -27,6 +29,26 @@ public class InstallerTypeTest {
         assertEquals(Optional.of(InstallerType.RPM), InstallerType.detect("Linux", "amd64", succeeds("/usr/bin/rpm")));
         assertEquals("Not installed from a package", Optional.empty(), InstallerType.detect("Linux", "amd64", none));
         assertEquals(Optional.empty(), InstallerType.detect("FreeBSD", "amd64", none));
+    }
+
+    @Test
+    public void windowsReopensGenSynthWhenTheInstallerEnds() {
+        List<String> install = List.of("D:\\Win\\System32\\msiexec.exe", "/i",
+            "C:\\Users\\José O'Neil\\updates\\GenSynth-installer-0.7.0.msi", "/passive", "/norestart");
+
+        List<String> command = InstallerType.reopeningAfterwards(install,
+            "C:\\Program Files\\GenSynth\\GenSynth.exe", Map.of("SystemRoot", "D:\\Win"));
+
+        assertEquals(Paths.get("D:\\Win", "System32", "WindowsPowerShell", "v1.0", "powershell.exe").toString(),
+            command.get(0));
+        assertEquals(List.of("-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-EncodedCommand"),
+            command.subList(1, 6));
+        String script = new String(Base64.getDecoder().decode(command.get(6)), StandardCharsets.UTF_16LE);
+        // Waits for the installer, quoting the path with spaces, and opens GenSynth even if it fails
+        assertEquals("try { Start-Process -FilePath 'D:\\Win\\System32\\msiexec.exe' -ArgumentList '/i',"
+                + "'\"C:\\Users\\José O''Neil\\updates\\GenSynth-installer-0.7.0.msi\"','/passive','/norestart' -Wait }"
+                + " finally { Start-Process -FilePath 'C:\\Program Files\\GenSynth\\GenSynth.exe' }",
+            script);
     }
 
     @Test

@@ -4,7 +4,8 @@
   with the additions marked "GenSynth". It puts the "cli" folder of the installation (with
   gensynth.cmd) on the PATH, so "gensynth" works in any new terminal without setting it up by hand;
   uninstalling removes it. It also remembers the installation folder, so an update installs in the
-  folder of the version it replaces. Used by both editions (core/pom.xml, resourceDir); compare it with the
+  folder of the version it replaces, and the wizard of the application ends with "Open GenSynth".
+  Used by both editions (core/pom.xml, resourceDir); compare it with the
   template of the JDK when the JDK used to build the installers changes.
 -->
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi"
@@ -115,6 +116,18 @@
          it runs in the execute sequence -->
     <CustomAction Id="GenSynthUsePreviousInstallDir" Property="INSTALLDIR"
                   Value="[GENSYNTH_PREVIOUS_INSTALLDIR]" Execute="firstSequence"/>
+
+    <?if $(var.JpAppName) != "GenSynth-CLI" ?>
+    <!-- GenSynth: "Open GenSynth" (checked) on the last page of the wizard. msiexec /passive shows
+         no pages: there the updater opens GenSynth itself. The CLI edition has no window to open. -->
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Open $(var.JpAppName)"/>
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1"/>
+    <Property Id="WixShellExecTarget" Value="[INSTALLDIR]$(var.JpAppName).exe"/>
+    <CustomAction Id="GenSynthOpenApp" BinaryKey="WixCA" DllEntry="WixShellExec" Impersonate="yes"/>
+    <UI>
+      <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="GenSynthOpenApp">WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 AND NOT Installed</Publish>
+    </UI>
+    <?endif?>
 
     <Feature Id="DefaultFeature" Title="!(loc.MainFeatureTitle)" Level="1">
       <ComponentGroupRef Id="Shortcuts"/>

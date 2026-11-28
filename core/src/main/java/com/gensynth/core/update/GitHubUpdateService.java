@@ -295,6 +295,15 @@ public class GitHubUpdateService implements IUpdateService {
     public void install(Path installer) throws IOException, InterruptedException {
         InstallerType type = installerType().orElseThrow(() -> new IOException(unsupportedReason()));
         List<String> command = type.installCommand(installer);
+        String launcher = System.getProperty(AppPaths.LAUNCHER_PROPERTY);
+        if (type == InstallerType.MSI && launcher != null) {
+            if (logger.isInfoEnabled()) {
+                logger.info("Installing update: {}, then opening {}", String.join(" ", command), launcher);
+            }
+            RestartUtil.exitAndLaunch(new ProcessBuilder(
+                InstallerType.reopeningAfterwards(command, launcher, System.getenv())));
+            return;
+        }
         if (logger.isInfoEnabled()) {
             logger.info("Installing update: {}", String.join(" ", command));
         }

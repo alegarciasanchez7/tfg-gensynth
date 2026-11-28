@@ -1,9 +1,11 @@
 package com.gensynth.core.update;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -19,7 +21,7 @@ public enum InstallerType {
     /**
      * Windows installer, run with {@code msiexec}; it replaces the previous version. It runs with
      * a progress bar only ({@code /passive}), in the folder of the version it replaces, and never
-     * restarts Windows by itself.
+     * restarts Windows by itself. GenSynth opens again afterwards, see {@link #reopeningAfterwards}.
      */
     MSI("msi", true),
     /** Debian/Ubuntu package, installed with {@code apt-get} through {@code pkexec}. */
@@ -123,6 +125,42 @@ public enum InstallerType {
             command.addAll(List.of("/passive", "/norestart"));
         }
         return command;
+    }
+
+    /**
+     * Wraps a Windows install command so that GenSynth opens again when the installer ends.
+     * GenSynth has closed by then (Windows locks the files of the running application), so a
+     * hidden PowerShell waits for the installer and then starts the launcher. Updates install in
+     * the folder of the launcher, so it opens the new version, or the same one if the update was
+     * cancelled or failed (the installer then leaves the previous version as it was).
+     *
+     * @param command  the install command, see {@link #installCommand(Path)}
+     * @param launcher the launcher of the installed application ({@code jpackage.app-path})
+     * @param env      environment variables ({@code SystemRoot})
+     * @return the PowerShell command
+     */
+    public static List<String> reopeningAfterwards(List<String> command, String launcher, Map<String, String> env) {
+        StringBuilder arguments = new StringBuilder();
+        for (String argument : command.subList(1, command.size())) {
+            if (!arguments.isEmpty()) {
+                arguments.append(',');
+            }
+            // Start-Process passes its arguments joined with spaces, without quoting them
+            arguments.append(powerShellString(argument.contains(" ") ? '"' + argument + '"' : argument));
+        }
+        String script = "try { Start-Process -FilePath " + powerShellString(command.get(0))
+            + " -ArgumentList " + arguments + " -Wait } finally { Start-Process -FilePath "
+            + powerShellString(launcher) + " }";
+        String systemRoot = env.getOrDefault("SystemRoot", "C:\\Windows");
+        return List.of(Paths.get(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe").toString(),
+            "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-EncodedCommand",
+            // Encoded as PowerShell expects: no quoting rules of the Windows command line apply
+            Base64.getEncoder().encodeToString(script.getBytes(StandardCharsets.UTF_16LE)));
+    }
+
+    /** A PowerShell string literal: single quotes, where only a single quote needs escaping. */
+    private static String powerShellString(String value) {
+        return "'" + value.replace("'", "''") + "'";
     }
 
     /**

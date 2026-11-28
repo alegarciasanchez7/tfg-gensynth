@@ -184,7 +184,7 @@ public class UpdateCommandHandler implements CommandHandler {
             installing = true;
             broadcastStatus("installing", version, update.assetSize(), update.assetSize(),
                 service.closesAppToInstall()
-                    ? "GenSynth will close and open the installer."
+                    ? "GenSynth will close to install the update."
                     : "Enter your password to install. GenSynth will restart.");
             service.install(installer);
         } catch (InterruptedException e) {
