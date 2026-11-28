@@ -1,5 +1,6 @@
 ## What's new in 0.6.1
 
+- **Message Format:** clicking **JSON**, **XML**, **CSV** or **PLAIN** converts the template at once, with **Undo**, and keeps your choice while you write. File Output now writes a `.json`, `.xml`, `.csv` or `.txt` file to match, instead of having its own *File format* setting: a flow whose setting did not match its template writes the matching kind of file from now on.
 - **Easier updates on Windows:** the update installs in the same folder as before, with only a progress bar, and GenSynth opens again when it finishes. The installer also offers **Open GenSynth** on its last page. (Updating from 0.6.0 still shows the installer wizard once.)
 - **Linux menu entry:** updating the `.rpm` no longer removes GenSynth from the applications menu. If 0.6.0 removed it, see *Troubleshooting* in the User Guide.
 - **Software centers on Linux:** GNOME Software and similar apps show GenSynth with its description, screenshots and an **Open** button.
